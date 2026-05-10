@@ -18,6 +18,7 @@ import { RoleGuard } from "../../features/auth";
 import {
   createWorkplace,
   listWorkplaces,
+  patchWorkplaceTax,
   updateWorkplaceStatus,
   type Workplace,
 } from "../../features/workplaces/api";
@@ -71,6 +72,31 @@ export function WorkplacesClient() {
       setErrorMessage(error instanceof Error ? error.message : "Could not create workplace.");
     } finally {
       setIsCreating(false);
+    }
+  }
+
+  async function handleWorkplaceTax(workplace: Workplace) {
+    const raw = prompt(
+      "Workplace CIS tax % (optional fallback after company default)",
+      workplace.tax_rate ?? "",
+    );
+    if (raw === null) {
+      return;
+    }
+    setErrorMessage("");
+    setSuccessMessage("");
+    setUpdatingId(workplace.id);
+    try {
+      const trimmed = raw.trim();
+      await patchWorkplaceTax(workplace.id, {
+        tax_rate: trimmed === "" ? null : trimmed,
+      });
+      setSuccessMessage(`Updated tax for ${workplace.name}.`);
+      await loadWorkplaces();
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not update tax.");
+    } finally {
+      setUpdatingId(null);
     }
   }
 
@@ -163,18 +189,19 @@ export function WorkplacesClient() {
                 <TableHead>Code</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
+                <TableHead>CIS %</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5}>Loading workplaces...</TableCell>
+                  <TableCell colSpan={6}>Loading workplaces...</TableCell>
                 </TableRow>
               ) : null}
               {!isLoading && workplaces.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5}>No workplaces found.</TableCell>
+                  <TableCell colSpan={6}>No workplaces found.</TableCell>
                 </TableRow>
               ) : null}
               {!isLoading
@@ -184,18 +211,28 @@ export function WorkplacesClient() {
                       <TableCell>{workplace.code ?? "-"}</TableCell>
                       <TableCell>{workplace.is_active ? "Active" : "Inactive"}</TableCell>
                       <TableCell>{new Date(workplace.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-xs">{workplace.tax_rate ?? "—"}</TableCell>
                       <TableCell>
-                        <Button
-                          disabled={updatingId === workplace.id}
-                          onClick={() => handleToggleStatus(workplace)}
-                          type="button"
-                        >
-                          {updatingId === workplace.id
-                            ? "Updating..."
-                            : workplace.is_active
-                              ? "Deactivate"
-                              : "Activate"}
-                        </Button>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            disabled={updatingId === workplace.id}
+                            onClick={() => handleWorkplaceTax(workplace)}
+                            type="button"
+                          >
+                            Set CIS
+                          </Button>
+                          <Button
+                            disabled={updatingId === workplace.id}
+                            onClick={() => handleToggleStatus(workplace)}
+                            type="button"
+                          >
+                            {updatingId === workplace.id
+                              ? "Updating..."
+                              : workplace.is_active
+                                ? "Deactivate"
+                                : "Activate"}
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))

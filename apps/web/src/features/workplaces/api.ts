@@ -7,6 +7,7 @@ export type Workplace = {
   code: string | null;
   address: string | null;
   is_active: boolean;
+  tax_rate?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -58,6 +59,30 @@ export async function createWorkplace(
 
   if (!response.ok) {
     throw new Error("Could not create workplace.");
+  }
+
+  return response.json() as Promise<Workplace>;
+}
+
+export type PatchWorkplaceTaxRequest = {
+  tax_rate: string | number | null;
+};
+
+export async function patchWorkplaceTax(
+  workplaceId: string,
+  request: PatchWorkplaceTaxRequest,
+): Promise<Workplace> {
+  const response = await fetch(`${API_URL}/api/workplaces/${workplaceId}/tax`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not update workplace tax rate.");
   }
 
   return response.json() as Promise<Workplace>;

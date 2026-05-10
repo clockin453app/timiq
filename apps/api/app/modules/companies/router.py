@@ -12,6 +12,7 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.companies.repository import get_company_by_id, list_companies
 from app.modules.companies.schemas import (
     CompanyCreateRequest,
+    CompanyPayrollTaxPatchRequest,
     CompanyResponse,
     CompanyStatusUpdateRequest,
     CompanyTimePolicyPatchRequest,
@@ -25,6 +26,7 @@ from app.modules.companies.service import (
     DuplicateCompanyError,
     create_company,
     get_company_time_policy_for_actor,
+    patch_company_default_tax_rate,
     patch_company_time_policy,
     update_company_details,
     update_company_status,
@@ -41,6 +43,27 @@ def read_company_time_policy(
 ) -> CompanyTimePolicyResponse:
     try:
         return get_company_time_policy_for_actor(db_session, current_user, company_id)
+    except CompanyNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found.",
+        ) from exc
+    except CompanyTimePolicyPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
+@router.patch("/{company_id}/payroll-tax", response_model=CompanyResponse)
+def update_company_payroll_tax_route(
+    company_id: uuid.UUID,
+    request: CompanyPayrollTaxPatchRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> CompanyResponse:
+    try:
+        return patch_company_default_tax_rate(db_session, current_user, company_id, request)
     except CompanyNotFoundError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

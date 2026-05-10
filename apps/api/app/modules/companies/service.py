@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime, timezone
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -16,6 +15,8 @@ from app.modules.companies.repository import (
 )
 from app.modules.companies.schemas import (
     CompanyCreateRequest,
+    CompanyPayrollTaxPatchRequest,
+    CompanyResponse,
     CompanyTimePolicyPatchRequest,
     CompanyTimePolicyResponse,
     CompanyUpdateRequest,
@@ -98,6 +99,24 @@ def get_company_time_policy_for_actor(
 
     policy = ensure_company_time_policy(db_session, company_id)
     return company_time_policy_to_response(policy)
+
+
+def patch_company_default_tax_rate(
+    db_session: Session,
+    actor: User,
+    company_id: uuid.UUID,
+    request: CompanyPayrollTaxPatchRequest,
+) -> CompanyResponse:
+    assert_can_manage_company_time_policy(actor, company_id)
+    company = get_company_by_id(db_session, company_id)
+    if company is None:
+        raise CompanyNotFoundError("Company not found.")
+    if request.default_tax_rate is not None:
+        company.default_tax_rate = float(request.default_tax_rate)
+    else:
+        company.default_tax_rate = None
+    updated = update_company(db_session, company)
+    return CompanyResponse.model_validate(updated)
 
 
 def patch_company_time_policy(

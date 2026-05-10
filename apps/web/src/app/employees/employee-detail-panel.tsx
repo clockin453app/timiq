@@ -63,10 +63,13 @@ export function EmployeeDetailPanel({
   const [clearHistoryPhrase, setClearHistoryPhrase] = useState("");
   const [deletePhrase, setDeletePhrase] = useState("");
   const [earlyAccessEnabled, setEarlyAccessEnabled] = useState(false);
-  const [earlyAccessLoaded, setEarlyAccessLoaded] = useState(false);
+  const [hourlyRateStr, setHourlyRateStr] = useState("");
+  const [taxRateStr, setTaxRateStr] = useState("");
+  const [employeeProfileLoaded, setEmployeeProfileLoaded] = useState(false);
   const [isUpdatingEarlyAccess, setIsUpdatingEarlyAccess] = useState(false);
+  const [isSavingPayrollRates, setIsSavingPayrollRates] = useState(false);
 
-  const showEarlyAccessEditor =
+  const showEmployeeExtendedFields =
     canManageUser(currentUser, user) && user.system_role === "employee";
 
   useEffect(() => {
@@ -78,11 +81,13 @@ export function EmployeeDetailPanel({
     setLocalSuccess("");
     setClearHistoryPhrase("");
     setDeletePhrase("");
-    setEarlyAccessLoaded(false);
+    setEmployeeProfileLoaded(false);
+    setHourlyRateStr("");
+    setTaxRateStr("");
   }, [user]);
 
   useEffect(() => {
-    if (!showEarlyAccessEditor) {
+    if (!showEmployeeExtendedFields) {
       return;
     }
     let cancelled = false;
@@ -91,18 +96,20 @@ export function EmployeeDetailPanel({
         const profile = await getManagedEmployeeProfile(user.id);
         if (!cancelled) {
           setEarlyAccessEnabled(profile.early_access_enabled);
-          setEarlyAccessLoaded(true);
+          setHourlyRateStr(profile.hourly_rate ?? "");
+          setTaxRateStr(profile.tax_rate ?? "");
+          setEmployeeProfileLoaded(true);
         }
       } catch {
         if (!cancelled) {
-          setEarlyAccessLoaded(false);
+          setEmployeeProfileLoaded(false);
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [showEarlyAccessEditor, user.id]);
+  }, [showEmployeeExtendedFields, user.id]);
 
   const showCompanyField =
     isAdministrator(currentUser) && systemRole !== "administrator";
@@ -112,6 +119,24 @@ export function EmployeeDetailPanel({
     isAdministrator(currentUser) &&
     !targetIsAdministrator &&
     user.id !== currentUser.id;
+
+  async function handleSavePayrollRates() {
+    setLocalError("");
+    setLocalSuccess("");
+    setIsSavingPayrollRates(true);
+    try {
+      await patchManagedEmployeeProfile(user.id, {
+        hourly_rate: hourlyRateStr.trim() === "" ? null : hourlyRateStr.trim(),
+        tax_rate: taxRateStr.trim() === "" ? null : taxRateStr.trim(),
+      });
+      setLocalSuccess("Payroll rates saved.");
+      await onRefresh();
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "Could not save payroll rates.");
+    } finally {
+      setIsSavingPayrollRates(false);
+    }
+  }
 
   async function handleEarlyAccessChange(next: boolean) {
     const previous = earlyAccessEnabled;
@@ -332,12 +357,12 @@ export function EmployeeDetailPanel({
           </Button>
         </form>
 
-        {showEarlyAccessEditor ? (
-          <div className="mt-4 space-y-2 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
+        {showEmployeeExtendedFields ? (
+          <div className="mt-4 space-y-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
               Clock rules
             </p>
-            {!earlyAccessLoaded ? (
+            {!employeeProfileLoaded ? (
               <p className="text-xs text-[var(--color-text-muted)]">Loading profile…</p>
             ) : (
               <label className="flex items-start gap-2 text-sm text-[var(--color-text)]">
@@ -357,6 +382,45 @@ export function EmployeeDetailPanel({
                 </span>
               </label>
             )}
+
+            <div className="border-t border-[var(--color-border)] pt-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                Payroll rates
+              </p>
+              {!employeeProfileLoaded ? (
+                <p className="text-xs text-[var(--color-text-muted)]">Loading profile…</p>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Hourly rate
+                    <input
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      onChange={(event) => setHourlyRateStr(event.target.value)}
+                      placeholder="Leave blank if not set"
+                      type="text"
+                      value={hourlyRateStr}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    CIS tax % (employee override)
+                    <input
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      onChange={(event) => setTaxRateStr(event.target.value)}
+                      placeholder="Uses company default if blank"
+                      type="text"
+                      value={taxRateStr}
+                    />
+                  </label>
+                  <Button
+                    disabled={isSavingPayrollRates}
+                    onClick={handleSavePayrollRates}
+                    type="button"
+                  >
+                    {isSavingPayrollRates ? "Saving…" : "Save payroll rates"}
+                  </Button>
+                </div>
+              )}
+            </div>
           </div>
         ) : null}
 

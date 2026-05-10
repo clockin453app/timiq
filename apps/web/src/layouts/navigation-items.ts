@@ -5,7 +5,7 @@ export const primaryNavigation: NavigationItem[] = [
   { label: "Clock In / Out", href: "/clock", roles: ["administrator", "admin", "employee"] },
   { label: "Time Records", href: "/time-records", roles: ["administrator", "admin", "employee"] },
   { label: "Timesheets", href: "/timesheets", roles: ["administrator", "admin", "employee"] },
-  { label: "Pay History", href: "/pay-history", roles: ["administrator", "admin", "employee"] },
+  { label: "Pay History", href: "/pay-history", roles: ["employee"] },
   { label: "Starter Form", href: "/starter-form", roles: ["administrator", "admin", "employee"] },
   { label: "Site Progress", href: "/site-progress", roles: ["administrator", "admin", "employee"] },
   { label: "Profile", href: "/profile", roles: ["administrator", "admin", "employee"] }

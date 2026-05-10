@@ -4,6 +4,7 @@ export type Company = {
   id: string;
   name: string;
   is_active: boolean;
+  default_tax_rate?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -155,6 +156,30 @@ export async function patchCompanyTimePolicy(
   }
 
   return response.json() as Promise<CompanyTimePolicy>;
+}
+
+export type PatchCompanyPayrollTaxRequest = {
+  default_tax_rate: string | number | null;
+};
+
+export async function patchCompanyPayrollTax(
+  companyId: string,
+  request: PatchCompanyPayrollTaxRequest,
+): Promise<Company> {
+  const response = await fetch(`${API_URL}/api/companies/${companyId}/payroll-tax`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not update company default tax rate.");
+  }
+
+  return response.json() as Promise<Company>;
 }
 
 export async function updateCompanyStatus(

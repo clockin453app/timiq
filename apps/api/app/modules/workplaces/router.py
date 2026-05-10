@@ -10,6 +10,7 @@ from app.modules.workplaces.schemas import (
     WorkplaceCreateRequest,
     WorkplaceResponse,
     WorkplaceStatusUpdateRequest,
+    WorkplaceTaxPatchRequest,
 )
 from app.modules.workplaces.service import (
     WorkplaceCompanyNotFoundError,
@@ -18,6 +19,7 @@ from app.modules.workplaces.service import (
     WorkplacePermissionError,
     create_workplace,
     list_workplaces_visible_to_user,
+    patch_workplace_tax_rate,
     update_workplace_status,
 )
 
@@ -63,6 +65,35 @@ def create_managed_workplace(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Company not found.",
+        ) from exc
+
+    return WorkplaceResponse.model_validate(workplace)
+
+
+@router.patch("/{workplace_id}/tax", response_model=WorkplaceResponse)
+def update_workplace_tax_route(
+    workplace_id: uuid.UUID,
+    request: WorkplaceTaxPatchRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> WorkplaceResponse:
+    try:
+        rate = float(request.tax_rate) if request.tax_rate is not None else None
+        workplace = patch_workplace_tax_rate(
+            db_session,
+            current_user,
+            workplace_id,
+            rate,
+        )
+    except WorkplaceNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Workplace not found.",
+        ) from exc
+    except WorkplacePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
         ) from exc
 
     return WorkplaceResponse.model_validate(workplace)

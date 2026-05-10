@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -33,5 +34,10 @@ class WorkplaceResponse(BaseModel):
     code: str | None
     address: str | None
     is_active: bool
+    tax_rate: Decimal | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class WorkplaceTaxPatchRequest(BaseModel):
+    tax_rate: Decimal | None = Field(default=None, ge=0, le=100)

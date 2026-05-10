@@ -27,6 +27,7 @@ import {
   type Company,
 } from "../../features/companies/api";
 
+import { CompanyPayrollTaxModal } from "./company-payroll-tax-modal";
 import { CompanyTimePolicyModal } from "./company-time-policy-modal";
 
 type EditingCompanyState = {
@@ -47,6 +48,7 @@ export function CompaniesClient() {
   const [isCreating, setIsCreating] = useState(false);
   const [updatingCompanyId, setUpdatingCompanyId] = useState<string | null>(null);
   const [policyCompany, setPolicyCompany] = useState<Company | null>(null);
+  const [payrollTaxCompany, setPayrollTaxCompany] = useState<Company | null>(null);
 
   async function loadCompanies() {
     setIsLoading(true);
@@ -229,6 +231,7 @@ export function CompaniesClient() {
                 <TableHead>Name</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Created</TableHead>
+                <TableHead>Default CIS %</TableHead>
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -236,13 +239,13 @@ export function CompaniesClient() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={4}>Loading companies...</TableCell>
+                  <TableCell colSpan={5}>Loading companies...</TableCell>
                 </TableRow>
               ) : null}
 
               {!isLoading && companies.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4}>No companies found.</TableCell>
+                  <TableCell colSpan={5}>No companies found.</TableCell>
                 </TableRow>
               ) : null}
 
@@ -274,6 +277,10 @@ export function CompaniesClient() {
                             {new Date(company.created_at).toLocaleDateString()}
                           </TableCell>
 
+                          <TableCell className="text-xs">
+                            {company.default_tax_rate ?? "—"}
+                          </TableCell>
+
                           <TableCell>
                             <div className="flex flex-wrap gap-2">
                               <Button
@@ -299,6 +306,14 @@ export function CompaniesClient() {
                               >
                                 Time policy
                               </Button>
+
+                              <Button
+                                disabled={updatingCompanyId === company.id}
+                                onClick={() => setPayrollTaxCompany(company)}
+                                type="button"
+                              >
+                                CIS default
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -313,6 +328,9 @@ export function CompaniesClient() {
                         </TableCell>
                         <TableCell>
                           {new Date(company.created_at).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {company.default_tax_rate ?? "—"}
                         </TableCell>
                         <TableCell>
                           <div className="flex flex-wrap gap-2">
@@ -350,6 +368,13 @@ export function CompaniesClient() {
                             >
                               Time policy
                             </Button>
+
+                            <Button
+                              onClick={() => setPayrollTaxCompany(company)}
+                              type="button"
+                            >
+                              CIS default
+                            </Button>
                           </div>
                         </TableCell>
                       </TableRow>
@@ -369,6 +394,17 @@ export function CompaniesClient() {
           onClose={() => setPolicyCompany(null)}
           onSaved={async () => {
             setSuccessMessage(`Updated time policy for ${policyCompany.name}.`);
+          }}
+        />
+      ) : null}
+
+      {payrollTaxCompany ? (
+        <CompanyPayrollTaxModal
+          company={payrollTaxCompany}
+          onClose={() => setPayrollTaxCompany(null)}
+          onSaved={async () => {
+            setSuccessMessage(`Updated default CIS rate for ${payrollTaxCompany.name}.`);
+            await loadCompanies();
           }}
         />
       ) : null}

@@ -98,3 +98,37 @@ def list_time_shifts_for_week(
 
     rows = db_session.execute(statement).all()
     return [(shift, location, owner, profile) for shift, location, owner, profile in rows]
+
+
+def list_time_shifts_for_payroll_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    subject_user_id: uuid.UUID,
+    week_start_utc: datetime,
+    week_end_utc: datetime,
+) -> list[tuple[TimeShift, Location, User, EmployeeProfile | None]]:
+    """Completed shifts for payroll aggregation (company scoped; no viewer-role filter)."""
+    statement = (
+        select(TimeShift, Location, User, EmployeeProfile)
+        .join(Location, TimeShift.location_id == Location.id)
+        .join(User, TimeShift.user_id == User.id)
+        .outerjoin(EmployeeProfile, EmployeeProfile.user_id == User.id)
+        .where(TimeShift.user_id == subject_user_id)
+        .where(
+            or_(
+                TimeShift.company_id == company_id,
+                Location.company_id == company_id,
+            ),
+        )
+        .where(
+            and_(
+                TimeShift.clock_in_at >= week_start_utc,
+                TimeShift.clock_in_at < week_end_utc,
+            ),
+        )
+        .where(TimeShift.status == "completed")
+        .order_by(TimeShift.clock_in_at.asc())
+    )
+    rows = db_session.execute(statement).all()
+    return [(shift, location, owner, profile) for shift, location, owner, profile in rows]

@@ -27,7 +27,7 @@ def get_my_profile(
     current_user: User = Depends(get_current_user),
 ) -> EmployeeProfileResponse:
     profile = get_profile_for_actor_or_user_id(db_session=db_session, actor=current_user)
-    return employee_profile_to_response(db_session, profile)
+    return employee_profile_to_response(db_session, profile, actor=current_user)
 
 
 @router.patch("/me", response_model=EmployeeProfileResponse)
@@ -48,7 +48,7 @@ def update_my_profile(
             detail=str(exc),
         ) from exc
 
-    return employee_profile_to_response(db_session, profile)
+    return employee_profile_to_response(db_session, profile, actor=current_user)
 
 
 @router.get("", response_model=EmployeeProfileResponse)
@@ -74,7 +74,7 @@ def get_managed_profile(
             detail=str(exc),
         ) from exc
 
-    return employee_profile_to_response(db_session, profile)
+    return employee_profile_to_response(db_session, profile, actor=current_user)
 
 
 @router.patch("", response_model=EmployeeProfileResponse)
@@ -102,4 +102,4 @@ def patch_managed_profile(
             detail=str(exc),
         ) from exc
 
-    return employee_profile_to_response(db_session, profile)
+    return employee_profile_to_response(db_session, profile, actor=current_user)

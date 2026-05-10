@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ClockSitesMap } from "../../components/maps";
@@ -576,39 +577,42 @@ export function ClockClient() {
           </Button>
         </div>
 
-        {activeSelfiePhase ? (
-          <div
-            aria-modal="true"
-            className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-3"
-            role="dialog"
-          >
-            <div className="w-full max-w-sm rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md">
-              <p className="text-sm font-bold text-[var(--color-text)]">
-                {activeSelfiePhase === "clock_in" ? "Clock-in selfie" : "Clock-out selfie"}
-              </p>
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Position your face in frame, then tap Capture.
-              </p>
-              <div className="mt-2 overflow-hidden rounded border border-[var(--color-border-dark)] bg-black">
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  className="aspect-video max-h-44 w-full object-cover"
-                  muted
-                  playsInline
-                />
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Button onClick={handleConfirmSelfieCapture} type="button">
-                  Capture
-                </Button>
-                <Button onClick={handleCancelSelfieCapture} type="button">
-                  Cancel
-                </Button>
-              </div>
-            </div>
-          </div>
-        ) : null}
+        {typeof document !== "undefined" && activeSelfiePhase
+          ? createPortal(
+              <div
+                aria-modal="true"
+                className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/45 p-3"
+                role="dialog"
+              >
+                <div className="w-full max-w-sm rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md">
+                  <p className="text-sm font-bold text-[var(--color-text)]">
+                    {activeSelfiePhase === "clock_in" ? "Clock-in selfie" : "Clock-out selfie"}
+                  </p>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    Position your face in frame, then tap Capture.
+                  </p>
+                  <div className="mt-2 overflow-hidden rounded border border-[var(--color-border-dark)] bg-black">
+                    <video
+                      ref={videoRef}
+                      autoPlay
+                      className="aspect-video max-h-44 w-full object-cover"
+                      muted
+                      playsInline
+                    />
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button onClick={handleConfirmSelfieCapture} type="button">
+                      Capture
+                    </Button>
+                    <Button onClick={handleCancelSelfieCapture} type="button">
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
 
         {errorMessage ? (
           <div className="mt-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">

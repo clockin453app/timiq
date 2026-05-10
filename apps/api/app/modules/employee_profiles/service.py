@@ -21,6 +21,8 @@ from app.modules.employee_profiles.schemas import (
 def employee_profile_to_response(
     db_session: Session,
     profile: EmployeeProfile,
+    *,
+    actor: User,
 ) -> EmployeeProfileResponse:
     company_name: str | None = None
     if profile.company_id is not None:
@@ -28,9 +30,13 @@ def employee_profile_to_response(
         if company is not None:
             company_name = company.name
 
-    return EmployeeProfileResponse.model_validate(profile).model_copy(
+    mask_rates = actor.id == profile.user_id
+    base = EmployeeProfileResponse.model_validate(profile).model_copy(
         update={"company_name": company_name},
     )
+    if mask_rates:
+        return base.model_copy(update={"hourly_rate": None, "tax_rate": None})
+    return base
 
 
 class EmployeeProfileError(ValueError):
@@ -128,5 +134,17 @@ def update_profile_for_actor_or_user_id(
                 "You cannot update early access for this user.",
             )
         profile.early_access_enabled = request.early_access_enabled
+
+    if request.hourly_rate is not None or request.tax_rate is not None:
+        if actor.id == target_user.id:
+            raise EmployeeProfilePermissionError("You cannot update payroll rates on your own profile.")
+        if not can_manage_user(actor, target_user):
+            raise EmployeeProfilePermissionError(
+                "You cannot update payroll rates for this user.",
+            )
+        if request.hourly_rate is not None:
+            profile.hourly_rate = float(request.hourly_rate)
+        if request.tax_rate is not None:
+            profile.tax_rate = float(request.tax_rate)
 
     return update_employee_profile(db_session, profile)

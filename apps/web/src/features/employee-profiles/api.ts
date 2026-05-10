@@ -14,6 +14,8 @@ export type EmployeeProfile = {
   emergency_contact_phone: string | null;
   is_onboarded: boolean;
   early_access_enabled: boolean;
+  hourly_rate: string | null;
+  tax_rate: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -31,6 +33,8 @@ export type UpdateMyEmployeeProfileRequest = {
 
 export type PatchManagedEmployeeProfileRequest = {
   early_access_enabled?: boolean;
+  hourly_rate?: string | number | null;
+  tax_rate?: string | number | null;
 };
 
 export async function getMyEmployeeProfile(): Promise<EmployeeProfile> {

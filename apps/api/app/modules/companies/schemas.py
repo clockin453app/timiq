@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -43,8 +44,13 @@ class CompanyResponse(BaseModel):
     id: uuid.UUID
     name: str
     is_active: bool
+    default_tax_rate: Decimal | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class CompanyPayrollTaxPatchRequest(BaseModel):
+    default_tax_rate: Decimal | None = Field(default=None, ge=0, le=100)
 
 
 class CompanyTimePolicyResponse(BaseModel):

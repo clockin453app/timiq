@@ -90,6 +90,27 @@ def create_workplace(
     return save_workplace(db_session, workplace)
 
 
+def patch_workplace_tax_rate(
+    db_session: Session,
+    actor: User,
+    workplace_id: uuid.UUID,
+    tax_rate_percent: float | None,
+) -> Workplace:
+    workplace = get_workplace_by_id(db_session, workplace_id)
+    if workplace is None:
+        raise WorkplaceNotFoundError("Workplace not found.")
+
+    if actor.system_role == SystemRole.ADMINISTRATOR:
+        workplace.tax_rate = tax_rate_percent
+        return update_workplace(db_session, workplace)
+
+    if actor.system_role != SystemRole.ADMIN or actor.company_id != workplace.company_id:
+        raise WorkplacePermissionError("You cannot update this workplace.")
+
+    workplace.tax_rate = tax_rate_percent
+    return update_workplace(db_session, workplace)
+
+
 def update_workplace_status(
     db_session: Session,
     actor: User,
