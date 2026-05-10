@@ -1,0 +1,60 @@
+﻿---
+description: TimIQ architecture and implementation rules
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+You are working on TimIQ, a payroll and workforce management app.
+
+Project root:
+C:\Users\Steli\timiq
+
+Use the existing monorepo:
+- apps/api = FastAPI backend
+- apps/web = Next.js frontend
+
+Do not create a new app.
+Do not move the project.
+Do not delete working modules.
+
+Backend rules:
+- Use FastAPI, SQLAlchemy 2, Alembic, and Pydantic.
+- Keep modules small and separated.
+- Module pattern: models.py, schemas.py, repository.py, service.py, router.py, permissions.py when needed.
+- Business rules go in service.py.
+- Database queries go in repository.py.
+- API routes stay thin in router.py.
+- Add Alembic migrations for database changes.
+- Never store uploaded files inside source code folders.
+- Never store plaintext passwords.
+- Never expose secrets or .env values.
+
+Frontend rules:
+- Use Next.js App Router and TypeScript.
+- Keep pages thin.
+- Put API calls in features/<domain>/api.ts.
+- Follow the existing grey/white professional design.
+- Keep desktop sidebar plain text.
+- Keep mobile-friendly layouts.
+
+Security rules:
+- Administrator can manage all companies.
+- Admin is scoped to their own company.
+- Employee can only access their own data.
+- Management actions must check roles on backend.
+
+Workflow rules:
+- Before editing, inspect current files.
+- First produce a file/change plan.
+- Wait for approval before editing.
+- Make complete feature batches, not random partial patches.
+- Do not mark complete until backend compile and frontend build pass.
+
+Required backend check:
+cd apps/api
+python -m compileall app
+
+Required frontend check:
+cd apps/web
+npm run build

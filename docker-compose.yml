@@ -1,0 +1,21 @@
+services:
+  timiq_postgres:
+    image: postgres:16-alpine
+    container_name: timiq_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: timiq_local
+      POSTGRES_USER: timiq_app
+      POSTGRES_PASSWORD: timiq_local_password_change_me
+    ports:
+      - "5432:5432"
+    volumes:
+      - timiq_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U timiq_app -d timiq_local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  timiq_postgres_data:

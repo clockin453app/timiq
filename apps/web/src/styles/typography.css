@@ -1,0 +1,45 @@
+.timiq-title-xl {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 1.625rem;
+  font-weight: 700;
+  line-height: 2rem;
+}
+
+.timiq-title-lg {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 1.375rem;
+  font-weight: 700;
+  line-height: 1.75rem;
+}
+
+.timiq-title-md {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.375rem;
+}
+
+.timiq-body {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  line-height: 1.375rem;
+}
+
+.timiq-caption {
+  margin: 0;
+  color: var(--color-text-soft);
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.timiq-label {
+  display: inline-block;
+  color: var(--color-text);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+}

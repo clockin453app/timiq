@@ -1,0 +1,81 @@
+﻿---
+description: TimIQ product rebuild plan and feature tracker
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+TimIQ product goal:
+Build a professional payroll and workforce management app with desktop and mobile layouts, role-based access, payroll, time tracking, onboarding, uploads, audit, and system health.
+
+Roles:
+- Administrator: global master admin
+- Admin: company-scoped admin
+- Employee: own data only
+
+Main employee pages:
+- Dashboard
+- Clock In / Out
+- Time Records
+- Timesheets
+- Week Report
+- Pay History
+- Starter Form / Onboarding
+- Site Progress
+- Profile / Change Password
+
+Main management pages:
+- Management Overview
+- Employees
+- Companies
+- Workplaces
+- Locations
+- Site Access
+- Payroll Report
+- Live Attendance
+- Onboarding Review
+- Audit Log
+- System Health
+- Work Progress Admin View
+
+Current completed foundations:
+- Auth/login/logout
+- Protected routes
+- Role-based UI
+- Companies
+- Company status
+- Employees
+- Employee edit
+- Password reset
+- Locations with GPS/geofence
+- Location edit
+- Partial Site Access
+
+Next build direction:
+Batch 29: Core foundation completion
+- audit events backend module
+- file storage abstraction
+- workplaces backend/frontend foundation
+- employee profiles foundation
+- system health foundation
+
+Batch 30: Full time clock rebuild
+- clock status
+- clock in
+- clock out
+- break start
+- break end
+- GPS/geofence validation
+- assigned site validation
+- selfie metadata
+- clock page UI
+
+Batch 31: Time records, timesheets, week report
+Batch 32: Payroll
+Batch 33: Onboarding / starter form
+Batch 34: Site progress / work progress
+Batch 35: Live attendance and force actions
+Batch 36: Audit log, system health, backups, Google Drive storage
+
+Important:
+The old uploaded app is a behavior reference only. Do not copy old code directly. Rebuild cleanly in the TimIQ architecture.
