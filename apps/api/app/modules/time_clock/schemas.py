@@ -80,3 +80,17 @@ class ClockSelfieResponse(BaseModel):
     file_size_bytes: int
     captured_at: datetime
     created_at: datetime
+
+
+class ClockSelfieMetadataResponse(BaseModel):
+    """Safe selfie metadata for APIs; never includes storage paths."""
+
+    id: uuid.UUID
+    time_shift_id: uuid.UUID
+    phase: str
+    content_type: str
+    file_size_bytes: int
+    captured_at: datetime
+    created_at: datetime
+    clock_in_at: datetime
+    clock_out_at: datetime | None

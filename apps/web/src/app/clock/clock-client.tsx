@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { ClockSitesMap } from "../../components/maps";
@@ -406,6 +407,12 @@ export function ClockClient() {
         description="GPS and a live camera selfie are required for each clock-in and clock-out."
       />
       <SheetBody>
+        <div className="mb-3 text-sm">
+          <Link className="font-semibold text-[var(--color-text)] underline" href="/clock-selfies">
+            My clock selfies
+          </Link>
+        </div>
+
         <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
           {isRefreshing ? "Loading status..." : null}
           {!isRefreshing && clockStatus

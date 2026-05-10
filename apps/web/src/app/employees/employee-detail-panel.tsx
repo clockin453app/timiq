@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 
 import { Button } from "../../components/ui";
 import {
+  canAccessManagement,
   clearManagedUserHistory,
   deleteManagedUser,
   isAdministrator,
@@ -184,6 +186,16 @@ export function EmployeeDetailPanel({
           <div>
             <p className="text-sm font-bold text-[var(--color-text)]">Edit employee</p>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{user.email}</p>
+            {canAccessManagement(currentUser) ? (
+              <div className="mt-2">
+                <Link
+                  className="text-xs font-semibold text-[var(--color-text)] underline"
+                  href={`/employees/${user.id}/clock-selfies`}
+                >
+                  Clock selfies
+                </Link>
+              </div>
+            ) : null}
           </div>
           <Button onClick={onClose} type="button">
             Close

@@ -1,15 +1,21 @@
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+import uuid
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
+from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User
+from app.modules.auth.models import SystemRole, User
 from app.modules.time_clock.schemas import (
     BreakActionResponse,
     ClockActionResponse,
+    ClockSelfieMetadataResponse,
     ClockStatusResponse,
 )
 from app.modules.time_clock.service import (
+    ClockSelfieAccessDeniedError,
     ClockStateError,
     GeofenceValidationError,
     LocationAccessError,
@@ -18,10 +24,16 @@ from app.modules.time_clock.service import (
     clock_in,
     clock_out,
     get_clock_status,
+    list_my_clock_selfies_metadata,
+    list_user_clock_selfies_metadata,
     parse_timestamp_utc,
+    resolve_clock_selfie_file_path,
 )
 
 router = APIRouter(prefix="/api/time-clock", tags=["time-clock"])
+
+
+NOT_FOUND_SELFIE_DETAIL = "Clock selfie not found."
 
 
 @router.get("/status", response_model=ClockStatusResponse)
@@ -31,6 +43,89 @@ def get_time_clock_status(
 ) -> ClockStatusResponse:
     data = get_clock_status(db_session, current_user)
     return ClockStatusResponse(**data)
+
+
+@router.get("/selfies/me", response_model=list[ClockSelfieMetadataResponse])
+def list_my_clock_selfies(
+    limit: int | None = Query(default=None, ge=1),
+    offset: int | None = Query(default=None, ge=0),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> list[ClockSelfieMetadataResponse]:
+    return list_my_clock_selfies_metadata(
+        db_session,
+        current_user,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.get(
+    "/users/{user_id}/selfies",
+    response_model=list[ClockSelfieMetadataResponse],
+)
+def list_clock_selfies_for_user(
+    user_id: uuid.UUID,
+    limit: int | None = Query(default=None, ge=1),
+    offset: int | None = Query(default=None, ge=0),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> list[ClockSelfieMetadataResponse]:
+    try:
+        return list_user_clock_selfies_metadata(
+            db_session,
+            current_user,
+            user_id,
+            limit=limit,
+            offset=offset,
+        )
+    except ClockSelfieAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=NOT_FOUND_SELFIE_DETAIL,
+        ) from None
+
+
+@router.get("/selfies/{selfie_id}/file")
+def download_clock_selfie_file(
+    selfie_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> FileResponse:
+    try:
+        path, selfie, shift, owner = resolve_clock_selfie_file_path(
+            db_session,
+            current_user,
+            selfie_id,
+        )
+    except ClockSelfieAccessDeniedError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=NOT_FOUND_SELFIE_DETAIL,
+        ) from None
+
+    if current_user.system_role in (
+        SystemRole.ADMIN,
+        SystemRole.ADMINISTRATOR,
+    ) and current_user.id != owner.id:
+        create_internal_audit_event(
+            db_session=db_session,
+            actor=current_user,
+            action="clock_selfie_viewed",
+            entity_type="clock_selfie",
+            entity_id=str(selfie.id),
+            company_id=owner.company_id,
+            details={
+                "time_shift_id": str(shift.id),
+                "subject_user_id": str(owner.id),
+            },
+        )
+
+    return FileResponse(
+        path,
+        media_type=selfie.content_type,
+        filename=f"clock-selfie-{selfie.id}",
+    )
 
 
 @router.post("/clock-in", response_model=ClockActionResponse)

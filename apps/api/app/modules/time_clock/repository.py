@@ -136,3 +136,39 @@ def get_clock_selfie_for_shift_phase(
         .limit(1)
     )
     return db_session.scalar(statement)
+
+
+def list_clock_selfies_with_shifts_for_user(
+    db_session: Session,
+    user_id: uuid.UUID,
+    *,
+    limit: int,
+    offset: int,
+) -> list[tuple[ClockSelfie, TimeShift]]:
+    statement = (
+        select(ClockSelfie, TimeShift)
+        .join(TimeShift, ClockSelfie.time_shift_id == TimeShift.id)
+        .where(TimeShift.user_id == user_id)
+        .order_by(ClockSelfie.captured_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = db_session.execute(statement).all()
+    return [(selfie, shift) for selfie, shift in rows]
+
+
+def get_clock_selfie_and_shift_by_id(
+    db_session: Session,
+    selfie_id: uuid.UUID,
+) -> tuple[ClockSelfie, TimeShift] | None:
+    statement = (
+        select(ClockSelfie, TimeShift)
+        .join(TimeShift, ClockSelfie.time_shift_id == TimeShift.id)
+        .where(ClockSelfie.id == selfie_id)
+        .limit(1)
+    )
+    row = db_session.execute(statement).first()
+    if row is None:
+        return None
+    selfie, shift = row
+    return selfie, shift

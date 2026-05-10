@@ -7,21 +7,26 @@ from sqlalchemy.orm import Session
 from app.core.storage.factory import get_storage_backend
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import User
+from app.modules.auth.repository import get_user_by_id
 from app.modules.locations.models import Location
 from app.modules.time_clock.geofence import haversine_distance_meters, is_inside_geofence
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
+from app.modules.time_clock.permissions import can_view_shift_owner_selfies
 from app.modules.time_clock.repository import (
+    get_clock_selfie_and_shift_by_id,
     get_clock_selfie_for_shift_phase,
     get_open_break_for_shift,
     get_open_shift_for_user,
     has_completed_shift_for_user_on_utc_day,
     list_active_assigned_locations_for_user,
     list_breaks_for_shift,
+    list_clock_selfies_with_shifts_for_user,
     save_break,
     save_clock_selfie,
     save_shift,
     update_break,
 )
+from app.modules.time_clock.schemas import ClockSelfieMetadataResponse
 
 MAX_GPS_ACCURACY_METERS = 100.0
 MAX_GPS_AGE_SECONDS = 120
@@ -48,6 +53,14 @@ class GeofenceValidationError(TimeClockError):
 
 class ClockStateError(TimeClockError):
     pass
+
+
+class ClockSelfieAccessDeniedError(TimeClockError):
+    """Missing storage row, unauthorized viewer, or missing file (respond as 404)."""
+
+
+DEFAULT_SELFIE_LIST_LIMIT = 50
+MAX_SELFIE_LIST_LIMIT = 100
 
 
 def _utc_now() -> datetime:
@@ -128,6 +141,115 @@ def get_clock_status(db_session: Session, actor: User) -> dict:
         "current_break_open": current_break is not None,
         "assigned_sites": assigned_sites,
     }
+
+
+def normalize_selfie_list_limit(limit: int | None) -> int:
+    if limit is None or limit <= 0:
+        return DEFAULT_SELFIE_LIST_LIMIT
+    return min(limit, MAX_SELFIE_LIST_LIMIT)
+
+
+def normalize_selfie_list_offset(offset: int | None) -> int:
+    if offset is None or offset < 0:
+        return 0
+    return offset
+
+
+def _metadata_from_selfie_and_shift(
+    selfie: ClockSelfie,
+    shift: TimeShift,
+) -> ClockSelfieMetadataResponse:
+    return ClockSelfieMetadataResponse(
+        id=selfie.id,
+        time_shift_id=selfie.time_shift_id,
+        phase=selfie.phase,
+        content_type=selfie.content_type,
+        file_size_bytes=selfie.file_size_bytes,
+        captured_at=selfie.captured_at,
+        created_at=selfie.created_at,
+        clock_in_at=shift.clock_in_at,
+        clock_out_at=shift.clock_out_at,
+    )
+
+
+def authorize_selfie_subject_user(
+    db_session: Session,
+    actor: User,
+    subject_user_id: uuid.UUID,
+) -> User:
+    """Resolve subject user or raise ClockSelfieAccessDeniedError."""
+    subject = get_user_by_id(db_session, subject_user_id)
+    if subject is None:
+        raise ClockSelfieAccessDeniedError("Clock selfie subject was not found.")
+
+    if not can_view_shift_owner_selfies(actor, subject):
+        raise ClockSelfieAccessDeniedError("Clock selfie subject was not found.")
+
+    return subject
+
+
+def list_my_clock_selfies_metadata(
+    db_session: Session,
+    actor: User,
+    *,
+    limit: int | None,
+    offset: int | None,
+) -> list[ClockSelfieMetadataResponse]:
+    effective_limit = normalize_selfie_list_limit(limit)
+    effective_offset = normalize_selfie_list_offset(offset)
+    rows = list_clock_selfies_with_shifts_for_user(
+        db_session,
+        actor.id,
+        limit=effective_limit,
+        offset=effective_offset,
+    )
+    return [_metadata_from_selfie_and_shift(selfie, shift) for selfie, shift in rows]
+
+
+def list_user_clock_selfies_metadata(
+    db_session: Session,
+    actor: User,
+    subject_user_id: uuid.UUID,
+    *,
+    limit: int | None,
+    offset: int | None,
+) -> list[ClockSelfieMetadataResponse]:
+    authorize_selfie_subject_user(db_session, actor, subject_user_id)
+    effective_limit = normalize_selfie_list_limit(limit)
+    effective_offset = normalize_selfie_list_offset(offset)
+    rows = list_clock_selfies_with_shifts_for_user(
+        db_session,
+        subject_user_id,
+        limit=effective_limit,
+        offset=effective_offset,
+    )
+    return [_metadata_from_selfie_and_shift(selfie, shift) for selfie, shift in rows]
+
+
+def resolve_clock_selfie_file_path(
+    db_session: Session,
+    actor: User,
+    selfie_id: uuid.UUID,
+) -> tuple[Path, ClockSelfie, TimeShift, User]:
+    row = get_clock_selfie_and_shift_by_id(db_session, selfie_id)
+    if row is None:
+        raise ClockSelfieAccessDeniedError("Clock selfie was not found.")
+
+    selfie, shift = row
+    owner = get_user_by_id(db_session, shift.user_id)
+    if owner is None:
+        raise ClockSelfieAccessDeniedError("Clock selfie was not found.")
+
+    if not can_view_shift_owner_selfies(actor, owner):
+        raise ClockSelfieAccessDeniedError("Clock selfie was not found.")
+
+    storage_backend = get_storage_backend()
+    absolute_path = storage_backend.build_path(selfie.storage_path)
+
+    if not absolute_path.is_file():
+        raise ClockSelfieAccessDeniedError("Clock selfie was not found.")
+
+    return absolute_path, selfie, shift, owner
 
 
 def parse_timestamp_utc(value: str) -> datetime:
