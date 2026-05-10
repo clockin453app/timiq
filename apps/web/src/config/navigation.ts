@@ -9,6 +9,7 @@ export type NavigationItem = {
 export const employeeNavigation: NavigationItem[] = [
   { label: "Dashboard", href: "/dashboard", allowedRoles: ["administrator", "admin", "employee"] },
   { label: "Clock In / Out", href: "/clock", allowedRoles: ["administrator", "admin", "employee"] },
+  { label: "Clock Selfies", href: "/clock-selfies", allowedRoles: ["employee"] },
   { label: "Time Records", href: "/time-records", allowedRoles: ["administrator", "admin", "employee"] },
   { label: "Timesheets", href: "/timesheets", allowedRoles: ["administrator", "admin", "employee"] },
   { label: "Pay History", href: "/pay-history", allowedRoles: ["administrator", "admin", "employee"] },

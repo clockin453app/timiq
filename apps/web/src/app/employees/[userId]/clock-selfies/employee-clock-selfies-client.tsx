@@ -157,7 +157,7 @@ export function EmployeeClockSelfiesClient({ userId }: EmployeeClockSelfiesClien
       <Sheet>
         <PageHeader
           title="Employee clock selfies"
-          description="Review clock-in and clock-out selfies for this user. Management previews are audited."
+          description="Review clock-in and clock-out selfies for this user. Company admins only reach employees they manage; previews are audited."
         />
         <SheetBody>
           {isLoading ? (

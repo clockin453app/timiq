@@ -5,7 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 
 import { Button } from "../../components/ui";
 import {
-  canAccessManagement,
+  canManageUser,
   clearManagedUserHistory,
   deleteManagedUser,
   isAdministrator,
@@ -186,7 +186,7 @@ export function EmployeeDetailPanel({
           <div>
             <p className="text-sm font-bold text-[var(--color-text)]">Edit employee</p>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{user.email}</p>
-            {canAccessManagement(currentUser) ? (
+            {canManageUser(currentUser, user) ? (
               <div className="mt-2">
                 <Link
                   className="text-xs font-semibold text-[var(--color-text)] underline"

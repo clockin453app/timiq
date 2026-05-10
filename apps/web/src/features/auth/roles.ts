@@ -31,6 +31,27 @@ export function canAccessManagement(user: AuthUser) {
   return isAdministrator(user) || isAdmin(user);
 }
 
+/** Mirrors backend auth.service.can_manage_user (management scope for company admins). */
+export function canManageUser(actor: AuthUser, target: AuthUser): boolean {
+  if (isAdministrator(actor)) {
+    return true;
+  }
+
+  if (!isAdmin(actor)) {
+    return false;
+  }
+
+  if (!actor.company_id) {
+    return false;
+  }
+
+  if (target.company_id !== actor.company_id) {
+    return false;
+  }
+
+  return target.system_role === "employee";
+}
+
 export function canAccessSystemSettings(user: AuthUser) {
   return isAdministrator(user);
 }

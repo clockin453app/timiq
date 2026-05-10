@@ -6,6 +6,7 @@ export { UserAccountSummary } from "./user-account-summary";
 export {
   canAccessManagement,
   canAccessSystemSettings,
+  canManageUser,
   formatSystemRole,
   hasAnyRole,
   isAdmin,
