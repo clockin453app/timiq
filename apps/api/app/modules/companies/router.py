@@ -14,18 +14,64 @@ from app.modules.companies.schemas import (
     CompanyCreateRequest,
     CompanyResponse,
     CompanyStatusUpdateRequest,
+    CompanyTimePolicyPatchRequest,
+    CompanyTimePolicyResponse,
     CompanyUpdateRequest,
 )
 from app.modules.companies.service import (
     CompanyHasActiveUsersError,
     CompanyNotFoundError,
+    CompanyTimePolicyPermissionError,
     DuplicateCompanyError,
     create_company,
+    get_company_time_policy_for_actor,
+    patch_company_time_policy,
     update_company_details,
     update_company_status,
 )
 
 router = APIRouter(prefix="/api/companies", tags=["companies"])
+
+
+@router.get("/{company_id}/time-policy", response_model=CompanyTimePolicyResponse)
+def read_company_time_policy(
+    company_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> CompanyTimePolicyResponse:
+    try:
+        return get_company_time_policy_for_actor(db_session, current_user, company_id)
+    except CompanyNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found.",
+        ) from exc
+    except CompanyTimePolicyPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
+@router.patch("/{company_id}/time-policy", response_model=CompanyTimePolicyResponse)
+def update_company_time_policy_route(
+    company_id: uuid.UUID,
+    request: CompanyTimePolicyPatchRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> CompanyTimePolicyResponse:
+    try:
+        return patch_company_time_policy(db_session, current_user, company_id, request)
+    except CompanyNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found.",
+        ) from exc
+    except CompanyTimePolicyPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get("", response_model=list[CompanyResponse])

@@ -1,5 +1,19 @@
 import { API_URL } from "../../config/api";
 
+export type ClockSelfieReviewItem = {
+  id: string;
+  user_id: string;
+  user_email: string;
+  employee_name: string | null;
+  company_name: string | null;
+  phase: string;
+  captured_at: string;
+  clock_in_at: string;
+  clock_out_at: string | null;
+  content_type: string;
+  file_size_bytes: number;
+};
+
 export type ClockSelfieMetadata = {
   id: string;
   time_shift_id: string;
@@ -37,24 +51,28 @@ async function parseErrorMessage(response: Response, fallback: string): Promise<
   return fallback;
 }
 
-export async function listMyClockSelfies(options?: {
+export async function listClockSelfiesForReview(options?: {
   limit?: number;
   offset?: number;
-}): Promise<ClockSelfieMetadata[]> {
+}): Promise<ClockSelfieReviewItem[]> {
   const searchParams = new URLSearchParams();
   appendPaginationParams(searchParams, options?.limit, options?.offset);
   const query = searchParams.toString();
   const suffix = query ? `?${query}` : "";
-  const response = await fetch(`${API_URL}/api/time-clock/selfies/me${suffix}`, {
+  const response = await fetch(`${API_URL}/api/time-clock/selfies/review${suffix}`, {
     method: "GET",
     credentials: "include",
   });
 
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not load your clock selfies."));
+  if (response.status === 403) {
+    throw new Error("You do not have permission to review clock selfies.");
   }
 
-  return response.json() as Promise<ClockSelfieMetadata[]>;
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not load clock selfie review."));
+  }
+
+  return response.json() as Promise<ClockSelfieReviewItem[]>;
 }
 
 export async function listClockSelfiesForUser(
@@ -73,6 +91,10 @@ export async function listClockSelfiesForUser(
     },
   );
 
+  if (response.status === 403) {
+    throw new Error("You do not have permission to list clock selfies for this user.");
+  }
+
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, "Could not load clock selfies for this user."));
   }
@@ -85,6 +107,10 @@ export async function fetchClockSelfieBlob(selfieId: string): Promise<Blob> {
     method: "GET",
     credentials: "include",
   });
+
+  if (response.status === 403) {
+    throw new Error("You do not have permission to view this selfie.");
+  }
 
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, "Could not load selfie image."));

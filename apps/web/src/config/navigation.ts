@@ -9,9 +9,9 @@ export type NavigationItem = {
 export const employeeNavigation: NavigationItem[] = [
   { label: "Dashboard", href: "/dashboard", allowedRoles: ["administrator", "admin", "employee"] },
   { label: "Clock In / Out", href: "/clock", allowedRoles: ["administrator", "admin", "employee"] },
-  { label: "Clock Selfies", href: "/clock-selfies", allowedRoles: ["employee"] },
   { label: "Time Records", href: "/time-records", allowedRoles: ["administrator", "admin", "employee"] },
   { label: "Timesheets", href: "/timesheets", allowedRoles: ["administrator", "admin", "employee"] },
+  { label: "Week Report", href: "/week-report", allowedRoles: ["administrator", "admin", "employee"] },
   { label: "Pay History", href: "/pay-history", allowedRoles: ["administrator", "admin", "employee"] },
   { label: "Starter Form", href: "/starter-form", allowedRoles: ["administrator", "admin", "employee"] },
   { label: "Site Progress", href: "/site-progress", allowedRoles: ["administrator", "admin", "employee"] },
@@ -21,6 +21,7 @@ export const employeeNavigation: NavigationItem[] = [
 export const managementNavigation: NavigationItem[] = [
   { label: "Overview", href: "/management", allowedRoles: ["administrator", "admin"] },
   { label: "Employees", href: "/employees", allowedRoles: ["administrator", "admin"] },
+  { label: "Clock Selfies", href: "/clock-selfie-review", allowedRoles: ["administrator", "admin"] },
   { label: "Companies", href: "/companies", allowedRoles: ["administrator"] },
   { label: "Workplaces", href: "/workplaces", allowedRoles: ["administrator", "admin"] },
   { label: "Locations", href: "/locations", allowedRoles: ["administrator", "admin"] },

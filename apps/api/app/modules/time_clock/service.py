@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.core.storage.factory import get_storage_backend
 from app.modules.audit.service import create_internal_audit_event
-from app.modules.auth.models import User
+from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
+from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
 from app.modules.time_clock.geofence import haversine_distance_meters, is_inside_geofence
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
@@ -20,13 +21,14 @@ from app.modules.time_clock.repository import (
     has_completed_shift_for_user_on_utc_day,
     list_active_assigned_locations_for_user,
     list_breaks_for_shift,
+    list_clock_selfie_review_rows,
     list_clock_selfies_with_shifts_for_user,
     save_break,
     save_clock_selfie,
     save_shift,
     update_break,
 )
-from app.modules.time_clock.schemas import ClockSelfieMetadataResponse
+from app.modules.time_clock.schemas import ClockSelfieMetadataResponse, ClockSelfieReviewItemResponse
 
 MAX_GPS_ACCURACY_METERS = 100.0
 MAX_GPS_AGE_SECONDS = 120
@@ -172,6 +174,68 @@ def _metadata_from_selfie_and_shift(
     )
 
 
+def _employee_display_name(profile: EmployeeProfile | None) -> str | None:
+    if profile is None:
+        return None
+    first = (profile.first_name or "").strip()
+    last = (profile.last_name or "").strip()
+    if not first and not last:
+        return None
+    return f"{first} {last}".strip()
+
+
+def list_clock_selfies_review_metadata(
+    db_session: Session,
+    actor: User,
+    *,
+    limit: int | None,
+    offset: int | None,
+) -> list[ClockSelfieReviewItemResponse]:
+    """Admin review feed; caller must restrict to admin/administrator roles."""
+    effective_limit = normalize_selfie_list_limit(limit)
+    effective_offset = normalize_selfie_list_offset(offset)
+
+    if actor.system_role == SystemRole.ADMIN:
+        if actor.company_id is None:
+            return []
+        rows = list_clock_selfie_review_rows(
+            db_session,
+            limit=effective_limit,
+            offset=effective_offset,
+            managed_company_id=actor.company_id,
+            restrict_to_managed_company_employees=True,
+        )
+    elif actor.system_role == SystemRole.ADMINISTRATOR:
+        rows = list_clock_selfie_review_rows(
+            db_session,
+            limit=effective_limit,
+            offset=effective_offset,
+            managed_company_id=None,
+            restrict_to_managed_company_employees=False,
+        )
+    else:
+        return []
+
+    items: list[ClockSelfieReviewItemResponse] = []
+    for selfie, shift, owner, company, profile in rows:
+        items.append(
+            ClockSelfieReviewItemResponse(
+                id=selfie.id,
+                user_id=owner.id,
+                user_email=owner.email,
+                employee_name=_employee_display_name(profile),
+                company_name=company.name if company is not None else None,
+                phase=selfie.phase,
+                captured_at=selfie.captured_at,
+                clock_in_at=shift.clock_in_at,
+                clock_out_at=shift.clock_out_at,
+                content_type=selfie.content_type,
+                file_size_bytes=selfie.file_size_bytes,
+            )
+        )
+    return items
+
+
 def authorize_selfie_subject_user(
     db_session: Session,
     actor: User,
@@ -186,24 +250,6 @@ def authorize_selfie_subject_user(
         raise ClockSelfieAccessDeniedError("Clock selfie subject was not found.")
 
     return subject
-
-
-def list_my_clock_selfies_metadata(
-    db_session: Session,
-    actor: User,
-    *,
-    limit: int | None,
-    offset: int | None,
-) -> list[ClockSelfieMetadataResponse]:
-    effective_limit = normalize_selfie_list_limit(limit)
-    effective_offset = normalize_selfie_list_offset(offset)
-    rows = list_clock_selfies_with_shifts_for_user(
-        db_session,
-        actor.id,
-        limit=effective_limit,
-        offset=effective_offset,
-    )
-    return [_metadata_from_selfie_and_shift(selfie, shift) for selfie, shift in rows]
 
 
 def list_user_clock_selfies_metadata(

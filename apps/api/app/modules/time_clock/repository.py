@@ -4,6 +4,9 @@ from datetime import datetime
 from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
+from app.modules.auth.models import SystemRole, User
+from app.modules.companies.models import Company
+from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
 from app.modules.site_access.models import EmployeeLocationAccess
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
@@ -155,6 +158,47 @@ def list_clock_selfies_with_shifts_for_user(
     )
     rows = db_session.execute(statement).all()
     return [(selfie, shift) for selfie, shift in rows]
+
+
+def list_clock_selfie_review_rows(
+    db_session: Session,
+    *,
+    limit: int,
+    offset: int,
+    managed_company_id: uuid.UUID | None,
+    restrict_to_managed_company_employees: bool,
+) -> list[tuple[ClockSelfie, TimeShift, User, Company | None, EmployeeProfile | None]]:
+    """Review listing with shift owner, optional company, optional profile.
+
+    When restrict_to_managed_company_employees is True, managed_company_id must match shift owners;
+    uses same company + employee-only scope as can_manage_user for company admins.
+
+    TODO: Narrow company-admin review to workplace/site-manager scope when workplace manager permissions are introduced.
+    """
+    statement = (
+        select(ClockSelfie, TimeShift, User, Company, EmployeeProfile)
+        .join(TimeShift, ClockSelfie.time_shift_id == TimeShift.id)
+        .join(User, TimeShift.user_id == User.id)
+        .outerjoin(Company, User.company_id == Company.id)
+        .outerjoin(EmployeeProfile, EmployeeProfile.user_id == User.id)
+        .order_by(ClockSelfie.captured_at.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+
+    if restrict_to_managed_company_employees:
+        if managed_company_id is None:
+            return []
+        statement = statement.where(
+            User.company_id == managed_company_id,
+            User.system_role == SystemRole.EMPLOYEE,
+        )
+
+    rows = db_session.execute(statement).all()
+    return [
+        (selfie, shift, owner, company, profile)
+        for selfie, shift, owner, company, profile in rows
+    ]
 
 
 def get_clock_selfie_and_shift_by_id(

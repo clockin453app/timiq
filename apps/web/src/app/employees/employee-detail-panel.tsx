@@ -15,6 +15,10 @@ import {
   type AuthUser,
   type SystemRole,
 } from "../../features/auth";
+import {
+  getManagedEmployeeProfile,
+  patchManagedEmployeeProfile,
+} from "../../features/employee-profiles/api";
 import { type Company } from "../../features/companies/api";
 
 function formatRole(role: string) {
@@ -58,6 +62,12 @@ export function EmployeeDetailPanel({
   const [isDeletingUser, setIsDeletingUser] = useState(false);
   const [clearHistoryPhrase, setClearHistoryPhrase] = useState("");
   const [deletePhrase, setDeletePhrase] = useState("");
+  const [earlyAccessEnabled, setEarlyAccessEnabled] = useState(false);
+  const [earlyAccessLoaded, setEarlyAccessLoaded] = useState(false);
+  const [isUpdatingEarlyAccess, setIsUpdatingEarlyAccess] = useState(false);
+
+  const showEarlyAccessEditor =
+    canManageUser(currentUser, user) && user.system_role === "employee";
 
   useEffect(() => {
     setEmail(user.email);
@@ -68,7 +78,31 @@ export function EmployeeDetailPanel({
     setLocalSuccess("");
     setClearHistoryPhrase("");
     setDeletePhrase("");
+    setEarlyAccessLoaded(false);
   }, [user]);
+
+  useEffect(() => {
+    if (!showEarlyAccessEditor) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const profile = await getManagedEmployeeProfile(user.id);
+        if (!cancelled) {
+          setEarlyAccessEnabled(profile.early_access_enabled);
+          setEarlyAccessLoaded(true);
+        }
+      } catch {
+        if (!cancelled) {
+          setEarlyAccessLoaded(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showEarlyAccessEditor, user.id]);
 
   const showCompanyField =
     isAdministrator(currentUser) && systemRole !== "administrator";
@@ -78,6 +112,26 @@ export function EmployeeDetailPanel({
     isAdministrator(currentUser) &&
     !targetIsAdministrator &&
     user.id !== currentUser.id;
+
+  async function handleEarlyAccessChange(next: boolean) {
+    const previous = earlyAccessEnabled;
+    setEarlyAccessEnabled(next);
+    setIsUpdatingEarlyAccess(true);
+    setLocalError("");
+    setLocalSuccess("");
+    try {
+      await patchManagedEmployeeProfile(user.id, { early_access_enabled: next });
+      setLocalSuccess("Early access updated.");
+      await onRefresh();
+    } catch (error) {
+      setEarlyAccessEnabled(previous);
+      setLocalError(
+        error instanceof Error ? error.message : "Could not update early access.",
+      );
+    } finally {
+      setIsUpdatingEarlyAccess(false);
+    }
+  }
 
   async function handleSaveUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -277,6 +331,34 @@ export function EmployeeDetailPanel({
             {isSavingUser ? "Saving..." : "Save user edits"}
           </Button>
         </form>
+
+        {showEarlyAccessEditor ? (
+          <div className="mt-4 space-y-2 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
+            <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+              Clock rules
+            </p>
+            {!earlyAccessLoaded ? (
+              <p className="text-xs text-[var(--color-text-muted)]">Loading profile…</p>
+            ) : (
+              <label className="flex items-start gap-2 text-sm text-[var(--color-text)]">
+                <input
+                  checked={earlyAccessEnabled}
+                  className="mt-1 h-4 w-4 shrink-0"
+                  disabled={isUpdatingEarlyAccess}
+                  onChange={(event) => handleEarlyAccessChange(event.target.checked)}
+                  type="checkbox"
+                />
+                <span>
+                  <span className="font-semibold">Early clock-in access</span>
+                  <span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">
+                    When off, clock-in before standard start counts from standard start unless policy
+                    allows otherwise.
+                  </span>
+                </span>
+              </label>
+            )}
+          </div>
+        ) : null}
 
         <div className="mt-4 space-y-2 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">

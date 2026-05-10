@@ -36,11 +36,18 @@ def update_my_profile(
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> EmployeeProfileResponse:
-    profile = update_profile_for_actor_or_user_id(
-        db_session=db_session,
-        actor=current_user,
-        request=request,
-    )
+    try:
+        profile = update_profile_for_actor_or_user_id(
+            db_session=db_session,
+            actor=current_user,
+            request=request,
+        )
+    except EmployeeProfilePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
     return employee_profile_to_response(db_session, profile)
 
 
@@ -54,6 +61,34 @@ def get_managed_profile(
         profile = get_profile_for_actor_or_user_id(
             db_session=db_session,
             actor=current_user,
+            user_id=user_id,
+        )
+    except EmployeeProfileTargetUserNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        ) from exc
+    except EmployeeProfilePermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    return employee_profile_to_response(db_session, profile)
+
+
+@router.patch("", response_model=EmployeeProfileResponse)
+def patch_managed_profile(
+    request: EmployeeProfileUpdateRequest,
+    user_id: uuid.UUID = Query(...),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> EmployeeProfileResponse:
+    try:
+        profile = update_profile_for_actor_or_user_id(
+            db_session=db_session,
+            actor=current_user,
+            request=request,
             user_id=user_id,
         )
     except EmployeeProfileTargetUserNotFoundError as exc:

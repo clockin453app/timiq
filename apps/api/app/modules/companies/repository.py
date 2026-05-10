@@ -3,7 +3,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.companies.models import Company
+from app.modules.companies.models import Company, CompanyTimePolicy
 
 
 def get_company_by_id(db_session: Session, company_id: uuid.UUID) -> Company | None:
@@ -33,3 +33,26 @@ def update_company(db_session: Session, company: Company) -> Company:
     db_session.commit()
     db_session.refresh(company)
     return company
+
+
+def get_company_time_policy(
+    db_session: Session,
+    company_id: uuid.UUID,
+) -> CompanyTimePolicy | None:
+    statement = select(CompanyTimePolicy).where(CompanyTimePolicy.company_id == company_id)
+    return db_session.scalar(statement)
+
+
+def save_company_time_policy(
+    db_session: Session,
+    policy: CompanyTimePolicy,
+    *,
+    commit: bool = True,
+) -> CompanyTimePolicy:
+    db_session.add(policy)
+    if commit:
+        db_session.commit()
+    else:
+        db_session.flush()
+    db_session.refresh(policy)
+    return policy

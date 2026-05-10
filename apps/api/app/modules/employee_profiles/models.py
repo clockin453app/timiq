@@ -37,6 +37,11 @@ class EmployeeProfile(Base):
     emergency_contact_name: Mapped[str] = mapped_column(String(120), nullable=True)
     emergency_contact_phone: Mapped[str] = mapped_column(String(30), nullable=True)
     is_onboarded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    early_access_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -13,6 +13,7 @@ class EmployeeProfileUpdateRequest(BaseModel):
     emergency_contact_name: str | None = Field(default=None, max_length=120)
     emergency_contact_phone: str | None = Field(default=None, max_length=30)
     is_onboarded: bool | None = None
+    early_access_enabled: bool | None = None
 
 
 class EmployeeProfileResponse(BaseModel):
@@ -30,5 +31,6 @@ class EmployeeProfileResponse(BaseModel):
     emergency_contact_name: str | None
     emergency_contact_phone: str | None
     is_onboarded: bool
+    early_access_enabled: bool
     created_at: datetime
     updated_at: datetime

@@ -13,6 +13,7 @@ export type EmployeeProfile = {
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
   is_onboarded: boolean;
+  early_access_enabled: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -28,6 +29,10 @@ export type UpdateMyEmployeeProfileRequest = {
   is_onboarded?: boolean;
 };
 
+export type PatchManagedEmployeeProfileRequest = {
+  early_access_enabled?: boolean;
+};
+
 export async function getMyEmployeeProfile(): Promise<EmployeeProfile> {
   const response = await fetch(`${API_URL}/api/employee-profiles/me`, {
     method: "GET",
@@ -36,6 +41,49 @@ export async function getMyEmployeeProfile(): Promise<EmployeeProfile> {
 
   if (!response.ok) {
     throw new Error("Could not load profile.");
+  }
+
+  return response.json() as Promise<EmployeeProfile>;
+}
+
+export async function getManagedEmployeeProfile(
+  userId: string,
+): Promise<EmployeeProfile> {
+  const search = new URLSearchParams({ user_id: userId });
+  const response = await fetch(
+    `${API_URL}/api/employee-profiles?${search.toString()}`,
+    {
+      method: "GET",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not load employee profile.");
+  }
+
+  return response.json() as Promise<EmployeeProfile>;
+}
+
+export async function patchManagedEmployeeProfile(
+  userId: string,
+  request: PatchManagedEmployeeProfileRequest,
+): Promise<EmployeeProfile> {
+  const search = new URLSearchParams({ user_id: userId });
+  const response = await fetch(
+    `${API_URL}/api/employee-profiles?${search.toString()}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify(request),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not update employee profile.");
   }
 
   return response.json() as Promise<EmployeeProfile>;

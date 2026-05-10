@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
+from app.modules.auth.service import can_manage_user
 from app.modules.auth.repository import get_user_by_id
 from app.modules.companies.repository import get_company_by_id
 from app.modules.employee_profiles.models import EmployeeProfile
@@ -118,5 +119,14 @@ def update_profile_for_actor_or_user_id(
 
     if request.is_onboarded is not None:
         profile.is_onboarded = request.is_onboarded
+
+    if request.early_access_enabled is not None:
+        if actor.id == target_user.id:
+            raise EmployeeProfilePermissionError("Employees cannot update early access.")
+        if not can_manage_user(actor, target_user):
+            raise EmployeeProfilePermissionError(
+                "You cannot update early access for this user.",
+            )
+        profile.early_access_enabled = request.early_access_enabled
 
     return update_employee_profile(db_session, profile)

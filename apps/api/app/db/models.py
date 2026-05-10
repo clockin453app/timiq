@@ -1,6 +1,6 @@
 from app.modules.audit.models import AuditEvent
 from app.modules.auth.models import EmployeeJobRole, User
-from app.modules.companies.models import Company
+from app.modules.companies.models import Company, CompanyTimePolicy
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
 from app.modules.site_access.models import EmployeeLocationAccess
@@ -10,6 +10,7 @@ from app.modules.workplaces.models import Workplace
 __all__ = [
     "AuditEvent",
     "Company",
+    "CompanyTimePolicy",
     "EmployeeProfile",
     "EmployeeJobRole",
     "EmployeeLocationAccess",

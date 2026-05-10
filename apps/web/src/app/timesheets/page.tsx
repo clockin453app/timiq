@@ -1,12 +1,13 @@
 import { AppShell } from "../../components/layout";
 import { AuthGuard } from "../../features/auth";
-import { ClockSelfiesGate } from "./clock-selfies-gate";
 
-export default function ClockSelfiesPage() {
+import { TimesheetsClient } from "./timesheets-client";
+
+export default function TimesheetsPage() {
   return (
     <AuthGuard>
-      <AppShell activeHref="/clock">
-        <ClockSelfiesGate />
+      <AppShell activeHref="/timesheets">
+        <TimesheetsClient />
       </AppShell>
     </AuthGuard>
   );

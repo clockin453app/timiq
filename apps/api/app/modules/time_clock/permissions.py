@@ -7,9 +7,12 @@ from app.modules.auth.service import can_manage_user
 
 
 def can_view_shift_owner_selfies(actor: User, shift_owner: User) -> bool:
-    """Whether actor may list or download selfies for shifts owned by shift_owner (subject user)."""
-    if actor.id == shift_owner.id:
-        return True
+    """Whether actor may list or download stored selfies for shifts owned by shift_owner.
+
+    Employees never receive stored selfie bytes or listings (live capture at clock-in/out only).
+    """
+    if actor.system_role == SystemRole.EMPLOYEE:
+        return False
 
     if actor.system_role == SystemRole.ADMINISTRATOR:
         return True

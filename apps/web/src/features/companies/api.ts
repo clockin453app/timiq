@@ -89,6 +89,74 @@ export async function updateCompany(
   return response.json() as Promise<Company>;
 }
 
+export type CompanyTimePolicy = {
+  company_id: string;
+  standard_start_time: string;
+  overtime_after_hours: number;
+  overtime_multiplier: number;
+  rounding_increment_minutes: number;
+  rounding_mode: string;
+  break_deduction_minutes: number;
+  rule_effective_from: string;
+  rule_note: string;
+  timezone: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PatchCompanyTimePolicyRequest = {
+  standard_start_time?: string;
+  overtime_after_hours?: number;
+  overtime_multiplier?: number;
+  rounding_increment_minutes?: number;
+  rounding_mode?: string;
+  break_deduction_minutes?: number;
+  rule_effective_from?: string;
+  rule_note?: string;
+  timezone?: string;
+};
+
+export async function getCompanyTimePolicy(
+  companyId: string,
+): Promise<CompanyTimePolicy> {
+  const response = await fetch(
+    `${API_URL}/api/companies/${companyId}/time-policy`,
+    {
+      method: "GET",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not load time policy.");
+  }
+
+  return response.json() as Promise<CompanyTimePolicy>;
+}
+
+export async function patchCompanyTimePolicy(
+  companyId: string,
+  request: PatchCompanyTimePolicyRequest,
+): Promise<CompanyTimePolicy> {
+  const response = await fetch(
+    `${API_URL}/api/companies/${companyId}/time-policy`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      body: JSON.stringify(request),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not save time policy.");
+  }
+
+  return response.json() as Promise<CompanyTimePolicy>;
+}
+
 export async function updateCompanyStatus(
   companyId: string,
   isActive: boolean,

@@ -94,3 +94,19 @@ class ClockSelfieMetadataResponse(BaseModel):
     created_at: datetime
     clock_in_at: datetime
     clock_out_at: datetime | None
+
+
+class ClockSelfieReviewItemResponse(BaseModel):
+    """Aggregated selfie row for admin review; never includes storage paths."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    user_email: str
+    employee_name: str | None = None
+    company_name: str | None = None
+    phase: str
+    captured_at: datetime
+    clock_in_at: datetime
+    clock_out_at: datetime | None
+    content_type: str
+    file_size_bytes: int

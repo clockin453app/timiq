@@ -27,6 +27,8 @@ import {
   type Company,
 } from "../../features/companies/api";
 
+import { CompanyTimePolicyModal } from "./company-time-policy-modal";
+
 type EditingCompanyState = {
   id: string;
   name: string;
@@ -44,6 +46,7 @@ export function CompaniesClient() {
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
   const [updatingCompanyId, setUpdatingCompanyId] = useState<string | null>(null);
+  const [policyCompany, setPolicyCompany] = useState<Company | null>(null);
 
   async function loadCompanies() {
     setIsLoading(true);
@@ -156,6 +159,7 @@ export function CompaniesClient() {
   }
 
   return (
+    <>
     <Sheet>
       <PageHeader
         title="Companies"
@@ -271,7 +275,7 @@ export function CompaniesClient() {
                           </TableCell>
 
                           <TableCell>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <Button
                                 disabled={updatingCompanyId === company.id}
                                 onClick={saveEditingCompany}
@@ -286,6 +290,14 @@ export function CompaniesClient() {
                                 type="button"
                               >
                                 Cancel
+                              </Button>
+
+                              <Button
+                                disabled={updatingCompanyId === company.id}
+                                onClick={() => setPolicyCompany(company)}
+                                type="button"
+                              >
+                                Time policy
                               </Button>
                             </div>
                           </TableCell>
@@ -303,32 +315,42 @@ export function CompaniesClient() {
                           {new Date(company.created_at).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
-                          {isAdministrator(currentUser) ? (
-                            <div className="flex gap-2">
-                              <Button
-                                onClick={() => startEditingCompany(company)}
-                                type="button"
-                              >
-                                Edit
-                              </Button>
+                          <div className="flex flex-wrap gap-2">
+                            {isAdministrator(currentUser) ? (
+                              <>
+                                <Button
+                                  onClick={() => startEditingCompany(company)}
+                                  type="button"
+                                >
+                                  Edit
+                                </Button>
 
-                              <Button
-                                disabled={updatingCompanyId === company.id}
-                                onClick={() =>
-                                  handleToggleCompanyStatus(company)
-                                }
-                                type="button"
-                              >
-                                {updatingCompanyId === company.id
-                                  ? "Updating..."
-                                  : company.is_active
-                                    ? "Deactivate"
-                                    : "Activate"}
-                              </Button>
-                            </div>
-                          ) : (
-                            "View only"
-                          )}
+                                <Button
+                                  disabled={updatingCompanyId === company.id}
+                                  onClick={() =>
+                                    handleToggleCompanyStatus(company)
+                                  }
+                                  type="button"
+                                >
+                                  {updatingCompanyId === company.id
+                                    ? "Updating..."
+                                    : company.is_active
+                                      ? "Deactivate"
+                                      : "Activate"}
+                                </Button>
+                              </>
+                            ) : (
+                              <span className="text-xs text-[var(--color-text-muted)]">
+                                View only
+                              </span>
+                            )}
+                            <Button
+                              onClick={() => setPolicyCompany(company)}
+                              type="button"
+                            >
+                              Time policy
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -338,6 +360,18 @@ export function CompaniesClient() {
           </Table>
         </RoleGuard>
       </SheetBody>
+
     </Sheet>
+
+      {policyCompany ? (
+        <CompanyTimePolicyModal
+          company={policyCompany}
+          onClose={() => setPolicyCompany(null)}
+          onSaved={async () => {
+            setSuccessMessage(`Updated time policy for ${policyCompany.name}.`);
+          }}
+        />
+      ) : null}
+    </>
   );
 }

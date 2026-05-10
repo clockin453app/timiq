@@ -6,12 +6,13 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
 from app.modules.audit.service import create_internal_audit_event
-from app.modules.auth.dependencies import get_current_user
+from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
 from app.modules.auth.models import SystemRole, User
 from app.modules.time_clock.schemas import (
     BreakActionResponse,
     ClockActionResponse,
     ClockSelfieMetadataResponse,
+    ClockSelfieReviewItemResponse,
     ClockStatusResponse,
 )
 from app.modules.time_clock.service import (
@@ -24,7 +25,7 @@ from app.modules.time_clock.service import (
     clock_in,
     clock_out,
     get_clock_status,
-    list_my_clock_selfies_metadata,
+    list_clock_selfies_review_metadata,
     list_user_clock_selfies_metadata,
     parse_timestamp_utc,
     resolve_clock_selfie_file_path,
@@ -45,14 +46,14 @@ def get_time_clock_status(
     return ClockStatusResponse(**data)
 
 
-@router.get("/selfies/me", response_model=list[ClockSelfieMetadataResponse])
-def list_my_clock_selfies(
+@router.get("/selfies/review", response_model=list[ClockSelfieReviewItemResponse])
+def list_clock_selfies_review(
     limit: int | None = Query(default=None, ge=1),
     offset: int | None = Query(default=None, ge=0),
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
-) -> list[ClockSelfieMetadataResponse]:
-    return list_my_clock_selfies_metadata(
+    current_user: User = Depends(require_admin_or_administrator),
+) -> list[ClockSelfieReviewItemResponse]:
+    return list_clock_selfies_review_metadata(
         db_session,
         current_user,
         limit=limit,
@@ -69,7 +70,7 @@ def list_clock_selfies_for_user(
     limit: int | None = Query(default=None, ge=1),
     offset: int | None = Query(default=None, ge=0),
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin_or_administrator),
 ) -> list[ClockSelfieMetadataResponse]:
     try:
         return list_user_clock_selfies_metadata(

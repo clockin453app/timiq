@@ -103,6 +103,18 @@ export function ProfileClient() {
       label: "Account status",
       value: user.is_active ? "Active" : "Inactive",
     },
+    {
+      label: "Early clock-in access",
+      value: isLoadingProfile
+        ? "Loading…"
+        : loadError
+          ? "—"
+          : profile
+            ? profile.early_access_enabled
+              ? "Enabled"
+              : "Off"
+            : "—",
+    },
   ];
 
   const starterNote =

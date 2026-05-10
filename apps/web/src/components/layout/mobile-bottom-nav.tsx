@@ -7,13 +7,14 @@ type MobileBottomNavProps = {
 const mobilePrimaryLinks = [
   { label: "Dashboard", href: "/dashboard" },
   { label: "Clock", href: "/clock" },
-  { label: "Timesheets", href: "/timesheets" },
+  { label: "Sheets", href: "/timesheets" },
+  { label: "Week", href: "/week-report" },
   { label: "More", href: "/profile" },
 ];
 
 export function MobileBottomNav({ activeHref = "/dashboard" }: MobileBottomNavProps) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-4 border-t border-[var(--color-border-dark)] bg-[var(--color-header)] text-xs md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[var(--color-border-dark)] bg-[var(--color-header)] text-[11px] md:hidden">
       {mobilePrimaryLinks.map((item) => (
         <Link
           className={
