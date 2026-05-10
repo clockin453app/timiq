@@ -13,6 +13,7 @@ from app.modules.employee_profiles.schemas import (
 from app.modules.employee_profiles.service import (
     EmployeeProfilePermissionError,
     EmployeeProfileTargetUserNotFoundError,
+    employee_profile_to_response,
     get_profile_for_actor_or_user_id,
     update_profile_for_actor_or_user_id,
 )
@@ -26,7 +27,7 @@ def get_my_profile(
     current_user: User = Depends(get_current_user),
 ) -> EmployeeProfileResponse:
     profile = get_profile_for_actor_or_user_id(db_session=db_session, actor=current_user)
-    return EmployeeProfileResponse.model_validate(profile)
+    return employee_profile_to_response(db_session, profile)
 
 
 @router.patch("/me", response_model=EmployeeProfileResponse)
@@ -40,7 +41,7 @@ def update_my_profile(
         actor=current_user,
         request=request,
     )
-    return EmployeeProfileResponse.model_validate(profile)
+    return employee_profile_to_response(db_session, profile)
 
 
 @router.get("", response_model=EmployeeProfileResponse)
@@ -66,4 +67,4 @@ def get_managed_profile(
             detail=str(exc),
         ) from exc
 
-    return EmployeeProfileResponse.model_validate(profile)
+    return employee_profile_to_response(db_session, profile)

@@ -4,13 +4,32 @@ from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
+from app.modules.companies.repository import get_company_by_id
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.employee_profiles.repository import (
     get_employee_profile_by_user_id,
     save_employee_profile,
     update_employee_profile,
 )
-from app.modules.employee_profiles.schemas import EmployeeProfileUpdateRequest
+from app.modules.employee_profiles.schemas import (
+    EmployeeProfileResponse,
+    EmployeeProfileUpdateRequest,
+)
+
+
+def employee_profile_to_response(
+    db_session: Session,
+    profile: EmployeeProfile,
+) -> EmployeeProfileResponse:
+    company_name: str | None = None
+    if profile.company_id is not None:
+        company = get_company_by_id(db_session, profile.company_id)
+        if company is not None:
+            company_name = company.name
+
+    return EmployeeProfileResponse.model_validate(profile).model_copy(
+        update={"company_name": company_name},
+    )
 
 
 class EmployeeProfileError(ValueError):

@@ -21,6 +21,7 @@ class EmployeeProfileResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     company_id: uuid.UUID | None
+    company_name: str | None = None
     first_name: str | None
     last_name: str | None
     phone: str | None

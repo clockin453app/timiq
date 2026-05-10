@@ -73,6 +73,8 @@ Batch 30: Full time clock rebuild
 Batch 31: Time records, timesheets, week report
 Batch 32: Payroll
 Batch 33: Onboarding / starter form
+- After Starter Form / Onboarding ships: approved submission data must populate applicable employee profile fields; the profile page must display those details.
+- Employees may update only safe contact/profile fields from basic profile; sensitive payroll, bank, and tax fields must not be freely editable there (admin-controlled or dedicated flows).
 Batch 34: Site progress / work progress
 Batch 35: Live attendance and force actions
 Batch 36: Audit log, system health, backups, Google Drive storage

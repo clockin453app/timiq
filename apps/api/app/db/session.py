@@ -37,11 +37,19 @@ def get_database_url() -> str:
 
 @lru_cache(maxsize=1)
 def get_engine() -> Engine:
+    database_url = get_database_url()
+    connect_args: dict = {}
+
+    if database_url.startswith("postgresql"):
+        # Prevent indefinite TCP hangs when the DB host is unreachable (Windows-friendly).
+        connect_args["connect_timeout"] = 10
+
     return create_engine(
-        get_database_url(),
+        database_url,
         pool_pre_ping=True,
         pool_size=5,
         max_overflow=10,
+        connect_args=connect_args,
     )
 
 

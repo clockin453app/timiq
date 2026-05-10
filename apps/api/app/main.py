@@ -10,6 +10,7 @@ from app.modules.employee_profiles.router import router as employee_profiles_rou
 from app.modules.locations.router import router as locations_router
 from app.modules.site_access.router import router as site_access_router
 from app.modules.system_health.router import router as system_health_router
+from app.modules.time_clock.router import router as time_clock_router
 from app.modules.workplaces.router import router as workplaces_router
 
 app = FastAPI(
@@ -40,3 +41,4 @@ app.include_router(audit_router)
 app.include_router(workplaces_router)
 app.include_router(employee_profiles_router)
 app.include_router(system_health_router)
+app.include_router(time_clock_router)

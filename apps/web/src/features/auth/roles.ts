@@ -2,6 +2,19 @@ import type { AuthUser } from "./api";
 
 export type SystemRole = AuthUser["system_role"];
 
+export function formatSystemRole(role: SystemRole): string {
+  switch (role) {
+    case "administrator":
+      return "Administrator";
+    case "admin":
+      return "Admin";
+    case "employee":
+      return "Employee";
+    default:
+      return role;
+  }
+}
+
 export function isAdministrator(user: AuthUser) {
   return user.system_role === "administrator";
 }

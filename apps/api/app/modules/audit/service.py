@@ -35,6 +35,26 @@ def create_audit_event(
     if actor.system_role not in (SystemRole.ADMINISTRATOR, SystemRole.ADMIN):
         raise AuditPermissionError("You do not have permission to create audit events.")
 
+    return create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        company_id=company_id,
+        details=details,
+    )
+
+
+def create_internal_audit_event(
+    db_session: Session,
+    actor: User,
+    action: str,
+    entity_type: str,
+    entity_id: str | None = None,
+    company_id: uuid.UUID | None = None,
+    details: dict[str, Any] | None = None,
+) -> AuditEvent:
     event = AuditEvent(
         actor_user_id=actor.id,
         company_id=company_id if actor.system_role == SystemRole.ADMINISTRATOR else actor.company_id,

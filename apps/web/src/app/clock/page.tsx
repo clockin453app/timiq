@@ -1,13 +1,12 @@
 import { AppShell } from "../../components/layout";
 import { AuthGuard } from "../../features/auth";
+import { ClockClient } from "./clock-client";
 
-import { DashboardHome } from "./dashboard-client";
-
-export default function DashboardPage() {
+export default function ClockPage() {
   return (
     <AuthGuard>
-      <AppShell activeHref="/dashboard">
-        <DashboardHome />
+      <AppShell activeHref="/clock">
+        <ClockClient />
       </AppShell>
     </AuthGuard>
   );

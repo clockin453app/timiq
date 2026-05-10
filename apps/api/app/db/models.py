@@ -4,6 +4,7 @@ from app.modules.companies.models import Company
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
 from app.modules.site_access.models import EmployeeLocationAccess
+from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
 from app.modules.workplaces.models import Workplace
 
 __all__ = [
@@ -13,6 +14,9 @@ __all__ = [
     "EmployeeJobRole",
     "EmployeeLocationAccess",
     "Location",
+    "ClockSelfie",
+    "TimeShift",
+    "TimeShiftBreak",
     "User",
     "Workplace",
 ]

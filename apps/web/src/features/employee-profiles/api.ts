@@ -4,6 +4,7 @@ export type EmployeeProfile = {
   id: string;
   user_id: string;
   company_id: string | null;
+  company_name: string | null;
   first_name: string | null;
   last_name: string | null;
   phone: string | null;
