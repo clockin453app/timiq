@@ -13,6 +13,7 @@ from app.modules.locations.schemas import (
     LocationCreateRequest,
     LocationResponse,
     LocationStatusUpdateRequest,
+    LocationUpdateRequest,
 )
 from app.modules.locations.service import (
     DuplicateLocationError,
@@ -21,6 +22,7 @@ from app.modules.locations.service import (
     LocationNotFoundError,
     create_location,
     list_locations_visible_to_user,
+    update_location_details,
     update_location_status,
 )
 
@@ -66,6 +68,44 @@ def create_managed_location(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Company not found.",
+        ) from exc
+
+    return LocationResponse.model_validate(location)
+
+
+@router.patch("/{location_id}", response_model=LocationResponse)
+def update_managed_location(
+    location_id: uuid.UUID,
+    request: LocationUpdateRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> LocationResponse:
+    try:
+        location = update_location_details(
+            db_session=db_session,
+            actor=current_user,
+            location_id=location_id,
+            request=request,
+        )
+    except DuplicateLocationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    except LocationAccessDeniedError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except LocationCompanyNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Company not found.",
+        ) from exc
+    except LocationNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Location not found.",
         ) from exc
 
     return LocationResponse.model_validate(location)

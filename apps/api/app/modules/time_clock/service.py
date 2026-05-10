@@ -103,17 +103,30 @@ def _resolve_assigned_geofenced_location(
 
 
 def get_clock_status(db_session: Session, actor: User) -> dict:
+    """Clock summary for the authenticated user; assigned_sites are RBAC-scoped to their access rows only."""
     open_shift = get_open_shift_for_user(db_session, actor.id)
     active_locations = list_active_assigned_locations_for_user(db_session, actor.id)
     current_break = (
         get_open_break_for_shift(db_session, open_shift.id) if open_shift is not None else None
     )
+    assigned_sites = [
+        {
+            "id": loc.id,
+            "name": loc.name,
+            "latitude": loc.latitude,
+            "longitude": loc.longitude,
+            "geofence_radius_meters": loc.geofence_radius_meters,
+        }
+        for loc in active_locations
+    ]
+
     return {
         "has_open_shift": open_shift is not None,
         "open_shift_id": open_shift.id if open_shift is not None else None,
         "status": "clocked_in" if open_shift is not None else "clocked_out",
         "active_location_count": len(active_locations),
         "current_break_open": current_break is not None,
+        "assigned_sites": assigned_sites,
     }
 
 

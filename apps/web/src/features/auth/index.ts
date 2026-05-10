@@ -14,7 +14,9 @@ export {
   type SystemRole,
 } from "./roles";
 export {
+  clearManagedUserHistory,
   createManagedUser,
+  deleteManagedUser,
   listManagedUsers,
   resetManagedUserPassword,
   updateManagedUser,

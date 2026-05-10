@@ -75,3 +75,8 @@ def delete_site_access(
     )
     db_session.execute(statement)
     db_session.commit()
+
+
+def delete_all_site_access_for_user(db_session: Session, user_id: uuid.UUID) -> None:
+    statement = delete(EmployeeLocationAccess).where(EmployeeLocationAccess.user_id == user_id)
+    db_session.execute(statement)

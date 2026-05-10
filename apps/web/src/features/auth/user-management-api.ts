@@ -2,6 +2,18 @@ import { API_URL } from "../../config/api";
 import { type AuthUser } from "./api";
 import { type SystemRole } from "./roles";
 
+async function errorDetailFromResponse(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body.detail === "string") {
+      return body.detail;
+    }
+  } catch {
+    // Ignore malformed bodies.
+  }
+  return "Request failed.";
+}
+
 export type CreateManagedUserRequest = {
   email: string;
   password: string;
@@ -150,4 +162,30 @@ export async function resetManagedUserPassword(
   }
 
   return response.json() as Promise<AuthUser>;
+}
+
+export async function clearManagedUserHistory(userId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/auth/users/${userId}/clear-history`, {
+    method: "POST",
+    credentials: "include",
+  });
+
+  if (response.status === 204) {
+    return;
+  }
+
+  throw new Error(await errorDetailFromResponse(response));
+}
+
+export async function deleteManagedUser(userId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/auth/users/${userId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (response.status === 204) {
+    return;
+  }
+
+  throw new Error(await errorDetailFromResponse(response));
 }

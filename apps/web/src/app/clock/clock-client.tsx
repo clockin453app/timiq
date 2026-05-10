@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { ClockSitesMap } from "../../components/maps";
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
 import {
   breakEnd,
@@ -10,9 +11,12 @@ import {
   clockOutWithSelfie,
   getClockStatus,
   isGpsCaptureStale,
+  type ClockAssignedSite,
   type ClockStatus,
   type GeolocationRequest,
 } from "../../features/time-clock/api";
+
+const EMPTY_ASSIGNED_SITES: ClockAssignedSite[] = [];
 
 type GeoCapture = {
   payload: GeolocationRequest;
@@ -218,6 +222,7 @@ export function ClockClient() {
       const capture = await captureGpsPosition();
       setGeoCapture(capture);
       setSuccessMessage("GPS captured.");
+      await refreshStatus();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Unable to capture GPS location.",
@@ -438,6 +443,29 @@ export function ClockClient() {
             </Button>
           </div>
         </div>
+
+        {geoCapture ? (
+          <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
+            <p className="font-bold text-[var(--color-text)]">Map</p>
+            {(clockStatus?.assigned_sites ?? []).length === 0 ? (
+              <p className="mt-1 text-[var(--color-text-muted)]">
+                No assigned active locations. Your administrator must assign you to an active site before you can clock in at a geofence.
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                Blue dot: your captured GPS. Rings: assigned active sites (teal = nearest site center).
+              </p>
+            )}
+            <div className="mt-2">
+              <ClockSitesMap
+                accuracyMeters={geoCapture.payload.accuracy_meters}
+                employeeLatitude={geoCapture.payload.latitude}
+                employeeLongitude={geoCapture.payload.longitude}
+                sites={clockStatus?.assigned_sites ?? EMPTY_ASSIGNED_SITES}
+              />
+            </div>
+          </div>
+        ) : null}
 
         <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
           <p className="font-bold text-[var(--color-text)]">Selfies</p>

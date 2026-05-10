@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
 
+import { LocationGeofenceMap } from "../../components/maps";
 import {
   Button,
   PageHeader,
@@ -23,9 +24,32 @@ import { listCompanies, type Company } from "../../features/companies/api";
 import {
   createLocation,
   listLocations,
+  updateLocation,
   updateLocationStatus,
   type Location,
 } from "../../features/locations/api";
+import { searchNominatim, type NominatimSearchHit } from "../../features/locations/nominatim";
+
+const DEFAULT_LAT = 51.507351;
+const DEFAULT_LNG = -0.127758;
+
+function parseLatitude(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_LAT;
+}
+
+function parseLongitude(value: string): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : DEFAULT_LNG;
+}
+
+function parseRadius(value: string): number {
+  const parsed = Number.parseInt(value, 10);
+  if (Number.isNaN(parsed)) {
+    return 100;
+  }
+  return Math.min(5000, Math.max(10, parsed));
+}
 
 export function LocationsClient() {
   const currentUser = useCurrentUser();
@@ -38,16 +62,59 @@ export function LocationsClient() {
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
   const [geofenceRadiusMeters, setGeofenceRadiusMeters] = useState("100");
+  const [editingLocation, setEditingLocation] = useState<Location | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [isCreating, setIsCreating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [isGettingPosition, setIsGettingPosition] = useState(false);
-  const [updatingLocationId, setUpdatingLocationId] = useState<string | null>(
-    null,
-  );
+  const [updatingLocationId, setUpdatingLocationId] = useState<string | null>(null);
+  const [addressSearchQuery, setAddressSearchQuery] = useState("");
+  const [addressSearchResults, setAddressSearchResults] = useState<NominatimSearchHit[]>([]);
+  const [addressSearchLoading, setAddressSearchLoading] = useState(false);
+  const [addressSearchError, setAddressSearchError] = useState("");
 
   const showCompanySelector = isAdministrator(currentUser);
+
+  const mapLatitude = parseLatitude(latitude);
+  const mapLongitude = parseLongitude(longitude);
+  const mapRadius = parseRadius(geofenceRadiusMeters);
+
+  const handleMapLatLng = useCallback((lat: number, lng: number) => {
+    setLatitude(lat.toFixed(6));
+    setLongitude(lng.toFixed(6));
+  }, []);
+
+  function applyNominatimHit(hit: NominatimSearchHit) {
+    const lat = Number(hit.lat);
+    const lng = Number(hit.lon);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      setAddressSearchError("Could not use this search result.");
+      return;
+    }
+    setLatitude(lat.toFixed(6));
+    setLongitude(lng.toFixed(6));
+    setAddress((current) => (current.trim() ? current : hit.display_name));
+    setAddressSearchResults([]);
+    setAddressSearchError("");
+  }
+
+  async function handleAddressSearch() {
+    setAddressSearchError("");
+    setAddressSearchLoading(true);
+    setAddressSearchResults([]);
+    try {
+      const hits = await searchNominatim(addressSearchQuery);
+      setAddressSearchResults(hits);
+      if (hits.length === 0) {
+        setAddressSearchError("No matches found.");
+      }
+    } catch (error) {
+      setAddressSearchError(error instanceof Error ? error.message : "Search failed.");
+    } finally {
+      setAddressSearchLoading(false);
+    }
+  }
 
   async function loadLocations() {
     setIsLoading(true);
@@ -67,9 +134,7 @@ export function LocationsClient() {
       const loadedCompanies = await listCompanies();
       setCompanies(loadedCompanies);
 
-      const firstActiveCompany = loadedCompanies.find(
-        (company) => company.is_active,
-      );
+      const firstActiveCompany = loadedCompanies.find((company) => company.is_active);
 
       if (firstActiveCompany) {
         setCompanyId((currentValue) => currentValue || firstActiveCompany.id);
@@ -83,6 +148,25 @@ export function LocationsClient() {
     loadLocations();
     loadCompanies();
   }, []);
+
+  function resetCreateFormFields() {
+    setEditingLocation(null);
+    setName("");
+    setAddress("");
+    setLatitude("");
+    setLongitude("");
+    setGeofenceRadiusMeters("100");
+  }
+
+  function startEditing(location: Location) {
+    setEditingLocation(location);
+    setCompanyId(location.company_id);
+    setName(location.name);
+    setAddress(location.address ?? "");
+    setLatitude(location.latitude.toFixed(6));
+    setLongitude(location.longitude.toFixed(6));
+    setGeofenceRadiusMeters(String(location.geofence_radius_meters));
+  }
 
   function handleUseCurrentPosition() {
     setErrorMessage("");
@@ -112,16 +196,16 @@ export function LocationsClient() {
     );
   }
 
-  async function handleCreateLocation(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setErrorMessage("");
     setSuccessMessage("");
-    setIsCreating(true);
+    setIsSaving(true);
 
     if (showCompanySelector && !companyId) {
       setErrorMessage("Select a company for this location.");
-      setIsCreating(false);
+      setIsSaving(false);
       return;
     }
 
@@ -131,40 +215,54 @@ export function LocationsClient() {
 
     if (Number.isNaN(parsedLatitude) || Number.isNaN(parsedLongitude)) {
       setErrorMessage("Enter valid latitude and longitude.");
-      setIsCreating(false);
+      setIsSaving(false);
       return;
     }
 
     if (Number.isNaN(parsedRadius) || parsedRadius < 10) {
       setErrorMessage("Geofence radius must be at least 10 meters.");
-      setIsCreating(false);
+      setIsSaving(false);
       return;
     }
 
     try {
-      const createdLocation = await createLocation({
-        company_id: showCompanySelector ? companyId : undefined,
-        name,
-        address: address || null,
-        latitude: parsedLatitude,
-        longitude: parsedLongitude,
-        geofence_radius_meters: parsedRadius,
-        is_active: true,
-      });
+      if (editingLocation) {
+        await updateLocation(editingLocation.id, {
+          company_id: showCompanySelector ? companyId : undefined,
+          name,
+          address: address || null,
+          latitude: parsedLatitude,
+          longitude: parsedLongitude,
+          geofence_radius_meters: parsedRadius,
+          is_active: editingLocation.is_active,
+        });
+        setSuccessMessage(`Updated ${name}`);
+        resetCreateFormFields();
+      } else {
+        await createLocation({
+          company_id: showCompanySelector ? companyId : undefined,
+          name,
+          address: address || null,
+          latitude: parsedLatitude,
+          longitude: parsedLongitude,
+          geofence_radius_meters: parsedRadius,
+          is_active: true,
+        });
+        setSuccessMessage(`Created ${name}`);
+        setName("");
+        setAddress("");
+        setLatitude("");
+        setLongitude("");
+        setGeofenceRadiusMeters("100");
+      }
 
-      setSuccessMessage(`Created ${createdLocation.name}`);
-      setName("");
-      setAddress("");
-      setLatitude("");
-      setLongitude("");
-      setGeofenceRadiusMeters("100");
       await loadLocations();
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Could not create location.",
+        error instanceof Error ? error.message : "Could not save location.",
       );
     } finally {
-      setIsCreating(false);
+      setIsSaving(false);
     }
   }
 
@@ -174,15 +272,10 @@ export function LocationsClient() {
     setUpdatingLocationId(location.id);
 
     try {
-      const updatedLocation = await updateLocationStatus(
-        location.id,
-        !location.is_active,
-      );
+      const updatedLocation = await updateLocationStatus(location.id, !location.is_active);
 
       setSuccessMessage(
-        `${updatedLocation.name} is now ${
-          updatedLocation.is_active ? "active" : "inactive"
-        }`,
+        `${updatedLocation.name} is now ${updatedLocation.is_active ? "active" : "inactive"}`,
       );
 
       await loadLocations();
@@ -199,7 +292,11 @@ export function LocationsClient() {
     <Sheet>
       <PageHeader
         title="Locations"
-        description="Create geofenced work locations with GPS coordinates."
+        description={
+          editingLocation
+            ? `Editing ${editingLocation.name}. Adjust map, fields, then save.`
+            : "Create geofenced work locations with GPS coordinates."
+        }
       />
 
       <SheetBody>
@@ -219,7 +316,7 @@ export function LocationsClient() {
 
           <form
             className="mb-4 border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
-            onSubmit={handleCreateLocation}
+            onSubmit={handleSubmit}
           >
             <div
               className={
@@ -272,7 +369,7 @@ export function LocationsClient() {
               </label>
             </div>
 
-            <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
+            <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Latitude
                 <input
@@ -305,38 +402,93 @@ export function LocationsClient() {
                 Radius meters
                 <input
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  max="5000"
-                  min="10"
+                  max={5000}
+                  min={10}
                   name="radius"
-                  onChange={(event) =>
-                    setGeofenceRadiusMeters(event.target.value)
-                  }
+                  onChange={(event) => setGeofenceRadiusMeters(event.target.value)}
                   required
                   type="number"
                   value={geofenceRadiusMeters}
                 />
               </label>
+            </div>
 
-              <div className="flex flex-col">
-                <span className="mb-1 text-xs font-bold opacity-0">
-                  Current GPS
-                </span>
+            <div className="mt-3 border border-[var(--color-border)] bg-[var(--color-header)] p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                Address search (OpenStreetMap Nominatim)
+              </p>
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                Search by street or place name, pick a result to move the map and coordinates.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <input
+                  className="h-10 min-w-[12rem] flex-1 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                  onChange={(event) => setAddressSearchQuery(event.target.value)}
+                  placeholder="Address search"
+                  type="text"
+                  value={addressSearchQuery}
+                />
+                <Button disabled={addressSearchLoading} onClick={handleAddressSearch} type="button">
+                  {addressSearchLoading ? "Searching..." : "Search address"}
+                </Button>
+              </div>
+              {addressSearchError ? (
+                <p className="mt-2 text-xs text-[var(--color-danger-700)]">{addressSearchError}</p>
+              ) : null}
+              {addressSearchResults.length > 0 ? (
+                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] text-xs">
+                  {addressSearchResults.map((hit, index) => (
+                    <li key={`${hit.lat}-${hit.lon}-${index}`}>
+                      <button
+                        className="w-full px-2 py-1.5 text-left hover:bg-[var(--color-header)]"
+                        onClick={() => applyNominatimHit(hit)}
+                        type="button"
+                      >
+                        <span className="font-medium text-[var(--color-text)]">{hit.display_name}</span>
+                        <span className="mt-0.5 block text-[var(--color-text-muted)]">
+                          {hit.lat}, {hit.lon}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+
+            <div className="mt-3">
+              <p className="mb-1 text-xs font-bold text-[var(--color-text-soft)]">
+                Map preview
+              </p>
+              <p className="mb-2 text-xs text-[var(--color-text-muted)]">
+                Click the map or drag the marker to set coordinates. Radius updates the geofence ring.
+              </p>
+              <LocationGeofenceMap
+                key={editingLocation?.id ?? "create"}
+                latitude={mapLatitude}
+                longitude={mapLongitude}
+                onLatLngChange={handleMapLatLng}
+                radiusMeters={mapRadius}
+              />
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button disabled={isGettingPosition} onClick={handleUseCurrentPosition} type="button">
+                {isGettingPosition ? "Getting..." : "Use current GPS"}
+              </Button>
+              <Button disabled={isSaving} type="submit">
+                {isSaving ? "Saving..." : editingLocation ? "Save changes" : "Create location"}
+              </Button>
+              {editingLocation ? (
                 <Button
-                  className="h-10"
-                  disabled={isGettingPosition}
-                  onClick={handleUseCurrentPosition}
+                  onClick={() => {
+                    resetCreateFormFields();
+                    setSuccessMessage("");
+                  }}
                   type="button"
                 >
-                  {isGettingPosition ? "Getting..." : "Use current GPS"}
+                  Cancel edit
                 </Button>
-              </div>
-
-              <div className="flex flex-col">
-                <span className="mb-1 text-xs font-bold opacity-0">Action</span>
-                <Button className="h-10" disabled={isCreating} type="submit">
-                  {isCreating ? "Creating..." : "Create location"}
-                </Button>
-              </div>
+              ) : null}
             </div>
           </form>
 
@@ -381,37 +533,34 @@ export function LocationsClient() {
 
               {!isLoading
                 ? locations.map((location) => {
-                    const company = companies.find(
-                      (item) => item.id === location.company_id,
-                    );
+                    const company = companies.find((item) => item.id === location.company_id);
 
                     return (
                       <TableRow key={location.id}>
                         <TableCell>{location.name}</TableCell>
                         <TableCell>{location.address ?? "-"}</TableCell>
-                        <TableCell>
-                          {company?.name ?? "Assigned company"}
-                        </TableCell>
+                        <TableCell>{company?.name ?? "Assigned company"}</TableCell>
                         <TableCell>{location.latitude.toFixed(6)}</TableCell>
                         <TableCell>{location.longitude.toFixed(6)}</TableCell>
+                        <TableCell>{location.geofence_radius_meters}m</TableCell>
+                        <TableCell>{location.is_active ? "Active" : "Inactive"}</TableCell>
                         <TableCell>
-                          {location.geofence_radius_meters}m
-                        </TableCell>
-                        <TableCell>
-                          {location.is_active ? "Active" : "Inactive"}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            disabled={updatingLocationId === location.id}
-                            onClick={() => handleToggleLocationStatus(location)}
-                            type="button"
-                          >
-                            {updatingLocationId === location.id
-                              ? "Updating..."
-                              : location.is_active
-                                ? "Deactivate"
-                                : "Activate"}
-                          </Button>
+                          <div className="flex flex-wrap gap-2">
+                            <Button onClick={() => startEditing(location)} type="button">
+                              Edit
+                            </Button>
+                            <Button
+                              disabled={updatingLocationId === location.id}
+                              onClick={() => handleToggleLocationStatus(location)}
+                              type="button"
+                            >
+                              {updatingLocationId === location.id
+                                ? "Updating..."
+                                : location.is_active
+                                  ? "Deactivate"
+                                  : "Activate"}
+                            </Button>
+                          </div>
                         </TableCell>
                       </TableRow>
                     );

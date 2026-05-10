@@ -13,12 +13,23 @@ class GeolocationPayload(BaseModel):
     timestamp_utc: datetime
 
 
+class AssignedSiteStatus(BaseModel):
+    """Active assigned work sites for the current user (for maps / clock UI)."""
+
+    id: uuid.UUID
+    name: str
+    latitude: float
+    longitude: float
+    geofence_radius_meters: int
+
+
 class ClockStatusResponse(BaseModel):
     has_open_shift: bool
     open_shift_id: uuid.UUID | None = None
     status: str
     active_location_count: int
     current_break_open: bool
+    assigned_sites: list[AssignedSiteStatus]
 
 
 class ClockActionResponse(BaseModel):

@@ -1,11 +1,20 @@
 import { API_URL } from "../../config/api";
 
+export type ClockAssignedSite = {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  geofence_radius_meters: number;
+};
+
 export type ClockStatus = {
   has_open_shift: boolean;
   open_shift_id: string | null;
   status: string;
   active_location_count: number;
   current_break_open: boolean;
+  assigned_sites: ClockAssignedSite[];
 };
 
 export type ClockActionResponse = {

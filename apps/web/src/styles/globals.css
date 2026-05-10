@@ -88,3 +88,39 @@ a {
   padding: 0.5rem 0.625rem;
   font-size: 0.875rem;
 }
+
+.timiq-leaflet-shell .leaflet-container {
+  z-index: 1;
+  background: var(--color-cell);
+  font-family: var(--font-sans);
+}
+
+.timiq-leaflet-marker-host {
+  background: transparent !important;
+  border: none !important;
+}
+
+.timiq-leaflet-marker-pin {
+  width: 16px;
+  height: 16px;
+  margin: 3px;
+  border-radius: 9999px;
+  border: 2px solid #fff;
+  background: #0f172a;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.45);
+}
+
+.timiq-leaflet-site-marker {
+  width: 14px;
+  height: 14px;
+  margin: 7px;
+  border-radius: 9999px;
+  border: 2px solid var(--color-border-dark, #cbd5e1);
+  background: var(--color-cell, #f8fafc);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.35);
+}
+
+.timiq-leaflet-site-marker--nearest {
+  border-color: #0f766e;
+  background: #e0f2f1;
+}

@@ -23,6 +23,16 @@ export type CreateLocationRequest = {
   is_active: boolean;
 };
 
+export type UpdateLocationRequest = {
+  company_id?: string | null;
+  name: string;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  geofence_radius_meters: number;
+  is_active: boolean;
+};
+
 export async function listLocations(): Promise<Location[]> {
   const response = await fetch(`${API_URL}/api/locations`, {
     method: "GET",
@@ -62,6 +72,38 @@ export async function createLocation(
 
   if (!response.ok) {
     throw new Error("Could not create location.");
+  }
+
+  return response.json() as Promise<Location>;
+}
+
+export async function updateLocation(
+  locationId: string,
+  request: UpdateLocationRequest,
+): Promise<Location> {
+  const response = await fetch(`${API_URL}/api/locations/${locationId}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(request),
+  });
+
+  if (response.status === 403) {
+    throw new Error("You do not have permission to update this location.");
+  }
+
+  if (response.status === 404) {
+    throw new Error("Location or company was not found.");
+  }
+
+  if (response.status === 409) {
+    throw new Error("A location with this name already exists for this company.");
+  }
+
+  if (!response.ok) {
+    throw new Error("Could not update location.");
   }
 
   return response.json() as Promise<Location>;

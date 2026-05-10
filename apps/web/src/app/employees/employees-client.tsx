@@ -18,27 +18,23 @@ import {
   createManagedUser,
   isAdministrator,
   listManagedUsers,
-  resetManagedUserPassword,
   RoleGuard,
-  updateManagedUser,
-  updateManagedUserStatus,
   useCurrentUser,
   type AuthUser,
   type SystemRole,
 } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
 
-type EditingUserState = {
-  id: string;
-  email: string;
-  systemRole: SystemRole;
-  companyId: string;
-};
+import { EmployeeDetailPanel } from "./employee-detail-panel";
 
-type PasswordResetState = {
-  id: string;
-  password: string;
-};
+function formatEmployeeDisplayName(user: AuthUser): string {
+  const first = user.profile_first_name?.trim();
+  const last = user.profile_last_name?.trim();
+  if (first || last) {
+    return [first, last].filter(Boolean).join(" ");
+  }
+  return "—";
+}
 
 function formatRole(role: string) {
   return role.charAt(0).toUpperCase() + role.slice(1);
@@ -61,15 +57,13 @@ export function EmployeesClient() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("Employee12345");
   const [systemRole, setSystemRole] = useState<SystemRole>("employee");
-  const [editingUser, setEditingUser] = useState<EditingUserState | null>(null);
-  const [passwordReset, setPasswordReset] = useState<PasswordResetState | null>(
-    null,
-  );
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [panelUserId, setPanelUserId] = useState<string | null>(null);
+
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
-  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
 
   const roleOptions = getRoleOptions(currentUser);
 
@@ -81,6 +75,26 @@ export function EmployeesClient() {
       ? "grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
       : "grid gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto]";
   }, [showCompanySelector]);
+
+  const panelUser = useMemo(() => {
+    if (!panelUserId) {
+      return null;
+    }
+    return users.find((item) => item.id === panelUserId) ?? null;
+  }, [panelUserId, users]);
+
+  const filteredUsers = useMemo(() => {
+    const query = employeeSearch.trim().toLowerCase();
+    if (!query) {
+      return users;
+    }
+
+    return users.filter((userItem) => {
+      const name = formatEmployeeDisplayName(userItem).toLowerCase();
+      const mail = userItem.email.toLowerCase();
+      return name.includes(query) || mail.includes(query);
+    });
+  }, [employeeSearch, users]);
 
   async function loadUsers() {
     setIsLoading(true);
@@ -100,9 +114,7 @@ export function EmployeesClient() {
       const loadedCompanies = await listCompanies();
       setCompanies(loadedCompanies);
 
-      const firstActiveCompany = loadedCompanies.find(
-        (company) => company.is_active,
-      );
+      const firstActiveCompany = loadedCompanies.find((company) => company.is_active);
 
       if (firstActiveCompany) {
         setCompanyId((currentValue) => currentValue || firstActiveCompany.id);
@@ -159,121 +171,6 @@ export function EmployeesClient() {
       );
     } finally {
       setIsCreating(false);
-    }
-  }
-
-  function startEditingUser(user: AuthUser) {
-    setErrorMessage("");
-    setSuccessMessage("");
-
-    setEditingUser({
-      id: user.id,
-      email: user.email,
-      systemRole: user.system_role,
-      companyId: user.company_id ?? "",
-    });
-  }
-
-  function cancelEditingUser() {
-    setEditingUser(null);
-    setErrorMessage("");
-  }
-
-  async function saveEditingUser() {
-    if (!editingUser) {
-      return;
-    }
-
-    setErrorMessage("");
-    setSuccessMessage("");
-    setUpdatingUserId(editingUser.id);
-
-    try {
-      const updatedUser = await updateManagedUser(editingUser.id, {
-        email: editingUser.email,
-        system_role: editingUser.systemRole,
-        company_id:
-          isAdministrator(currentUser) &&
-          editingUser.systemRole !== "administrator"
-            ? editingUser.companyId || null
-            : null,
-      });
-
-      setSuccessMessage(`Updated ${updatedUser.email}`);
-      setEditingUser(null);
-      await loadUsers();
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Could not update user.",
-      );
-    } finally {
-      setUpdatingUserId(null);
-    }
-  }
-
-  function startPasswordReset(user: AuthUser) {
-    setErrorMessage("");
-    setSuccessMessage("");
-
-    setPasswordReset({
-      id: user.id,
-      password: user.system_role === "admin" ? "Admin12345" : "Employee12345",
-    });
-  }
-
-  function cancelPasswordReset() {
-    setPasswordReset(null);
-    setErrorMessage("");
-  }
-
-  async function savePasswordReset() {
-    if (!passwordReset) {
-      return;
-    }
-
-    setErrorMessage("");
-    setSuccessMessage("");
-    setUpdatingUserId(passwordReset.id);
-
-    try {
-      const updatedUser = await resetManagedUserPassword(
-        passwordReset.id,
-        passwordReset.password,
-      );
-
-      setSuccessMessage(`Password reset for ${updatedUser.email}`);
-      setPasswordReset(null);
-      await loadUsers();
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Could not reset password.",
-      );
-    } finally {
-      setUpdatingUserId(null);
-    }
-  }
-
-  async function handleToggleUserStatus(user: AuthUser) {
-    setErrorMessage("");
-    setSuccessMessage("");
-    setUpdatingUserId(user.id);
-
-    try {
-      const updatedUser = await updateManagedUserStatus(user.id, !user.is_active);
-
-      setSuccessMessage(
-        `${updatedUser.email} is now ${
-          updatedUser.is_active ? "active" : "inactive"
-        }`,
-      );
-
-      await loadUsers();
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Could not update user.",
-      );
-    } finally {
-      setUpdatingUserId(null);
     }
   }
 
@@ -334,9 +231,7 @@ export function EmployeesClient() {
                 Role
                 <select
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  onChange={(event) =>
-                    setSystemRole(event.target.value as SystemRole)
-                  }
+                  onChange={(event) => setSystemRole(event.target.value as SystemRole)}
                   value={systemRole}
                 >
                   {roleOptions.map((role) => (
@@ -376,6 +271,17 @@ export function EmployeesClient() {
             </div>
           </form>
 
+          <label className="mb-3 block text-xs font-bold text-[var(--color-text)]">
+            Search employees
+            <input
+              className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm md:max-w-md"
+              onChange={(event) => setEmployeeSearch(event.target.value)}
+              placeholder="Filter by name or email"
+              type="search"
+              value={employeeSearch}
+            />
+          </label>
+
           {errorMessage ? (
             <div className="mb-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
               {errorMessage}
@@ -391,6 +297,7 @@ export function EmployeesClient() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Name</TableHead>
                 <TableHead>Email</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
@@ -403,221 +310,51 @@ export function EmployeesClient() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6}>Loading users...</TableCell>
+                  <TableCell colSpan={7}>Loading users...</TableCell>
                 </TableRow>
               ) : null}
 
               {!isLoading && users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6}>No users found.</TableCell>
+                  <TableCell colSpan={7}>No users found.</TableCell>
+                </TableRow>
+              ) : null}
+
+              {!isLoading && users.length > 0 && filteredUsers.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7}>No users match this filter.</TableCell>
                 </TableRow>
               ) : null}
 
               {!isLoading
-                ? users.map((user) => {
-                    const company = companies.find(
-                      (item) => item.id === user.company_id,
-                    );
-                    const isEditing = editingUser?.id === user.id;
-                    const isResettingPassword = passwordReset?.id === user.id;
-
-                    if (isEditing && editingUser) {
-                      return (
-                        <TableRow key={user.id}>
-                          <TableCell>
-                            <input
-                              className="h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                              onChange={(event) =>
-                                setEditingUser({
-                                  ...editingUser,
-                                  email: event.target.value,
-                                })
-                              }
-                              type="email"
-                              value={editingUser.email}
-                            />
-                          </TableCell>
-
-                          <TableCell>
-                            <select
-                              className="h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                              disabled={!isAdministrator(currentUser)}
-                              onChange={(event) =>
-                                setEditingUser({
-                                  ...editingUser,
-                                  systemRole: event.target.value as SystemRole,
-                                  companyId:
-                                    event.target.value === "administrator"
-                                      ? ""
-                                      : editingUser.companyId,
-                                })
-                              }
-                              value={editingUser.systemRole}
-                            >
-                              {getRoleOptions(currentUser).map((role) => (
-                                <option key={role} value={role}>
-                                  {formatRole(role)}
-                                </option>
-                              ))}
-                            </select>
-                          </TableCell>
-
-                          <TableCell>
-                            {user.is_active ? "Active" : "Inactive"}
-                          </TableCell>
-
-                          <TableCell>
-                            {isAdministrator(currentUser) &&
-                            editingUser.systemRole !== "administrator" ? (
-                              <select
-                                className="h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                                onChange={(event) =>
-                                  setEditingUser({
-                                    ...editingUser,
-                                    companyId: event.target.value,
-                                  })
-                                }
-                                value={editingUser.companyId}
-                              >
-                                <option value="">Global</option>
-                                {companies
-                                  .filter((item) => item.is_active)
-                                  .map((item) => (
-                                    <option key={item.id} value={item.id}>
-                                      {item.name}
-                                    </option>
-                                  ))}
-                              </select>
-                            ) : (
-                              company?.name ??
-                              (user.company_id ? "Assigned company" : "Global")
-                            )}
-                          </TableCell>
-
-                          <TableCell>
-                            {new Date(user.created_at).toLocaleDateString()}
-                          </TableCell>
-
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <Button
-                                disabled={updatingUserId === user.id}
-                                onClick={saveEditingUser}
-                                type="button"
-                              >
-                                Save
-                              </Button>
-
-                              <Button
-                                disabled={updatingUserId === user.id}
-                                onClick={cancelEditingUser}
-                                type="button"
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    }
-
-                    if (isResettingPassword && passwordReset) {
-                      return (
-                        <TableRow key={user.id}>
-                          <TableCell>{user.email}</TableCell>
-                          <TableCell>{formatRole(user.system_role)}</TableCell>
-                          <TableCell>
-                            {user.is_active ? "Active" : "Inactive"}
-                          </TableCell>
-                          <TableCell>
-                            {company?.name ??
-                              (user.company_id ? "Assigned company" : "Global")}
-                          </TableCell>
-                          <TableCell>
-                            {new Date(user.created_at).toLocaleDateString()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex gap-2">
-                              <input
-                                className="h-9 w-40 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                                onChange={(event) =>
-                                  setPasswordReset({
-                                    ...passwordReset,
-                                    password: event.target.value,
-                                  })
-                                }
-                                type="text"
-                                value={passwordReset.password}
-                              />
-
-                              <Button
-                                disabled={updatingUserId === user.id}
-                                onClick={savePasswordReset}
-                                type="button"
-                              >
-                                Save password
-                              </Button>
-
-                              <Button
-                                disabled={updatingUserId === user.id}
-                                onClick={cancelPasswordReset}
-                                type="button"
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    }
+                ? filteredUsers.map((userItem) => {
+                    const company = companies.find((item) => item.id === userItem.company_id);
 
                     return (
-                      <TableRow key={user.id}>
-                        <TableCell>{user.email}</TableCell>
-                        <TableCell>{formatRole(user.system_role)}</TableCell>
-                        <TableCell>
-                          {user.is_active ? "Active" : "Inactive"}
-                        </TableCell>
+                      <TableRow key={userItem.id}>
+                        <TableCell>{formatEmployeeDisplayName(userItem)}</TableCell>
+                        <TableCell>{userItem.email}</TableCell>
+                        <TableCell>{formatRole(userItem.system_role)}</TableCell>
+                        <TableCell>{userItem.is_active ? "Active" : "Inactive"}</TableCell>
                         <TableCell>
                           {company?.name ??
-                            (user.company_id ? "Assigned company" : "Global")}
+                            (userItem.company_id ? "Assigned company" : "Global")}
                         </TableCell>
                         <TableCell>
-                          {new Date(user.created_at).toLocaleDateString()}
+                          {new Date(userItem.created_at).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
-                          <div className="flex gap-2">
-                            <Button
-                              disabled={user.id === currentUser.id}
-                              onClick={() => startEditingUser(user)}
-                              type="button"
-                            >
-                              Edit
-                            </Button>
-
-                            <Button
-                              disabled={user.id === currentUser.id}
-                              onClick={() => startPasswordReset(user)}
-                              type="button"
-                            >
-                              Reset password
-                            </Button>
-
-                            <Button
-                              disabled={
-                                user.id === currentUser.id ||
-                                updatingUserId === user.id
-                              }
-                              onClick={() => handleToggleUserStatus(user)}
-                              type="button"
-                            >
-                              {updatingUserId === user.id
-                                ? "Updating..."
-                                : user.is_active
-                                  ? "Deactivate"
-                                  : "Activate"}
-                            </Button>
-                          </div>
+                          <Button
+                            disabled={userItem.id === currentUser.id}
+                            onClick={() => {
+                              setPanelUserId(userItem.id);
+                              setErrorMessage("");
+                              setSuccessMessage("");
+                            }}
+                            type="button"
+                          >
+                            Edit
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );
@@ -625,6 +362,16 @@ export function EmployeesClient() {
                 : null}
             </TableBody>
           </Table>
+
+          {panelUser ? (
+            <EmployeeDetailPanel
+              companies={companies}
+              currentUser={currentUser}
+              onClose={() => setPanelUserId(null)}
+              onRefresh={loadUsers}
+              user={panelUser}
+            />
+          ) : null}
         </RoleGuard>
       </SheetBody>
     </Sheet>

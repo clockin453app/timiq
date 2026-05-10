@@ -13,7 +13,7 @@ from app.modules.locations.repository import (
     save_location,
     update_location,
 )
-from app.modules.locations.schemas import LocationCreateRequest
+from app.modules.locations.schemas import LocationCreateRequest, LocationUpdateRequest
 
 
 class LocationError(ValueError):
@@ -114,6 +114,62 @@ def create_location(
     )
 
     return save_location(db_session, location)
+
+
+def update_location_details(
+    db_session: Session,
+    actor: User,
+    location_id: uuid.UUID,
+    request: LocationUpdateRequest,
+) -> Location:
+    location = get_location_by_id(db_session, location_id)
+
+    if location is None:
+        raise LocationNotFoundError("Location not found.")
+
+    if actor.system_role == SystemRole.ADMINISTRATOR:
+        pass
+    elif actor.system_role == SystemRole.ADMIN:
+        if actor.company_id is None:
+            raise LocationAccessDeniedError(
+                "Your admin account is not assigned to a company."
+            )
+        if location.company_id != actor.company_id:
+            raise LocationAccessDeniedError(
+                "You cannot update locations outside your company."
+            )
+    else:
+        raise LocationAccessDeniedError("You cannot update locations.")
+
+    resolved_company_id = location.company_id
+    if actor.system_role == SystemRole.ADMINISTRATOR:
+        if request.company_id is not None:
+            company = get_company_by_id(db_session, request.company_id)
+            if company is None or not company.is_active:
+                raise LocationCompanyNotFoundError("Company not found.")
+            resolved_company_id = company.id
+    elif actor.system_role == SystemRole.ADMIN:
+        resolved_company_id = actor.company_id
+
+    duplicate = get_location_by_company_and_name(
+        db_session=db_session,
+        company_id=resolved_company_id,
+        name=request.name,
+    )
+    if duplicate is not None and duplicate.id != location.id:
+        raise DuplicateLocationError(
+            "A location with this name already exists for this company."
+        )
+
+    location.company_id = resolved_company_id
+    location.name = request.name
+    location.address = request.address
+    location.latitude = request.latitude
+    location.longitude = request.longitude
+    location.geofence_radius_meters = request.geofence_radius_meters
+    location.is_active = request.is_active
+
+    return update_location(db_session, location)
 
 
 def update_location_status(

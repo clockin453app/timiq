@@ -8,6 +8,8 @@ export type AuthUser = {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  profile_first_name?: string | null;
+  profile_last_name?: string | null;
 };
 
 export type LoginResponse = {

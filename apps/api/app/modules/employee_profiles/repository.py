@@ -32,3 +32,33 @@ def update_employee_profile(
     db_session.commit()
     db_session.refresh(profile)
     return profile
+
+
+def delete_employee_profile_by_user_id(
+    db_session: Session,
+    user_id: uuid.UUID,
+) -> None:
+    profile = get_employee_profile_by_user_id(db_session, user_id)
+    if profile is None:
+        return
+    db_session.delete(profile)
+    db_session.flush()
+
+
+def reset_employee_profile_after_history_clear(
+    db_session: Session,
+    user_id: uuid.UUID,
+) -> None:
+    profile = get_employee_profile_by_user_id(db_session, user_id)
+    if profile is None:
+        return
+    profile.first_name = None
+    profile.last_name = None
+    profile.phone = None
+    profile.job_title = None
+    profile.start_date = None
+    profile.emergency_contact_name = None
+    profile.emergency_contact_phone = None
+    profile.is_onboarded = False
+    db_session.add(profile)
+    db_session.flush()

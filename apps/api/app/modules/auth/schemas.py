@@ -103,6 +103,8 @@ class UserResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+    profile_first_name: Optional[str] = None
+    profile_last_name: Optional[str] = None
 
 
 class LoginResponse(BaseModel):

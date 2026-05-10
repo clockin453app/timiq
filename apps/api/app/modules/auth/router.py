@@ -7,9 +7,10 @@ from app.db.session import get_db_session
 from app.modules.auth.dependencies import (
     get_current_user,
     require_admin_or_administrator,
+    require_administrator,
 )
 from app.modules.auth.models import User
-from app.modules.auth.repository import list_users_visible_to_user
+from app.modules.auth.repository import list_users_visible_to_user_with_profile_names
 from app.modules.auth.schemas import (
     AdminCreateUserRequest,
     LoginRequest,
@@ -29,6 +30,13 @@ from app.modules.auth.service import (
     reset_user_password_by_admin,
     update_user_by_admin,
     update_user_status_by_admin,
+)
+from app.modules.auth.user_lifecycle import (
+    ClearHistoryPermissionError,
+    DeleteUserPermissionError,
+    UserHasOperationalHistoryError,
+    clear_user_operational_history,
+    delete_user_hard_by_administrator,
 )
 from app.modules.auth.session_tokens import SESSION_COOKIE_NAME, create_session_token
 
@@ -84,8 +92,16 @@ def get_users(
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
 ) -> list[UserResponse]:
-    users = list_users_visible_to_user(db_session, current_user)
-    return [UserResponse.model_validate(user) for user in users]
+    rows = list_users_visible_to_user_with_profile_names(db_session, current_user)
+    return [
+        UserResponse.model_validate(user).model_copy(
+            update={
+                "profile_first_name": first_name,
+                "profile_last_name": last_name,
+            },
+        )
+        for user, first_name, last_name in rows
+    ]
 
 
 @router.post(
@@ -187,6 +203,63 @@ def update_managed_user_status(
         ) from exc
 
     return UserResponse.model_validate(user)
+
+
+@router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_managed_user_hard(
+    user_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_administrator),
+) -> Response:
+    try:
+        delete_user_hard_by_administrator(
+            db_session=db_session,
+            actor=current_user,
+            user_id=user_id,
+        )
+    except UserNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        ) from exc
+    except DeleteUserPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except UserHasOperationalHistoryError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/users/{user_id}/clear-history", status_code=status.HTTP_204_NO_CONTENT)
+def clear_managed_user_history(
+    user_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_administrator),
+) -> Response:
+    try:
+        clear_user_operational_history(
+            db_session=db_session,
+            actor=current_user,
+            user_id=user_id,
+        )
+    except UserNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        ) from exc
+    except ClearHistoryPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.patch("/users/{user_id}/password", response_model=UserResponse)
