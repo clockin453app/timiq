@@ -1,0 +1,129 @@
+---
+description: TimIQ deployed legacy app feature inventory
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+The uploaded legacy/deployed app is a behavior reference only. Do not copy old Flask code directly. Rebuild all features cleanly in the new TimIQ architecture: FastAPI backend, SQLAlchemy 2, Alembic, Next.js frontend, TypeScript.
+
+Legacy deployed app feature inventory:
+
+Auth:
+- login/logout
+- session runtime
+- change password
+- global master admin handling
+- live session tracking
+
+Employee pages/features:
+- dashboard
+- clock in/out
+- GPS/geofence clock validation
+- selfie capture required for clock in/out
+- assigned-site validation
+- early access clock-in handling
+- one open shift at a time
+- prevent duplicate completed shift for same day
+- time records
+- timesheets
+- week report
+- pay history
+- onboarding/starter form
+- onboarding file uploads
+- site progress/work progress updates
+- profile/change password
+
+Admin/management pages/features:
+- management overview
+- companies
+- workplaces
+- employees
+- locations
+- site access / employee-site assignment
+- payroll report
+- live attendance/current sessions
+- force clock in
+- force clock out
+- onboarding review list
+- onboarding detail review
+- onboarding document download
+- audit log
+- log activities
+- clock selfie review
+- system health
+- recalculate shifts
+- save/edit shift
+- mark payroll paid
+- CSV payroll export
+- PDF payroll export
+
+Payroll behavior:
+- user hourly rates
+- workplace settings
+- workplace payroll rules
+- tax rate
+- overtime after hours
+- overtime multiplier
+- time rounding minutes
+- break deduction minutes
+- gross/tax/net calculation
+- payroll paid/unpaid status
+- payroll report rows
+- payroll charts/cards
+- employee pay history
+
+Time clock behavior:
+- validate browser GPS coordinates
+- validate GPS freshness
+- validate accuracy
+- validate employee is assigned to active site
+- validate inside geofence radius
+- save clock-in latitude/longitude/accuracy/site/distance
+- save clock-out latitude/longitude/accuracy/site/distance
+- save clock-in selfie metadata
+- save clock-out selfie metadata
+- calculate shift hours
+- snapshot payroll rule used for the shift
+
+Files/storage behavior:
+- onboarding upload validation
+- onboarding document storage
+- work progress file storage
+- clock selfie storage
+- local storage for development
+- Google Drive OAuth/storage helper for production-style storage
+
+System/admin utilities:
+- database debug/import helpers
+- import actions/parsers
+- system health diagnostics
+- backup/export style tooling
+
+Legacy data concepts to rebuild in new schema:
+- employees
+- workhours/time_entries
+- audit_logs/audit_events
+- payroll_reports/payroll periods/items/payments
+- onboarding_records/submissions/documents
+- locations/geofences
+- employee site access
+- workplace_settings
+- workplace_payroll_rules
+- clock_selfies
+- work_progress entries/files
+
+Build order after Batch 29:
+Batch 30: full time clock rebuild
+Batch 31: time records, timesheets, week report
+Batch 32: payroll
+Batch 33: onboarding/starter form
+Batch 34: site progress/work progress
+Batch 35: live attendance and force actions
+Batch 36: audit log, system health, backups, Google Drive storage
+
+Important:
+- Keep new code modular.
+- Do not create giant files like the legacy app.
+- Do not copy old Flask route code.
+- Rebuild behavior cleanly with tests/checks.
