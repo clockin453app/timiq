@@ -1,27 +1,32 @@
 :root {
-  --color-page: #e6e6e6;
-  --color-sheet: #f3f3f3;
-  --color-cell: #f8f8f8;
-  --color-header: #dedede;
-  --color-border: #c7c7c7;
-  --color-border-dark: #a8a8a8;
+  /* Cool neutrals — main chrome (no warm cream/beige) */
+  --color-page: #f8fafc;
+  --color-sheet: #ffffff;
+  --color-cell: #ffffff;
+  --color-header: #f3f4f6;
+  --color-border: #e5e7eb;
+  --color-border-dark: #d1d5db;
 
-  --color-text: #1f1f1f;
-  --color-text-muted: #4f4f4f;
-  --color-text-soft: #707070;
+  --color-text: #111827;
+  --color-text-muted: #4b5563;
+  --color-text-soft: #6b7280;
 
-  --color-primary: #d9d9d9;
-  --color-primary-hover: #cfcfcf;
-  --color-primary-border: #9f9f9f;
+  /* Default / primary actions: white field, grey border */
+  --color-primary: #ffffff;
+  --color-primary-hover: #e5e7eb;
+  --color-primary-border: #d1d5db;
 
-  --color-danger-50: #f4eaea;
-  --color-danger-700: #8f2f2f;
+  --color-input: #ffffff;
 
-  --color-success-50: #eaf2ea;
-  --color-success-700: #2f6f3e;
+  --color-danger-50: #fef2f2;
+  --color-danger-700: #991b1b;
 
-  --color-warning-50: #f4efe1;
-  --color-warning-700: #8a5a13;
+  --color-success-50: #ecfdf5;
+  --color-success-700: #166534;
+
+  /* Panel tint only — pair with border/text for status */
+  --color-warning-50: #f3f4f6;
+  --color-warning-700: #b45309;
 
   --font-sans:
     Calibri, Arial, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,

@@ -15,11 +15,11 @@ const variantClasses: Record<ButtonVariant, string> = {
   primary:
     "border border-[var(--color-primary-border)] bg-[var(--color-primary)] text-[var(--color-text)] hover:bg-[var(--color-primary-hover)]",
   secondary:
-    "border border-[var(--color-border-dark)] bg-[var(--color-cell)] text-[var(--color-text)] hover:bg-[var(--color-primary-hover)]",
+    "border border-[var(--color-border-dark)] bg-[var(--color-header)] text-[var(--color-text)] hover:bg-[var(--color-primary-hover)]",
   ghost:
     "border border-transparent bg-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)]",
   danger:
-    "border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] text-[var(--color-danger-700)]",
+    "border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] text-[var(--color-danger-700)] hover:bg-[var(--color-danger-700)] hover:text-white",
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
@@ -39,7 +39,7 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center rounded-[var(--radius-md)] font-semibold transition disabled:pointer-events-none disabled:opacity-60",
+        "inline-flex items-center justify-center rounded-[var(--radius-md)] font-semibold disabled:pointer-events-none disabled:opacity-60",
         variantClasses[variant],
         sizeClasses[size],
         className,

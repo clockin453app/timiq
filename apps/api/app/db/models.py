@@ -5,6 +5,7 @@ from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
 from app.modules.site_access.models import EmployeeLocationAccess
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
+from app.modules.onboarding.models import OnboardingDocument, OnboardingSubmission
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.workplaces.models import Workplace
 
@@ -23,4 +24,6 @@ __all__ = [
     "Workplace",
     "PayrollPeriod",
     "PayrollItem",
+    "OnboardingSubmission",
+    "OnboardingDocument",
 ]

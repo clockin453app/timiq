@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
 import {
@@ -8,7 +9,21 @@ import {
   updateMyEmployeeProfile,
   type EmployeeProfile,
 } from "../../features/employee-profiles/api";
-import { formatSystemRole, useCurrentUser } from "../../features/auth";
+import { formatSystemRole, isEmployee, useCurrentUser } from "../../features/auth";
+import {
+  fetchOnboardingDocumentBlob,
+  fetchOnboardingProfilePhotoBlob,
+  fetchOnboardingSignatureBlob,
+  getMyOnboarding,
+  ONBOARDING_REQUIRED_DOC_SLOTS,
+  type OnboardingSubmissionDetail,
+} from "../../features/onboarding/api";
+import {
+  maskOnboardingFieldValue,
+  ONBOARDING_SUMMARY_FIELD_ORDER,
+  onboardingSummaryFieldLabel,
+  SENSITIVE_ONBOARDING_FIELD_KEYS,
+} from "../../features/onboarding/profile-summary";
 
 export function ProfileClient() {
   const user = useCurrentUser();
@@ -25,6 +40,13 @@ export function ProfileClient() {
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+
+  const [onboarding, setOnboarding] = useState<OnboardingSubmissionDetail | null>(null);
+  const [onboardingLoading, setOnboardingLoading] = useState(false);
+  const [onboardingError, setOnboardingError] = useState("");
+  const [showSensitiveOnboarding, setShowSensitiveOnboarding] = useState(false);
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
+  const profileAvatarRevokeRef = useRef<string | null>(null);
 
   async function loadProfile() {
     setIsLoadingProfile(true);
@@ -48,6 +70,85 @@ export function ProfileClient() {
 
   useEffect(() => {
     loadProfile();
+  }, []);
+
+  useEffect(() => {
+    if (!isEmployee(user)) {
+      setOnboarding(null);
+      setOnboardingError("");
+      setOnboardingLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadOnboarding() {
+      setOnboardingLoading(true);
+      setOnboardingError("");
+      try {
+        const data = await getMyOnboarding();
+        if (!cancelled) {
+          setOnboarding(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setOnboarding(null);
+          setOnboardingError("Could not load starter form summary.");
+        }
+      } finally {
+        if (!cancelled) {
+          setOnboardingLoading(false);
+        }
+      }
+    }
+
+    void loadOnboarding();
+    return () => {
+      cancelled = true;
+    };
+  }, [user.id, user.system_role]);
+
+  useEffect(() => {
+    if (!isEmployee(user) || !onboarding?.has_profile_photo) {
+      if (profileAvatarRevokeRef.current) {
+        URL.revokeObjectURL(profileAvatarRevokeRef.current);
+        profileAvatarRevokeRef.current = null;
+      }
+      setProfileAvatarUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    async function loadAvatar() {
+      try {
+        const blob = await fetchOnboardingProfilePhotoBlob(user.id);
+        const url = URL.createObjectURL(blob);
+        if (profileAvatarRevokeRef.current) {
+          URL.revokeObjectURL(profileAvatarRevokeRef.current);
+        }
+        profileAvatarRevokeRef.current = url;
+        if (!cancelled) {
+          setProfileAvatarUrl(url);
+        }
+      } catch {
+        if (!cancelled) {
+          setProfileAvatarUrl(null);
+        }
+      }
+    }
+
+    void loadAvatar();
+    return () => {
+      cancelled = true;
+    };
+  }, [user.id, onboarding?.has_profile_photo, onboarding?.profile_photo_updated_at]);
+
+  useEffect(() => {
+    return () => {
+      if (profileAvatarRevokeRef.current) {
+        URL.revokeObjectURL(profileAvatarRevokeRef.current);
+        profileAvatarRevokeRef.current = null;
+      }
+    };
   }, []);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
@@ -117,8 +218,75 @@ export function ProfileClient() {
     },
   ];
 
-  const starterNote =
-    "These details will also be filled from your Starter Form once onboarding is submitted and approved.";
+  const starterNote = isEmployee(user)
+    ? "The editable section below updates your live profile. Submitted starter form answers (including sensitive items) appear read-only in Onboarding record once you have submitted."
+    : "These details will also be filled from your Starter Form once onboarding is submitted and approved.";
+
+  const showOnboardingReadback =
+    isEmployee(user) &&
+    onboarding &&
+    (onboarding.status === "submitted" ||
+      onboarding.status === "approved" ||
+      onboarding.status === "rejected");
+
+  const hasSensitiveOnboardingValues =
+    onboarding &&
+    ONBOARDING_SUMMARY_FIELD_ORDER.some((key) => {
+      if (!SENSITIVE_ONBOARDING_FIELD_KEYS.has(key)) {
+        return false;
+      }
+      const v = onboarding.form_payload[key]?.trim();
+      return Boolean(v);
+    });
+
+  async function handleDownloadOnboardingDoc(documentId: string, filename: string) {
+    try {
+      const blob = await fetchOnboardingDocumentBlob(documentId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || "document";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      setOnboardingError("Could not download document.");
+    }
+  }
+
+  function profileDisplayName(): string {
+    const fn = profile?.first_name?.trim();
+    const ln = profile?.last_name?.trim();
+    if (fn || ln) {
+      return [fn, ln].filter(Boolean).join(" ");
+    }
+    return user.email;
+  }
+
+  function profileInitials(): string {
+    const fn = profile?.first_name?.trim();
+    const ln = profile?.last_name?.trim();
+    if (fn && ln) {
+      return `${fn[0] ?? ""}${ln[0] ?? ""}`.toUpperCase();
+    }
+    if (fn && fn.length >= 2) {
+      return fn.slice(0, 2).toUpperCase();
+    }
+    if (fn) {
+      return fn.slice(0, 1).toUpperCase();
+    }
+    return user.email.slice(0, 2).toUpperCase();
+  }
+
+  async function handleViewOnboardingSignature(submissionId: string) {
+    try {
+      const blob = await fetchOnboardingSignatureBlob(submissionId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank", "noopener,noreferrer");
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      setOnboardingError("Could not open signature.");
+    }
+  }
 
   return (
     <Sheet>
@@ -128,6 +296,28 @@ export function ProfileClient() {
       />
       <SheetBody>
         <div className="space-y-3">
+          {isEmployee(user) ? (
+            <div className="flex items-center gap-4 border border-[var(--color-border)] bg-[var(--color-cell)] p-4">
+              <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[var(--color-border-dark)] bg-[var(--color-header)] text-lg font-bold tracking-wide text-[var(--color-text-soft)]">
+                {profileAvatarUrl ? (
+                  <img
+                    src={profileAvatarUrl}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  profileInitials()
+                )}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-lg font-semibold leading-tight text-[var(--color-text)]">
+                  {isLoadingProfile ? "Loading…" : profileDisplayName()}
+                </p>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">{user.email}</p>
+              </div>
+            </div>
+          ) : null}
+
           <div className="border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
               Account
@@ -148,6 +338,149 @@ export function ProfileClient() {
           {loadError ? (
             <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
               {loadError} You can still review your account information above.
+            </div>
+          ) : null}
+
+          {isEmployee(user) ? (
+            <div className="border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                Starter form (onboarding)
+              </p>
+              {onboardingLoading ? (
+                <p className="mt-2 text-sm text-[var(--color-text-muted)]">Loading onboarding…</p>
+              ) : null}
+              {!onboardingLoading && onboardingError ? (
+                <p className="mt-2 text-sm text-[var(--color-danger-700)]">{onboardingError}</p>
+              ) : null}
+              {!onboardingLoading && onboarding && !onboardingError ? (
+                <div className="mt-2 space-y-3 text-sm text-[var(--color-text)]">
+                  <p className="font-medium text-[var(--color-text)]">
+                    {onboarding.status === "draft" ? "Draft — not submitted yet" : null}
+                    {onboarding.status === "submitted" ? "Submitted — awaiting review" : null}
+                    {onboarding.status === "approved" ? "Approved — onboarded" : null}
+                    {onboarding.status === "rejected" ? "Rejected — action needed" : null}
+                  </p>
+                  {onboarding.status === "draft" ? (
+                    <p className="text-[var(--color-text-muted)]">
+                      Complete your starter form to provide documents, details, and your signature for payroll
+                      setup.
+                    </p>
+                  ) : null}
+                  {onboarding.status === "draft" ? (
+                    <Link
+                      href="/starter-form"
+                      className="inline-flex h-9 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-primary-border)] bg-[var(--color-primary)] px-4 text-sm font-semibold text-[var(--color-text)] no-underline hover:bg-[var(--color-primary-hover)]"
+                    >
+                      Go to Starter Form
+                    </Link>
+                  ) : null}
+                  {onboarding.status === "rejected" && onboarding.review_note ? (
+                    <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2 text-sm">
+                      <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">Reviewer note</p>
+                      <p className="mt-1 text-[var(--color-text)]">{onboarding.review_note}</p>
+                    </div>
+                  ) : null}
+                  {onboarding.status === "rejected" ? (
+                    <Link
+                      href="/starter-form"
+                      className="inline-flex h-9 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-4 text-sm font-semibold text-[var(--color-text)] no-underline hover:bg-[var(--color-primary-hover)]"
+                    >
+                      Update starter form & resubmit
+                    </Link>
+                  ) : null}
+                  {showOnboardingReadback ? (
+                    <>
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-3">
+                        <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">
+                          Submitted details (read-only)
+                        </p>
+                        {hasSensitiveOnboardingValues ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowSensitiveOnboarding((v) => !v)}
+                          >
+                            {showSensitiveOnboarding ? "Hide sensitive values" : "Show sensitive values"}
+                          </Button>
+                        ) : null}
+                      </div>
+                      <dl className="grid gap-2 text-sm">
+                        {ONBOARDING_SUMMARY_FIELD_ORDER.map((key) => (
+                          <div
+                            key={key}
+                            className="flex flex-col gap-0.5 border-t border-[var(--color-border)] pt-2 first:border-t-0 first:pt-0 sm:flex-row sm:justify-between sm:gap-4"
+                          >
+                            <dt className="text-[var(--color-text-muted)]">{onboardingSummaryFieldLabel(key)}</dt>
+                            <dd className="max-w-full break-words font-medium text-[var(--color-text)] sm:text-right">
+                              {maskOnboardingFieldValue(
+                                key,
+                                onboarding.form_payload[key],
+                                showSensitiveOnboarding,
+                              )}
+                            </dd>
+                          </div>
+                        ))}
+                      </dl>
+                      <div className="border-t border-[var(--color-border)] pt-3">
+                        <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">
+                          Required documents
+                        </p>
+                        <ul className="mt-2 space-y-2">
+                          {ONBOARDING_REQUIRED_DOC_SLOTS.map(({ docType, label }) => {
+                            const doc = onboarding.documents.find((d) => d.doc_type === docType);
+                            return (
+                              <li
+                                key={docType}
+                                className="flex flex-col gap-2 rounded border border-[var(--color-border)] p-2 sm:flex-row sm:items-center sm:justify-between"
+                              >
+                                <div>
+                                  <p className="font-medium text-[var(--color-text)]">{label}</p>
+                                  <p className="text-xs text-[var(--color-text-muted)]">
+                                    {doc ? `Uploaded — ${doc.original_filename}` : "Not on file for this submission"}
+                                  </p>
+                                </div>
+                                {doc ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="secondary"
+                                    onClick={() =>
+                                      void handleDownloadOnboardingDoc(doc.id, doc.original_filename)
+                                    }
+                                  >
+                                    Download
+                                  </Button>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                      <div className="border-t border-[var(--color-border)] pt-3">
+                        <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">Signature</p>
+                        {onboarding.signature_mode === "typed" && onboarding.signature_typed_text ? (
+                          <p className="mt-1 text-[var(--color-text)]">{onboarding.signature_typed_text}</p>
+                        ) : null}
+                        {onboarding.signature_mode === "drawn" && onboarding.has_drawn_signature ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="secondary"
+                            className="mt-2"
+                            onClick={() => void handleViewOnboardingSignature(onboarding.id)}
+                          >
+                            View drawn signature
+                          </Button>
+                        ) : null}
+                        {!onboarding.signature_mode ? (
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">—</p>
+                        ) : null}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

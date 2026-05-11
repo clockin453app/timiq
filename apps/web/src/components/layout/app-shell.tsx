@@ -17,7 +17,7 @@ export function AppShell({ activeHref = "/dashboard", children }: AppShellProps)
       <main className="min-w-0 flex-1 pb-[var(--layout-mobile-bottom-nav-height)] md:pb-0">
         <MobileHeader activeHref={activeHref} />
 
-        <div className="p-3 md:p-4">{children}</div>
+        <div className="mx-auto w-full max-w-6xl p-3 sm:p-4 md:p-5">{children}</div>
       </main>
 
       <MobileBottomNav activeHref={activeHref} />

@@ -23,7 +23,7 @@ export function LogoutButton() {
   }
 
   return (
-    <Button disabled={isLoggingOut} onClick={handleLogout} type="button">
+    <Button disabled={isLoggingOut} onClick={handleLogout} type="button" variant="secondary">
       {isLoggingOut ? "Logging out..." : "Logout"}
     </Button>
   );

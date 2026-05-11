@@ -44,6 +44,26 @@ function formatDay(isoDate: string) {
   });
 }
 
+function TimesheetSummaryCard(props: { label: string; value: string }) {
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+        {props.label}
+      </p>
+      <p className="mt-1.5 text-lg font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
+    </div>
+  );
+}
+
+function segmentBtnClass(active: boolean) {
+  return [
+    "rounded-[var(--radius-sm)] px-3 py-1.5 text-sm font-semibold transition-colors",
+    active
+      ? "border border-[var(--color-border-dark)] bg-[var(--color-cell)] text-[var(--color-text)]"
+      : "border border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+  ].join(" ");
+}
+
 export function TimesheetsClient() {
   const user = useCurrentUser();
   const management = canAccessManagement(user);
@@ -134,49 +154,53 @@ export function TimesheetsClient() {
     };
   }, [weekStart, adminMode, management, subjectUserId]);
 
+  const showEmptyShifts = Boolean(!loading && sheet && sheet.shift_count === 0);
+
   return (
     <Sheet>
       <PageHeader
-        title="Timesheets"
         description="Weekly totals by day using counted and rounded time from policy (not raw clock span)."
+        title="Timesheets"
       />
-      <SheetBody className="space-y-3">
+      <SheetBody className="space-y-3 md:p-5">
         {management ? (
-          <div className="flex flex-wrap items-center gap-3 border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-sm">
-            <label className="flex items-center gap-2 font-semibold text-[var(--color-text)]">
-              <input
-                checked={!adminMode}
-                className="h-4 w-4"
-                onChange={() => setAdminMode(false)}
-                type="radio"
-              />
-              My week
-            </label>
-            <label className="flex items-center gap-2 font-semibold text-[var(--color-text)]">
-              <input
-                checked={adminMode}
-                className="h-4 w-4"
-                onChange={() => {
+          <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2.5 md:flex-row md:flex-wrap md:items-center md:justify-between">
+            <div
+              className="inline-flex w-fit rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-0.5"
+              role="group"
+              aria-label="Timesheet view"
+            >
+              <button
+                className={segmentBtnClass(!adminMode)}
+                onClick={() => setAdminMode(false)}
+                type="button"
+              >
+                My week
+              </button>
+              <button
+                className={segmentBtnClass(adminMode)}
+                onClick={() => {
                   setAdminMode(true);
                   alignedOnce.current = true;
                 }}
-                type="radio"
-              />
-              Admin view
-            </label>
+                type="button"
+              >
+                Admin view
+              </button>
+            </div>
             {isAdministrator(user) ? (
-              <span className="text-xs text-[var(--color-text-muted)]">
+              <p className="max-w-xl text-xs leading-snug text-[var(--color-text-muted)]">
                 Administrators use employee accounts for weekly payroll-style totals.
-              </span>
+              </p>
             ) : null}
           </div>
         ) : null}
 
         {adminMode && management ? (
-          <label className="block max-w-md text-xs font-bold text-[var(--color-text)]">
-            Employee
+          <label className="block max-w-md text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+            <span className="text-[var(--color-text)]">Employee</span>
             <select
-              className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+              className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
               onChange={(event) => setSubjectUserId(event.target.value)}
               value={subjectUserId}
             >
@@ -198,14 +222,45 @@ export function TimesheetsClient() {
         />
 
         {sheet?.open_shift_in_week ? (
-          <div className="border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-[var(--color-warning-700)] bg-[var(--color-header)] px-3 py-2.5 text-sm text-[var(--color-text)]">
             This week includes an open shift; totals may change after clock-out.
           </div>
         ) : null}
 
         {error ? (
-          <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2.5 text-sm text-[var(--color-danger-700)]">
             {error}
+          </div>
+        ) : null}
+
+        {!loading && sheet ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <TimesheetSummaryCard
+              label="Actual total"
+              value={formatDurationSeconds(sheet.week_actual_seconds)}
+            />
+            <TimesheetSummaryCard
+              label="Counted total"
+              value={formatDurationSeconds(sheet.week_counted_seconds)}
+            />
+            <TimesheetSummaryCard
+              label="Rounded total"
+              value={formatDurationSeconds(sheet.week_rounded_seconds)}
+            />
+            <TimesheetSummaryCard
+              label="Break total"
+              value={formatDurationSeconds(sheet.week_break_seconds)}
+            />
+          </div>
+        ) : null}
+
+        {showEmptyShifts ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-4 py-5 text-center">
+            <p className="text-sm font-semibold text-[var(--color-text)]">No completed shifts this week</p>
+            <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
+              When you clock in and out for this payroll week, day rows and totals will appear in the table
+              below. Open shifts are called out separately above.
+            </p>
           </div>
         ) : null}
 
@@ -229,16 +284,16 @@ export function TimesheetsClient() {
               ? sheet.days.map((day) => (
                   <TableRow key={day.date}>
                     <TableCell>{formatDay(day.date)}</TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="tabular-nums text-xs">
                       {formatDurationSeconds(day.actual_seconds)}
                     </TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="tabular-nums text-xs">
                       {formatDurationSeconds(day.counted_seconds)}
                     </TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="tabular-nums text-xs">
                       {formatDurationSeconds(day.rounded_seconds)}
                     </TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="tabular-nums text-xs">
                       {formatDurationSeconds(day.break_seconds)}
                     </TableCell>
                   </TableRow>
@@ -247,17 +302,24 @@ export function TimesheetsClient() {
             {!loading && sheet ? (
               <TableRow>
                 <TableCell className="font-semibold">Week total</TableCell>
-                <TableCell className="text-xs font-semibold">
+                <TableCell className="tabular-nums text-xs font-semibold">
                   {formatDurationSeconds(sheet.week_actual_seconds)}
                 </TableCell>
-                <TableCell className="text-xs font-semibold">
+                <TableCell className="tabular-nums text-xs font-semibold">
                   {formatDurationSeconds(sheet.week_counted_seconds)}
                 </TableCell>
-                <TableCell className="text-xs font-semibold">
+                <TableCell className="tabular-nums text-xs font-semibold">
                   {formatDurationSeconds(sheet.week_rounded_seconds)}
                 </TableCell>
-                <TableCell className="text-xs font-semibold">
+                <TableCell className="tabular-nums text-xs font-semibold">
                   {formatDurationSeconds(sheet.week_break_seconds)}
+                </TableCell>
+              </TableRow>
+            ) : null}
+            {!loading && !sheet ? (
+              <TableRow>
+                <TableCell className="text-[var(--color-text-muted)]" colSpan={5}>
+                  No timesheet loaded for this selection.
                 </TableCell>
               </TableRow>
             ) : null}

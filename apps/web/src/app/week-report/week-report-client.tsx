@@ -6,6 +6,7 @@ import { WeekPickerBar } from "../../components/week-picker-bar";
 import { PageHeader, Sheet, SheetBody } from "../../components/ui";
 import {
   canAccessManagement,
+  isAdministrator,
   listManagedUsers,
   useCurrentUser,
   type AuthUser,
@@ -23,16 +24,27 @@ import {
 
 function StatCard(props: { label: string; value: string; hint?: string }) {
   return (
-    <div className="border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
-      <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+    <div className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4">
+      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
         {props.label}
       </p>
-      <p className="mt-1 text-lg font-semibold text-[var(--color-text)]">{props.value}</p>
+      <p className="text-xl font-semibold tabular-nums tracking-tight text-[var(--color-text)]">
+        {props.value}
+      </p>
       {props.hint ? (
-        <p className="mt-1 text-xs text-[var(--color-text-muted)]">{props.hint}</p>
+        <p className="mt-1 text-xs leading-snug text-[var(--color-text-muted)]">{props.hint}</p>
       ) : null}
     </div>
   );
+}
+
+function segmentBtnClass(active: boolean) {
+  return [
+    "rounded-[var(--radius-sm)] px-3 py-1.5 text-sm font-semibold transition-colors",
+    active
+      ? "border border-[var(--color-border-dark)] bg-[var(--color-cell)] text-[var(--color-text)]"
+      : "border border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+  ].join(" ");
 }
 
 export function WeekReportClient() {
@@ -125,44 +137,59 @@ export function WeekReportClient() {
     };
   }, [weekStart, adminMode, management, subjectUserId]);
 
+  const activityEmpty = Boolean(!loading && sheet && sheet.shift_count === 0);
+
   return (
     <Sheet>
       <PageHeader
-        title="Week report"
         description="Summary for the selected week using policy-based counted and rounded time."
+        title="Week report"
       />
-      <SheetBody className="space-y-3">
+      <SheetBody className="space-y-3 md:p-5">
         {management ? (
-          <div className="flex flex-wrap items-center gap-3 border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-sm">
-            <label className="flex items-center gap-2 font-semibold text-[var(--color-text)]">
-              <input
-                checked={!adminMode}
-                className="h-4 w-4"
-                onChange={() => setAdminMode(false)}
-                type="radio"
-              />
-              My report
-            </label>
-            <label className="flex items-center gap-2 font-semibold text-[var(--color-text)]">
-              <input
-                checked={adminMode}
-                className="h-4 w-4"
-                onChange={() => {
+          <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2.5 md:flex-row md:flex-wrap md:items-center md:justify-between">
+            <div
+              className="inline-flex w-fit rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-0.5"
+              role="group"
+              aria-label="Week report view"
+            >
+              <button
+                className={segmentBtnClass(!adminMode)}
+                onClick={() => setAdminMode(false)}
+                type="button"
+              >
+                My report
+              </button>
+              <button
+                className={segmentBtnClass(adminMode)}
+                onClick={() => {
                   setAdminMode(true);
                   alignedOnce.current = true;
                 }}
-                type="radio"
-              />
-              Admin view
-            </label>
+                type="button"
+              >
+                Admin view
+              </button>
+            </div>
+            <div className="flex min-w-0 flex-1 flex-col gap-1 md:items-end md:text-right">
+              {isAdministrator(user) ? (
+                <p className="max-w-xl text-xs leading-snug text-[var(--color-text-muted)] md:text-right">
+                  Administrators use employee accounts for week-level summaries.
+                </p>
+              ) : (
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  Switch to admin view to open another employee&apos;s week.
+                </p>
+              )}
+            </div>
           </div>
         ) : null}
 
         {adminMode && management ? (
-          <label className="block max-w-md text-xs font-bold text-[var(--color-text)]">
-            Employee
+          <label className="block max-w-md text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+            <span className="text-[var(--color-text)]">Employee</span>
             <select
-              className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+              className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
               onChange={(event) => setSubjectUserId(event.target.value)}
               value={subjectUserId}
             >
@@ -184,15 +211,19 @@ export function WeekReportClient() {
         />
 
         {sheet?.open_shift_in_week ? (
-          <div className="border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-[var(--color-warning-700)] bg-[var(--color-header)] px-3 py-2.5 text-sm text-[var(--color-text)]">
             Open shift in this week — finalize clock-out for final numbers.
           </div>
         ) : null}
 
         {error ? (
-          <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2.5 text-sm text-[var(--color-danger-700)]">
             {error}
           </div>
+        ) : null}
+
+        {loading ? (
+          <p className="text-sm text-[var(--color-text-muted)]">Loading week…</p>
         ) : null}
 
         {!loading && sheet ? (
@@ -220,23 +251,31 @@ export function WeekReportClient() {
         ) : null}
 
         {!loading && sheet ? (
-          <div className="border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
-            <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
               Activity
             </p>
-            <p className="mt-2 text-[var(--color-text)]">
-              Completed shift segments in range:{" "}
-              <span className="font-semibold">{sheet.shift_count}</span>
-            </p>
-            <p className="mt-2 text-[var(--color-text-muted)]">
-              Locations:{" "}
-              {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}
-            </p>
+            {activityEmpty ? (
+              <div className="mt-4 rounded border border-dashed border-[var(--color-border)] bg-[var(--color-header)] px-4 py-5 text-center">
+                <p className="text-sm font-semibold text-[var(--color-text)]">No shift activity this week</p>
+                <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
+                  Completed shift segments will be counted here. If you are still clocked in, close the shift
+                  to refresh totals.
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="mt-3 text-sm text-[var(--color-text)]">
+                  Completed shift segments in range:{" "}
+                  <span className="font-semibold tabular-nums">{sheet.shift_count}</span>
+                </p>
+                <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                  Locations:{" "}
+                  {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}
+                </p>
+              </>
+            )}
           </div>
-        ) : null}
-
-        {loading ? (
-          <p className="text-sm text-[var(--color-text-muted)]">Loading week…</p>
         ) : null}
       </SheetBody>
     </Sheet>
