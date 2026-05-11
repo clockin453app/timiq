@@ -11,7 +11,7 @@ FileKind = Literal["jpeg", "png", "webp", "pdf"]
 
 MAX_LONG_EDGE = 1600
 JPEG_QUALITY = 82
-PROCESSING_VERSION = "1"
+PROCESSING_VERSION = "2"
 
 
 def detect_magic_file_kind(data: bytes) -> FileKind | None:
@@ -60,6 +60,10 @@ def process_site_progress_photo(file_bytes: bytes) -> tuple[bytes, int, int]:
         w, h = img.size
 
     out = io.BytesIO()
-    img.save(out, format="JPEG", quality=JPEG_QUALITY, optimize=True)
+    # Strip EXIF and other APP segments from output JPEG (metadata must not be stored).
+    try:
+        img.save(out, format="JPEG", quality=JPEG_QUALITY, optimize=True, exif=b"")
+    except TypeError:
+        img.save(out, format="JPEG", quality=JPEG_QUALITY, optimize=True)
     data = out.getvalue()
     return data, w, h

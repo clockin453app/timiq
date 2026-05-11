@@ -422,7 +422,7 @@ export function LocationsClient() {
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <input
-                  className="h-10 min-w-[12rem] flex-1 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                  className="h-10 w-full min-w-0 flex-1 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm sm:min-w-[12rem]"
                   onChange={(event) => setAddressSearchQuery(event.target.value)}
                   placeholder="Address search"
                   type="text"

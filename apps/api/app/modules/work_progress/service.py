@@ -53,8 +53,11 @@ from app.modules.work_progress.schemas import (
     WorkProgressLocationOption,
 )
 
-MAX_WORK_PROGRESS_FILE_BYTES = 10 * 1024 * 1024
-MAX_ATTACHMENTS_PER_ENTRY = 8
+# Original upload ceiling (before server-side resize/compress). Large phone photos are accepted then optimised.
+MAX_ORIGINAL_PHOTO_BYTES = 25 * 1024 * 1024
+# Safety ceiling for processed JPEG output (long edge 1600, q≈82 — normally far smaller).
+MAX_STORED_JPEG_BYTES = 10 * 1024 * 1024
+MAX_ATTACHMENTS_PER_ENTRY = 20
 
 ALLOWED_PROGRESS_STATUSES = frozenset(
     {
@@ -100,22 +103,25 @@ def _validate_and_process_new_progress_photo(file_bytes: bytes) -> tuple[bytes, 
     """Validate magic bytes (JPEG/PNG/WebP only), optimise to JPEG. Returns (jpeg_bytes, orig_len, w, h)."""
     if len(file_bytes) == 0:
         raise WorkProgressValidationError("Uploaded file is empty.")
-    if len(file_bytes) > MAX_WORK_PROGRESS_FILE_BYTES:
-        raise WorkProgressValidationError("Uploaded file is too large (max 10 MB).")
+    if len(file_bytes) > MAX_ORIGINAL_PHOTO_BYTES:
+        max_mb = MAX_ORIGINAL_PHOTO_BYTES // (1024 * 1024)
+        raise WorkProgressValidationError(
+            f"Image file is too large before optimisation (max {max_mb} MB per original photo)."
+        )
 
     kind = detect_magic_file_kind(file_bytes)
     if kind == "pdf":
         raise WorkProgressValidationError("PDF uploads are not allowed for site progress photos.")
     if kind not in ("jpeg", "png", "webp"):
-        raise WorkProgressValidationError("Only JPEG, PNG, or WebP photos are allowed.")
+        raise WorkProgressValidationError("Unsupported image type. Only JPEG, PNG, or WebP are allowed.")
 
     try:
         processed, w, h = process_site_progress_photo(file_bytes)
     except Exception:
-        raise WorkProgressValidationError("Could not process image. Try a different file.") from None
+        raise WorkProgressValidationError("Failed to process image. Try a different photo.") from None
 
-    if len(processed) > MAX_WORK_PROGRESS_FILE_BYTES:
-        raise WorkProgressValidationError("Processed file is unexpectedly large.")
+    if len(processed) > MAX_STORED_JPEG_BYTES:
+        raise WorkProgressValidationError("Failed to produce a reasonably sized image. Try a different photo.")
 
     return processed, len(file_bytes), w, h
 
@@ -180,7 +186,11 @@ def _allowed_location_ids(db_session: Session, user: User) -> set[uuid.UUID]:
 
 def get_me_options(db_session: Session, user: User) -> WorkProgressMeOptionsResponse:
     if user.company_id is None:
-        return WorkProgressMeOptionsResponse(locations=[])
+        return WorkProgressMeOptionsResponse(
+            locations=[],
+            max_attachments_per_entry=MAX_ATTACHMENTS_PER_ENTRY,
+            max_original_image_bytes=MAX_ORIGINAL_PHOTO_BYTES,
+        )
     allowed_ids = _allowed_location_ids(db_session, user)
     locations: list[WorkProgressLocationOption] = []
     for loc_id in sorted(allowed_ids, key=lambda x: str(x)):
@@ -195,7 +205,11 @@ def get_me_options(db_session: Session, user: User) -> WorkProgressMeOptionsResp
             )
         )
     locations.sort(key=lambda o: o.name.lower())
-    return WorkProgressMeOptionsResponse(locations=locations)
+    return WorkProgressMeOptionsResponse(
+        locations=locations,
+        max_attachments_per_entry=MAX_ATTACHMENTS_PER_ENTRY,
+        max_original_image_bytes=MAX_ORIGINAL_PHOTO_BYTES,
+    )
 
 
 def _display_name(profile) -> str | None:
@@ -377,7 +391,9 @@ def upload_my_entry_file(
     if row is None or row.user_id != user.id:
         raise WorkProgressNotFoundError()
     if count_attachments_for_entry(db_session, row.id) >= MAX_ATTACHMENTS_PER_ENTRY:
-        raise WorkProgressValidationError(f"You can upload at most {MAX_ATTACHMENTS_PER_ENTRY} files per entry.")
+        raise WorkProgressValidationError(
+            f"Maximum number of photos reached for this entry ({MAX_ATTACHMENTS_PER_ENTRY})."
+        )
 
     processed, original_len, img_w, img_h = _validate_and_process_new_progress_photo(file_bytes)
     rel_path = f"work-progress-files/{user.id}/{row.id}/file-{uuid.uuid4().hex}.jpg"

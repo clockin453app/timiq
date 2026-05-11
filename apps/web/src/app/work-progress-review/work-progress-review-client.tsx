@@ -330,7 +330,7 @@ function ReviewAdminBody() {
     <div className="space-y-4">
       <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
         <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">Filters</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {adminAllCompanies ? (
             <label className="block text-xs font-bold text-[var(--color-text-soft)]">
               <span className="text-[var(--color-text)]">Company</span>
@@ -487,7 +487,7 @@ function ReviewAdminBody() {
             <p className="text-sm text-[var(--color-text-muted)]">No attachments match the current filters.</p>
           ) : null}
           {!galleryLoading && galleryItems.length > 0 ? (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {galleryItems.map((row) => {
                 const id = row.attachment.id;
                 const checked = selectedFileIds.has(id);

@@ -28,7 +28,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   );
 
   return (
-    <header className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] md:hidden">
+    <header className="w-full min-w-0 overflow-x-clip border-b border-[var(--color-border-dark)] bg-[var(--color-header)] md:hidden">
       <div className="flex items-center justify-between gap-3 px-3 py-2.5">
         <div className="min-w-0">
           <p className="truncate font-bold tracking-tight text-[var(--color-text)]">TimIQ</p>
@@ -40,8 +40,8 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             Menu
           </summary>
 
-          <div className="absolute right-0 z-20 mt-2 w-[min(100vw-1.5rem,19rem)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_4px_rgba(15,23,42,0.08)]">
-            <nav className="max-h-[min(75vh,28rem)] overflow-y-auto p-2 text-sm">
+          <div className="absolute right-0 z-20 mt-2 w-[min(100vw-1.5rem,19rem)] max-w-[calc(100vw-1rem)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_4px_rgba(15,23,42,0.08)]">
+            <nav className="max-h-[min(calc(100dvh-5rem),28rem)] overflow-y-auto overscroll-y-contain p-2 text-sm">
               <GroupedNavBlock
                 activeHref={activeHref}
                 groups={employeeGroups}

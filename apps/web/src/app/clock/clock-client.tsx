@@ -611,7 +611,7 @@ export function ClockClient() {
                 Blue dot: your latest GPS fix. Rings: assigned active sites (teal = nearest site center).
               </p>
             )}
-            <div className="mt-2">
+            <div className="mt-2 w-full min-w-0 max-w-full">
               <ClockSitesMap
                 accuracyMeters={geoCapture.payload.accuracy_meters}
                 employeeLatitude={geoCapture.payload.latitude}
@@ -735,10 +735,10 @@ export function ClockClient() {
           ? createPortal(
               <div
                 aria-modal="true"
-                className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/45 p-3"
+                className="fixed inset-0 z-[2000] flex items-center justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3"
                 role="dialog"
               >
-                <div className="w-full max-w-sm rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md">
+                <div className="mx-auto w-full max-w-[min(24rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md">
                   <p className="text-sm font-bold text-[var(--color-text)]">
                     {activeSelfiePhase === "clock_in" ? "Clock-in selfie" : "Clock-out selfie"}
                   </p>

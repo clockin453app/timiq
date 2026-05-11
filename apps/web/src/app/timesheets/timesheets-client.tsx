@@ -444,7 +444,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <TimesheetSummaryCard
               label="Clocked time total (completed)"
               value={formatDurationSeconds(sheet.week_actual_seconds)}
@@ -465,7 +465,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && companySheet && viewingAllEmployees ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <TimesheetSummaryCard
               label="Clocked time total (completed)"
               value={formatDurationSeconds(companySheet.week_clocked_seconds)}

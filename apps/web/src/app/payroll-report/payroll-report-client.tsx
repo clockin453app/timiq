@@ -533,7 +533,7 @@ export function PayrollReportClient() {
               </p>
             )}
 
-            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-stretch">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-stretch">
               <div className="min-w-0">
                 <WeekPickerBar
                   disabled={loading}
@@ -551,7 +551,7 @@ export function PayrollReportClient() {
             </div>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
-              <label className="block min-w-[12rem] flex-1 text-xs font-bold text-[#111827]">
+              <label className="block w-full min-w-0 flex-1 text-xs font-bold text-[#111827] sm:min-w-[12rem]">
                 Employee
                 <select
                   className="timiq-select mt-1.5 h-10 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] pl-3 text-sm font-medium text-[#111827]"
@@ -1134,11 +1134,11 @@ export function PayrollReportClient() {
         {editRow ? (
           <div
             aria-modal="true"
-            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-y-auto bg-black/45 p-3 md:p-6"
+            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6"
             role="dialog"
           >
-            <div className="timiq-sheet my-4 w-full max-w-lg border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
-              <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
+            <div className="timiq-sheet mx-auto my-4 w-full max-w-[min(32rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
                 <p className="text-sm font-bold text-[var(--color-text)]">Edit payroll row</p>
                 <Button onClick={() => setEditRow(null)} type="button">
                   Close

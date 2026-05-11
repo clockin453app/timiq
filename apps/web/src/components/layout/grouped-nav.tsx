@@ -61,8 +61,8 @@ function saveStoredOpen(scope: string, state: Record<string, boolean>) {
 function linkClass(active: boolean, variant: GroupedNavVariant): string {
   const base =
     variant === "sidebar"
-      ? "block rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937] transition-colors"
-      : "block rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]";
+      ? "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937] transition-colors"
+      : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]";
   if (active) {
     return `${base} border-[var(--color-border-dark)] bg-[#e5e7eb] font-semibold text-[#111827]`;
   }

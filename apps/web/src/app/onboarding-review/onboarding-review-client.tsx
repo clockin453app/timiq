@@ -247,10 +247,10 @@ function OnboardingReviewAdminBody() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <label className="flex flex-col gap-1 text-sm">
+        <label className="flex min-w-0 w-full flex-col gap-1 text-sm md:w-auto">
           <span className="text-[var(--color-text-muted)]">Status filter</span>
           <select
-            className="h-9 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2 text-sm text-[var(--color-text)]"
+            className="h-9 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2 text-sm text-[var(--color-text)]"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
@@ -262,10 +262,10 @@ function OnboardingReviewAdminBody() {
           </select>
         </label>
         {adminAllCompanies ? (
-          <label className="flex flex-col gap-1 text-sm">
+          <label className="flex min-w-0 w-full flex-col gap-1 text-sm md:w-auto">
             <span className="text-[var(--color-text-muted)]">Company</span>
             <select
-              className="h-9 min-w-[12rem] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2 text-sm text-[var(--color-text)]"
+              className="h-9 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2 text-sm text-[var(--color-text)] sm:min-w-[12rem]"
               value={companyFilter}
               onChange={(e) => setCompanyFilter(e.target.value)}
             >

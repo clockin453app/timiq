@@ -167,20 +167,20 @@ export function TimeRecordsClient() {
           className="space-y-2 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm"
           onSubmit={handleApplyFilters}
         >
-          <div className="flex flex-wrap gap-3">
-            <label className="block text-xs font-bold text-[var(--color-text)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+            <label className="block min-w-0 flex-1 text-xs font-bold text-[var(--color-text)] sm:max-w-[12rem]">
               Start date
               <input
-                className="mt-1 h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
+                className="mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
                 onChange={(event) => setStartDate(event.target.value)}
                 type="date"
                 value={startDate}
               />
             </label>
-            <label className="block text-xs font-bold text-[var(--color-text)]">
+            <label className="block min-w-0 flex-1 text-xs font-bold text-[var(--color-text)] sm:max-w-[12rem]">
               End date (exclusive)
               <input
-                className="mt-1 h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
+                className="mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
                 onChange={(event) => setEndDate(event.target.value)}
                 type="date"
                 value={endDate}
@@ -189,11 +189,11 @@ export function TimeRecordsClient() {
           </div>
 
           {adminMode && management ? (
-            <div className="flex flex-wrap gap-3">
-              <label className="block text-xs font-bold text-[var(--color-text)]">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+              <label className="block min-w-0 w-full flex-1 text-xs font-bold text-[var(--color-text)] sm:min-w-[12rem]">
                 Employee
                 <select
-                  className="timiq-select mt-1 h-9 min-w-[12rem] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                  className="timiq-select mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   onChange={(event) => setFilterUserId(event.target.value)}
                   value={filterUserId}
                 >
@@ -206,10 +206,10 @@ export function TimeRecordsClient() {
                 </select>
               </label>
               {isAdministrator(user) ? (
-                <label className="block text-xs font-bold text-[var(--color-text)]">
+                <label className="block min-w-0 w-full flex-1 text-xs font-bold text-[var(--color-text)]">
                   Company ID (optional)
                   <input
-                    className="mt-1 h-9 w-full min-w-[14rem] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 font-mono text-xs"
+                    className="mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 font-mono text-xs"
                     onChange={(event) => setFilterCompanyId(event.target.value)}
                     placeholder="UUID"
                     type="text"

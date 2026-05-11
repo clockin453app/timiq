@@ -16,6 +16,8 @@ import {
   TableRow,
 } from "../../components/ui";
 import {
+  WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS,
+  WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES,
   WORK_PROGRESS_STATUS_OPTIONS,
   createMyWorkProgress,
   fetchWorkProgressFileBlob,
@@ -100,12 +102,17 @@ export function SiteProgressClient() {
   const [stagedPhotoFiles, setStagedPhotoFiles] = useState<File[]>([]);
   const [uploadNotice, setUploadNotice] = useState("");
   const [uploadError, setUploadError] = useState("");
+  const [uploadProgressText, setUploadProgressText] = useState("");
+  const [maxAttachments, setMaxAttachments] = useState(WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS);
+  const [maxOriginalBytes, setMaxOriginalBytes] = useState(WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES);
 
   const loadOptions = useCallback(async () => {
     setOptionsError("");
     try {
       const data = await fetchWorkProgressMeOptions();
       setOptions(data.locations);
+      setMaxAttachments(data.max_attachments_per_entry ?? WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS);
+      setMaxOriginalBytes(data.max_original_image_bytes ?? WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES);
     } catch (err) {
       setOptionsError(err instanceof Error ? err.message : "Could not load allowed sites.");
       setOptions([]);
@@ -223,49 +230,65 @@ export function SiteProgressClient() {
     if (!activeEntryId || !activeDetail || stagedPhotoFiles.length === 0) {
       return;
     }
-    const room = Math.max(0, 8 - activeDetail.attachments.length);
-    const queue = stagedPhotoFiles.slice(0, room);
-    if (stagedPhotoFiles.length > room) {
-      const skipped = stagedPhotoFiles.slice(room);
-      setUploadNotice(
-        `Only ${room} file(s) can be added (8 per entry). Skipped: ${skipped.map((f) => f.name).join(", ")}`,
-      );
-    } else {
+    const room = Math.max(0, maxAttachments - activeDetail.attachments.length);
+    if (room === 0) {
       setUploadNotice("");
-    }
-    if (queue.length === 0) {
-      setUploadError("This entry already has the maximum number of attachments (8).");
+      setUploadError(
+        `This entry already has the maximum number of photos (${maxAttachments} per entry).`,
+      );
       setStagedPhotoFiles([]);
+      return;
+    }
+    if (stagedPhotoFiles.length > room) {
+      setUploadNotice("");
+      setUploadError(
+        `You selected ${stagedPhotoFiles.length} photo(s) but only ${room} slot(s) remain (max ${maxAttachments} per entry). Remove extra files or upload in batches.`,
+      );
+      return;
+    }
+
+    const oversized = stagedPhotoFiles.filter((f) => f.size > maxOriginalBytes);
+    if (oversized.length > 0) {
+      const mb = (maxOriginalBytes / (1024 * 1024)).toFixed(0);
+      setUploadNotice("");
+      setUploadError(
+        `These file(s) exceed the ${mb} MB per-photo limit before optimisation: ${oversized.map((f) => f.name).join(", ")}`,
+      );
       return;
     }
 
     setUploadBusy(true);
     setUploadError("");
-    let latestDetail: WorkProgressEntryDetail | null = activeDetail;
-    let failIdx = -1;
-    let failMessage = "";
+    setUploadNotice("");
+    setUploadProgressText("");
 
-    for (let i = 0; i < queue.length; i++) {
-      const file = queue[i]!;
+    let latestDetail: WorkProgressEntryDetail | null = activeDetail;
+    const failed: { file: File; message: string }[] = [];
+
+    for (let i = 0; i < stagedPhotoFiles.length; i++) {
+      const file = stagedPhotoFiles[i]!;
+      setUploadProgressText(`Uploading ${i + 1} of ${stagedPhotoFiles.length}…`);
       try {
         latestDetail = await uploadWorkProgressFile(activeEntryId, file);
       } catch (err) {
-        failIdx = i;
-        failMessage = err instanceof Error ? err.message : "Upload failed.";
-        break;
+        failed.push({
+          file,
+          message: err instanceof Error ? err.message : "Upload failed.",
+        });
       }
     }
 
+    setUploadProgressText("");
     if (latestDetail) {
       setActiveDetail(latestDetail);
     }
     await loadList();
 
-    if (failIdx >= 0) {
-      const failedFile = queue[failIdx]!;
-      setUploadError(`"${failedFile.name}": ${failMessage}`);
-      setStagedPhotoFiles(queue.slice(failIdx));
+    if (failed.length > 0) {
+      setUploadError(failed.map((f) => `"${f.file.name}": ${f.message}`).join("\n"));
+      setStagedPhotoFiles(failed.map((f) => f.file));
     } else {
+      setUploadError("");
       setStagedPhotoFiles([]);
     }
     setUploadBusy(false);
@@ -285,7 +308,7 @@ export function SiteProgressClient() {
   return (
     <Sheet>
       <PageHeader
-        description="Log site work with photos. Only locations you are assigned to appear below. New uploads are JPEG, PNG, or WebP (optimised on the server)."
+        description="Log site work with photos. Only locations you are assigned to appear below. New uploads are JPEG, PNG, or WebP (compressed on the server; large originals are accepted up to the per-photo limit)."
         title="Site progress"
       />
       <SheetBody className="space-y-4 md:p-5">
@@ -302,8 +325,8 @@ export function SiteProgressClient() {
             </p>
           </div>
           <form className="space-y-3 p-4" onSubmit={handleSubmit}>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-bold text-[var(--color-text-soft)]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
                 <span className="text-[var(--color-text)]">Work date</span>
                 <Input
                   className="mt-1"
@@ -334,8 +357,8 @@ export function SiteProgressClient() {
               <span className="text-[var(--color-text)]">Title / summary</span>
               <Input className="mt-1" onChange={(e) => setTitle(e.target.value)} required value={title} />
             </label>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-bold text-[var(--color-text-soft)]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
                 <span className="text-[var(--color-text)]">Progress status</span>
                 <select
                   className="mt-1 h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
@@ -349,7 +372,7 @@ export function SiteProgressClient() {
                   ))}
                 </select>
               </label>
-              <label className="block text-xs font-bold text-[var(--color-text-soft)]">
+              <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
                 <span className="text-[var(--color-text)]">Percent complete (optional)</span>
                 <Input
                   className="mt-1"
@@ -384,7 +407,8 @@ export function SiteProgressClient() {
           <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
             <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                Photos for selected entry (max 8, 10 MB each before optimisation)
+                Photos for selected entry (max {maxAttachments} per entry; large originals accepted up to{" "}
+                {(maxOriginalBytes / (1024 * 1024)).toFixed(0)} MB each before server compression)
               </p>
             </div>
             <div className="space-y-2 p-4 text-sm">
@@ -396,12 +420,13 @@ export function SiteProgressClient() {
                     {activeDetail.title}
                   </p>
                   <p className="text-[var(--color-text-muted)]">
-                    Attachments: {activeDetail.attachments.length} / 8 — JPEG, PNG, or WebP only.
+                    Uploaded: {activeDetail.attachments.length} / {maxAttachments} — Remaining slots:{" "}
+                    {Math.max(0, maxAttachments - activeDetail.attachments.length)} — JPEG, PNG, or WebP only.
                   </p>
                   <input
                     accept="image/jpeg,image/png,image/webp"
                     className="text-sm"
-                    disabled={uploadBusy || activeDetail.attachments.length >= 8}
+                    disabled={uploadBusy || activeDetail.attachments.length >= maxAttachments}
                     multiple
                     onChange={(e) => {
                       const files = Array.from(e.target.files ?? []);
@@ -415,16 +440,30 @@ export function SiteProgressClient() {
                   {stagedPhotoFiles.length > 0 ? (
                     <div className="text-xs text-[var(--color-text-muted)]">
                       <p className="font-medium text-[var(--color-text)]">
-                        {stagedPhotoFiles.length} file(s) selected
+                        Selected: {stagedPhotoFiles.length} file(s) — will upload when you tap Upload photos below
+                        {activeDetail ? (
+                          <>
+                            {" "}
+                            (max {maxAttachments} per entry;{" "}
+                            {Math.max(0, maxAttachments - activeDetail.attachments.length)} slot(s) left)
+                          </>
+                        ) : null}
                       </p>
                       <p className="mt-1 max-h-24 overflow-y-auto break-words">{stagedPhotoFiles.map((f) => f.name).join(", ")}</p>
                     </div>
                   ) : null}
                   {uploadNotice ? <p className="text-xs text-[var(--color-text-muted)]">{uploadNotice}</p> : null}
-                  {uploadError ? <p className="text-sm text-[var(--color-danger-700)]">{uploadError}</p> : null}
+                  {uploadProgressText ? (
+                    <p className="text-xs text-[var(--color-text-muted)]">{uploadProgressText}</p>
+                  ) : null}
+                  {uploadError ? (
+                    <p className="whitespace-pre-wrap text-sm text-[var(--color-danger-700)]">{uploadError}</p>
+                  ) : null}
                   <Button
                     disabled={
-                      uploadBusy || stagedPhotoFiles.length === 0 || activeDetail.attachments.length >= 8
+                      uploadBusy ||
+                      stagedPhotoFiles.length === 0 ||
+                      activeDetail.attachments.length >= maxAttachments
                     }
                     onClick={() => void handleUploadPhotos()}
                     type="button"

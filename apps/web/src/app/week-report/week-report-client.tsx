@@ -365,7 +365,7 @@ export function WeekReportClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               hint="Clocked time = raw clock-in to clock-out."
               label="Clocked time"
@@ -390,7 +390,7 @@ export function WeekReportClient() {
         ) : null}
 
         {!loading && companyReport && viewingAllEmployees ? (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               hint="Clocked time = raw clock-in to clock-out (completed shifts, all employees)."
               label="Clocked time (company)"

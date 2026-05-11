@@ -12,7 +12,7 @@ export function Table({
   ...props
 }: TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="w-full overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)]">
+    <div className="max-w-full min-w-0 w-full overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] [-webkit-overflow-scrolling:touch]">
       <table
         className={cn("w-full border-collapse text-sm", className)}
         {...props}

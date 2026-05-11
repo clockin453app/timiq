@@ -12,6 +12,8 @@ class WorkProgressLocationOption(BaseModel):
 
 class WorkProgressMeOptionsResponse(BaseModel):
     locations: list[WorkProgressLocationOption]
+    max_attachments_per_entry: int
+    max_original_image_bytes: int
 
 
 class WorkProgressAttachmentPublic(BaseModel):

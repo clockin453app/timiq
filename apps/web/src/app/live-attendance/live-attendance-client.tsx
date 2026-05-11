@@ -325,7 +325,7 @@ export function LiveAttendanceClient() {
             ) : null}
           </div>
 
-          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
               <div className="text-xs font-bold text-[var(--color-text-muted)]">Present today</div>
               <div className="text-2xl font-semibold tabular-nums">{summary?.present_today ?? "—"}</div>
@@ -355,8 +355,8 @@ export function LiveAttendanceClient() {
             </div>
           ) : null}
 
-          <div className="mb-4 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
-            <div className="grid gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="mb-4 min-w-0 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Search employees
                 <Input
@@ -415,7 +415,7 @@ export function LiveAttendanceClient() {
             </div>
           ) : null}
 
-          <div className="overflow-x-auto border border-[var(--color-border-dark)]">
+          <div className="min-w-0 max-w-full">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -487,11 +487,11 @@ export function LiveAttendanceClient() {
           </div>
 
           {modalInUser ? (
-            <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/45 p-3 md:p-6">
+            <div className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6">
               <div
                 role="dialog"
                 aria-modal="true"
-                className="mt-8 w-full max-w-lg border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg"
+                className="mx-auto mt-8 w-full max-w-[min(32rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg"
               >
                 <h2 className="mb-1 text-lg font-semibold">Manual clock in</h2>
                 <p className="mb-3 text-sm text-[var(--color-text-muted)]">
@@ -534,7 +534,7 @@ export function LiveAttendanceClient() {
                       {actionError}
                     </div>
                   ) : null}
-                  <div className="flex justify-end gap-2 pt-2">
+                  <div className="flex flex-wrap justify-end gap-2 pt-2">
                     <Button
                       type="button"
                       variant="secondary"
@@ -553,11 +553,11 @@ export function LiveAttendanceClient() {
           ) : null}
 
           {modalOutUser ? (
-            <div className="fixed inset-0 z-40 flex items-start justify-center overflow-y-auto bg-black/45 p-3 md:p-6">
+            <div className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6">
               <div
                 role="dialog"
                 aria-modal="true"
-                className="mt-8 w-full max-w-lg border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg"
+                className="mx-auto mt-8 w-full max-w-[min(32rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg"
               >
                 <h2 className="mb-1 text-lg font-semibold">Manual clock out</h2>
                 <p className="mb-3 text-sm text-[var(--color-text-muted)]">
@@ -579,7 +579,7 @@ export function LiveAttendanceClient() {
                       {actionError}
                     </div>
                   ) : null}
-                  <div className="flex justify-end gap-2 pt-2">
+                  <div className="flex flex-wrap justify-end gap-2 pt-2">
                     <Button
                       type="button"
                       variant="secondary"

@@ -1,5 +1,9 @@
 import { API_URL } from "../../config/api";
 
+/** Defaults if `/me/options` omits limits (older server). Must match backend intent. */
+export const WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS = 20;
+export const WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES = 25 * 1024 * 1024;
+
 export const WORK_PROGRESS_STATUS_OPTIONS = [
   { value: "in_progress", label: "In progress" },
   { value: "blocked", label: "Blocked" },
@@ -16,6 +20,8 @@ export type WorkProgressLocationOption = {
 
 export type WorkProgressMeOptions = {
   locations: WorkProgressLocationOption[];
+  max_attachments_per_entry?: number;
+  max_original_image_bytes?: number;
 };
 
 export type WorkProgressAttachmentMeta = {
@@ -109,14 +115,34 @@ export type WorkProgressReviewDetail = WorkProgressEntryDetail & {
 };
 
 type ErrorBody = {
-  detail?: string;
+  detail?: unknown;
 };
+
+function formatApiDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail.trim()) {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => {
+        if (item && typeof item === "object" && "msg" in item) {
+          return String((item as { msg: string }).msg);
+        }
+        return null;
+      })
+      .filter((s): s is string => Boolean(s));
+    if (parts.length) {
+      return parts.join(" ");
+    }
+  }
+  return fallback;
+}
 
 async function parseErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const parsed = (await response.json()) as ErrorBody;
-    if (parsed.detail) {
-      return typeof parsed.detail === "string" ? parsed.detail : fallback;
+    if (parsed.detail != null) {
+      return formatApiDetail(parsed.detail, fallback);
     }
   } catch {
     // ignore
