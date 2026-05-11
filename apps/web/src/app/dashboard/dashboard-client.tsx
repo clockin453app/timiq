@@ -107,7 +107,7 @@ function EmployeeDashboard() {
     { label: "Timesheets", href: "/timesheets" },
     { label: "Pay History", href: "/pay-history" },
     { label: "Starter Form", href: "/starter-form" },
-    { label: "Site Progress", href: null, note: "Coming in next batch" },
+    { label: "Site Progress", href: "/site-progress" },
     { label: "Profile", href: "/profile" },
   ];
 

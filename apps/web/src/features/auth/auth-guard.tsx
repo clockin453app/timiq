@@ -51,9 +51,10 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   if (isLoading) {
     return (
-      <div className="timiq-page flex min-h-screen items-center justify-center">
-        <div className="timiq-sheet px-4 py-3 text-sm">
-          Loading...
+      <div className="timiq-page flex min-h-screen items-center justify-center px-4 py-8">
+        <div className="timiq-loading-panel text-center text-sm text-[var(--color-text)]">
+          <div aria-hidden className="timiq-spinner" />
+          <p>Loading…</p>
         </div>
       </div>
     );

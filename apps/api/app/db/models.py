@@ -8,6 +8,7 @@ from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
 from app.modules.onboarding.models import OnboardingDocument, OnboardingSubmission
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.workplaces.models import Workplace
+from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
 
 __all__ = [
     "AuditEvent",
@@ -26,4 +27,6 @@ __all__ = [
     "PayrollItem",
     "OnboardingSubmission",
     "OnboardingDocument",
+    "WorkProgressEntry",
+    "WorkProgressAttachment",
 ]

@@ -1,11 +1,12 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
+from app.modules.time_clock.models import TimeShift
 from app.modules.workplaces.models import Workplace
 
 
@@ -98,6 +99,49 @@ def first_workplace_tax(db_session: Session, company_id: uuid.UUID) -> float | N
     if wp is None or wp.tax_rate is None:
         return None
     return float(wp.tax_rate)
+
+
+def list_periods_for_company_month(
+    db_session: Session,
+    company_id: uuid.UUID,
+    *,
+    year: int,
+    month: int,
+) -> list[PayrollPeriod]:
+    first = date(year, month, 1)
+    if month == 12:
+        next_first = date(year + 1, 1, 1)
+    else:
+        next_first = date(year, month + 1, 1)
+    statement = (
+        select(PayrollPeriod)
+        .where(PayrollPeriod.company_id == company_id)
+        .where(PayrollPeriod.week_start >= first)
+        .where(PayrollPeriod.week_start < next_first)
+        .order_by(PayrollPeriod.week_start.asc())
+    )
+    return list(db_session.scalars(statement).all())
+
+
+def count_open_shifts_started_in_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start_utc: datetime,
+    week_end_utc: datetime,
+) -> int:
+    """Open shifts whose clock-in falls in [week_start_utc, week_end_utc), company employees only."""
+    statement = (
+        select(func.count())
+        .select_from(TimeShift)
+        .join(User, TimeShift.user_id == User.id)
+        .where(User.company_id == company_id)
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(TimeShift.status == "open")
+        .where(TimeShift.clock_in_at >= week_start_utc)
+        .where(TimeShift.clock_in_at < week_end_utc)
+    )
+    return int(db_session.scalar(statement) or 0)
 
 
 def list_items_for_user_pay_history(

@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class TimeRecordShiftRow(BaseModel):
@@ -15,6 +15,7 @@ class TimeRecordShiftRow(BaseModel):
     company_name: str | None = None
     employee_email: str | None = None
     employee_name: str | None = None
+    employee_job_title: str | None = None
     clock_in_at: datetime
     clock_out_at: datetime | None
     break_seconds: int
@@ -45,6 +46,15 @@ class TimesheetDayTotals(BaseModel):
     break_seconds: int = 0
 
 
+class TimesheetOpenShiftSummary(BaseModel):
+    shift_id: uuid.UUID
+    clock_in_at: datetime
+    location_id: uuid.UUID
+    location_name: str
+    running_actual_seconds: int | None = None
+    break_seconds: int = 0
+
+
 class TimesheetWeekResponse(BaseModel):
     week_start: date
     company_timezone: str
@@ -55,4 +65,6 @@ class TimesheetWeekResponse(BaseModel):
     week_break_seconds: int
     open_shift_in_week: bool
     shift_count: int = 0
-    locations_worked: list[str] = []
+    completed_shift_count: int = 0
+    open_shifts: list[TimesheetOpenShiftSummary] = Field(default_factory=list)
+    locations_worked: list[str] = Field(default_factory=list)

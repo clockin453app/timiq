@@ -12,6 +12,7 @@ from app.modules.payroll.schemas import (
     PayrollApproveAllRequest,
     PayrollItemPatchRequest,
     PayrollItemResponse,
+    PayrollMonthSummaryResponse,
     PayrollRecalculateRequest,
     PayrollReportResponse,
 )
@@ -24,6 +25,7 @@ from app.modules.payroll.service import (
     approve_item,
     export_csv_report,
     export_print_html,
+    get_payroll_month_summary,
     get_payroll_report,
     list_my_pay_history,
     mark_paid_item,
@@ -51,6 +53,7 @@ def _handle_payroll_exc(exc: Exception) -> HTTPException:
 def payroll_report(
     company_id: uuid.UUID = Query(...),
     week_start: date = Query(...),
+    user_id: uuid.UUID | None = Query(default=None),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
 ) -> PayrollReportResponse:
@@ -60,10 +63,44 @@ def payroll_report(
             current_user,
             company_id=company_id,
             week_start=week_start,
+            user_id=user_id,
         )
     except PayrollPermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except PayrollError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/month-summary", response_model=PayrollMonthSummaryResponse)
+def payroll_month_summary(
+    company_id: uuid.UUID = Query(...),
+    year: int = Query(..., ge=2000, le=2100),
+    month: int = Query(..., ge=1, le=12),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> PayrollMonthSummaryResponse:
+    try:
+        return get_payroll_month_summary(
+            db_session,
+            current_user,
+            company_id=company_id,
+            year=year,
+            month=month,
+        )
+    except PayrollPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except PayrollError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
 

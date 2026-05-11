@@ -47,12 +47,47 @@ a {
   background: var(--color-page);
 }
 
+.timiq-loading-panel {
+  box-sizing: border-box;
+  width: auto;
+  max-width: 16rem;
+  border: 1px solid var(--color-border-dark);
+  border-radius: var(--radius-md);
+  background: var(--color-sheet);
+  padding: 1rem 1.25rem;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
+}
+
+.timiq-spinner {
+  box-sizing: border-box;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin: 0 auto 0.5rem;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-text-soft, #6b7280);
+  border-radius: 9999px;
+  animation: timiq-spin 0.75s linear infinite;
+}
+
+@keyframes timiq-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .timiq-sheet {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
   border: 1px solid var(--color-border-dark);
   background: var(--color-sheet);
 }
 
 .timiq-sheet-header {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   border-bottom: 1px solid var(--color-border-dark);
   background: var(--color-header);
 }
@@ -93,6 +128,24 @@ a {
   color: var(--color-text);
   padding: 0.5rem 0.625rem;
   font-size: 0.875rem;
+}
+
+/* Clearer native selects without extra dependencies */
+select.timiq-select {
+  appearance: none;
+  -webkit-appearance: none;
+  color: #111827;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  padding-right: 2.5rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'%3E%3Cpath fill='none' stroke='%231f2937' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round' d='M1.5 2.25L7 7l5.5-4.75'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.6rem center;
+  background-size: 12px 8px;
+}
+
+select.timiq-select:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 
 .timiq-leaflet-shell .leaflet-container {

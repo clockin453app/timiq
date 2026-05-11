@@ -171,7 +171,7 @@ export function TimeRecordsClient() {
             <label className="block text-xs font-bold text-[var(--color-text)]">
               Start date
               <input
-                className="mt-1 h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                className="mt-1 h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
                 onChange={(event) => setStartDate(event.target.value)}
                 type="date"
                 value={startDate}
@@ -180,7 +180,7 @@ export function TimeRecordsClient() {
             <label className="block text-xs font-bold text-[var(--color-text)]">
               End date (exclusive)
               <input
-                className="mt-1 h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                className="mt-1 h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
                 onChange={(event) => setEndDate(event.target.value)}
                 type="date"
                 value={endDate}
@@ -193,7 +193,7 @@ export function TimeRecordsClient() {
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Employee
                 <select
-                  className="mt-1 h-9 min-w-[12rem] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                  className="timiq-select mt-1 h-9 min-w-[12rem] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   onChange={(event) => setFilterUserId(event.target.value)}
                   value={filterUserId}
                 >
@@ -261,8 +261,15 @@ export function TimeRecordsClient() {
               ? rows.map((row) => (
                   <TableRow key={row.shift_id}>
                     {adminMode ? (
-                      <TableCell className="max-w-[12rem] truncate text-xs">
-                        {row.employee_name ?? row.employee_email ?? row.user_id}
+                      <TableCell className="max-w-[14rem] text-xs">
+                        <span className="font-medium text-[var(--color-text)]">
+                          {row.employee_name ?? row.employee_email ?? "Employee"}
+                        </span>
+                        {row.employee_job_title ? (
+                          <span className="mt-0.5 block truncate text-[var(--color-text-muted)]">
+                            {row.employee_job_title}
+                          </span>
+                        ) : null}
                       </TableCell>
                     ) : null}
                     <TableCell>{row.location_name}</TableCell>

@@ -7,6 +7,7 @@ export type PayrollItemRow = {
   company_id: string;
   employee_email: string | null;
   employee_name: string | null;
+  employee_job_title?: string | null;
   regular_seconds: number;
   overtime_seconds: number;
   rounded_total_seconds: number;
@@ -50,9 +51,42 @@ export type PayrollPeriodSummary = {
   total_other_deductions: string;
 };
 
+export type PayrollPaySplit = {
+  regular_pay: string;
+  overtime_pay: string;
+  other_pay: string;
+  total_gross: string | null;
+};
+
+export type PayrollReportAlerts = {
+  pending_approval_count: number;
+  open_shifts_started_in_week_count: number;
+  rate_missing_employees_count: number;
+  zero_rounded_hours_employees_count: number;
+  payroll_period_not_calculated: boolean;
+};
+
 export type PayrollReportResponse = {
   period: PayrollPeriodSummary;
   items: PayrollItemRow[];
+  alerts: PayrollReportAlerts;
+  split: PayrollPaySplit;
+};
+
+export type PayrollMonthSummary = {
+  company_id: string;
+  year: number;
+  month: number;
+  payroll_weeks: number;
+  distinct_employees: number;
+  total_regular_seconds: number;
+  total_overtime_seconds: number;
+  total_rounded_seconds: number;
+  total_gross: string | null;
+  total_tax: string | null;
+  total_net: string | null;
+  total_other_deductions: string;
+  total_days: number | null;
 };
 
 export type PatchPayrollItemRequest = {
@@ -83,17 +117,27 @@ export type PayHistoryEntry = {
   rate_missing: boolean;
 };
 
-function qs(params: Record<string, string>): string {
-  const search = new URLSearchParams(params);
+function qs(params: Record<string, string | undefined>): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") {
+      search.set(key, value);
+    }
+  }
   return search.toString();
 }
 
 export async function fetchPayrollReport(
   companyId: string,
   weekStartIso: string,
+  options?: { userId?: string | null },
 ): Promise<PayrollReportResponse> {
   const response = await fetch(
-    `${API_URL}/api/payroll/report?${qs({ company_id: companyId, week_start: weekStartIso })}`,
+    `${API_URL}/api/payroll/report?${qs({
+      company_id: companyId,
+      week_start: weekStartIso,
+      user_id: options?.userId ?? undefined,
+    })}`,
     { credentials: "include" },
   );
   if (!response.ok) {
@@ -103,6 +147,28 @@ export async function fetchPayrollReport(
     );
   }
   return response.json() as Promise<PayrollReportResponse>;
+}
+
+export async function fetchPayrollMonthSummary(
+  companyId: string,
+  year: number,
+  month: number,
+): Promise<PayrollMonthSummary> {
+  const response = await fetch(
+    `${API_URL}/api/payroll/month-summary?${qs({
+      company_id: companyId,
+      year: String(year),
+      month: String(month),
+    })}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(
+      typeof detail.detail === "string" ? detail.detail : "Could not load month summary.",
+    );
+  }
+  return response.json() as Promise<PayrollMonthSummary>;
 }
 
 export async function recalculatePayroll(

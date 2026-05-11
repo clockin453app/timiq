@@ -22,6 +22,7 @@ from app.modules.time_records.repository import (
 from app.modules.time_records.schemas import (
     TimeRecordShiftRow,
     TimesheetDayTotals,
+    TimesheetOpenShiftSummary,
     TimesheetWeekResponse,
 )
 
@@ -84,6 +85,22 @@ def _employee_display_name(profile: EmployeeProfile | None) -> str | None:
     return f"{first} {last}".strip()
 
 
+def _employee_job_title(profile: EmployeeProfile | None) -> str | None:
+    if profile is None or profile.job_title is None:
+        return None
+    title = profile.job_title.strip()
+    return title or None
+
+
+def _employee_primary_label(profile: EmployeeProfile | None, owner: User) -> str:
+    display = _employee_display_name(profile)
+    if display:
+        return display
+    if owner.email:
+        return owner.email
+    return "Employee"
+
+
 def _company_name(db_session: Session, company_id: uuid.UUID | None) -> str | None:
     if company_id is None:
         return None
@@ -122,7 +139,8 @@ def _shift_to_row(
         company_id=cid,
         company_name=_company_name(db_session, cid),
         employee_email=owner.email if include_employee_fields else None,
-        employee_name=_employee_display_name(profile) if include_employee_fields else None,
+        employee_name=_employee_primary_label(profile, owner) if include_employee_fields else None,
+        employee_job_title=_employee_job_title(profile) if include_employee_fields else None,
         clock_in_at=shift.clock_in_at,
         clock_out_at=shift.clock_out_at,
         break_seconds=metrics.break_seconds,
@@ -335,17 +353,15 @@ def timesheet_week_for_user(
     open_shift_in_week = False
     week_actual = week_counted = week_rounded = week_break = 0
     shift_count = 0
+    completed_shift_count = 0
     location_names: set[str] = set()
+    open_summaries: list[TimesheetOpenShiftSummary] = []
 
     for shift, location, owner, profile in rows:
         if not can_view_time_record_shift_owner(actor, owner):
             continue
 
         shift_count += 1
-        location_names.add(location.name)
-
-        if shift.status == "open":
-            open_shift_in_week = True
 
         pol = _load_policy(db_session, shift, location)
         early_access = bool(profile.early_access_enabled) if profile is not None else False
@@ -357,6 +373,26 @@ def timesheet_week_for_user(
             policy=pol,
         )
 
+        if shift.status == "open":
+            open_shift_in_week = True
+            open_summaries.append(
+                TimesheetOpenShiftSummary(
+                    shift_id=shift.id,
+                    clock_in_at=shift.clock_in_at,
+                    location_id=location.id,
+                    location_name=location.name,
+                    running_actual_seconds=metrics.running_actual_seconds,
+                    break_seconds=metrics.break_seconds,
+                ),
+            )
+            continue
+
+        if shift.status != "completed":
+            continue
+
+        completed_shift_count += 1
+        location_names.add(location.name)
+
         local_day = shift.clock_in_at.astimezone(tz).date()
         bucket = day_map.get(local_day)
         if bucket is None:
@@ -365,9 +401,6 @@ def timesheet_week_for_user(
         if metrics.actual_seconds is not None:
             bucket.actual_seconds += metrics.actual_seconds
             week_actual += metrics.actual_seconds
-        elif metrics.running_actual_seconds is not None:
-            bucket.actual_seconds += metrics.running_actual_seconds
-            week_actual += metrics.running_actual_seconds
 
         if metrics.counted_seconds is not None:
             bucket.counted_seconds += metrics.counted_seconds
@@ -390,5 +423,7 @@ def timesheet_week_for_user(
         week_break_seconds=week_break,
         open_shift_in_week=open_shift_in_week,
         shift_count=shift_count,
+        completed_shift_count=completed_shift_count,
+        open_shifts=open_summaries,
         locations_worked=sorted(location_names),
     )

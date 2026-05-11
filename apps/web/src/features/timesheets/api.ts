@@ -8,6 +8,15 @@ export type TimesheetDayTotals = {
   break_seconds: number;
 };
 
+export type TimesheetOpenShiftSummary = {
+  shift_id: string;
+  clock_in_at: string;
+  location_id: string;
+  location_name: string;
+  running_actual_seconds: number | null;
+  break_seconds: number;
+};
+
 export type TimesheetWeekResponse = {
   week_start: string;
   company_timezone: string;
@@ -18,6 +27,8 @@ export type TimesheetWeekResponse = {
   week_break_seconds: number;
   open_shift_in_week: boolean;
   shift_count: number;
+  completed_shift_count: number;
+  open_shifts: TimesheetOpenShiftSummary[];
   locations_worked: string[];
 };
 

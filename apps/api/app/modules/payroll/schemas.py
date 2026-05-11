@@ -37,6 +37,7 @@ class PayrollItemResponse(BaseModel):
     company_id: uuid.UUID
     employee_email: str | None = None
     employee_name: str | None = None
+    employee_job_title: str | None = None
     regular_seconds: int
     overtime_seconds: int
     rounded_total_seconds: int
@@ -82,9 +83,44 @@ class PayrollPeriodSummary(BaseModel):
     total_other_deductions: Decimal
 
 
+class PayrollPaySplit(BaseModel):
+    """Pre-tax wage components derived from stored seconds and rate snapshots (same basis as payroll items)."""
+
+    regular_pay: Decimal
+    overtime_pay: Decimal
+    other_pay: Decimal
+    total_gross: Decimal | None
+
+
+class PayrollReportAlerts(BaseModel):
+    pending_approval_count: int
+    open_shifts_started_in_week_count: int
+    rate_missing_employees_count: int
+    zero_rounded_hours_employees_count: int
+    payroll_period_not_calculated: bool
+
+
 class PayrollReportResponse(BaseModel):
     period: PayrollPeriodSummary
     items: list[PayrollItemResponse]
+    alerts: PayrollReportAlerts
+    split: PayrollPaySplit
+
+
+class PayrollMonthSummaryResponse(BaseModel):
+    company_id: uuid.UUID
+    year: int
+    month: int
+    payroll_weeks: int
+    distinct_employees: int
+    total_regular_seconds: int
+    total_overtime_seconds: int
+    total_rounded_seconds: int
+    total_gross: Decimal | None
+    total_tax: Decimal | None
+    total_net: Decimal | None
+    total_other_deductions: Decimal
+    total_days: int | None = None
 
 
 class PayHistoryEntry(BaseModel):

@@ -1,14 +1,14 @@
 "use client";
 
-
-import Link from "next/link";
+import { useMemo } from "react";
 
 import {
-  employeeNavigation,
-  getNavigationForRole,
-  managementNavigation,
+  getEmployeeNavigationGroups,
+  getManagementNavigationGroups,
 } from "../../config/navigation";
 import { useCurrentUser, UserAccountSummary } from "../../features/auth";
+
+import { GroupedNavBlock } from "./grouped-nav";
 
 type DesktopSidebarProps = {
   activeHref?: string;
@@ -17,25 +17,15 @@ type DesktopSidebarProps = {
 export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProps) {
   const user = useCurrentUser();
 
-  const employeeLinks = getNavigationForRole(
-    employeeNavigation,
-    user.system_role,
+  const employeeGroups = useMemo(
+    () => getEmployeeNavigationGroups(user.system_role),
+    [user.system_role],
   );
 
-  const managementLinks = getNavigationForRole(
-    managementNavigation,
-    user.system_role,
+  const managementGroups = useMemo(
+    () => getManagementNavigationGroups(user.system_role),
+    [user.system_role],
   );
-
-  function navLinkClass(href: string) {
-    const active = href === activeHref;
-    return [
-      "block rounded-[var(--radius-md)] border px-2.5 py-2 text-[#111827] transition-colors",
-      active
-        ? "border-[var(--color-border-dark)] bg-[#e5e7eb] font-bold text-[#111827]"
-        : "border-transparent font-medium hover:border-[var(--color-border)] hover:bg-[#e5e7eb] hover:text-[#111827]",
-    ].join(" ");
-  }
 
   return (
     <aside className="hidden min-h-screen w-[var(--layout-sidebar-width)] flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm md:flex">
@@ -46,28 +36,27 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
         </p>
       </div>
 
-      <nav className="flex-1 px-2.5 py-4">
-        <div className="space-y-1">
-          {employeeLinks.map((item) => (
-            <Link className={navLinkClass(item.href)} href={item.href} key={item.href}>
-              {item.label}
-            </Link>
-          ))}
-        </div>
+      <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-4">
+        <GroupedNavBlock
+          activeHref={activeHref}
+          groups={employeeGroups}
+          role={user.system_role}
+          storageScope="sidebar-desktop-primary"
+          variant="sidebar"
+        />
 
-        {managementLinks.length > 0 ? (
-          <div className="mt-6 border-t border-[var(--color-border)] pt-4">
-            <p className="mb-2 px-2.5 text-[10px] font-bold uppercase tracking-wider text-[#374151]">
+        {managementGroups.length > 0 ? (
+          <div className="mt-5 border-t border-[var(--color-border)] pt-4">
+            <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[#374151]">
               Management
             </p>
-
-            <div className="space-y-1">
-              {managementLinks.map((item) => (
-                <Link className={navLinkClass(item.href)} href={item.href} key={item.href}>
-                  {item.label}
-                </Link>
-              ))}
-            </div>
+            <GroupedNavBlock
+              activeHref={activeHref}
+              groups={managementGroups}
+              role={user.system_role}
+              storageScope="sidebar-desktop-management"
+              variant="sidebar"
+            />
           </div>
         ) : null}
       </nav>

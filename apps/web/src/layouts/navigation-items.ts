@@ -20,6 +20,7 @@ export const managementNavigation: NavigationItem[] = [
   { label: "Payroll Report", href: "/payroll-report", roles: ["administrator", "admin"] },
   { label: "Live Attendance", href: "/live-attendance", roles: ["administrator", "admin"] },
   { label: "Onboarding Review", href: "/onboarding-review", roles: ["administrator", "admin"] },
+  { label: "Work Progress Review", href: "/work-progress-review", roles: ["administrator", "admin"] },
   { label: "Audit Log", href: "/audit-log", roles: ["administrator"] },
   { label: "System Health", href: "/system-health", roles: ["administrator"] }
 ];

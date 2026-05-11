@@ -25,6 +25,7 @@ import { formatDurationSeconds } from "../../features/time-records/format-durati
 import {
   fetchAdminTimesheetWeek,
   fetchMyTimesheetWeek,
+  type TimesheetDayTotals,
   type TimesheetWeekResponse,
 } from "../../features/timesheets/api";
 import {
@@ -42,6 +43,30 @@ function formatDay(isoDate: string) {
     month: "short",
     day: "numeric",
   });
+}
+
+function formatDateTime(iso: string, timeZone?: string) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return iso;
+  }
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: timeZone || undefined,
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+}
+
+function dayHasAttendance(day: TimesheetDayTotals): boolean {
+  return (
+    day.actual_seconds > 0 ||
+    day.counted_seconds > 0 ||
+    day.rounded_seconds > 0 ||
+    day.break_seconds > 0
+  );
 }
 
 function TimesheetSummaryCard(props: { label: string; value: string }) {
@@ -158,12 +183,19 @@ export function TimesheetsClient() {
     };
   }, [weekStart, adminMode, management, subjectUserId]);
 
-  const showEmptyShifts = Boolean(!loading && sheet && sheet.shift_count === 0);
+  const completedCount =
+    sheet != null && typeof sheet.completed_shift_count === "number"
+      ? sheet.completed_shift_count
+      : (sheet?.shift_count ?? 0);
+  const openShifts = sheet?.open_shifts ?? [];
+  const showNoCompleted = Boolean(!loading && sheet && completedCount === 0);
+  const daysWithAttendance =
+    sheet?.days.filter(dayHasAttendance) ?? [];
 
   return (
     <Sheet>
       <PageHeader
-        description="Weekly totals by day using counted and rounded time from policy (not raw clock span)."
+        description="Completed shifts only: day rows and week totals use policy counted/rounded time. Open shifts are listed separately and are not included in those totals."
         title="Timesheets"
       />
       <SheetBody className="space-y-3 md:p-5">
@@ -204,7 +236,7 @@ export function TimesheetsClient() {
           <label className="block max-w-md text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
             <span className="text-[var(--color-text)]">Employee</span>
             <select
-              className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
+              className="timiq-select mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
               onChange={(event) => setSubjectUserId(event.target.value)}
               value={subjectUserId}
             >
@@ -225,9 +257,34 @@ export function TimesheetsClient() {
           weekStartIso={weekStart}
         />
 
-        {sheet?.open_shift_in_week ? (
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-[var(--color-warning-700)] bg-[var(--color-header)] px-3 py-2.5 text-sm text-[var(--color-text)]">
-            This week includes an open shift; totals may change after clock-out.
+        {!loading && sheet && openShifts.length > 0 ? (
+          <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)]">
+            <p className="text-xs font-bold uppercase tracking-wide text-[#374151]">Open shift (not in week totals)</p>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Counted and rounded totals below include only completed shifts. Actual elapsed while clocked in is
+              shown per shift.
+            </p>
+            <ul className="space-y-2">
+              {openShifts.map((s) => (
+                <li
+                  className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-xs"
+                  key={s.shift_id}
+                >
+                  <p className="font-semibold text-[var(--color-text)]">Live shift · {s.location_name}</p>
+                  <p className="mt-1 text-[var(--color-text-muted)]">
+                    Clocked in{" "}
+                    <span className="font-medium text-[var(--color-text)]">
+                      {formatDateTime(s.clock_in_at, sheet.company_timezone)}
+                    </span>
+                  </p>
+                  {s.running_actual_seconds != null ? (
+                    <p className="mt-0.5 tabular-nums text-[var(--color-text)]">
+                      Elapsed (running): {formatDurationSeconds(s.running_actual_seconds)}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
 
@@ -240,70 +297,63 @@ export function TimesheetsClient() {
         {!loading && sheet ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <TimesheetSummaryCard
-              label="Actual total"
+              label="Actual total (completed)"
               value={formatDurationSeconds(sheet.week_actual_seconds)}
             />
             <TimesheetSummaryCard
-              label="Counted total"
+              label="Counted total (completed)"
               value={formatDurationSeconds(sheet.week_counted_seconds)}
             />
             <TimesheetSummaryCard
-              label="Rounded total"
+              label="Rounded total (completed)"
               value={formatDurationSeconds(sheet.week_rounded_seconds)}
             />
             <TimesheetSummaryCard
-              label="Break total"
+              label="Break total (completed)"
               value={formatDurationSeconds(sheet.week_break_seconds)}
             />
           </div>
         ) : null}
 
-        {showEmptyShifts ? (
+        {showNoCompleted ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-5 text-center">
-            <p className="text-sm font-semibold text-[var(--color-text)]">No completed shifts this week</p>
+            <p className="text-sm font-semibold text-[var(--color-text)]">No completed shifts this week.</p>
             <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
-              When you clock in and out for this payroll week, day rows and totals will appear in the table
-              below. Open shifts are called out separately above.
+              Day totals and the table below list only completed clock-in/out pairs. If you are still clocked in,
+              see the open shift panel above.
             </p>
           </div>
         ) : null}
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Day</TableHead>
-              <TableHead>Actual</TableHead>
-              <TableHead>Counted</TableHead>
-              <TableHead>Rounded</TableHead>
-              <TableHead>Break</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
+        {!loading && sheet && completedCount > 0 ? (
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5}>Loading…</TableCell>
+                <TableHead>Day</TableHead>
+                <TableHead>Actual</TableHead>
+                <TableHead>Counted</TableHead>
+                <TableHead>Rounded</TableHead>
+                <TableHead>Break</TableHead>
               </TableRow>
-            ) : null}
-            {!loading && sheet
-              ? sheet.days.map((day) => (
-                  <TableRow key={day.date}>
-                    <TableCell>{formatDay(day.date)}</TableCell>
-                    <TableCell className="tabular-nums text-xs">
-                      {formatDurationSeconds(day.actual_seconds)}
-                    </TableCell>
-                    <TableCell className="tabular-nums text-xs">
-                      {formatDurationSeconds(day.counted_seconds)}
-                    </TableCell>
-                    <TableCell className="tabular-nums text-xs">
-                      {formatDurationSeconds(day.rounded_seconds)}
-                    </TableCell>
-                    <TableCell className="tabular-nums text-xs">
-                      {formatDurationSeconds(day.break_seconds)}
-                    </TableCell>
-                  </TableRow>
-                ))
-              : null}
-            {!loading && sheet ? (
+            </TableHeader>
+            <TableBody>
+              {daysWithAttendance.map((day) => (
+                <TableRow key={day.date}>
+                  <TableCell>{formatDay(day.date)}</TableCell>
+                  <TableCell className="tabular-nums text-xs">
+                    {formatDurationSeconds(day.actual_seconds)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs">
+                    {formatDurationSeconds(day.counted_seconds)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs">
+                    {formatDurationSeconds(day.rounded_seconds)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs">
+                    {formatDurationSeconds(day.break_seconds)}
+                  </TableCell>
+                </TableRow>
+              ))}
               <TableRow className="timiq-table-total-row">
                 <TableCell className="font-semibold">Week total</TableCell>
                 <TableCell className="tabular-nums text-xs font-semibold">
@@ -319,20 +369,23 @@ export function TimesheetsClient() {
                   {formatDurationSeconds(sheet.week_break_seconds)}
                 </TableCell>
               </TableRow>
-            ) : null}
-            {!loading && !sheet ? (
-              <TableRow>
-                <TableCell className="text-[var(--color-text-muted)]" colSpan={5}>
-                  No timesheet loaded for this selection.
-                </TableCell>
-              </TableRow>
-            ) : null}
-          </TableBody>
-        </Table>
+            </TableBody>
+          </Table>
+        ) : null}
+
+        {!loading && !sheet ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
+            No timesheet loaded for this selection.
+          </div>
+        ) : null}
 
         {!loading && sheet ? (
           <p className="text-xs text-[var(--color-text-muted)]">
-            Shifts recorded: {sheet.shift_count}. Locations:{" "}
+            Completed shifts this week: {completedCount}
+            {sheet.shift_count !== completedCount
+              ? ` · All shift records in week: ${sheet.shift_count}`
+              : ""}
+            . Locations (completed):{" "}
             {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}.
           </p>
         ) : null}

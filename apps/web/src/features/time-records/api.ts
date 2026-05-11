@@ -10,6 +10,7 @@ export type TimeRecordShiftRow = {
   company_name: string | null;
   employee_email: string | null;
   employee_name: string | null;
+  employee_job_title?: string | null;
   clock_in_at: string;
   clock_out_at: string | null;
   break_seconds: number;

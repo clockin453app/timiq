@@ -1,13 +1,14 @@
 "use client";
 
-import Link from "next/link";
+import { useMemo } from "react";
 
 import {
-  employeeNavigation,
-  getNavigationForRole,
-  managementNavigation,
+  getEmployeeNavigationGroups,
+  getManagementNavigationGroups,
 } from "../../config/navigation";
 import { useCurrentUser } from "../../features/auth";
+
+import { GroupedNavBlock } from "./grouped-nav";
 
 type MobileHeaderProps = {
   activeHref?: string;
@@ -16,8 +17,15 @@ type MobileHeaderProps = {
 export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const user = useCurrentUser();
 
-  const employeeLinks = getNavigationForRole(employeeNavigation, user.system_role);
-  const managementLinks = getNavigationForRole(managementNavigation, user.system_role);
+  const employeeGroups = useMemo(
+    () => getEmployeeNavigationGroups(user.system_role),
+    [user.system_role],
+  );
+
+  const managementGroups = useMemo(
+    () => getManagementNavigationGroups(user.system_role),
+    [user.system_role],
+  );
 
   return (
     <header className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] md:hidden">
@@ -32,42 +40,29 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             Menu
           </summary>
 
-          <div className="absolute right-0 z-20 mt-2 w-[min(100vw-1.5rem,17rem)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_4px_rgba(15,23,42,0.08)]">
-            <nav className="max-h-[min(70vh,24rem)] overflow-y-auto p-2 text-sm">
-              {employeeLinks.map((item) => (
-                <Link
-                  className={
-                    item.href === activeHref
-                      ? "block rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[#e5e7eb] px-2.5 py-2 font-bold text-[#111827]"
-                      : "block rounded-[var(--radius-md)] border border-transparent px-2.5 py-2 font-medium text-[#111827] hover:bg-[#e5e7eb]"
-                  }
-                  href={item.href}
-                  key={item.href}
-                >
-                  {item.label}
-                </Link>
-              ))}
+          <div className="absolute right-0 z-20 mt-2 w-[min(100vw-1.5rem,19rem)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_4px_rgba(15,23,42,0.08)]">
+            <nav className="max-h-[min(75vh,28rem)] overflow-y-auto p-2 text-sm">
+              <GroupedNavBlock
+                activeHref={activeHref}
+                groups={employeeGroups}
+                role={user.system_role}
+                storageScope="drawer-mobile-primary"
+                variant="drawer"
+              />
 
-              {managementLinks.length > 0 ? (
-                <>
-                  <p className="mt-3 border-t border-[var(--color-border)] px-2.5 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wider text-[#374151]">
+              {managementGroups.length > 0 ? (
+                <div className="mt-3 border-t border-[var(--color-border)] pt-3">
+                  <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[#374151]">
                     Management
                   </p>
-
-                  {managementLinks.map((item) => (
-                    <Link
-                      className={
-                        item.href === activeHref
-                          ? "block rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[#e5e7eb] px-2.5 py-2 font-bold text-[#111827]"
-                          : "block rounded-[var(--radius-md)] border border-transparent px-2.5 py-2 font-medium text-[#111827] hover:bg-[#e5e7eb]"
-                      }
-                      href={item.href}
-                      key={item.href}
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </>
+                  <GroupedNavBlock
+                    activeHref={activeHref}
+                    groups={managementGroups}
+                    role={user.system_role}
+                    storageScope="drawer-mobile-management"
+                    variant="drawer"
+                  />
+                </div>
               ) : null}
             </nav>
           </div>

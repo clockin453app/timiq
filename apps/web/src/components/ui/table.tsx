@@ -59,7 +59,7 @@ export function TableHead({
   return (
     <th
       className={cn(
-        "border-r border-[var(--color-border)] px-2.5 py-2 text-left text-xs font-bold uppercase tracking-wide text-[var(--color-text)] last:border-r-0",
+        "border-r border-[var(--color-border)] px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wide text-[var(--color-text)] last:border-r-0",
         className,
       )}
       {...props}
@@ -74,7 +74,7 @@ export function TableCell({
   return (
     <td
       className={cn(
-        "border-r border-[var(--color-border)] bg-[var(--color-cell)] px-2.5 py-2 text-sm text-[var(--color-text)] last:border-r-0",
+        "border-r border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2.5 text-sm text-[var(--color-text)] last:border-r-0",
         className,
       )}
       {...props}

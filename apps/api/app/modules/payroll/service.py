@@ -6,7 +6,7 @@ import csv
 import io
 import uuid
 from datetime import date, datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -24,6 +24,7 @@ from app.modules.payroll.calculation import (
     resolve_effective_tax_rate_percent,
     split_regular_overtime,
     sum_rounded_seconds_payroll_week,
+    week_bounds_utc,
 )
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.payroll.permissions import (
@@ -32,6 +33,7 @@ from app.modules.payroll.permissions import (
     assert_payroll_company_scope,
 )
 from app.modules.payroll.repository import (
+    count_open_shifts_started_in_week,
     delete_non_paid_items_for_period,
     first_workplace_tax,
     get_item_by_id,
@@ -39,6 +41,7 @@ from app.modules.payroll.repository import (
     list_employee_users_for_company,
     list_items_for_period,
     list_items_for_user_pay_history,
+    list_periods_for_company_month,
     period_has_paid_item,
     save_item,
     save_period,
@@ -48,7 +51,10 @@ from app.modules.payroll.schemas import (
     PayHistoryEntry,
     PayrollItemPatchRequest,
     PayrollItemResponse,
+    PayrollMonthSummaryResponse,
+    PayrollPaySplit,
     PayrollPeriodSummary,
+    PayrollReportAlerts,
     PayrollReportResponse,
 )
 
@@ -71,21 +77,89 @@ def _decimal_or_none(value: object | None) -> Decimal | None:
     return Decimal(str(value))
 
 
-def _employee_label(db_session: Session, user_id: uuid.UUID) -> tuple[str | None, str | None]:
+def _employee_display(
+    db_session: Session,
+    user_id: uuid.UUID,
+) -> tuple[str | None, str | None, str | None]:
     user = get_user_by_id(db_session, user_id)
     if user is None:
-        return None, None
+        return None, None, None
     profile = get_employee_profile_by_user_id(db_session, user_id)
     if profile is None:
-        return user.email, None
+        return user.email, None, None
     first = (profile.first_name or "").strip()
     last = (profile.last_name or "").strip()
     name = f"{first} {last}".strip() if first or last else None
-    return user.email, name
+    job_title = (profile.job_title or "").strip() or None
+    return user.email, name, job_title
+
+
+def _item_regular_overtime_pay_components(item: PayrollItem) -> tuple[Decimal, Decimal]:
+    if item.rate_missing:
+        return Decimal(0), Decimal(0)
+    hourly = _decimal_or_none(item.hourly_rate_snapshot)
+    if hourly is None:
+        return Decimal(0), Decimal(0)
+    mult = _decimal_or_none(item.overtime_multiplier_snapshot) or Decimal(1)
+    reg_h = Decimal(item.regular_seconds) / Decimal(3600)
+    ot_h = Decimal(item.overtime_seconds) / Decimal(3600)
+    reg_p = (reg_h * hourly).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    ot_p = (ot_h * hourly * mult).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+    return reg_p, ot_p
+
+
+def _build_pay_split(items: list[PayrollItem]) -> PayrollPaySplit:
+    reg = Decimal(0)
+    ot = Decimal(0)
+    for i in items:
+        rp, op = _item_regular_overtime_pay_components(i)
+        reg += rp
+        ot += op
+    tg = Decimal(0)
+    has_gross = False
+    for i in items:
+        if i.gross_amount is not None:
+            tg += Decimal(str(i.gross_amount))
+            has_gross = True
+    return PayrollPaySplit(
+        regular_pay=reg,
+        overtime_pay=ot,
+        other_pay=Decimal(0),
+        total_gross=tg if has_gross else None,
+    )
+
+
+def _build_report_alerts(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    policy,
+    week_start: date,
+    period: PayrollPeriod | None,
+    all_items: list[PayrollItem],
+) -> PayrollReportAlerts:
+    week_start_utc, week_end_utc = week_bounds_utc(policy, week_start)
+    open_n = count_open_shifts_started_in_week(
+        db_session,
+        company_id=company_id,
+        week_start_utc=week_start_utc,
+        week_end_utc=week_end_utc,
+    )
+    pending = sum(1 for i in all_items if i.status == "pending")
+    rate_missing = sum(1 for i in all_items if i.rate_missing)
+    zero_hours = sum(1 for i in all_items if i.rounded_total_seconds == 0)
+    not_calculated = period is None or period.calculated_at is None
+    return PayrollReportAlerts(
+        pending_approval_count=pending,
+        open_shifts_started_in_week_count=open_n,
+        rate_missing_employees_count=rate_missing,
+        zero_rounded_hours_employees_count=zero_hours,
+        payroll_period_not_calculated=not_calculated,
+    )
 
 
 def item_to_response(db_session: Session, item: PayrollItem) -> PayrollItemResponse:
-    email, name = _employee_label(db_session, item.user_id)
+    email, name, job_title = _employee_display(db_session, item.user_id)
     return PayrollItemResponse(
         id=item.id,
         period_id=item.period_id,
@@ -93,6 +167,7 @@ def item_to_response(db_session: Session, item: PayrollItem) -> PayrollItemRespo
         company_id=item.company_id,
         employee_email=email,
         employee_name=name,
+        employee_job_title=job_title,
         regular_seconds=item.regular_seconds,
         overtime_seconds=item.overtime_seconds,
         rounded_total_seconds=item.rounded_total_seconds,
@@ -170,12 +245,13 @@ def get_payroll_report(
     *,
     company_id: uuid.UUID,
     week_start: date,
+    user_id: uuid.UUID | None = None,
 ) -> PayrollReportResponse:
     assert_payroll_admin_or_administrator(actor)
     assert_payroll_company_scope(actor, company_id)
+    policy = ensure_company_time_policy(db_session, company_id)
     period = get_period_by_company_week(db_session, company_id, week_start)
     if period is None:
-        policy = ensure_company_time_policy(db_session, company_id)
         empty = PayrollPeriodSummary(
             id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
             company_id=company_id,
@@ -195,11 +271,104 @@ def get_payroll_report(
             total_net=None,
             total_other_deductions=Decimal(0),
         )
-        return PayrollReportResponse(period=empty, items=[])
-    items = list_items_for_period(db_session, period.id)
+        alerts = _build_report_alerts(
+            db_session,
+            company_id=company_id,
+            policy=policy,
+            week_start=week_start,
+            period=None,
+            all_items=[],
+        )
+        split = _build_pay_split([])
+        return PayrollReportResponse(period=empty, items=[], alerts=alerts, split=split)
+
+    all_items = list_items_for_period(db_session, period.id)
+    if user_id is not None:
+        target = get_user_by_id(db_session, user_id)
+        if (
+            target is None
+            or target.company_id != company_id
+            or target.system_role != SystemRole.EMPLOYEE
+        ):
+            raise PayrollError("Invalid employee filter.")
+        display_items = [i for i in all_items if i.user_id == user_id]
+    else:
+        display_items = all_items
+
+    alerts = _build_report_alerts(
+        db_session,
+        company_id=company_id,
+        policy=policy,
+        week_start=week_start,
+        period=period,
+        all_items=all_items,
+    )
+    split = _build_pay_split(all_items)
     return PayrollReportResponse(
-        period=_summarize_period(db_session, period, items),
-        items=[item_to_response(db_session, i) for i in items],
+        period=_summarize_period(db_session, period, all_items),
+        items=[item_to_response(db_session, i) for i in display_items],
+        alerts=alerts,
+        split=split,
+    )
+
+
+def get_payroll_month_summary(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID,
+    year: int,
+    month: int,
+) -> PayrollMonthSummaryResponse:
+    assert_payroll_admin_or_administrator(actor)
+    assert_payroll_company_scope(actor, company_id)
+    if month < 1 or month > 12 or year < 2000 or year > 2100:
+        raise PayrollError("Invalid month or year.")
+    periods = list_periods_for_company_month(db_session, company_id, year=year, month=month)
+    all_items: list[PayrollItem] = []
+    user_ids: set[uuid.UUID] = set()
+    for p in periods:
+        for row in list_items_for_period(db_session, p.id):
+            all_items.append(row)
+            user_ids.add(row.user_id)
+    tr = tor = tt = 0
+    tg = tn = total_tax = Decimal(0)
+    other_sum = Decimal(0)
+    has_gross = has_net = has_tax = False
+    for i in all_items:
+        tr += i.regular_seconds
+        tor += i.overtime_seconds
+        tt += i.rounded_total_seconds
+        if i.gross_amount is not None:
+            tg += Decimal(str(i.gross_amount))
+            has_gross = True
+        if i.display_net_amount is not None:
+            tn += Decimal(str(i.display_net_amount))
+            has_net = True
+        elif i.net_amount is not None:
+            tn += Decimal(str(i.net_amount))
+            has_net = True
+        if i.display_tax_amount is not None:
+            total_tax += Decimal(str(i.display_tax_amount))
+            has_tax = True
+        elif i.tax_amount is not None:
+            total_tax += Decimal(str(i.tax_amount))
+            has_tax = True
+        other_sum += Decimal(str(i.other_deductions_amount or 0))
+    return PayrollMonthSummaryResponse(
+        company_id=company_id,
+        year=year,
+        month=month,
+        payroll_weeks=len(periods),
+        distinct_employees=len(user_ids),
+        total_regular_seconds=tr,
+        total_overtime_seconds=tor,
+        total_rounded_seconds=tt,
+        total_gross=tg if has_gross else None,
+        total_tax=total_tax if has_tax else None,
+        total_net=tn if has_net else None,
+        total_other_deductions=other_sum,
+        total_days=None,
     )
 
 
@@ -300,9 +469,21 @@ def recalculate_payroll(
     )
 
     items = list_items_for_period(db_session, period.id)
+    policy = ensure_company_time_policy(db_session, company_id)
+    alerts = _build_report_alerts(
+        db_session,
+        company_id=company_id,
+        policy=policy,
+        week_start=week_start,
+        period=period,
+        all_items=items,
+    )
+    split = _build_pay_split(items)
     return PayrollReportResponse(
         period=_summarize_period(db_session, period, items),
         items=[item_to_response(db_session, i) for i in items],
+        alerts=alerts,
+        split=split,
     )
 
 
@@ -457,9 +638,21 @@ def approve_all_pending(
         details={"week_start": str(week_start)},
     )
     items = list_items_for_period(db_session, period.id)
+    policy = ensure_company_time_policy(db_session, company_id)
+    alerts = _build_report_alerts(
+        db_session,
+        company_id=company_id,
+        policy=policy,
+        week_start=week_start,
+        period=period,
+        all_items=items,
+    )
+    split = _build_pay_split(items)
     return PayrollReportResponse(
         period=_summarize_period(db_session, period, items),
         items=[item_to_response(db_session, i) for i in items],
+        alerts=alerts,
+        split=split,
     )
 
 

@@ -10,7 +10,7 @@ type PageHeaderProps = {
 
 export function PageHeader({ action, description, title, titleClassName }: PageHeaderProps) {
   return (
-    <div className="timiq-sheet-header flex items-start justify-between gap-3 px-4 py-3 md:px-5 md:py-3.5">
+    <div className="timiq-sheet-header flex w-full min-w-0 items-start justify-between gap-3 px-4 py-3 md:px-5 md:py-3.5">
       <div className="min-w-0">
         <h1 className={titleClassName ?? "timiq-title-lg"}>{title}</h1>
 
