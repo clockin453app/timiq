@@ -31,6 +31,14 @@ import {
   type WorkProgressListItem,
   type WorkProgressLocationOption,
 } from "../../features/work-progress/api";
+import {
+  isSupportedSiteProgressMime,
+  prepareSiteProgressPhotoUpload,
+  runWithConcurrency,
+  SITE_PROGRESS_UPLOAD_CONCURRENCY,
+  yieldToBrowser,
+  type PreparedSiteProgressUpload,
+} from "../../features/work-progress/image-compression";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -102,7 +110,14 @@ export function SiteProgressClient() {
   const [stagedPhotoFiles, setStagedPhotoFiles] = useState<File[]>([]);
   const [uploadNotice, setUploadNotice] = useState("");
   const [uploadError, setUploadError] = useState("");
-  const [uploadProgressText, setUploadProgressText] = useState("");
+  const [uploadPhaseLabel, setUploadPhaseLabel] = useState("");
+  const [uploadDetailLines, setUploadDetailLines] = useState<string[]>([]);
+  const [uploadBarPercent, setUploadBarPercent] = useState(0);
+  const [uploadCounts, setUploadCounts] = useState<{
+    ok: number;
+    fail: number;
+    total: number;
+  } | null>(null);
   const [maxAttachments, setMaxAttachments] = useState(WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS);
   const [maxOriginalBytes, setMaxOriginalBytes] = useState(WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES);
 
@@ -182,6 +197,10 @@ export function SiteProgressClient() {
     setStagedPhotoFiles([]);
     setUploadNotice("");
     setUploadError("");
+    setUploadPhaseLabel("");
+    setUploadDetailLines([]);
+    setUploadBarPercent(0);
+    setUploadCounts(null);
   }, [activeEntryId]);
 
   async function handleSubmit(event: FormEvent) {
@@ -247,50 +266,156 @@ export function SiteProgressClient() {
       return;
     }
 
-    const oversized = stagedPhotoFiles.filter((f) => f.size > maxOriginalBytes);
-    if (oversized.length > 0) {
-      const mb = (maxOriginalBytes / (1024 * 1024)).toFixed(0);
-      setUploadNotice("");
+    const badType = stagedPhotoFiles.filter((f) => !isSupportedSiteProgressMime(f));
+    if (badType.length > 0) {
       setUploadError(
-        `These file(s) exceed the ${mb} MB per-photo limit before optimisation: ${oversized.map((f) => f.name).join(", ")}`,
+        `Unsupported type (only JPEG, PNG, or WebP): ${badType.map((f) => f.name).join(", ")}`,
       );
       return;
     }
 
+    const progressId = activeEntryId;
+
     setUploadBusy(true);
     setUploadError("");
     setUploadNotice("");
-    setUploadProgressText("");
+    setUploadDetailLines([]);
+    setUploadBarPercent(0);
+    setUploadCounts(null);
+    setUploadPhaseLabel("Preparing photos…");
 
-    let latestDetail: WorkProgressEntryDetail | null = activeDetail;
-    const failed: { file: File; message: string }[] = [];
+    const prepared: PreparedSiteProgressUpload[] = [];
+    const prepareFailures: { file: File; message: string }[] = [];
 
     for (let i = 0; i < stagedPhotoFiles.length; i++) {
       const file = stagedPhotoFiles[i]!;
-      setUploadProgressText(`Uploading ${i + 1} of ${stagedPhotoFiles.length}…`);
+      setUploadBarPercent(Math.round(((i + 0.5) / stagedPhotoFiles.length) * 50));
       try {
-        latestDetail = await uploadWorkProgressFile(activeEntryId, file);
+        const p = await prepareSiteProgressPhotoUpload(file, maxOriginalBytes, {
+          onStatus: (msg) => {
+            setUploadDetailLines((lines) => {
+              const next = [...lines, msg];
+              return next.length > 24 ? next.slice(-24) : next;
+            });
+          },
+        });
+        prepared.push(p);
+        const suffix = p.usedClientCompression ? "" : " (original)";
+        setUploadDetailLines((lines) => {
+          const line = `${p.displayName}: ${formatBytes(p.originalBytes)} → ${formatBytes(p.uploadBytes)}${suffix}`;
+          const next = [...lines, line];
+          return next.length > 24 ? next.slice(-24) : next;
+        });
       } catch (err) {
-        failed.push({
+        prepareFailures.push({
           file,
-          message: err instanceof Error ? err.message : "Upload failed.",
+          message: err instanceof Error ? err.message : "Could not prepare file.",
+        });
+      }
+      setUploadBarPercent(Math.round(((i + 1) / stagedPhotoFiles.length) * 50));
+      await yieldToBrowser();
+    }
+
+    if (prepared.length === 0) {
+      setUploadPhaseLabel("");
+      setUploadBarPercent(0);
+      setUploadError(prepareFailures.map((f) => `"${f.file.name}": ${f.message}`).join("\n"));
+      setStagedPhotoFiles(prepareFailures.map((f) => f.file));
+      setUploadBusy(false);
+      return;
+    }
+
+    setUploadPhaseLabel("Uploading and optimising photos…");
+    setUploadCounts({ ok: 0, fail: 0, total: prepared.length });
+
+    let latestDetail: WorkProgressEntryDetail | null = activeDetail;
+    const uploadProgress = { finished: 0 };
+
+    type UploadAttemptResult =
+      | { ok: true; detail: WorkProgressEntryDetail }
+      | {
+          ok: false;
+          file: File;
+          displayName: string;
+          message: string;
+        };
+
+    const uploadResults = await runWithConcurrency(
+      prepared,
+      SITE_PROGRESS_UPLOAD_CONCURRENCY,
+      async (prep): Promise<UploadAttemptResult> => {
+        try {
+          const d = await uploadWorkProgressFile(progressId, prep.uploadFile);
+          return { ok: true, detail: d };
+        } catch (err) {
+          return {
+            ok: false,
+            file: prep.originalFile,
+            displayName: prep.displayName,
+            message: err instanceof Error ? err.message : "Upload failed.",
+          };
+        } finally {
+          uploadProgress.finished += 1;
+          setUploadBarPercent(
+            Math.round(50 + (50 * uploadProgress.finished) / prepared.length),
+          );
+          setUploadPhaseLabel(
+            `Uploading and optimising photos… (${uploadProgress.finished}/${prepared.length})`,
+          );
+        }
+      },
+    );
+
+    const uploadFailures: { file: File; displayName: string; message: string }[] = [];
+    for (const r of uploadResults) {
+      if (r.ok) {
+        latestDetail = r.detail;
+      } else {
+        uploadFailures.push({
+          file: r.file,
+          displayName: r.displayName,
+          message: r.message,
         });
       }
     }
 
-    setUploadProgressText("");
-    if (latestDetail) {
-      setActiveDetail(latestDetail);
+    const okCount = prepared.length - uploadFailures.length;
+    setUploadCounts({ ok: okCount, fail: uploadFailures.length, total: prepared.length });
+
+    try {
+      const refreshed = await getMyWorkProgressDetail(progressId);
+      setActiveDetail(refreshed);
+    } catch {
+      if (latestDetail) {
+        setActiveDetail(latestDetail);
+      }
     }
     await loadList();
 
-    if (failed.length > 0) {
-      setUploadError(failed.map((f) => `"${f.file.name}": ${f.message}`).join("\n"));
-      setStagedPhotoFiles(failed.map((f) => f.file));
-    } else {
-      setUploadError("");
-      setStagedPhotoFiles([]);
+    const messages: string[] = [];
+    if (prepareFailures.length > 0) {
+      messages.push(
+        ...prepareFailures.map((f) => `"${f.file.name}": ${f.message}`),
+      );
     }
+    if (uploadFailures.length > 0) {
+      messages.push(
+        ...uploadFailures.map((f) => `"${f.displayName}": ${f.message}`),
+      );
+    }
+    setUploadError(messages.length > 0 ? messages.join("\n") : "");
+    if (messages.length === 0) {
+      setUploadDetailLines([]);
+    }
+
+    const retryFiles = [
+      ...prepareFailures.map((f) => f.file),
+      ...uploadFailures.map((f) => f.file),
+    ];
+    setStagedPhotoFiles(retryFiles.length > 0 ? retryFiles : []);
+
+    setUploadPhaseLabel("");
+    setUploadBarPercent(100);
     setUploadBusy(false);
   }
 
@@ -308,7 +433,7 @@ export function SiteProgressClient() {
   return (
     <Sheet>
       <PageHeader
-        description="Log site work with photos. Only locations you are assigned to appear below. New uploads are JPEG, PNG, or WebP (compressed on the server; large originals are accepted up to the per-photo limit)."
+        description="Log site work with photos. Only locations you are assigned to appear below. Photos are resized in your browser before upload, then validated and optimised again on the server (JPEG, PNG, or WebP)."
         title="Site progress"
       />
       <SheetBody className="space-y-4 md:p-5">
@@ -453,8 +578,34 @@ export function SiteProgressClient() {
                     </div>
                   ) : null}
                   {uploadNotice ? <p className="text-xs text-[var(--color-text-muted)]">{uploadNotice}</p> : null}
-                  {uploadProgressText ? (
-                    <p className="text-xs text-[var(--color-text-muted)]">{uploadProgressText}</p>
+                  {uploadPhaseLabel || uploadBusy ? (
+                    <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
+                      {uploadPhaseLabel ? (
+                        <p className="text-xs font-medium text-[var(--color-text)]">{uploadPhaseLabel}</p>
+                      ) : null}
+                      {uploadBusy ? (
+                        <div className="h-2 w-full min-w-0 overflow-hidden rounded bg-[var(--color-border-dark)]">
+                          <div
+                            className="h-full rounded-sm bg-[var(--color-action-text)] transition-[width] duration-200"
+                            style={{ width: `${Math.min(100, Math.max(0, uploadBarPercent))}%` }}
+                          />
+                        </div>
+                      ) : null}
+                      {uploadCounts ? (
+                        <p className="text-[10px] text-[var(--color-text-muted)]">
+                          Uploaded {uploadCounts.ok} / {uploadCounts.total} · Failed {uploadCounts.fail}
+                        </p>
+                      ) : null}
+                      {uploadDetailLines.length > 0 ? (
+                        <ul className="max-h-32 list-disc space-y-0.5 overflow-y-auto pl-4 text-[10px] text-[var(--color-text-muted)]">
+                          {uploadDetailLines.slice(-12).map((line, idx) => (
+                            <li className="break-words" key={`${idx}-${line.slice(0, 48)}`}>
+                              {line}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
                   ) : null}
                   {uploadError ? (
                     <p className="whitespace-pre-wrap text-sm text-[var(--color-danger-700)]">{uploadError}</p>
@@ -469,7 +620,7 @@ export function SiteProgressClient() {
                     type="button"
                     variant="secondary"
                   >
-                    {uploadBusy ? "Uploading…" : "Upload photos"}
+                    {uploadBusy ? "Working…" : "Upload photos"}
                   </Button>
                   <ul className="divide-y divide-[var(--color-border)] border border-[var(--color-border)]">
                     {activeDetail.attachments.map((a) => (
