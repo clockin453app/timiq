@@ -7,12 +7,19 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
 from app.modules.auth.models import User
-from app.modules.time_records.schemas import TimeRecordShiftRow, TimesheetWeekResponse
+from app.modules.time_records.schemas import (
+    AdminTimesheetWeekAllEmployeesResponse,
+    AdminWeekReportAllEmployeesResponse,
+    TimeRecordShiftRow,
+    TimesheetWeekResponse,
+)
 from app.modules.time_records.service import (
     TimeRecordsPermissionError,
     list_time_records_admin,
     list_time_records_me,
+    timesheet_week_all_employees_for_company,
     timesheet_week_for_user,
+    week_report_all_employees_for_company,
 )
 
 time_records_router = APIRouter(prefix="/api/time-records", tags=["time-records"])
@@ -158,4 +165,80 @@ def read_admin_timesheet_week(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
+        ) from exc
+
+
+@timesheets_router.get("/admin/company/timesheet-week", response_model=AdminTimesheetWeekAllEmployeesResponse)
+def read_admin_company_timesheet_week(
+    week_start: str = Query(..., description="Monday local date (YYYY-MM-DD) in company policy timezone."),
+    company_id: uuid.UUID | None = Query(
+        default=None,
+        description="Required for administrators; ignored for company admins (own company enforced).",
+    ),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> AdminTimesheetWeekAllEmployeesResponse:
+    try:
+        parsed = _opt_date(week_start)
+        if parsed is None:
+            raise ValueError("week_start is required.")
+        return timesheet_week_all_employees_for_company(
+            db_session,
+            current_user,
+            company_id=company_id,
+            week_start=parsed,
+        )
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        detail = str(exc)
+        if "not found" in detail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=detail,
+        ) from exc
+
+
+@timesheets_router.get("/admin/company/week-report", response_model=AdminWeekReportAllEmployeesResponse)
+def read_admin_company_week_report(
+    week_start: str = Query(..., description="Monday local date (YYYY-MM-DD) in company policy timezone."),
+    company_id: uuid.UUID | None = Query(
+        default=None,
+        description="Required for administrators; ignored for company admins (own company enforced).",
+    ),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> AdminWeekReportAllEmployeesResponse:
+    try:
+        parsed = _opt_date(week_start)
+        if parsed is None:
+            raise ValueError("week_start is required.")
+        return week_report_all_employees_for_company(
+            db_session,
+            current_user,
+            company_id=company_id,
+            week_start=parsed,
+        )
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except ValueError as exc:
+        detail = str(exc)
+        if "not found" in detail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=detail,
         ) from exc

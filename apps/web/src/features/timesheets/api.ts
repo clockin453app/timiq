@@ -73,3 +73,120 @@ export async function fetchAdminTimesheetWeek(
 
   return response.json() as Promise<TimesheetWeekResponse>;
 }
+
+export type AdminTimesheetEmployeeDayRow = {
+  user_id: string;
+  employee_name: string | null;
+  employee_email: string;
+  employee_job_title: string | null;
+  date: string;
+  clocked_seconds: number;
+  payable_seconds: number;
+  payroll_seconds: number;
+  break_seconds: number;
+  locations: string[];
+  completed_shifts_count: number;
+};
+
+export type AdminTimesheetOpenShiftRow = {
+  user_id: string;
+  employee_name: string | null;
+  employee_email: string;
+  employee_job_title: string | null;
+  shift_id: string;
+  clock_in_at: string;
+  location_id: string;
+  location_name: string;
+  running_actual_seconds: number | null;
+  break_seconds: number;
+};
+
+export type AdminTimesheetWeekAllEmployeesResponse = {
+  week_start: string;
+  company_id: string;
+  company_timezone: string;
+  day_rows: AdminTimesheetEmployeeDayRow[];
+  open_shifts: AdminTimesheetOpenShiftRow[];
+  week_clocked_seconds: number;
+  week_payable_seconds: number;
+  week_payroll_seconds: number;
+  week_break_seconds: number;
+  completed_shift_count: number;
+};
+
+export type AdminWeekReportEmployeeSummary = {
+  user_id: string;
+  employee_name: string | null;
+  employee_email: string;
+  employee_job_title: string | null;
+  completed_shifts_count: number;
+  clocked_seconds: number;
+  payable_seconds: number;
+  payroll_seconds: number;
+  break_seconds: number;
+  locations_worked: string[];
+  open_shift_in_week: boolean;
+};
+
+export type AdminWeekReportCompanyTotals = {
+  completed_shifts_count: number;
+  clocked_seconds: number;
+  payable_seconds: number;
+  payroll_seconds: number;
+  break_seconds: number;
+  employees_with_open_shift: number;
+};
+
+export type AdminWeekReportAllEmployeesResponse = {
+  week_start: string;
+  company_id: string;
+  company_timezone: string;
+  employees: AdminWeekReportEmployeeSummary[];
+  totals: AdminWeekReportCompanyTotals;
+};
+
+export async function fetchAdminCompanyTimesheetWeek(
+  weekStartIsoYmd: string,
+  companyIdForAdministrator: string | null,
+): Promise<AdminTimesheetWeekAllEmployeesResponse> {
+  const search = new URLSearchParams({ week_start: weekStartIsoYmd });
+  if (companyIdForAdministrator) {
+    search.set("company_id", companyIdForAdministrator);
+  }
+  const response = await fetch(
+    `${API_URL}/api/timesheets/admin/company/timesheet-week?${search.toString()}`,
+    {
+      method: "GET",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not load timesheet.");
+  }
+
+  return response.json() as Promise<AdminTimesheetWeekAllEmployeesResponse>;
+}
+
+export async function fetchAdminCompanyWeekReport(
+  weekStartIsoYmd: string,
+  companyIdForAdministrator: string | null,
+): Promise<AdminWeekReportAllEmployeesResponse> {
+  const search = new URLSearchParams({ week_start: weekStartIsoYmd });
+  if (companyIdForAdministrator) {
+    search.set("company_id", companyIdForAdministrator);
+  }
+  const response = await fetch(
+    `${API_URL}/api/timesheets/admin/company/week-report?${search.toString()}`,
+    {
+      method: "GET",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not load week report.");
+  }
+
+  return response.json() as Promise<AdminWeekReportAllEmployeesResponse>;
+}

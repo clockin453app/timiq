@@ -100,6 +100,60 @@ def list_time_shifts_for_week(
     return [(shift, location, owner, profile) for shift, location, owner, profile in rows]
 
 
+def list_time_shifts_for_company_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start_utc: datetime,
+    week_end_utc: datetime,
+) -> list[tuple[TimeShift, Location, User, EmployeeProfile | None]]:
+    """All shifts clocked-in during the week for employees of the company (backend scope)."""
+    statement = (
+        select(TimeShift, Location, User, EmployeeProfile)
+        .join(Location, TimeShift.location_id == Location.id)
+        .join(User, TimeShift.user_id == User.id)
+        .outerjoin(EmployeeProfile, EmployeeProfile.user_id == User.id)
+        .where(User.company_id == company_id)
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
+        .where(
+            or_(
+                TimeShift.company_id == company_id,
+                Location.company_id == company_id,
+            ),
+        )
+        .where(
+            and_(
+                TimeShift.clock_in_at >= week_start_utc,
+                TimeShift.clock_in_at < week_end_utc,
+            ),
+        )
+        .order_by(User.email.asc(), TimeShift.clock_in_at.asc())
+    )
+    rows = db_session.execute(statement).all()
+    return [(shift, location, owner, profile) for shift, location, owner, profile in rows]
+
+
+def list_company_employee_users_with_profiles(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+) -> list[tuple[User, EmployeeProfile | None]]:
+    statement = (
+        select(User, EmployeeProfile)
+        .outerjoin(EmployeeProfile, EmployeeProfile.user_id == User.id)
+        .where(User.company_id == company_id)
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
+        .order_by(User.email.asc())
+    )
+    rows = db_session.execute(statement).all()
+    out: list[tuple[User, EmployeeProfile | None]] = []
+    for user, profile in rows:
+        out.append((user, profile if isinstance(profile, EmployeeProfile) else None))
+    return out
+
+
 def list_time_shifts_for_payroll_week(
     db_session: Session,
     *,

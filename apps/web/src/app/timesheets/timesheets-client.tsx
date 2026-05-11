@@ -21,10 +21,13 @@ import {
   useCurrentUser,
   type AuthUser,
 } from "../../features/auth";
+import { listCompanies, type Company } from "../../features/companies/api";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import {
+  fetchAdminCompanyTimesheetWeek,
   fetchAdminTimesheetWeek,
   fetchMyTimesheetWeek,
+  type AdminTimesheetWeekAllEmployeesResponse,
   type TimesheetDayTotals,
   type TimesheetWeekResponse,
 } from "../../features/timesheets/api";
@@ -32,6 +35,8 @@ import {
   browserDefaultTimeZone,
   mondayWeekStartIso,
 } from "../../features/timesheets/week-utils";
+
+const ALL_EMPLOYEES_VALUE = "__all__";
 
 function formatDay(isoDate: string) {
   const d = new Date(`${isoDate}T12:00:00`);
@@ -69,6 +74,14 @@ function dayHasAttendance(day: TimesheetDayTotals): boolean {
   );
 }
 
+function employeeCell(name: string | null | undefined, email: string) {
+  const n = name?.trim();
+  if (n) {
+    return `${n} (${email})`;
+  }
+  return email;
+}
+
 function TimesheetSummaryCard(props: { label: string; value: string }) {
   return (
     <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
@@ -101,6 +114,7 @@ export function TimesheetsClient() {
     mondayWeekStartIso(new Date(), browserDefaultTimeZone()),
   );
   const [sheet, setSheet] = useState<TimesheetWeekResponse | null>(null);
+  const [companySheet, setCompanySheet] = useState<AdminTimesheetWeekAllEmployeesResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const alignedOnce = useRef(false);
@@ -108,11 +122,56 @@ export function TimesheetsClient() {
   const [adminMode, setAdminMode] = useState(false);
   const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
   const [subjectUserId, setSubjectUserId] = useState("");
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyOverride, setCompanyOverride] = useState<string | null>(null);
 
-  const employeeOptions = useMemo(
-    () => managedUsers.filter((u) => u.system_role === "employee"),
-    [managedUsers],
-  );
+  const activeCompanyId = useMemo(() => {
+    if (isAdministrator(user)) {
+      return companyOverride;
+    }
+    return user.company_id;
+  }, [user, companyOverride]);
+
+  const employeeOptions = useMemo(() => {
+    const cid = isAdministrator(user) ? activeCompanyId : user.company_id;
+    let list = managedUsers.filter((u) => u.system_role === "employee");
+    if (cid) {
+      list = list.filter((u) => u.company_id === cid);
+    }
+    return list.slice().sort((a, b) => (a.email || "").localeCompare(b.email || ""));
+  }, [managedUsers, user, activeCompanyId]);
+
+  const viewingAllEmployees = Boolean(adminMode && management && subjectUserId === ALL_EMPLOYEES_VALUE);
+  const timezoneLabel = sheet?.company_timezone ?? companySheet?.company_timezone;
+
+  useEffect(() => {
+    if (!isAdministrator(user)) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listCompanies();
+        if (!cancelled) {
+          setCompanies(list.filter((c) => c.is_active));
+        }
+      } catch {
+        if (!cancelled) {
+          setCompanies([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!isAdministrator(user) || companies.length === 0 || companyOverride !== null) {
+      return;
+    }
+    setCompanyOverride(companies[0].id);
+  }, [user, companies, companyOverride]);
 
   useEffect(() => {
     if (!management || !adminMode) {
@@ -145,13 +204,40 @@ export function TimesheetsClient() {
         if (adminMode && management) {
           if (!subjectUserId.trim()) {
             setSheet(null);
-            setError("Select an employee to load an admin timesheet.");
+            setCompanySheet(null);
+            setError('Select an employee or "All employees".');
             setLoading(false);
             return;
           }
-          const data = await fetchAdminTimesheetWeek(subjectUserId.trim(), weekStart);
-          if (!cancelled) {
-            setSheet(data);
+          if (subjectUserId === ALL_EMPLOYEES_VALUE) {
+            if (isAdministrator(user) && !activeCompanyId) {
+              setSheet(null);
+              setCompanySheet(null);
+              setError("Select a company.");
+              setLoading(false);
+              return;
+            }
+            if (!isAdministrator(user) && !user.company_id) {
+              setSheet(null);
+              setCompanySheet(null);
+              setError("Your account is not linked to a company.");
+              setLoading(false);
+              return;
+            }
+            const data = await fetchAdminCompanyTimesheetWeek(
+              weekStart,
+              isAdministrator(user) ? activeCompanyId : null,
+            );
+            if (!cancelled) {
+              setCompanySheet(data);
+              setSheet(null);
+            }
+          } else {
+            const data = await fetchAdminTimesheetWeek(subjectUserId.trim(), weekStart);
+            if (!cancelled) {
+              setSheet(data);
+              setCompanySheet(null);
+            }
           }
         } else {
           const data = await fetchMyTimesheetWeek(weekStart);
@@ -159,6 +245,7 @@ export function TimesheetsClient() {
             return;
           }
           setSheet(data);
+          setCompanySheet(null);
           if (!alignedOnce.current) {
             alignedOnce.current = true;
             const aligned = mondayWeekStartIso(new Date(), data.company_timezone);
@@ -170,6 +257,7 @@ export function TimesheetsClient() {
       } catch {
         if (!cancelled) {
           setSheet(null);
+          setCompanySheet(null);
           setError("Could not load timesheet.");
         }
       } finally {
@@ -181,16 +269,23 @@ export function TimesheetsClient() {
     return () => {
       cancelled = true;
     };
-  }, [weekStart, adminMode, management, subjectUserId]);
+  }, [weekStart, adminMode, management, subjectUserId, activeCompanyId, user]);
 
-  const completedCount =
-    sheet != null && typeof sheet.completed_shift_count === "number"
+  const completedCount = viewingAllEmployees
+    ? (companySheet?.completed_shift_count ?? 0)
+    : sheet != null && typeof sheet.completed_shift_count === "number"
       ? sheet.completed_shift_count
       : (sheet?.shift_count ?? 0);
-  const openShifts = sheet?.open_shifts ?? [];
-  const showNoCompleted = Boolean(!loading && sheet && completedCount === 0);
-  const daysWithAttendance =
-    sheet?.days.filter(dayHasAttendance) ?? [];
+
+  const openShiftsSingle = sheet?.open_shifts ?? [];
+  const openShiftsAll = companySheet?.open_shifts ?? [];
+  const showNoCompleted = Boolean(
+    !loading &&
+      (viewingAllEmployees
+        ? companySheet && companySheet.completed_shift_count === 0
+        : Boolean(sheet && completedCount === 0)),
+  );
+  const daysWithAttendance = sheet?.days.filter(dayHasAttendance) ?? [];
 
   return (
     <Sheet>
@@ -226,10 +321,29 @@ export function TimesheetsClient() {
             </div>
             {isAdministrator(user) ? (
               <p className="max-w-xl text-xs leading-snug text-[var(--color-text-muted)]">
-                Administrators use employee accounts for weekly payroll-style totals.
+                Pick a company, then one employee or all employees for that company. Only your selected company is
+                loaded on the server.
               </p>
             ) : null}
           </div>
+        ) : null}
+
+        {adminMode && management && isAdministrator(user) ? (
+          <label className="block max-w-md text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+            <span className="text-[var(--color-text)]">Company</span>
+            <select
+              className="timiq-select mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
+              onChange={(event) => setCompanyOverride(event.target.value || null)}
+              value={companyOverride ?? ""}
+            >
+              <option value="">Choose company…</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
         ) : null}
 
         {adminMode && management ? (
@@ -241,6 +355,7 @@ export function TimesheetsClient() {
               value={subjectUserId}
             >
               <option value="">Choose employee…</option>
+              <option value={ALL_EMPLOYEES_VALUE}>All employees</option>
               {employeeOptions.map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.email}
@@ -253,19 +368,19 @@ export function TimesheetsClient() {
         <WeekPickerBar
           disabled={loading}
           onWeekChange={setWeekStart}
-          timezoneLabel={sheet?.company_timezone}
+          timezoneLabel={timezoneLabel}
           weekStartIso={weekStart}
         />
 
-        {!loading && sheet && openShifts.length > 0 ? (
+        {!loading && sheet && !viewingAllEmployees && openShiftsSingle.length > 0 ? (
           <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)]">
             <p className="text-xs font-bold uppercase tracking-wide text-[#374151]">Open shift (not in week totals)</p>
             <p className="text-xs text-[var(--color-text-muted)]">
-              Payable and payroll totals below include only completed shifts. Clocked elapsed while still clocked in
-              is shown per shift.
+              Payable and payroll totals below include only completed shifts. Clocked elapsed while still clocked in is
+              shown per shift.
             </p>
             <ul className="space-y-2">
-              {openShifts.map((s) => (
+              {openShiftsSingle.map((s) => (
                 <li
                   className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-xs"
                   key={s.shift_id}
@@ -288,13 +403,47 @@ export function TimesheetsClient() {
           </div>
         ) : null}
 
+        {!loading && companySheet && viewingAllEmployees && openShiftsAll.length > 0 ? (
+          <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)]">
+            <p className="text-xs font-bold uppercase tracking-wide text-[#374151]">
+              Open shifts (not in completed totals)
+            </p>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Listed by employee. Payable and payroll totals below include only completed shifts.
+            </p>
+            <ul className="space-y-2">
+              {openShiftsAll.map((s) => (
+                <li
+                  className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-xs"
+                  key={s.shift_id}
+                >
+                  <p className="font-semibold text-[var(--color-text)]">
+                    {employeeCell(s.employee_name, s.employee_email)} · {s.location_name}
+                  </p>
+                  <p className="mt-1 text-[var(--color-text-muted)]">
+                    Clocked in{" "}
+                    <span className="font-medium text-[var(--color-text)]">
+                      {formatDateTime(s.clock_in_at, companySheet.company_timezone)}
+                    </span>
+                  </p>
+                  {s.running_actual_seconds != null ? (
+                    <p className="mt-0.5 tabular-nums text-[var(--color-text)]">
+                      Elapsed (running): {formatDurationSeconds(s.running_actual_seconds)}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         {error ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2.5 text-sm text-[var(--color-danger-700)]">
             {error}
           </div>
         ) : null}
 
-        {!loading && sheet ? (
+        {!loading && sheet && !viewingAllEmployees ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <TimesheetSummaryCard
               label="Clocked time total (completed)"
@@ -315,12 +464,33 @@ export function TimesheetsClient() {
           </div>
         ) : null}
 
-        {!loading && sheet ? (
+        {!loading && companySheet && viewingAllEmployees ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <TimesheetSummaryCard
+              label="Clocked time total (completed)"
+              value={formatDurationSeconds(companySheet.week_clocked_seconds)}
+            />
+            <TimesheetSummaryCard
+              label="Payable time total (completed)"
+              value={formatDurationSeconds(companySheet.week_payable_seconds)}
+            />
+            <TimesheetSummaryCard
+              label="Payroll time total (completed)"
+              value={formatDurationSeconds(companySheet.week_payroll_seconds)}
+            />
+            <TimesheetSummaryCard
+              label="Break deducted (completed)"
+              value={formatDurationSeconds(companySheet.week_break_seconds)}
+            />
+          </div>
+        ) : null}
+
+        {!loading && (sheet || companySheet) ? (
           <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
-            <span className="font-semibold text-[var(--color-text)]">Clocked time</span> = raw clock-in to
-            clock-out. <span className="font-semibold text-[var(--color-text)]">Payable time</span> = after standard
-            start and break rules. <span className="font-semibold text-[var(--color-text)]">Payroll time</span> =
-            rounded time used by payroll.
+            <span className="font-semibold text-[var(--color-text)]">Clocked time</span> = raw clock-in to clock-out.{" "}
+            <span className="font-semibold text-[var(--color-text)]">Payable time</span> = after standard start and
+            break rules. <span className="font-semibold text-[var(--color-text)]">Payroll time</span> = rounded time
+            used by payroll.
           </p>
         ) : null}
 
@@ -328,13 +498,13 @@ export function TimesheetsClient() {
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-5 text-center">
             <p className="text-sm font-semibold text-[var(--color-text)]">No completed shifts this week.</p>
             <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
-              Day totals and the table below list only completed clock-in/out pairs. If you are still clocked in,
-              see the open shift panel above.
+              Day totals and the table below list only completed clock-in/out pairs. If anyone is still clocked in, see
+              the open shift panel above.
             </p>
           </div>
         ) : null}
 
-        {!loading && sheet && completedCount > 0 ? (
+        {!loading && sheet && !viewingAllEmployees && completedCount > 0 ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -382,20 +552,84 @@ export function TimesheetsClient() {
           </Table>
         ) : null}
 
-        {!loading && !sheet ? (
+        {!loading && companySheet && viewingAllEmployees && companySheet.completed_shift_count > 0 ? (
+          <Table className="min-w-[960px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Job title</TableHead>
+                  <TableHead>Day</TableHead>
+                  <TableHead>Clocked time</TableHead>
+                  <TableHead>Payable time</TableHead>
+                  <TableHead>Payroll time</TableHead>
+                  <TableHead>Break deducted</TableHead>
+                  <TableHead>Location / site</TableHead>
+                  <TableHead>Completed shifts</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {companySheet.day_rows.map((row) => (
+                  <TableRow key={`${row.user_id}-${row.date}`}>
+                    <TableCell className="max-w-[200px] text-xs">
+                      {employeeCell(row.employee_name, row.employee_email)}
+                    </TableCell>
+                    <TableCell className="text-xs text-[var(--color-text-muted)]">
+                      {row.employee_job_title?.trim() || "—"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-xs">{formatDay(row.date)}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.clocked_seconds)}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.payable_seconds)}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.payroll_seconds)}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.break_seconds)}</TableCell>
+                    <TableCell className="max-w-[220px] text-xs text-[var(--color-text-muted)]">
+                      {row.locations.length > 0 ? row.locations.join(", ") : "—"}
+                    </TableCell>
+                    <TableCell className="tabular-nums text-xs">{row.completed_shifts_count}</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="timiq-table-total-row">
+                  <TableCell className="font-semibold" colSpan={3}>
+                    Week total (all employees)
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {formatDurationSeconds(companySheet.week_clocked_seconds)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {formatDurationSeconds(companySheet.week_payable_seconds)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {formatDurationSeconds(companySheet.week_payroll_seconds)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {formatDurationSeconds(companySheet.week_break_seconds)}
+                  </TableCell>
+                  <TableCell />
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {companySheet.completed_shift_count}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+          </Table>
+        ) : null}
+
+        {!loading && !sheet && !companySheet ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
             No timesheet loaded for this selection.
           </div>
         ) : null}
 
-        {!loading && sheet ? (
+        {!loading && sheet && !viewingAllEmployees ? (
           <p className="text-xs text-[var(--color-text-muted)]">
             Completed shifts this week: {completedCount}
-            {sheet.shift_count !== completedCount
-              ? ` · All shift records in week: ${sheet.shift_count}`
-              : ""}
-            . Locations (completed):{" "}
-            {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}.
+            {sheet.shift_count !== completedCount ? ` · All shift records in week: ${sheet.shift_count}` : ""}.
+            Locations (completed): {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}.
+          </p>
+        ) : null}
+
+        {!loading && companySheet && viewingAllEmployees ? (
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Completed shifts this week (company): {companySheet.completed_shift_count}
+            {openShiftsAll.length > 0 ? ` · Open shifts in week: ${openShiftsAll.length}` : ""}.
           </p>
         ) : null}
       </SheetBody>

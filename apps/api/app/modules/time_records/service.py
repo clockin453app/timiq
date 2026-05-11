@@ -1,4 +1,5 @@
 import uuid
+from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
@@ -16,10 +17,18 @@ from app.modules.time_clock.models import TimeShift
 from app.modules.time_records.calculation import compute_shift_metrics
 from app.modules.time_records.permissions import can_view_time_record_shift_owner
 from app.modules.time_records.repository import (
+    list_company_employee_users_with_profiles,
+    list_time_shifts_for_company_week,
     list_time_shifts_for_records,
     list_time_shifts_for_week,
 )
 from app.modules.time_records.schemas import (
+    AdminTimesheetEmployeeDayRow,
+    AdminTimesheetOpenShiftRow,
+    AdminTimesheetWeekAllEmployeesResponse,
+    AdminWeekReportAllEmployeesResponse,
+    AdminWeekReportCompanyTotals,
+    AdminWeekReportEmployeeSummary,
     TimeRecordShiftRow,
     TimesheetDayTotals,
     TimesheetOpenShiftSummary,
@@ -427,4 +436,284 @@ def timesheet_week_for_user(
         completed_shift_count=completed_shift_count,
         open_shifts=open_summaries,
         locations_worked=sorted(location_names),
+    )
+
+
+def _resolve_timesheet_company_scope(
+    db_session: Session,
+    actor: User,
+    company_id: uuid.UUID | None,
+) -> uuid.UUID:
+    if actor.system_role == SystemRole.ADMIN:
+        if actor.company_id is None:
+            raise TimeRecordsPermissionError("Admin user is not assigned to a company.")
+        if company_id is not None and company_id != actor.company_id:
+            raise TimeRecordsPermissionError("You cannot view another company.")
+        return actor.company_id
+    if actor.system_role == SystemRole.ADMINISTRATOR:
+        if company_id is None:
+            raise ValueError("company_id is required.")
+        if get_company_by_id(db_session, company_id) is None:
+            raise ValueError("Company not found.")
+        return company_id
+    raise TimeRecordsPermissionError("You cannot view this resource.")
+
+
+class _TimesheetDayAgg:
+    __slots__ = ("clocked", "payable", "payroll", "break_sec", "locs", "completed_count", "owner", "profile")
+
+    def __init__(self) -> None:
+        self.clocked = 0
+        self.payable = 0
+        self.payroll = 0
+        self.break_sec = 0
+        self.locs: set[str] = set()
+        self.completed_count = 0
+        self.owner: User | None = None
+        self.profile: EmployeeProfile | None = None
+
+
+def timesheet_week_all_employees_for_company(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    week_start: date,
+) -> AdminTimesheetWeekAllEmployeesResponse:
+    resolved = _resolve_timesheet_company_scope(db_session, actor, company_id)
+    policy = ensure_company_time_policy(db_session, resolved)
+    week_start_utc, week_end_utc = _week_bounds_utc(policy, week_start)
+
+    rows = list_time_shifts_for_company_week(
+        db_session,
+        company_id=resolved,
+        week_start_utc=week_start_utc,
+        week_end_utc=week_end_utc,
+    )
+
+    try:
+        tz = ZoneInfo(policy.timezone_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    day_acc: dict[tuple[uuid.UUID, date], _TimesheetDayAgg] = {}
+
+    def _ensure_acc(uid: uuid.UUID, d: date) -> _TimesheetDayAgg:
+        key = (uid, d)
+        if key not in day_acc:
+            day_acc[key] = _TimesheetDayAgg()
+        return day_acc[key]
+
+    open_rows: list[AdminTimesheetOpenShiftRow] = []
+    week_clocked = week_payable = week_payroll = week_break = 0
+    completed_total = 0
+
+    for shift, location, owner, profile in rows:
+        if not can_view_time_record_shift_owner(actor, owner):
+            continue
+
+        pol = _load_policy(db_session, shift, location)
+        early_access = bool(profile.early_access_enabled) if profile is not None else False
+        metrics = compute_shift_metrics(
+            clock_in_at_utc=shift.clock_in_at,
+            clock_out_at_utc=shift.clock_out_at,
+            break_seconds_tracked=int(shift.break_seconds or 0),
+            early_access_enabled=early_access,
+            policy=pol,
+        )
+
+        if shift.status == "open":
+            open_rows.append(
+                AdminTimesheetOpenShiftRow(
+                    user_id=owner.id,
+                    employee_name=_employee_display_name(profile),
+                    employee_email=owner.email or "",
+                    employee_job_title=_employee_job_title(profile),
+                    shift_id=shift.id,
+                    clock_in_at=shift.clock_in_at,
+                    location_id=location.id,
+                    location_name=location.name,
+                    running_actual_seconds=metrics.running_actual_seconds,
+                    break_seconds=metrics.break_seconds,
+                ),
+            )
+            continue
+
+        if shift.status != "completed":
+            continue
+
+        completed_total += 1
+        local_day = shift.clock_in_at.astimezone(tz).date()
+        acc = _ensure_acc(owner.id, local_day)
+        acc.owner = owner
+        acc.profile = profile
+
+        if metrics.actual_seconds is not None:
+            acc.clocked += metrics.actual_seconds
+            week_clocked += metrics.actual_seconds
+        if metrics.counted_seconds is not None:
+            acc.payable += metrics.counted_seconds
+            week_payable += metrics.counted_seconds
+        if metrics.rounded_seconds is not None:
+            acc.payroll += metrics.rounded_seconds
+            week_payroll += metrics.rounded_seconds
+        acc.break_sec += metrics.break_seconds
+        week_break += metrics.break_seconds
+        acc.locs.add(location.name)
+        acc.completed_count += 1
+
+    day_rows_out: list[AdminTimesheetEmployeeDayRow] = []
+    for (uid, d), acc in sorted(
+        day_acc.items(),
+        key=lambda kv: (
+            _employee_primary_label(kv[1].profile, kv[1].owner).lower()
+            if kv[1].owner is not None
+            else "",
+            (kv[1].owner.email or "").lower() if kv[1].owner is not None else "",
+            kv[0][1],
+        ),
+    ):
+        if acc.owner is None:
+            continue
+        if acc.clocked == 0 and acc.payable == 0 and acc.payroll == 0 and acc.break_sec == 0:
+            continue
+        day_rows_out.append(
+            AdminTimesheetEmployeeDayRow(
+                user_id=uid,
+                employee_name=_employee_display_name(acc.profile),
+                employee_email=acc.owner.email or "",
+                employee_job_title=_employee_job_title(acc.profile),
+                date=d,
+                clocked_seconds=acc.clocked,
+                payable_seconds=acc.payable,
+                payroll_seconds=acc.payroll,
+                break_seconds=acc.break_sec,
+                locations=sorted(acc.locs),
+                completed_shifts_count=acc.completed_count,
+            ),
+        )
+
+    open_rows.sort(
+        key=lambda r: (
+            (r.employee_name or r.employee_email).lower(),
+            r.clock_in_at,
+        ),
+    )
+
+    return AdminTimesheetWeekAllEmployeesResponse(
+        week_start=week_start,
+        company_id=resolved,
+        company_timezone=policy.timezone_name,
+        day_rows=day_rows_out,
+        open_shifts=open_rows,
+        week_clocked_seconds=week_clocked,
+        week_payable_seconds=week_payable,
+        week_payroll_seconds=week_payroll,
+        week_break_seconds=week_break,
+        completed_shift_count=completed_total,
+    )
+
+
+def week_report_all_employees_for_company(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    week_start: date,
+) -> AdminWeekReportAllEmployeesResponse:
+    resolved = _resolve_timesheet_company_scope(db_session, actor, company_id)
+    policy = ensure_company_time_policy(db_session, resolved)
+    week_start_utc, week_end_utc = _week_bounds_utc(policy, week_start)
+
+    rows = list_time_shifts_for_company_week(
+        db_session,
+        company_id=resolved,
+        week_start_utc=week_start_utc,
+        week_end_utc=week_end_utc,
+    )
+
+    shifts_by_user: dict[uuid.UUID, list[tuple[TimeShift, Location, User, EmployeeProfile | None]]] = (
+        defaultdict(list)
+    )
+    for shift, location, owner, profile in rows:
+        if not can_view_time_record_shift_owner(actor, owner):
+            continue
+        shifts_by_user[owner.id].append((shift, location, owner, profile))
+
+    roster = list_company_employee_users_with_profiles(db_session, company_id=resolved)
+
+    employees_out: list[AdminWeekReportEmployeeSummary] = []
+    totals = AdminWeekReportCompanyTotals()
+
+    for owner, profile in roster:
+        if not can_view_time_record_shift_owner(actor, owner):
+            continue
+
+        user_shifts = shifts_by_user.get(owner.id, [])
+        clocked = payable = payroll = break_sum = 0
+        completed = 0
+        loc_names: set[str] = set()
+        open_any = False
+
+        for shift, location, _o, prof in user_shifts:
+            pol = _load_policy(db_session, shift, location)
+            early_access = bool(prof.early_access_enabled) if prof is not None else False
+            metrics = compute_shift_metrics(
+                clock_in_at_utc=shift.clock_in_at,
+                clock_out_at_utc=shift.clock_out_at,
+                break_seconds_tracked=int(shift.break_seconds or 0),
+                early_access_enabled=early_access,
+                policy=pol,
+            )
+
+            if shift.status == "open":
+                open_any = True
+                continue
+
+            if shift.status != "completed":
+                continue
+
+            completed += 1
+            if metrics.actual_seconds is not None:
+                clocked += metrics.actual_seconds
+            if metrics.counted_seconds is not None:
+                payable += metrics.counted_seconds
+            if metrics.rounded_seconds is not None:
+                payroll += metrics.rounded_seconds
+            break_sum += metrics.break_seconds
+            loc_names.add(location.name)
+
+        employees_out.append(
+            AdminWeekReportEmployeeSummary(
+                user_id=owner.id,
+                employee_name=_employee_display_name(profile),
+                employee_email=owner.email or "",
+                employee_job_title=_employee_job_title(profile),
+                completed_shifts_count=completed,
+                clocked_seconds=clocked,
+                payable_seconds=payable,
+                payroll_seconds=payroll,
+                break_seconds=break_sum,
+                locations_worked=sorted(loc_names),
+                open_shift_in_week=open_any,
+            ),
+        )
+
+    totals.completed_shifts_count = sum(e.completed_shifts_count for e in employees_out)
+    totals.clocked_seconds = sum(e.clocked_seconds for e in employees_out)
+    totals.payable_seconds = sum(e.payable_seconds for e in employees_out)
+    totals.payroll_seconds = sum(e.payroll_seconds for e in employees_out)
+    totals.break_seconds = sum(e.break_seconds for e in employees_out)
+    totals.employees_with_open_shift = sum(1 for e in employees_out if e.open_shift_in_week)
+
+    employees_out.sort(
+        key=lambda e: ((e.employee_name or e.employee_email).lower(), e.employee_email.lower()),
+    )
+
+    return AdminWeekReportAllEmployeesResponse(
+        week_start=week_start,
+        company_id=resolved,
+        company_timezone=policy.timezone_name,
+        employees=employees_out,
+        totals=totals,
     )

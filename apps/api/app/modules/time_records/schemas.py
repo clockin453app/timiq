@@ -68,3 +68,76 @@ class TimesheetWeekResponse(BaseModel):
     completed_shift_count: int = 0
     open_shifts: list[TimesheetOpenShiftSummary] = Field(default_factory=list)
     locations_worked: list[str] = Field(default_factory=list)
+
+
+class AdminTimesheetEmployeeDayRow(BaseModel):
+    """One calendar day per employee (company timezone) with completed-shift aggregates."""
+
+    user_id: uuid.UUID
+    employee_name: str | None = None
+    employee_email: str
+    employee_job_title: str | None = None
+    date: date
+    clocked_seconds: int = 0
+    payable_seconds: int = 0
+    payroll_seconds: int = 0
+    break_seconds: int = 0
+    locations: list[str] = Field(default_factory=list)
+    completed_shifts_count: int = 0
+
+
+class AdminTimesheetOpenShiftRow(BaseModel):
+    user_id: uuid.UUID
+    employee_name: str | None = None
+    employee_email: str
+    employee_job_title: str | None = None
+    shift_id: uuid.UUID
+    clock_in_at: datetime
+    location_id: uuid.UUID
+    location_name: str
+    running_actual_seconds: int | None = None
+    break_seconds: int = 0
+
+
+class AdminTimesheetWeekAllEmployeesResponse(BaseModel):
+    week_start: date
+    company_id: uuid.UUID
+    company_timezone: str
+    day_rows: list[AdminTimesheetEmployeeDayRow]
+    open_shifts: list[AdminTimesheetOpenShiftRow] = Field(default_factory=list)
+    week_clocked_seconds: int = 0
+    week_payable_seconds: int = 0
+    week_payroll_seconds: int = 0
+    week_break_seconds: int = 0
+    completed_shift_count: int = 0
+
+
+class AdminWeekReportEmployeeSummary(BaseModel):
+    user_id: uuid.UUID
+    employee_name: str | None = None
+    employee_email: str
+    employee_job_title: str | None = None
+    completed_shifts_count: int = 0
+    clocked_seconds: int = 0
+    payable_seconds: int = 0
+    payroll_seconds: int = 0
+    break_seconds: int = 0
+    locations_worked: list[str] = Field(default_factory=list)
+    open_shift_in_week: bool = False
+
+
+class AdminWeekReportCompanyTotals(BaseModel):
+    completed_shifts_count: int = 0
+    clocked_seconds: int = 0
+    payable_seconds: int = 0
+    payroll_seconds: int = 0
+    break_seconds: int = 0
+    employees_with_open_shift: int = 0
+
+
+class AdminWeekReportAllEmployeesResponse(BaseModel):
+    week_start: date
+    company_id: uuid.UUID
+    company_timezone: str
+    employees: list[AdminWeekReportEmployeeSummary]
+    totals: AdminWeekReportCompanyTotals

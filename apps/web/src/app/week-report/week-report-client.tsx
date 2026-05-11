@@ -3,7 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { WeekPickerBar } from "../../components/week-picker-bar";
-import { PageHeader, Sheet, SheetBody } from "../../components/ui";
+import {
+  PageHeader,
+  Sheet,
+  SheetBody,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../../components/ui";
 import {
   canAccessManagement,
   isAdministrator,
@@ -11,16 +21,21 @@ import {
   useCurrentUser,
   type AuthUser,
 } from "../../features/auth";
+import { listCompanies, type Company } from "../../features/companies/api";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import {
+  fetchAdminCompanyWeekReport,
   fetchAdminTimesheetWeek,
   fetchMyTimesheetWeek,
+  type AdminWeekReportAllEmployeesResponse,
   type TimesheetWeekResponse,
 } from "../../features/timesheets/api";
 import {
   browserDefaultTimeZone,
   mondayWeekStartIso,
 } from "../../features/timesheets/week-utils";
+
+const ALL_EMPLOYEES_VALUE = "__all__";
 
 function StatCard(props: { label: string; value: string; hint?: string }) {
   return (
@@ -51,6 +66,14 @@ function segmentBtnClass(active: boolean) {
   ].join(" ");
 }
 
+function employeeCell(name: string | null | undefined, email: string) {
+  const n = name?.trim();
+  if (n) {
+    return `${n} (${email})`;
+  }
+  return email;
+}
+
 export function WeekReportClient() {
   const user = useCurrentUser();
   const management = canAccessManagement(user);
@@ -59,6 +82,7 @@ export function WeekReportClient() {
     mondayWeekStartIso(new Date(), browserDefaultTimeZone()),
   );
   const [sheet, setSheet] = useState<TimesheetWeekResponse | null>(null);
+  const [companyReport, setCompanyReport] = useState<AdminWeekReportAllEmployeesResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const alignedOnce = useRef(false);
@@ -66,11 +90,56 @@ export function WeekReportClient() {
   const [adminMode, setAdminMode] = useState(false);
   const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
   const [subjectUserId, setSubjectUserId] = useState("");
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyOverride, setCompanyOverride] = useState<string | null>(null);
 
-  const employeeOptions = useMemo(
-    () => managedUsers.filter((u) => u.system_role === "employee"),
-    [managedUsers],
-  );
+  const activeCompanyId = useMemo(() => {
+    if (isAdministrator(user)) {
+      return companyOverride;
+    }
+    return user.company_id;
+  }, [user, companyOverride]);
+
+  const employeeOptions = useMemo(() => {
+    const cid = isAdministrator(user) ? activeCompanyId : user.company_id;
+    let list = managedUsers.filter((u) => u.system_role === "employee");
+    if (cid) {
+      list = list.filter((u) => u.company_id === cid);
+    }
+    return list.slice().sort((a, b) => (a.email || "").localeCompare(b.email || ""));
+  }, [managedUsers, user, activeCompanyId]);
+
+  const viewingAllEmployees = Boolean(adminMode && management && subjectUserId === ALL_EMPLOYEES_VALUE);
+  const timezoneLabel = sheet?.company_timezone ?? companyReport?.company_timezone;
+
+  useEffect(() => {
+    if (!isAdministrator(user)) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listCompanies();
+        if (!cancelled) {
+          setCompanies(list.filter((c) => c.is_active));
+        }
+      } catch {
+        if (!cancelled) {
+          setCompanies([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!isAdministrator(user) || companies.length === 0 || companyOverride !== null) {
+      return;
+    }
+    setCompanyOverride(companies[0].id);
+  }, [user, companies, companyOverride]);
 
   useEffect(() => {
     if (!management || !adminMode) {
@@ -103,13 +172,40 @@ export function WeekReportClient() {
         if (adminMode && management) {
           if (!subjectUserId.trim()) {
             setSheet(null);
-            setError("Select an employee for this report.");
+            setCompanyReport(null);
+            setError('Select an employee or "All employees".');
             setLoading(false);
             return;
           }
-          const data = await fetchAdminTimesheetWeek(subjectUserId.trim(), weekStart);
-          if (!cancelled) {
-            setSheet(data);
+          if (subjectUserId === ALL_EMPLOYEES_VALUE) {
+            if (isAdministrator(user) && !activeCompanyId) {
+              setSheet(null);
+              setCompanyReport(null);
+              setError("Select a company.");
+              setLoading(false);
+              return;
+            }
+            if (!isAdministrator(user) && !user.company_id) {
+              setSheet(null);
+              setCompanyReport(null);
+              setError("Your account is not linked to a company.");
+              setLoading(false);
+              return;
+            }
+            const data = await fetchAdminCompanyWeekReport(
+              weekStart,
+              isAdministrator(user) ? activeCompanyId : null,
+            );
+            if (!cancelled) {
+              setCompanyReport(data);
+              setSheet(null);
+            }
+          } else {
+            const data = await fetchAdminTimesheetWeek(subjectUserId.trim(), weekStart);
+            if (!cancelled) {
+              setSheet(data);
+              setCompanyReport(null);
+            }
           }
         } else {
           const data = await fetchMyTimesheetWeek(weekStart);
@@ -117,6 +213,7 @@ export function WeekReportClient() {
             return;
           }
           setSheet(data);
+          setCompanyReport(null);
           if (!alignedOnce.current) {
             alignedOnce.current = true;
             const aligned = mondayWeekStartIso(new Date(), data.company_timezone);
@@ -128,6 +225,7 @@ export function WeekReportClient() {
       } catch {
         if (!cancelled) {
           setSheet(null);
+          setCompanyReport(null);
           setError("Could not load week report.");
         }
       } finally {
@@ -139,9 +237,19 @@ export function WeekReportClient() {
     return () => {
       cancelled = true;
     };
-  }, [weekStart, adminMode, management, subjectUserId]);
+  }, [weekStart, adminMode, management, subjectUserId, activeCompanyId, user]);
 
-  const activityEmpty = Boolean(!loading && sheet && sheet.shift_count === 0);
+  const activityEmpty = Boolean(
+    !loading &&
+      (viewingAllEmployees
+        ? companyReport && companyReport.totals.completed_shifts_count === 0
+        : sheet && sheet.shift_count === 0),
+  );
+
+  const openBannerSingle = Boolean(sheet?.open_shift_in_week && !viewingAllEmployees);
+  const openBannerAll = Boolean(
+    viewingAllEmployees && companyReport && companyReport.totals.employees_with_open_shift > 0,
+  );
 
   return (
     <Sheet>
@@ -178,15 +286,33 @@ export function WeekReportClient() {
             <div className="flex min-w-0 flex-1 flex-col gap-1 md:items-end md:text-right">
               {isAdministrator(user) ? (
                 <p className="max-w-xl text-xs leading-snug text-[var(--color-text-muted)] md:text-right">
-                  Administrators use employee accounts for week-level summaries.
+                  Pick a company, then one employee or all employees. The server aggregates only the selected company.
                 </p>
               ) : (
                 <p className="text-xs text-[var(--color-text-muted)]">
-                  Switch to admin view to open another employee&apos;s week.
+                  Switch to admin view to open another employee&apos;s week or all employees.
                 </p>
               )}
             </div>
           </div>
+        ) : null}
+
+        {adminMode && management && isAdministrator(user) ? (
+          <label className="block max-w-md text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+            <span className="text-[var(--color-text)]">Company</span>
+            <select
+              className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
+              onChange={(event) => setCompanyOverride(event.target.value || null)}
+              value={companyOverride ?? ""}
+            >
+              <option value="">Choose company…</option>
+              {companies.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
         ) : null}
 
         {adminMode && management ? (
@@ -198,6 +324,7 @@ export function WeekReportClient() {
               value={subjectUserId}
             >
               <option value="">Choose employee…</option>
+              <option value={ALL_EMPLOYEES_VALUE}>All employees</option>
               {employeeOptions.map((option) => (
                 <option key={option.id} value={option.id}>
                   {option.email}
@@ -210,13 +337,20 @@ export function WeekReportClient() {
         <WeekPickerBar
           disabled={loading}
           onWeekChange={setWeekStart}
-          timezoneLabel={sheet?.company_timezone}
+          timezoneLabel={timezoneLabel}
           weekStartIso={weekStart}
         />
 
-        {sheet?.open_shift_in_week ? (
+        {openBannerSingle ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-[var(--color-warning-700)] bg-[var(--color-header)] px-3 py-2.5 text-sm text-[var(--color-text)]">
             Open shift in this week — finalize clock-out for final numbers.
+          </div>
+        ) : null}
+
+        {openBannerAll ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-[var(--color-warning-700)] bg-[var(--color-header)] px-3 py-2.5 text-sm text-[var(--color-text)]">
+            One or more employees have an open shift this week — see timesheets for detail; completed totals exclude
+            open shifts.
           </div>
         ) : null}
 
@@ -230,7 +364,7 @@ export function WeekReportClient() {
           <p className="text-sm text-[var(--color-text-muted)]">Loading week…</p>
         ) : null}
 
-        {!loading && sheet ? (
+        {!loading && sheet && !viewingAllEmployees ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               hint="Clocked time = raw clock-in to clock-out."
@@ -255,7 +389,32 @@ export function WeekReportClient() {
           </div>
         ) : null}
 
-        {!loading && sheet ? (
+        {!loading && companyReport && viewingAllEmployees ? (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <StatCard
+              hint="Clocked time = raw clock-in to clock-out (completed shifts, all employees)."
+              label="Clocked time (company)"
+              value={formatDurationSeconds(companyReport.totals.clocked_seconds)}
+            />
+            <StatCard
+              hint="Payable time = after standard start and break rules."
+              label="Payable time (company)"
+              value={formatDurationSeconds(companyReport.totals.payable_seconds)}
+            />
+            <StatCard
+              hint="Payroll time = rounded time used by payroll."
+              label="Payroll time (company)"
+              value={formatDurationSeconds(companyReport.totals.payroll_seconds)}
+            />
+            <StatCard
+              hint="Break minutes applied by company time policy."
+              label="Break deducted (company)"
+              value={formatDurationSeconds(companyReport.totals.break_seconds)}
+            />
+          </div>
+        ) : null}
+
+        {!loading && sheet && !viewingAllEmployees ? (
           <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
             <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
@@ -267,8 +426,8 @@ export function WeekReportClient() {
                 <div className="rounded border border-dashed border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-4 text-center">
                   <p className="text-sm font-semibold text-[var(--color-text)]">No shift activity this week</p>
                   <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
-                    Completed shift segments will be counted here. If you are still clocked in, close the shift
-                    to refresh totals.
+                    Completed shift segments will be counted here. If you are still clocked in, close the shift to
+                    refresh totals.
                   </p>
                 </div>
               ) : (
@@ -278,12 +437,90 @@ export function WeekReportClient() {
                     <span className="font-semibold tabular-nums">{sheet.shift_count}</span>
                   </p>
                   <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                    Locations:{" "}
-                    {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}
+                    Locations: {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}
                   </p>
                 </>
               )}
             </div>
+          </div>
+        ) : null}
+
+        {!loading && companyReport && viewingAllEmployees ? (
+          <div className="space-y-2">
+            <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
+              <span className="font-semibold text-[var(--color-text)]">Clocked time</span> = raw clock-in to
+              clock-out. <span className="font-semibold text-[var(--color-text)]">Payable time</span> = after standard
+              start and break rules. <span className="font-semibold text-[var(--color-text)]">Payroll time</span> =
+              rounded time used by payroll.
+            </p>
+            <Table className="min-w-[880px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Employee</TableHead>
+                  <TableHead>Job title</TableHead>
+                  <TableHead>Completed shifts</TableHead>
+                  <TableHead>Clocked time</TableHead>
+                  <TableHead>Payable time</TableHead>
+                  <TableHead>Payroll time</TableHead>
+                  <TableHead>Break deducted</TableHead>
+                  <TableHead>Locations worked</TableHead>
+                  <TableHead>Open shift</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {companyReport.employees.map((row) => (
+                  <TableRow key={row.user_id}>
+                    <TableCell className="max-w-[200px] text-xs">
+                      {employeeCell(row.employee_name, row.employee_email)}
+                    </TableCell>
+                    <TableCell className="text-xs text-[var(--color-text-muted)]">
+                      {row.employee_job_title?.trim() || "—"}
+                    </TableCell>
+                    <TableCell className="tabular-nums text-xs">{row.completed_shifts_count}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.clocked_seconds)}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.payable_seconds)}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.payroll_seconds)}</TableCell>
+                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.break_seconds)}</TableCell>
+                    <TableCell className="max-w-[220px] text-xs text-[var(--color-text-muted)]">
+                      {row.locations_worked.length > 0 ? row.locations_worked.join(", ") : "—"}
+                    </TableCell>
+                    <TableCell className="text-xs">{row.open_shift_in_week ? "Yes" : "—"}</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="timiq-table-total-row">
+                  <TableCell className="font-semibold" colSpan={2}>
+                    Company total
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {companyReport.totals.completed_shifts_count}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {formatDurationSeconds(companyReport.totals.clocked_seconds)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {formatDurationSeconds(companyReport.totals.payable_seconds)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {formatDurationSeconds(companyReport.totals.payroll_seconds)}
+                  </TableCell>
+                  <TableCell className="tabular-nums text-xs font-semibold">
+                    {formatDurationSeconds(companyReport.totals.break_seconds)}
+                  </TableCell>
+                  <TableCell />
+                  <TableCell className="text-xs font-semibold">
+                    {companyReport.totals.employees_with_open_shift > 0
+                      ? `${companyReport.totals.employees_with_open_shift} employee(s)`
+                      : "—"}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+            {activityEmpty ? (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                No completed shifts in this week for any employee. Rows above are active employees with zero completed
+                time; open shifts are flagged when present.
+              </p>
+            ) : null}
           </div>
         ) : null}
       </SheetBody>
