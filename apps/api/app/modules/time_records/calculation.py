@@ -102,10 +102,21 @@ def compute_shift_metrics(
     else:
         running_actual_seconds = max(0, int((reference_now - clock_in_at_utc).total_seconds()))
 
+    gross_span_seconds = max(0, int((span_end - counted_in).total_seconds()))
+
+    # Payable span (counted clock-in to counted end) must reach threshold before automatic break floor applies.
+    threshold_minutes = (
+        int(policy.break_deduction_after_minutes)
+        if policy.break_deduction_after_minutes is not None
+        else 360
+    )
+    threshold_seconds = max(0, threshold_minutes) * 60
+
     deduction_floor = max(0, policy.break_deduction_minutes) * 60
+    if threshold_seconds > 0 and gross_span_seconds < threshold_seconds:
+        deduction_floor = 0
     effective_break = max(max(0, break_seconds_tracked), deduction_floor)
 
-    gross_span_seconds = max(0, int((span_end - counted_in).total_seconds()))
     net_seconds = max(0, gross_span_seconds - effective_break)
 
     rounded = round_duration_seconds(

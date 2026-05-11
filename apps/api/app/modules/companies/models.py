@@ -63,6 +63,7 @@ class CompanyTimePolicy(Base):
     rounding_increment_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
     rounding_mode: Mapped[str] = mapped_column(String(16), nullable=False, default="nearest")
     break_deduction_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    break_deduction_after_minutes: Mapped[int] = mapped_column(Integer, nullable=True)
     rule_effective_from: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

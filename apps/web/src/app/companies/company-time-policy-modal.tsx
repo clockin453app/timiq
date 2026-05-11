@@ -42,6 +42,7 @@ export function CompanyTimePolicyModal({
   const [roundingInc, setRoundingInc] = useState(30);
   const [roundingMode, setRoundingMode] = useState("nearest");
   const [breakDeduction, setBreakDeduction] = useState(30);
+  const [breakDeductionAfterMinutes, setBreakDeductionAfterMinutes] = useState(360);
   const [ruleEffectiveLocal, setRuleEffectiveLocal] = useState("");
   const [ruleNote, setRuleNote] = useState("");
   const [timezone, setTimezone] = useState("Europe/London");
@@ -83,6 +84,7 @@ export function CompanyTimePolicyModal({
     setRoundingInc(policy.rounding_increment_minutes);
     setRoundingMode(policy.rounding_mode);
     setBreakDeduction(policy.break_deduction_minutes);
+    setBreakDeductionAfterMinutes(policy.break_deduction_after_minutes ?? 360);
     setRuleEffectiveLocal(isoToDatetimeLocalValue(policy.rule_effective_from));
     setRuleNote(policy.rule_note);
     setTimezone(policy.timezone);
@@ -113,6 +115,7 @@ export function CompanyTimePolicyModal({
         rounding_increment_minutes: roundingInc,
         rounding_mode: roundingMode,
         break_deduction_minutes: breakDeduction,
+        break_deduction_after_minutes: breakDeductionAfterMinutes,
         rule_effective_from: effectiveDate.toISOString(),
         rule_note: ruleNote,
         timezone,
@@ -259,6 +262,23 @@ export function CompanyTimePolicyModal({
                 type="number"
                 value={breakDeduction}
               />
+            </label>
+
+            <label className="block text-xs font-bold text-[var(--color-text)]">
+              Apply break deduction after (minutes)
+              <input
+                className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                max={10080}
+                min={0}
+                onChange={(event) => setBreakDeductionAfterMinutes(Number(event.target.value))}
+                required
+                type="number"
+                value={breakDeductionAfterMinutes}
+              />
+              <span className="mt-1 block text-xs font-normal leading-snug text-[var(--color-text-muted)]">
+                Example: 360 minutes means the automatic break deduction applies only after 6 hours worked (payable
+                span). Tracked breaks that exceed the automatic deduction still apply on shorter shifts.
+              </span>
             </label>
 
             <label className="block text-xs font-bold text-[var(--color-text)]">

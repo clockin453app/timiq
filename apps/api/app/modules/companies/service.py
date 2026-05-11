@@ -52,6 +52,7 @@ def company_time_policy_to_response(policy: CompanyTimePolicy) -> CompanyTimePol
         rounding_increment_minutes=policy.rounding_increment_minutes,
         rounding_mode=policy.rounding_mode,
         break_deduction_minutes=policy.break_deduction_minutes,
+        break_deduction_after_minutes=policy.break_deduction_after_minutes,
         rule_effective_from=policy.rule_effective_from,
         rule_note=policy.rule_note,
         timezone=policy.timezone_name,
@@ -82,6 +83,7 @@ def ensure_company_time_policy(
     policy = CompanyTimePolicy(
         company_id=company_id,
         rule_effective_from=now,
+        break_deduction_after_minutes=360,
     )
     return save_company_time_policy(db_session, policy)
 

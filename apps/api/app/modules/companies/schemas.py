@@ -61,6 +61,7 @@ class CompanyTimePolicyResponse(BaseModel):
     rounding_increment_minutes: int
     rounding_mode: str
     break_deduction_minutes: int
+    break_deduction_after_minutes: int | None = None
     rule_effective_from: datetime
     rule_note: str
     timezone: str
@@ -75,6 +76,12 @@ class CompanyTimePolicyPatchRequest(BaseModel):
     rounding_increment_minutes: int | None = Field(default=None, ge=0, le=480)
     rounding_mode: str | None = Field(default=None, max_length=16)
     break_deduction_minutes: int | None = Field(default=None, ge=0, le=480)
+    break_deduction_after_minutes: int | None = Field(
+        default=None,
+        ge=0,
+        le=10080,
+        description="Apply automatic break deduction floor only after this many payable minutes (default 360).",
+    )
     rule_effective_from: datetime | None = None
     rule_note: str | None = Field(default=None, max_length=4000)
     timezone: str | None = Field(default=None, max_length=64)

@@ -56,6 +56,7 @@ def _fallback_policy() -> CompanyTimePolicy:
         rounding_increment_minutes=30,
         rounding_mode="nearest",
         break_deduction_minutes=30,
+        break_deduction_after_minutes=360,
         rule_effective_from=now,
         rule_note="",
         timezone_name="Europe/London",

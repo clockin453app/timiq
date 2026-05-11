@@ -74,6 +74,7 @@ def policy_snapshot_dict(policy: CompanyTimePolicy) -> dict:
         "rounding_increment_minutes": policy.rounding_increment_minutes,
         "rounding_mode": policy.rounding_mode,
         "break_deduction_minutes": policy.break_deduction_minutes,
+        "break_deduction_after_minutes": policy.break_deduction_after_minutes,
         "rule_effective_from": policy.rule_effective_from.isoformat(),
         "timezone_name": policy.timezone_name,
     }

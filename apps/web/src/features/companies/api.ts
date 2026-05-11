@@ -98,6 +98,7 @@ export type CompanyTimePolicy = {
   rounding_increment_minutes: number;
   rounding_mode: string;
   break_deduction_minutes: number;
+  break_deduction_after_minutes?: number | null;
   rule_effective_from: string;
   rule_note: string;
   timezone: string;
@@ -112,6 +113,7 @@ export type PatchCompanyTimePolicyRequest = {
   rounding_increment_minutes?: number;
   rounding_mode?: string;
   break_deduction_minutes?: number;
+  break_deduction_after_minutes?: number | null;
   rule_effective_from?: string;
   rule_note?: string;
   timezone?: string;
