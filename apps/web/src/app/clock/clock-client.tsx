@@ -11,20 +11,23 @@ import {
   clockInWithSelfie,
   clockOutWithSelfie,
   getClockStatus,
-  isGpsCaptureStale,
   type ClockAssignedSite,
   type ClockStatus,
-  type GeolocationRequest,
 } from "../../features/time-clock/api";
+import {
+  BACKEND_MAX_ACCURACY_M,
+  type GpsCapture,
+  type GpsStabilizationUpdate,
+  isGpsClientSubmittable,
+  stabilizeGpsFix,
+} from "../../features/time-clock/gps";
+import { haversineDistanceMeters } from "../../lib/geo";
 
 const EMPTY_ASSIGNED_SITES: ClockAssignedSite[] = [];
 
-type GeoCapture = {
-  payload: GeolocationRequest;
-  capturedAtMs: number;
-};
-
 type ActiveSelfiePhase = "clock_in" | "clock_out";
+
+type GpsFailure = null | "denied" | "failed" | "unsupported";
 
 const CAMERA_UNSUPPORTED =
   "Your browser does not support camera capture.";
@@ -40,7 +43,7 @@ export function ClockClient() {
   const streamRef = useRef<MediaStream | null>(null);
 
   const [clockStatus, setClockStatus] = useState<ClockStatus | null>(null);
-  const [geoCapture, setGeoCapture] = useState<GeoCapture | null>(null);
+  const [geoCapture, setGeoCapture] = useState<GpsCapture | null>(null);
   const [selfieClockIn, setSelfieClockIn] = useState<File | null>(null);
   const [selfieClockOut, setSelfieClockOut] = useState<File | null>(null);
 
@@ -56,10 +59,40 @@ export function ClockClient() {
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const gpsStale = useMemo(
-    () => (geoCapture ? isGpsCaptureStale(geoCapture.capturedAtMs) : false),
-    [geoCapture],
-  );
+  const [gpsAcquisitionKey, setGpsAcquisitionKey] = useState(0);
+  const [gpsAcquiring, setGpsAcquiring] = useState(false);
+  const [gpsFailure, setGpsFailure] = useState<GpsFailure>(null);
+  const [gpsBestAccuracy, setGpsBestAccuracy] = useState<number | null>(null);
+  const [gpsSamples, setGpsSamples] = useState(0);
+  const [gpsPhaseText, setGpsPhaseText] = useState<
+    "idle" | "searching" | "improving" | "captured" | "too_low" | "denied" | "failed" | "unsupported"
+  >("idle");
+
+  /** Avoid re-running GPS acquisition when only the `clockStatus` object reference changes. */
+  const siteCountForGps = clockStatus === null ? undefined : clockStatus.active_location_count;
+
+  const nearestSiteSummary = useMemo(() => {
+    if (!geoCapture || !(clockStatus?.assigned_sites?.length)) {
+      return null;
+    }
+    const { latitude, longitude } = geoCapture.payload;
+    let best: ClockAssignedSite | null = null;
+    let bestDistance = Infinity;
+    for (const site of clockStatus.assigned_sites) {
+      const d = haversineDistanceMeters(latitude, longitude, site.latitude, site.longitude);
+      if (d < bestDistance) {
+        bestDistance = d;
+        best = site;
+      }
+    }
+    if (!best) {
+      return null;
+    }
+    const outside = bestDistance > best.geofence_radius_meters;
+    return { site: best, distanceM: Math.round(bestDistance), outside };
+  }, [geoCapture, clockStatus?.assigned_sites]);
+
+  const gpsAcceptable = Boolean(geoCapture && isGpsClientSubmittable(geoCapture));
 
   useEffect(() => {
     if (!selfieClockIn) {
@@ -185,50 +218,102 @@ export function ClockClient() {
     refreshStatus();
   }, []);
 
-  function captureGpsPosition(): Promise<GeoCapture> {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error("Geolocation is not supported in this browser."));
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (!geoCapture) {
         return;
       }
+      if (gpsFailure === "denied" || gpsFailure === "unsupported") {
+        return;
+      }
+      if ((clockStatus?.active_location_count ?? 0) === 0) {
+        return;
+      }
+      if (!isGpsClientSubmittable(geoCapture)) {
+        setGpsAcquisitionKey((key) => key + 1);
+      }
+    }, 8000);
+    return () => window.clearInterval(id);
+  }, [geoCapture, clockStatus?.active_location_count, gpsFailure]);
 
-      const capturedAtMs = Date.now();
-
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          resolve({
-            capturedAtMs,
-            payload: {
-              latitude: position.coords.latitude,
-              longitude: position.coords.longitude,
-              accuracy_meters: position.coords.accuracy,
-              timestamp_utc: new Date(capturedAtMs).toISOString(),
-            },
-          });
-        },
-        () => reject(new Error("Unable to capture GPS location.")),
-        {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 15000,
-        },
-      );
-    });
+  function handleGpsUpdate(update: GpsStabilizationUpdate) {
+    setGpsBestAccuracy(update.bestAccuracyMeters);
+    setGpsSamples(update.samples);
+    setGeoCapture(update.bestCapture);
+    setGpsPhaseText(update.phase);
   }
 
-  async function handleCaptureGps() {
-    setErrorMessage("");
-    setSuccessMessage("");
-    try {
-      const capture = await captureGpsPosition();
-      setGeoCapture(capture);
-      setSuccessMessage("GPS captured.");
-      await refreshStatus();
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unable to capture GPS location.",
-      );
+  useEffect(() => {
+    if (siteCountForGps === undefined) {
+      return undefined;
     }
+
+    if (siteCountForGps === 0) {
+      setGeoCapture(null);
+      setGpsAcquiring(false);
+      setGpsFailure(null);
+      setGpsBestAccuracy(null);
+      setGpsSamples(0);
+      setGpsPhaseText("idle");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setGpsAcquiring(true);
+    setGpsFailure(null);
+    setGpsBestAccuracy(null);
+    setGpsSamples(0);
+    setGpsPhaseText("searching");
+
+    (async () => {
+      try {
+        const capture = await stabilizeGpsFix({
+          maxWaitMs: 25_000,
+          preferredAccuracyM: 80,
+          acceptAccuracyM: 100,
+          onUpdate: (u) => {
+            if (!cancelled) {
+              handleGpsUpdate(u);
+            }
+          },
+        });
+        if (cancelled) {
+          return;
+        }
+        setGeoCapture(capture);
+        setGpsAcquiring(false);
+        setGpsFailure(null);
+        setGpsPhaseText(
+          capture.payload.accuracy_meters <= 100 ? "captured" : "too_low",
+        );
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : "";
+        if (message === "PERMISSION_DENIED") {
+          setGpsFailure("denied");
+          setGpsPhaseText("denied");
+        } else if (message === "UNSUPPORTED") {
+          setGpsFailure("unsupported");
+          setGpsPhaseText("unsupported");
+        } else {
+          setGpsFailure("failed");
+          setGpsPhaseText("failed");
+        }
+        setGpsAcquiring(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [siteCountForGps, gpsAcquisitionKey]);
+
+  function handleRetryGps() {
+    setErrorMessage("");
+    setGpsFailure(null);
+    setGpsAcquisitionKey((key) => key + 1);
   }
 
   function openSelfieCapture(phase: ActiveSelfiePhase) {
@@ -293,12 +378,9 @@ export function ClockClient() {
   async function handleClockIn() {
     setErrorMessage("");
     setSuccessMessage("");
-    if (!geoCapture) {
-      setErrorMessage("Capture GPS before clocking in.");
-      return;
-    }
-    if (gpsStale) {
-      setErrorMessage("GPS data is stale. Capture GPS again.");
+    if (!geoCapture || !isGpsClientSubmittable(geoCapture)) {
+      setGpsAcquisitionKey((key) => key + 1);
+      setErrorMessage("Getting a reliable GPS fix… please wait, then try again.");
       return;
     }
     if (!selfieClockIn) {
@@ -313,6 +395,7 @@ export function ClockClient() {
       setSelfieClockIn(null);
       setSelfieClockOut(null);
       setGeoCapture(null);
+      setGpsAcquisitionKey((key) => key + 1);
       await refreshStatus();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Clock-in failed.");
@@ -324,12 +407,9 @@ export function ClockClient() {
   async function handleClockOut() {
     setErrorMessage("");
     setSuccessMessage("");
-    if (!geoCapture) {
-      setErrorMessage("Capture GPS before clocking out.");
-      return;
-    }
-    if (gpsStale) {
-      setErrorMessage("GPS data is stale. Capture GPS again.");
+    if (!geoCapture || !isGpsClientSubmittable(geoCapture)) {
+      setGpsAcquisitionKey((key) => key + 1);
+      setErrorMessage("Getting a reliable GPS fix… please wait, then try again.");
       return;
     }
     if (!selfieClockOut) {
@@ -344,6 +424,7 @@ export function ClockClient() {
       setSelfieClockOut(null);
       setSelfieClockIn(null);
       setGeoCapture(null);
+      setGpsAcquisitionKey((key) => key + 1);
       await refreshStatus();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Clock-out failed.");
@@ -383,22 +464,52 @@ export function ClockClient() {
   }
 
   const hasOpenShift = Boolean(clockStatus?.has_open_shift);
+  const noAssignedSites = Boolean(clockStatus && clockStatus.active_location_count === 0);
+
   const clockInEnabled =
-    Boolean(geoCapture && selfieClockIn && !gpsStale) &&
+    gpsAcceptable &&
+    Boolean(selfieClockIn) &&
     !hasOpenShift &&
     !isSubmitting &&
+    !gpsAcquiring &&
     activeSelfiePhase === null;
+
   const clockOutEnabled =
-    Boolean(geoCapture && selfieClockOut && !gpsStale) &&
+    gpsAcceptable &&
+    Boolean(selfieClockOut) &&
     hasOpenShift &&
     !Boolean(clockStatus?.current_break_open) &&
     !isSubmitting &&
+    !gpsAcquiring &&
     activeSelfiePhase === null;
 
   const takeClockInLabel = selfieClockIn ? "Retake clock-in selfie" : "Take clock-in selfie";
   const takeClockOutLabel = selfieClockOut
     ? "Retake clock-out selfie"
     : "Take clock-out selfie";
+
+  const showGpsRetry = Boolean(gpsFailure);
+
+  let gpsStatusLine = "";
+  if (noAssignedSites) {
+    gpsStatusLine = "No assigned active sites.";
+  } else if (gpsFailure === "unsupported") {
+    gpsStatusLine = "Geolocation is not supported in this browser.";
+  } else if (gpsFailure === "denied") {
+    gpsStatusLine = "Location permission denied.";
+  } else if (gpsFailure === "failed") {
+    gpsStatusLine = "Could not get a reliable GPS fix in time.";
+  } else if (gpsAcquiring && gpsPhaseText === "searching") {
+    gpsStatusLine = "Searching for location…";
+  } else if (gpsAcquiring && gpsPhaseText === "improving") {
+    gpsStatusLine = "Improving GPS accuracy…";
+  } else if (gpsAcceptable) {
+    gpsStatusLine = "Location captured.";
+  } else if (geoCapture && !gpsAcquiring) {
+    gpsStatusLine = "GPS accuracy too low for secure clocking.";
+  } else {
+    gpsStatusLine = "Preparing location…";
+  }
 
   return (
     <Sheet>
@@ -428,21 +539,63 @@ export function ClockClient() {
 
         <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
           <p className="font-bold text-[var(--color-text)]">GPS</p>
+          <p className="mt-1 text-[var(--color-text-muted)]">{gpsStatusLine}</p>
           <p className="mt-1 text-[var(--color-text-muted)]">
             Active assigned locations: {clockStatus?.active_location_count ?? 0}
           </p>
-          <p className="mt-1 text-[var(--color-text-muted)]">
-            GPS captured: {geoCapture ? "Yes" : "No"}
-          </p>
-          <p className="mt-1 text-[var(--color-text-muted)]">
-            GPS freshness:{" "}
-            {geoCapture ? (gpsStale ? "Stale — capture again" : "OK") : "Not captured"}
-          </p>
-          <div className="mt-2">
-            <Button disabled={isSubmitting || activeSelfiePhase !== null} onClick={handleCaptureGps} type="button">
-              Capture GPS
-            </Button>
-          </div>
+          {geoCapture ? (
+            <p className="mt-1 text-[var(--color-text-muted)]">
+              GPS accuracy: {Math.round(geoCapture.payload.accuracy_meters)}m (must be ≤{" "}
+              {BACKEND_MAX_ACCURACY_M}m)
+            </p>
+          ) : null}
+          {gpsAcquiring || gpsBestAccuracy !== null ? (
+            <p className="mt-1 text-[var(--color-text-muted)]">
+              Best accuracy so far: {gpsBestAccuracy !== null ? `${Math.round(gpsBestAccuracy)}m` : "—"} · Samples: {gpsSamples}
+            </p>
+          ) : null}
+          {nearestSiteSummary ? (
+            <div className="mt-2 space-y-1 text-[var(--color-text-muted)]">
+              <p>
+                Nearest assigned site: <span className="font-semibold">{nearestSiteSummary.site.name}</span> (
+                about {nearestSiteSummary.distanceM}m to center, radius{" "}
+                {nearestSiteSummary.site.geofence_radius_meters}m)
+              </p>
+              {nearestSiteSummary.outside ? (
+                <p className="text-[var(--color-danger-700)]">
+                  Your position may be outside that site; the server will confirm the geofence on submit.
+                </p>
+              ) : null}
+              {!nearestSiteSummary.outside && geoCapture && geoCapture.payload.accuracy_meters > BACKEND_MAX_ACCURACY_M ? (
+                <p className="text-[var(--color-warning-700)]">
+                  You appear near the site, but GPS accuracy is too low to verify securely.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+          {!noAssignedSites && geoCapture && geoCapture.payload.accuracy_meters > BACKEND_MAX_ACCURACY_M ? (
+            <div className="mt-2 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+              <p className="font-semibold text-[var(--color-text)]">GPS accuracy is too low for secure clocking.</p>
+              <ul className="mt-1 list-disc space-y-0.5 pl-5">
+                <li>Move near open sky or a window and retry.</li>
+                <li>On mobile, enable Precise Location for your browser.</li>
+                <li>Desktop/laptop GPS may be inaccurate; use mobile if possible.</li>
+                <li>If you are on site but still blocked, ask an admin to use manual clock-out with a reason.</li>
+              </ul>
+            </div>
+          ) : null}
+          {showGpsRetry ? (
+            <div className="mt-2">
+              <Button
+                disabled={gpsAcquiring || isSubmitting || activeSelfiePhase !== null}
+                onClick={handleRetryGps}
+                type="button"
+                variant="secondary"
+              >
+                Retry location
+              </Button>
+            </div>
+          ) : null}
         </div>
 
         {geoCapture ? (
@@ -450,11 +603,12 @@ export function ClockClient() {
             <p className="font-bold text-[var(--color-text)]">Map</p>
             {(clockStatus?.assigned_sites ?? []).length === 0 ? (
               <p className="mt-1 text-[var(--color-text-muted)]">
-                No assigned active locations. Your administrator must assign you to an active site before you can clock in at a geofence.
+                No assigned active locations. Your administrator must assign you to an active site before you can
+                clock in at a geofence.
               </p>
             ) : (
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Blue dot: your captured GPS. Rings: assigned active sites (teal = nearest site center).
+                Blue dot: your latest GPS fix. Rings: assigned active sites (teal = nearest site center).
               </p>
             )}
             <div className="mt-2">
