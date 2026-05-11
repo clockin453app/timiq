@@ -5,7 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { NavigationGroupDefinition, SystemRole } from "../../config/navigation";
 
-const STORAGE_PREFIX = "timiq-nav-groups:";
+/** Bump version to ignore legacy open-state blobs that left many groups expanded. */
+const STORAGE_PREFIX = "timiq-nav-groups:v2:";
 
 type GroupedNavVariant = "sidebar" | "drawer";
 

@@ -195,7 +195,7 @@ export function TimesheetsClient() {
   return (
     <Sheet>
       <PageHeader
-        description="Completed shifts only: day rows and week totals use policy counted/rounded time. Open shifts are listed separately and are not included in those totals."
+        description="Completed shifts only: day rows and week totals use payable and payroll time from company policy. Open shifts are listed separately and are not included in those totals."
         title="Timesheets"
       />
       <SheetBody className="space-y-3 md:p-5">
@@ -261,8 +261,8 @@ export function TimesheetsClient() {
           <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)]">
             <p className="text-xs font-bold uppercase tracking-wide text-[#374151]">Open shift (not in week totals)</p>
             <p className="text-xs text-[var(--color-text-muted)]">
-              Counted and rounded totals below include only completed shifts. Actual elapsed while clocked in is
-              shown per shift.
+              Payable and payroll totals below include only completed shifts. Clocked elapsed while still clocked in
+              is shown per shift.
             </p>
             <ul className="space-y-2">
               {openShifts.map((s) => (
@@ -297,22 +297,31 @@ export function TimesheetsClient() {
         {!loading && sheet ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <TimesheetSummaryCard
-              label="Actual total (completed)"
+              label="Clocked time total (completed)"
               value={formatDurationSeconds(sheet.week_actual_seconds)}
             />
             <TimesheetSummaryCard
-              label="Counted total (completed)"
+              label="Payable time total (completed)"
               value={formatDurationSeconds(sheet.week_counted_seconds)}
             />
             <TimesheetSummaryCard
-              label="Rounded total (completed)"
+              label="Payroll time total (completed)"
               value={formatDurationSeconds(sheet.week_rounded_seconds)}
             />
             <TimesheetSummaryCard
-              label="Break total (completed)"
+              label="Break deducted (completed)"
               value={formatDurationSeconds(sheet.week_break_seconds)}
             />
           </div>
+        ) : null}
+
+        {!loading && sheet ? (
+          <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
+            <span className="font-semibold text-[var(--color-text)]">Clocked time</span> = raw clock-in to
+            clock-out. <span className="font-semibold text-[var(--color-text)]">Payable time</span> = after standard
+            start and break rules. <span className="font-semibold text-[var(--color-text)]">Payroll time</span> =
+            rounded time used by payroll.
+          </p>
         ) : null}
 
         {showNoCompleted ? (
@@ -330,10 +339,10 @@ export function TimesheetsClient() {
             <TableHeader>
               <TableRow>
                 <TableHead>Day</TableHead>
-                <TableHead>Actual</TableHead>
-                <TableHead>Counted</TableHead>
-                <TableHead>Rounded</TableHead>
-                <TableHead>Break</TableHead>
+                <TableHead>Clocked time</TableHead>
+                <TableHead>Payable time</TableHead>
+                <TableHead>Payroll time</TableHead>
+                <TableHead>Break deducted</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

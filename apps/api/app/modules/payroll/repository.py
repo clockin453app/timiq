@@ -18,6 +18,7 @@ def list_employee_users_for_company(
         select(User)
         .where(User.company_id == company_id)
         .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
         .order_by(User.email.asc())
     )
     return list(db_session.scalars(statement).all())
@@ -79,13 +80,43 @@ def period_has_paid_item(db_session: Session, period_id: uuid.UUID) -> bool:
     return db_session.scalar(statement) is not None
 
 
-def delete_non_paid_items_for_period(db_session: Session, period_id: uuid.UUID) -> None:
+def delete_pending_items_for_period(db_session: Session, period_id: uuid.UUID) -> None:
+    """Remove only pending rows; approved and paid are never deleted here."""
     statement = delete(PayrollItem).where(
         PayrollItem.period_id == period_id,
-        PayrollItem.status != "paid",
+        PayrollItem.status == "pending",
     )
     db_session.execute(statement)
     db_session.commit()
+
+
+def period_has_approved_item(db_session: Session, period_id: uuid.UUID) -> bool:
+    statement = (
+        select(PayrollItem.id)
+        .where(PayrollItem.period_id == period_id)
+        .where(PayrollItem.status == "approved")
+        .limit(1)
+    )
+    return db_session.scalar(statement) is not None
+
+
+def max_employee_shift_updated_at_in_payroll_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start_utc: datetime,
+    week_end_utc: datetime,
+) -> datetime | None:
+    """Latest TimeShift.updated_at for company employees with clock-in in [week_start_utc, week_end_utc)."""
+    statement = (
+        select(func.max(TimeShift.updated_at))
+        .join(User, TimeShift.user_id == User.id)
+        .where(User.company_id == company_id)
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(TimeShift.clock_in_at >= week_start_utc)
+        .where(TimeShift.clock_in_at < week_end_utc)
+    )
+    return db_session.scalar(statement)
 
 
 def first_workplace_tax(db_session: Session, company_id: uuid.UUID) -> float | None:

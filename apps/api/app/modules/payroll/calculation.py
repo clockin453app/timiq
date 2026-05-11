@@ -125,11 +125,11 @@ def resolve_effective_tax_rate_percent(
     company_default: float | None,
     workplace_tax: float | None,
 ) -> Decimal | None:
-    """Employee profile overrides company default, then workplace."""
+    """Employee profile override, else first workplace rate, else company default."""
     if profile is not None and profile.tax_rate is not None:
         return Decimal(str(profile.tax_rate))
-    if company_default is not None:
-        return Decimal(str(company_default))
     if workplace_tax is not None:
         return Decimal(str(workplace_tax))
+    if company_default is not None:
+        return Decimal(str(company_default))
     return None

@@ -34,7 +34,7 @@ from app.modules.payroll.permissions import (
 )
 from app.modules.payroll.repository import (
     count_open_shifts_started_in_week,
-    delete_non_paid_items_for_period,
+    delete_pending_items_for_period,
     first_workplace_tax,
     get_item_by_id,
     get_period_by_company_week,
@@ -42,6 +42,8 @@ from app.modules.payroll.repository import (
     list_items_for_period,
     list_items_for_user_pay_history,
     list_periods_for_company_month,
+    max_employee_shift_updated_at_in_payroll_week,
+    period_has_approved_item,
     period_has_paid_item,
     save_item,
     save_period,
@@ -67,6 +69,10 @@ class PayrollPaidBlockingError(PayrollError):
     pass
 
 
+class PayrollApprovedBlockingError(PayrollError):
+    pass
+
+
 class PayrollItemStateError(PayrollError):
     pass
 
@@ -75,6 +81,17 @@ def _decimal_or_none(value: object | None) -> Decimal | None:
     if value is None:
         return None
     return Decimal(str(value))
+
+
+def _effective_tax_amount_for_item(item: PayrollItem) -> Decimal | None:
+    """Prefer display CIS when set; if display is exactly zero but calculated tax is non-zero, use calculated."""
+    display = _decimal_or_none(item.display_tax_amount)
+    calculated = _decimal_or_none(item.tax_amount)
+    if display is not None:
+        if display == 0 and calculated is not None and calculated != 0:
+            return calculated
+        return display
+    return calculated
 
 
 def _employee_display(
@@ -149,12 +166,23 @@ def _build_report_alerts(
     rate_missing = sum(1 for i in all_items if i.rate_missing)
     zero_hours = sum(1 for i in all_items if i.rounded_total_seconds == 0)
     not_calculated = period is None or period.calculated_at is None
+    needs_recalc = False
+    if period is not None and period.calculated_at is not None:
+        max_shift_updated = max_employee_shift_updated_at_in_payroll_week(
+            db_session,
+            company_id=company_id,
+            week_start_utc=week_start_utc,
+            week_end_utc=week_end_utc,
+        )
+        if max_shift_updated is not None and max_shift_updated > period.calculated_at:
+            needs_recalc = True
     return PayrollReportAlerts(
         pending_approval_count=pending,
         open_shifts_started_in_week_count=open_n,
         rate_missing_employees_count=rate_missing,
         zero_rounded_hours_employees_count=zero_hours,
         payroll_period_not_calculated=not_calculated,
+        payroll_needs_recalculation=needs_recalc,
     )
 
 
@@ -213,10 +241,9 @@ def _summarize_period(
             tn += Decimal(str(i.net_amount))
     total_tax = Decimal(0)
     for i in items:
-        if i.display_tax_amount is not None:
-            total_tax += Decimal(str(i.display_tax_amount))
-        elif i.tax_amount is not None:
-            total_tax += Decimal(str(i.tax_amount))
+        eff = _effective_tax_amount_for_item(i)
+        if eff is not None:
+            total_tax += eff
     other_sum = sum(Decimal(str(i.other_deductions_amount or 0)) for i in items)
     return PayrollPeriodSummary(
         id=period.id,
@@ -348,11 +375,9 @@ def get_payroll_month_summary(
         elif i.net_amount is not None:
             tn += Decimal(str(i.net_amount))
             has_net = True
-        if i.display_tax_amount is not None:
-            total_tax += Decimal(str(i.display_tax_amount))
-            has_tax = True
-        elif i.tax_amount is not None:
-            total_tax += Decimal(str(i.tax_amount))
+        eff_tax = _effective_tax_amount_for_item(i)
+        if eff_tax is not None:
+            total_tax += eff_tax
             has_tax = True
         other_sum += Decimal(str(i.other_deductions_amount or 0))
     return PayrollMonthSummaryResponse(
@@ -393,6 +418,10 @@ def recalculate_payroll(
         raise PayrollPaidBlockingError(
             "Cannot recalculate: this period contains paid payroll items.",
         )
+    if period is not None and period_has_approved_item(db_session, period.id):
+        raise PayrollApprovedBlockingError(
+            "Payroll is approved. Unlock it before recalculating.",
+        )
     if period is None:
         period = PayrollPeriod(
             company_id=company_id,
@@ -402,7 +431,7 @@ def recalculate_payroll(
     else:
         period.timezone_name = policy.timezone_name
     period = save_period(db_session, period)
-    delete_non_paid_items_for_period(db_session, period.id)
+    delete_pending_items_for_period(db_session, period.id)
 
     employees = list_employee_users_for_company(db_session, company_id)
     now = datetime.now(timezone.utc)
@@ -511,9 +540,7 @@ def patch_payroll_item(
         item.display_net_amount = float(request.display_net_amount)
 
     gross = _decimal_or_none(item.gross_amount)
-    tax_for_net = _decimal_or_none(item.display_tax_amount)
-    if tax_for_net is None:
-        tax_for_net = _decimal_or_none(item.tax_amount)
+    tax_for_net = _effective_tax_amount_for_item(item)
     other_d = Decimal(str(item.other_deductions_amount or 0))
     if gross is not None and tax_for_net is not None and request.display_net_amount is None:
         net_calc = (gross - tax_for_net - other_d).quantize(Decimal("0.01"))

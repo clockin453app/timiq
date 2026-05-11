@@ -137,7 +137,7 @@ export function TimeRecordsClient() {
     <Sheet>
       <PageHeader
         title="Time records"
-        description="Stored clock times are unchanged; counted and rounded durations follow company time policy."
+        description="Stored clock times are unchanged; payable and payroll durations follow company time policy."
       />
       <SheetBody className="space-y-3">
         {management ? (
@@ -232,6 +232,13 @@ export function TimeRecordsClient() {
           </div>
         ) : null}
 
+        <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
+          <span className="font-semibold text-[var(--color-text)]">Clocked time</span> = raw clock-in to
+          clock-out. <span className="font-semibold text-[var(--color-text)]">Payable time</span> = after standard
+          start and break rules. <span className="font-semibold text-[var(--color-text)]">Payroll time</span> =
+          rounded time used by payroll.
+        </p>
+
         <Table>
           <TableHeader>
             <TableRow>
@@ -240,10 +247,10 @@ export function TimeRecordsClient() {
               <TableHead>Status</TableHead>
               <TableHead>Clock in</TableHead>
               <TableHead>Clock out</TableHead>
-              <TableHead>Actual</TableHead>
-              <TableHead>Counted</TableHead>
-              <TableHead>Rounded</TableHead>
-              <TableHead>Break</TableHead>
+              <TableHead>Clocked time</TableHead>
+              <TableHead>Payable time</TableHead>
+              <TableHead>Payroll time</TableHead>
+              <TableHead>Break deducted</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>

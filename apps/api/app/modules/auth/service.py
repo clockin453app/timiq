@@ -83,6 +83,8 @@ def resolve_company_for_create_or_update(
         return None
 
     if actor.system_role == SystemRole.ADMINISTRATOR:
+        if requested_role in (SystemRole.ADMIN, SystemRole.EMPLOYEE) and requested_company_id is None:
+            raise PermissionDeniedError("Company is required for admin and employee users.")
         if requested_company_id is None:
             return None
 

@@ -23,6 +23,30 @@ export function formatMoneyGBP(value: string | null | undefined): string {
   return `£${inner}`;
 }
 
+/** Prefer stored display CIS when set; if display is 0 but calculated tax is non-zero, use calculated (stale display-zero rows). */
+export function effectiveDisplayedTaxAmount(
+  displayTax: string | null | undefined,
+  calculatedTax: string | null | undefined,
+): string | null | undefined {
+  if (displayTax === null || displayTax === undefined || displayTax === "") {
+    return calculatedTax;
+  }
+  const d = Number(displayTax);
+  const c = Number(calculatedTax);
+  if (
+    calculatedTax !== null &&
+    calculatedTax !== undefined &&
+    calculatedTax !== "" &&
+    !Number.isNaN(d) &&
+    !Number.isNaN(c) &&
+    d === 0 &&
+    c !== 0
+  ) {
+    return calculatedTax;
+  }
+  return displayTax;
+}
+
 /** Monday `weekStartIso` through Sunday, formatted in `timeZone` (company payroll TZ). */
 export function formatPayrollWeekRangeLabel(weekStartIso: string, timeZone: string): string {
   const [y, m, d] = weekStartIso.split("-").map(Number);

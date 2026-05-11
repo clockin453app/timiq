@@ -4,7 +4,11 @@ import { useEffect, useState } from "react";
 
 import { PageHeader, Sheet, SheetBody } from "../../components/ui";
 import { fetchMyPayHistory, type PayHistoryEntry } from "../../features/payroll/api";
-import { formatHoursFromSeconds, formatMoney } from "../../features/payroll/format";
+import {
+  effectiveDisplayedTaxAmount,
+  formatHoursFromSeconds,
+  formatMoney,
+} from "../../features/payroll/format";
 
 function formatWhen(iso: string | null) {
   if (!iso) {
@@ -76,7 +80,8 @@ export function PayHistoryClient() {
                     {formatHoursFromSeconds(row.overtime_seconds)} h
                   </p>
                   <p className="mt-2">
-                    Gross {formatMoney(row.gross_amount)} · CIS {formatMoney(row.display_tax_amount ?? row.tax_amount)} · Net{" "}
+                    Gross {formatMoney(row.gross_amount)} · CIS{" "}
+                    {formatMoney(effectiveDisplayedTaxAmount(row.display_tax_amount, row.tax_amount))} · Net{" "}
                     {formatMoney(row.display_net_amount ?? row.net_amount)}
                   </p>
                   <p className="mt-1 text-xs">
@@ -120,7 +125,9 @@ export function PayHistoryClient() {
                         {row.rate_missing ? "—" : formatMoney(row.gross_amount)}
                       </td>
                       <td className="border border-[var(--color-border)] px-2 py-2">
-                        {formatMoney(row.display_tax_amount ?? row.tax_amount)}
+                        {formatMoney(
+                          effectiveDisplayedTaxAmount(row.display_tax_amount, row.tax_amount),
+                        )}
                       </td>
                       <td className="border border-[var(--color-border)] px-2 py-2">
                         {formatMoney(row.display_net_amount ?? row.net_amount)}

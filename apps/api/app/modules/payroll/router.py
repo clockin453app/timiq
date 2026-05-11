@@ -17,6 +17,7 @@ from app.modules.payroll.schemas import (
     PayrollReportResponse,
 )
 from app.modules.payroll.service import (
+    PayrollApprovedBlockingError,
     PayrollError,
     PayrollItemStateError,
     PayrollPaidBlockingError,
@@ -38,7 +39,7 @@ router = APIRouter(prefix="/api/payroll", tags=["payroll"])
 
 
 def _handle_payroll_exc(exc: Exception) -> HTTPException:
-    if isinstance(exc, PayrollPaidBlockingError):
+    if isinstance(exc, (PayrollPaidBlockingError, PayrollApprovedBlockingError)):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
     if isinstance(exc, PayrollItemStateError):
         return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
@@ -118,7 +119,12 @@ def payroll_recalculate(
             company_id=request.company_id,
             week_start=request.week_start,
         )
-    except (PayrollPaidBlockingError, PayrollPermissionError, PayrollError) as exc:
+    except (
+        PayrollApprovedBlockingError,
+        PayrollPaidBlockingError,
+        PayrollPermissionError,
+        PayrollError,
+    ) as exc:
         raise _handle_payroll_exc(exc) from exc
 
 

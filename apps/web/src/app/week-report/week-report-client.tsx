@@ -146,7 +146,7 @@ export function WeekReportClient() {
   return (
     <Sheet>
       <PageHeader
-        description="Summary for the selected week using policy-based counted and rounded time."
+        description="Summary for the selected week using payable and payroll time from company policy."
         title="Week report"
       />
       <SheetBody className="space-y-3 md:p-5">
@@ -233,22 +233,23 @@ export function WeekReportClient() {
         {!loading && sheet ? (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              hint="Raw elapsed including before standard start (shown for reference)."
-              label="Actual time"
+              hint="Clocked time = raw clock-in to clock-out."
+              label="Clocked time"
               value={formatDurationSeconds(sheet.week_actual_seconds)}
             />
             <StatCard
-              hint="After standard start rule and break handling."
-              label="Counted time"
+              hint="Payable time = after standard start and break rules."
+              label="Payable time"
               value={formatDurationSeconds(sheet.week_counted_seconds)}
             />
             <StatCard
-              hint="Payroll will prefer this when rounding applies."
-              label="Rounded time"
+              hint="Payroll time = rounded time used by payroll."
+              label="Payroll time"
               value={formatDurationSeconds(sheet.week_rounded_seconds)}
             />
             <StatCard
-              label="Break (deducted)"
+              hint="Break minutes applied by company time policy."
+              label="Break deducted"
               value={formatDurationSeconds(sheet.week_break_seconds)}
             />
           </div>

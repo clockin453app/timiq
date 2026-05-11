@@ -33,6 +33,7 @@ import {
   type PayrollReportResponse,
 } from "../../features/payroll/api";
 import {
+  effectiveDisplayedTaxAmount,
   formatHoursFromSeconds,
   formatMoneyGBP,
   formatPayrollWeekRangeLabel,
@@ -71,6 +72,17 @@ function statusBadgeClass(status: string): string {
   return "bg-[var(--color-cell)] text-[var(--color-text)] border border-[var(--color-border-dark)]";
 }
 
+function normalizePaymentMode(value: string | null | undefined): "net_payment" | "gross_payment" {
+  const raw = (value ?? "").trim().toLowerCase();
+  if (raw === "gross_payment" || raw === "gross") {
+    return "gross_payment";
+  }
+  if (raw === "net_payment" || raw === "net") {
+    return "net_payment";
+  }
+  return "net_payment";
+}
+
 function formatShiftDateTime(iso: string, timeZone: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) {
@@ -101,12 +113,13 @@ export function PayrollReportClient() {
   const [loading, setLoading] = useState(false);
   const [monthLoading, setMonthLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [payrollSaveMessage, setPayrollSaveMessage] = useState("");
   const [editRow, setEditRow] = useState<PayrollItemRow | null>(null);
   const [editNotes, setEditNotes] = useState("");
   const [editOtherDed, setEditOtherDed] = useState("");
   const [editDispTax, setEditDispTax] = useState("");
   const [editDispNet, setEditDispNet] = useState("");
-  const [editPaymentMode, setEditPaymentMode] = useState("");
+  const [editPaymentMode, setEditPaymentMode] = useState<"net_payment" | "gross_payment">("net_payment");
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [shiftRowsByUser, setShiftRowsByUser] = useState<Record<string, TimeRecordShiftRow[] | "loading">>(
     {},
@@ -121,6 +134,16 @@ export function PayrollReportClient() {
     () => resolveCompanyId(user, companyOverride),
     [user, companyOverride],
   );
+
+  useEffect(() => {
+    setDraftEmployeeId("");
+    setAppliedEmployeeId("");
+    setPayrollSaveMessage("");
+  }, [activeCompanyId]);
+
+  useEffect(() => {
+    setPayrollSaveMessage("");
+  }, [weekStart]);
 
   const policyTimeZone = report?.period.timezone_name ?? browserDefaultTimeZone();
 
@@ -318,13 +341,22 @@ export function PayrollReportClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompanyId, monthFromWeek.year, monthFromWeek.month]);
 
+  useEffect(() => {
+    if (!payrollSaveMessage) {
+      return;
+    }
+    const t = window.setTimeout(() => setPayrollSaveMessage(""), 5000);
+    return () => window.clearTimeout(t);
+  }, [payrollSaveMessage]);
+
   function openEdit(row: PayrollItemRow) {
+    setPayrollSaveMessage("");
     setEditRow(row);
     setEditNotes(row.notes ?? "");
     setEditOtherDed(row.other_deductions_amount ?? "0");
-    setEditDispTax(row.display_tax_amount ?? row.tax_amount ?? "");
+    setEditDispTax(effectiveDisplayedTaxAmount(row.display_tax_amount, row.tax_amount) ?? "");
     setEditDispNet(row.display_net_amount ?? row.net_amount ?? "");
-    setEditPaymentMode(row.payment_mode ?? "");
+    setEditPaymentMode(normalizePaymentMode(row.payment_mode));
   }
 
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
@@ -343,16 +375,24 @@ export function PayrollReportClient() {
         payment_mode: editPaymentMode || null,
       });
       setEditRow(null);
+      setPayrollSaveMessage("Payroll row saved.");
       await loadReport();
-    } catch {
-      setError("Could not save payroll row.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save payroll row.");
     } finally {
       setBusyId(null);
     }
   }
 
   async function runRecalculate() {
-    if (!activeCompanyId || !confirm("Recalculate all unpaid rows from time data?")) {
+    if (!activeCompanyId) {
+      return;
+    }
+    const notCalculatedYet = report?.alerts.payroll_period_not_calculated === true;
+    const confirmText = notCalculatedYet
+      ? "Create payroll rows for this week from time records? Pending rows can be refreshed later; approved and paid rows are never overwritten without unlocking first."
+      : "Recalculate pending payroll rows from time records? Unlock any approved rows first if you need them rebuilt.";
+    if (!confirm(confirmText)) {
       return;
     }
     setLoading(true);
@@ -458,6 +498,8 @@ export function PayrollReportClient() {
   const totalHoursSeconds = period?.total_rounded_seconds ?? 0;
   const hasCompany = Boolean(activeCompanyId);
   const showMetricFigures = Boolean(report?.period && hasCompany);
+  const payrollPeriodNotCalculated = Boolean(alerts?.payroll_period_not_calculated);
+  const payrollNeedsRecalculation = Boolean(alerts?.payroll_needs_recalculation);
 
   return (
     <Sheet>
@@ -544,7 +586,7 @@ export function PayrollReportClient() {
               <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[#374151]">Actions</p>
               <div className="flex flex-wrap gap-2">
                 <Button disabled={loading || !activeCompanyId} onClick={runRecalculate} type="button">
-                  Recalculate
+                  {payrollPeriodNotCalculated ? "Calculate payroll" : "Recalculate"}
                 </Button>
                 <Button disabled={loading || !activeCompanyId} onClick={runApproveAll} type="button">
                   Approve all pending
@@ -577,6 +619,47 @@ export function PayrollReportClient() {
         {error ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
             {error}
+          </div>
+        ) : null}
+
+        {payrollSaveMessage ? (
+          <div
+            className="rounded-[var(--radius-md)] border border-emerald-800/25 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-950"
+            role="status"
+          >
+            {payrollSaveMessage}
+          </div>
+        ) : null}
+
+        {hasCompany && payrollPeriodNotCalculated ? (
+          <div
+            className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-3 text-sm text-[#1f2937]"
+            role="region"
+          >
+            <p className="font-semibold text-[#111827]">Payroll not calculated for this week yet</p>
+            <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
+              Rows are created on the server when you run calculate. Use the button below (same as{" "}
+              <span className="font-medium">Calculate payroll</span> in Actions).
+            </p>
+            <div className="mt-3">
+              <Button disabled={loading} onClick={runRecalculate} type="button">
+                {loading ? "Working…" : "Calculate payroll"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {hasCompany && payrollNeedsRecalculation && !payrollPeriodNotCalculated ? (
+          <div
+            className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            role="status"
+          >
+            <p className="font-semibold">Needs recalculation</p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
+              At least one employee time record in this week was updated after the last payroll run. Use{" "}
+              <span className="font-medium">Recalculate</span> when you are ready to refresh pending rows (unlock
+              approved rows first if required).
+            </p>
           </div>
         ) : null}
 
@@ -696,7 +779,11 @@ export function PayrollReportClient() {
                   {!loading && hasCompany && report && report.items.length === 0 ? (
                     <TableRow>
                       <TableCell className="py-8 text-center text-sm text-[#374151]" colSpan={12}>
-                        No payroll rows for this filter. Run recalculate for the company week.
+                        {payrollPeriodNotCalculated
+                          ? "No payroll rows yet. Use Calculate payroll in Actions (or the banner above)."
+                          : appliedEmployeeId
+                            ? "No payroll rows for this employee filter."
+                            : "No payroll rows for this week. Use Recalculate if employees should appear."}
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -730,7 +817,9 @@ export function PayrollReportClient() {
                               {row.rate_missing ? "Rate not set" : formatMoneyGBP(row.gross_amount)}
                             </TableCell>
                             <TableCell className="align-top text-xs">
-                              {formatMoneyGBP(row.display_tax_amount ?? row.tax_amount)}
+                              {formatMoneyGBP(
+                                effectiveDisplayedTaxAmount(row.display_tax_amount, row.tax_amount),
+                              )}
                             </TableCell>
                             <TableCell className="align-top text-xs">
                               {formatMoneyGBP(row.display_net_amount ?? row.net_amount)}
@@ -1010,13 +1099,20 @@ export function PayrollReportClient() {
                     </li>
                   ) : null}
                   {alerts.payroll_period_not_calculated ? (
-                    <li>Payroll for this week has not been calculated yet. Run recalculate.</li>
+                    <li>Payroll for this week has not been calculated yet. Use Calculate payroll in Actions.</li>
+                  ) : null}
+                  {alerts.payroll_needs_recalculation ? (
+                    <li>
+                      Time records in this week changed after the last payroll calculation. Consider
+                      recalculating pending rows.
+                    </li>
                   ) : null}
                   {alerts.pending_approval_count === 0 &&
                   alerts.open_shifts_started_in_week_count === 0 &&
                   alerts.rate_missing_employees_count === 0 &&
                   alerts.zero_rounded_hours_employees_count === 0 &&
-                  !alerts.payroll_period_not_calculated ? (
+                  !alerts.payroll_period_not_calculated &&
+                  !alerts.payroll_needs_recalculation ? (
                     <li className="list-none">No issues flagged for this week.</li>
                   ) : null}
                 </ul>
@@ -1090,12 +1186,18 @@ export function PayrollReportClient() {
                 </label>
                 <label className="block text-xs font-bold">
                   Payment mode
-                  <input
+                  <select
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    onChange={(event) => setEditPaymentMode(event.target.value)}
-                    type="text"
-                    value={editPaymentMode}
-                  />
+                    onChange={(event) =>
+                      setEditPaymentMode(
+                        normalizePaymentMode(event.target.value),
+                      )
+                    }
+                    value={normalizePaymentMode(editPaymentMode)}
+                  >
+                    <option value="net_payment">Net payment</option>
+                    <option value="gross_payment">Gross payment</option>
+                  </select>
                 </label>
                 <Button disabled={busyId === editRow.id} type="submit">
                   {busyId === editRow.id ? "Saving…" : "Save edits"}

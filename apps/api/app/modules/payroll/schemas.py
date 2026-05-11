@@ -3,6 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
+from typing import Literal
 
 
 class PayrollRecalculateRequest(BaseModel):
@@ -25,7 +26,7 @@ class PayrollItemPatchRequest(BaseModel):
     other_deductions_amount: Decimal | None = Field(default=None, ge=0)
     display_tax_amount: Decimal | None = None
     display_net_amount: Decimal | None = None
-    payment_mode: str | None = Field(default=None, max_length=64)
+    payment_mode: Literal["net_payment", "gross_payment"] | None = None
 
 
 class PayrollItemResponse(BaseModel):
@@ -98,6 +99,7 @@ class PayrollReportAlerts(BaseModel):
     rate_missing_employees_count: int
     zero_rounded_hours_employees_count: int
     payroll_period_not_calculated: bool
+    payroll_needs_recalculation: bool = False
 
 
 class PayrollReportResponse(BaseModel):

@@ -64,6 +64,7 @@ export type PayrollReportAlerts = {
   rate_missing_employees_count: number;
   zero_rounded_hours_employees_count: number;
   payroll_period_not_calculated: boolean;
+  payroll_needs_recalculation?: boolean;
 };
 
 export type PayrollReportResponse = {
@@ -201,7 +202,10 @@ export async function patchPayrollItem(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error("Could not save payroll row.");
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(
+      typeof detail.detail === "string" ? detail.detail : "Could not save payroll row.",
+    );
   }
   return response.json() as Promise<PayrollItemRow>;
 }
