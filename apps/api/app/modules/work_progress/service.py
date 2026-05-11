@@ -1,4 +1,6 @@
+import io
 import uuid
+import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -10,8 +12,15 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.auth.service import can_manage_user
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
+from app.modules.work_progress.image_processing import (
+    PROCESSING_VERSION,
+    detect_magic_file_kind,
+    process_site_progress_photo,
+)
 from app.modules.work_progress.repository import (
     count_attachments_for_entry,
+    count_review_attachments,
+    delete_attachments_many,
     get_attachment_by_id,
     get_company_by_id,
     get_entry_by_id,
@@ -19,9 +28,12 @@ from app.modules.work_progress.repository import (
     get_location_by_id,
     get_workplace_by_id,
     get_user_by_id,
+    list_attachments_by_ids_with_entries,
     list_attachments_for_entry,
+    list_attachments_for_entry_ids,
     list_entries_for_user,
     list_location_ids_for_user_site_access,
+    list_review_attachments_page,
     list_review_entries,
     save_attachment,
     save_entry,
@@ -33,6 +45,8 @@ from app.modules.work_progress.schemas import (
     WorkProgressEntryListItem,
     WorkProgressMeListResponse,
     WorkProgressMeOptionsResponse,
+    WorkProgressReviewAttachmentGalleryItem,
+    WorkProgressReviewAttachmentGalleryResponse,
     WorkProgressReviewDetailResponse,
     WorkProgressReviewListItem,
     WorkProgressReviewListResponse,
@@ -55,21 +69,7 @@ ALLOWED_PROGRESS_STATUSES = frozenset(
 STATUS_SUBMITTED = "submitted"
 STATUS_REVIEWED = "reviewed"
 
-ALLOWED_DOCUMENT_MEDIA = frozenset(
-    {
-        "application/pdf",
-        "image/jpeg",
-        "image/png",
-        "image/webp",
-    }
-)
-
-EXTENSION_BY_MEDIA: dict[str, str] = {
-    "application/pdf": ".pdf",
-    "image/jpeg": ".jpg",
-    "image/png": ".png",
-    "image/webp": ".webp",
-}
+STORED_JPEG_MEDIA = "image/jpeg"
 
 
 class WorkProgressError(ValueError):
@@ -96,35 +96,63 @@ def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _normalize_media_type(content_type: str) -> str:
-    return (content_type or "").split(";")[0].strip().lower()
-
-
-def _normalize_uploaded_file(content_type: str, file_bytes: bytes) -> tuple[str, str]:
+def _validate_and_process_new_progress_photo(file_bytes: bytes) -> tuple[bytes, int, int, int]:
+    """Validate magic bytes (JPEG/PNG/WebP only), optimise to JPEG. Returns (jpeg_bytes, orig_len, w, h)."""
     if len(file_bytes) == 0:
         raise WorkProgressValidationError("Uploaded file is empty.")
     if len(file_bytes) > MAX_WORK_PROGRESS_FILE_BYTES:
         raise WorkProgressValidationError("Uploaded file is too large (max 10 MB).")
-    media = _normalize_media_type(content_type)
-    if media == "application/octet-stream" and file_bytes[:4] == b"%PDF":
-        media = "application/pdf"
-    if media == "application/octet-stream" and len(file_bytes) >= 3 and file_bytes[:3] == b"\xff\xd8\xff":
-        media = "image/jpeg"
-    if media == "application/octet-stream" and len(file_bytes) >= 8 and file_bytes[:8] == b"\x89PNG\r\n\x1a\n":
-        media = "image/png"
-    if (
-        media == "application/octet-stream"
-        and len(file_bytes) >= 12
-        and file_bytes[:4] == b"RIFF"
-        and file_bytes[8:12] == b"WEBP"
-    ):
-        media = "image/webp"
-    if media not in ALLOWED_DOCUMENT_MEDIA:
-        raise WorkProgressValidationError("Only PDF, JPEG, PNG, or WebP files are allowed.")
-    ext = EXTENSION_BY_MEDIA.get(media)
-    if ext is None:
-        raise WorkProgressValidationError("Only PDF, JPEG, PNG, or WebP files are allowed.")
-    return media, ext
+
+    kind = detect_magic_file_kind(file_bytes)
+    if kind == "pdf":
+        raise WorkProgressValidationError("PDF uploads are not allowed for site progress photos.")
+    if kind not in ("jpeg", "png", "webp"):
+        raise WorkProgressValidationError("Only JPEG, PNG, or WebP photos are allowed.")
+
+    try:
+        processed, w, h = process_site_progress_photo(file_bytes)
+    except Exception:
+        raise WorkProgressValidationError("Could not process image. Try a different file.") from None
+
+    if len(processed) > MAX_WORK_PROGRESS_FILE_BYTES:
+        raise WorkProgressValidationError("Processed file is unexpectedly large.")
+
+    return processed, len(file_bytes), w, h
+
+
+def _remove_storage_file(att: WorkProgressAttachment) -> None:
+    backend = get_storage_backend()
+    path = backend.build_path(att.storage_path)
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        raise WorkProgressValidationError(
+            "The file could not be removed from storage. No database changes were made."
+        ) from exc
+
+
+def _download_media_type(att: WorkProgressAttachment) -> str:
+    return att.stored_content_type or att.content_type
+
+
+def _download_filename(att: WorkProgressAttachment) -> str:
+    name = att.original_filename or "download"
+    media = _download_media_type(att)
+    if media == STORED_JPEG_MEDIA:
+        stem = Path(name).stem
+        lower = name.lower()
+        if lower.endswith((".jpg", ".jpeg")):
+            return name
+        return f"{stem}.jpg"
+    return name
+
+
+def work_progress_attachment_response_media_type(att: WorkProgressAttachment) -> str:
+    return _download_media_type(att)
+
+
+def work_progress_attachment_response_filename(att: WorkProgressAttachment) -> str:
+    return _download_filename(att)
 
 
 def _write_binary_file(relative_path: str, file_bytes: bytes) -> Path:
@@ -190,7 +218,12 @@ def _workplace_name(db_session: Session, workplace_id: uuid.UUID | None) -> str 
     return wp.name if wp else None
 
 
-def _entry_to_list_item(db_session: Session, row: WorkProgressEntry) -> WorkProgressEntryListItem:
+def _entry_to_list_item(
+    db_session: Session,
+    row: WorkProgressEntry,
+    attachments: list[WorkProgressAttachment] | None = None,
+) -> WorkProgressEntryListItem:
+    atts = attachments if attachments is not None else []
     return WorkProgressEntryListItem(
         id=row.id,
         work_date=row.work_date,
@@ -202,6 +235,7 @@ def _entry_to_list_item(db_session: Session, row: WorkProgressEntry) -> WorkProg
         workplace_name=_workplace_name(db_session, row.workplace_id),
         created_at=row.created_at,
         updated_at=row.updated_at,
+        attachments=[WorkProgressAttachmentPublic.model_validate(a) for a in atts],
     )
 
 
@@ -213,7 +247,8 @@ def list_my_entries(
     offset: int,
 ) -> WorkProgressMeListResponse:
     rows, total = list_entries_for_user(db_session, user.id, limit, offset)
-    items = [_entry_to_list_item(db_session, r) for r in rows]
+    grouped = list_attachments_for_entry_ids(db_session, [r.id for r in rows])
+    items = [_entry_to_list_item(db_session, r, grouped.get(r.id, [])) for r in rows]
     return WorkProgressMeListResponse(items=items, total=total)
 
 
@@ -337,22 +372,30 @@ def upload_my_entry_file(
     content_type: str,
     file_bytes: bytes,
 ) -> WorkProgressEntryDetailResponse:
+    del content_type  # Declared MIME is not trusted for allowlisting; magic bytes are authoritative.
     row = get_entry_by_id(db_session, entry_id)
     if row is None or row.user_id != user.id:
         raise WorkProgressNotFoundError()
     if count_attachments_for_entry(db_session, row.id) >= MAX_ATTACHMENTS_PER_ENTRY:
         raise WorkProgressValidationError(f"You can upload at most {MAX_ATTACHMENTS_PER_ENTRY} files per entry.")
 
-    media, ext = _normalize_uploaded_file(content_type, file_bytes)
-    rel_path = f"work-progress-files/{user.id}/{row.id}/file-{uuid.uuid4().hex}{ext}"
-    _write_binary_file(rel_path, file_bytes)
+    processed, original_len, img_w, img_h = _validate_and_process_new_progress_photo(file_bytes)
+    rel_path = f"work-progress-files/{user.id}/{row.id}/file-{uuid.uuid4().hex}.jpg"
+    _write_binary_file(rel_path, processed)
+    stored_len = len(processed)
 
     att = WorkProgressAttachment(
         entry_id=row.id,
         original_filename=original_filename or "upload",
-        content_type=media,
-        file_size_bytes=len(file_bytes),
+        content_type=STORED_JPEG_MEDIA,
+        file_size_bytes=stored_len,
         storage_path=rel_path,
+        original_size_bytes=original_len,
+        stored_size_bytes=stored_len,
+        stored_content_type=STORED_JPEG_MEDIA,
+        image_width=img_w,
+        image_height=img_h,
+        processing_version=PROCESSING_VERSION,
         created_at=_utc_now(),
     )
     save_attachment(db_session, att)
@@ -433,7 +476,7 @@ def _assert_review_access(db_session: Session, actor: User, entry_id: uuid.UUID)
     return entry, owner
 
 
-def list_review(
+def _resolve_review_list_filters(
     db_session: Session,
     actor: User,
     *,
@@ -443,9 +486,7 @@ def list_review(
     status_filter: str | None,
     date_from: date | None,
     date_to: date | None,
-    limit: int,
-    offset: int,
-) -> WorkProgressReviewListResponse:
+) -> tuple[uuid.UUID | None, uuid.UUID | None, uuid.UUID | None, str | None, date | None, date | None]:
     if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
         raise WorkProgressPermissionError("You do not have permission to list work progress reviews.")
 
@@ -476,14 +517,43 @@ def list_review(
             if loc.company_id != company_filter:
                 raise WorkProgressPermissionError("Location does not belong to the selected company.")
 
+    return company_filter, user_id, location_id, status_filter, date_from, date_to
+
+
+def list_review(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    user_id: uuid.UUID | None,
+    location_id: uuid.UUID | None,
+    status_filter: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+    limit: int,
+    offset: int,
+) -> WorkProgressReviewListResponse:
+    company_filter, user_id, location_id, status_f, d_from, d_to = _resolve_review_list_filters(
+        db_session,
+        actor,
+        company_id=company_id,
+        user_id=user_id,
+        location_id=location_id,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
     rows, total = list_review_entries(
         db_session,
         company_id_filter=company_filter,
         user_id_filter=user_id,
         location_id_filter=location_id,
-        status_filter=status_filter,
-        date_from=date_from,
-        date_to=date_to,
+        status_filter=status_f,
+        date_from=d_from,
+        date_to=d_to,
+        title_search=title_search,
         limit=limit,
         offset=offset,
     )
@@ -511,6 +581,171 @@ def list_review(
             )
         )
     return WorkProgressReviewListResponse(items=items, total=total)
+
+
+def list_review_attachment_gallery(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    user_id: uuid.UUID | None,
+    location_id: uuid.UUID | None,
+    status_filter: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+    limit: int,
+    offset: int,
+) -> WorkProgressReviewAttachmentGalleryResponse:
+    company_filter, uid, loc_id, status_f, d_from, d_to = _resolve_review_list_filters(
+        db_session,
+        actor,
+        company_id=company_id,
+        user_id=user_id,
+        location_id=location_id,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+    )
+
+    total = count_review_attachments(
+        db_session,
+        company_id_filter=company_filter,
+        user_id_filter=uid,
+        location_id_filter=loc_id,
+        status_filter=status_f,
+        date_from=d_from,
+        date_to=d_to,
+        title_search=title_search,
+    )
+    page = list_review_attachments_page(
+        db_session,
+        company_id_filter=company_filter,
+        user_id_filter=uid,
+        location_id_filter=loc_id,
+        status_filter=status_f,
+        date_from=d_from,
+        date_to=d_to,
+        title_search=title_search,
+        limit=limit,
+        offset=offset,
+    )
+
+    items: list[WorkProgressReviewAttachmentGalleryItem] = []
+    for att, entry in page:
+        owner = get_user_by_id(db_session, entry.user_id)
+        profile = get_employee_profile_by_user_id(db_session, entry.user_id)
+        items.append(
+            WorkProgressReviewAttachmentGalleryItem(
+                attachment=WorkProgressAttachmentPublic.model_validate(att),
+                entry_id=entry.id,
+                work_date=entry.work_date,
+                title=entry.title,
+                location_id=entry.location_id,
+                location_name=_location_name(db_session, entry.location_id),
+                user_id=entry.user_id,
+                user_email=owner.email if owner else "",
+                employee_name=_display_name(profile),
+            )
+        )
+    return WorkProgressReviewAttachmentGalleryResponse(items=items, total=total)
+
+
+def _ordered_bulk_attachment_rows(
+    db_session: Session,
+    file_ids: list[uuid.UUID],
+) -> list[tuple[WorkProgressAttachment, WorkProgressEntry]]:
+    unique_ids = list(dict.fromkeys(file_ids))
+    want = set(unique_ids)
+    rows = list_attachments_by_ids_with_entries(db_session, list(want))
+    found = {att.id for att, _ in rows}
+    if found != want or len(rows) != len(want):
+        raise WorkProgressNotFoundError()
+    by_id = {att.id: (att, ent) for att, ent in rows}
+    return [by_id[fid] for fid in unique_ids]
+
+
+def _assert_bulk_attachment_scope(
+    db_session: Session,
+    actor: User,
+    ordered: list[tuple[WorkProgressAttachment, WorkProgressEntry]],
+) -> list[tuple[WorkProgressAttachment, WorkProgressEntry, User]]:
+    out: list[tuple[WorkProgressAttachment, WorkProgressEntry, User]] = []
+    for att, entry in ordered:
+        owner = get_user_by_id(db_session, entry.user_id)
+        if owner is None:
+            raise WorkProgressNotFoundError()
+        if not can_manage_user(actor, owner):
+            raise WorkProgressNotFoundError()
+        out.append((att, entry, owner))
+    return out
+
+
+def bulk_download_review_attachments_zip(
+    db_session: Session,
+    actor: User,
+    file_ids: list[uuid.UUID],
+) -> bytes:
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise WorkProgressPermissionError()
+
+    ordered = _ordered_bulk_attachment_rows(db_session, file_ids)
+    triples = _assert_bulk_attachment_scope(db_session, actor, ordered)
+
+    backend = get_storage_backend()
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for att, entry, _ in triples:
+            path = backend.build_path(att.storage_path)
+            if not path.is_file():
+                raise WorkProgressNotFoundError()
+            safe = Path(att.original_filename or "file").name.replace("/", "_").replace("\\", "_")
+            arcname = f"{entry.work_date}_{att.id.hex[:8]}_{safe}"
+            zf.write(path, arcname=arcname)
+
+    company_id_for_audit = triples[0][1].company_id if triples else None
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="work_progress.attachments_bulk_downloaded",
+        entity_type="work_progress_attachment",
+        entity_id=None,
+        company_id=company_id_for_audit,
+        details={
+            "file_count": len(triples),
+            "attachment_ids": [str(att.id) for att, _, _ in triples],
+        },
+    )
+    return buf.getvalue()
+
+
+def bulk_delete_review_attachments(
+    db_session: Session,
+    actor: User,
+    file_ids: list[uuid.UUID],
+) -> None:
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise WorkProgressPermissionError()
+
+    ordered = _ordered_bulk_attachment_rows(db_session, file_ids)
+    triples = _assert_bulk_attachment_scope(db_session, actor, ordered)
+
+    attachments = [att for att, _, _ in triples]
+    for att in attachments:
+        _remove_storage_file(att)
+
+    delete_attachments_many(db_session, attachments)
+
+    company_id_for_audit = triples[0][1].company_id if triples else None
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="work_progress.attachments_bulk_deleted",
+        entity_type="work_progress_attachment",
+        entity_id=None,
+        company_id=company_id_for_audit,
+        details={"file_count": len(attachments), "attachment_ids": [str(a.id) for a in attachments]},
+    )
 
 
 def get_review_detail(db_session: Session, actor: User, entry_id: uuid.UUID) -> WorkProgressReviewDetailResponse:

@@ -23,6 +23,12 @@ export type WorkProgressAttachmentMeta = {
   original_filename: string;
   content_type: string;
   file_size_bytes: number;
+  original_size_bytes: number | null;
+  stored_size_bytes: number | null;
+  stored_content_type: string | null;
+  image_width: number | null;
+  image_height: number | null;
+  processing_version: string | null;
   created_at: string;
 };
 
@@ -58,6 +64,7 @@ export type WorkProgressListItem = {
   workplace_name: string | null;
   created_at: string;
   updated_at: string;
+  attachments: WorkProgressAttachmentMeta[];
 };
 
 export type WorkProgressMeList = {
@@ -211,8 +218,26 @@ export type WorkProgressReviewQuery = {
   status?: string;
   date_from?: string;
   date_to?: string;
+  title_search?: string;
   limit?: number;
   offset?: number;
+};
+
+export type WorkProgressReviewGalleryItem = {
+  attachment: WorkProgressAttachmentMeta;
+  entry_id: string;
+  work_date: string;
+  title: string;
+  location_id: string;
+  location_name: string;
+  user_id: string;
+  user_email: string;
+  employee_name: string | null;
+};
+
+export type WorkProgressReviewGalleryResponse = {
+  items: WorkProgressReviewGalleryItem[];
+  total: number;
 };
 
 export async function listWorkProgressReview(params?: WorkProgressReviewQuery): Promise<WorkProgressReviewList> {
@@ -235,6 +260,9 @@ export async function listWorkProgressReview(params?: WorkProgressReviewQuery): 
   if (params?.date_to) {
     search.set("date_to", params.date_to);
   }
+  if (params?.title_search?.trim()) {
+    search.set("title_search", params.title_search.trim());
+  }
   if (params?.limit != null) {
     search.set("limit", String(params.limit));
   }
@@ -250,6 +278,73 @@ export async function listWorkProgressReview(params?: WorkProgressReviewQuery): 
     throw new Error(await parseErrorMessage(response, "Could not load review list."));
   }
   return response.json() as Promise<WorkProgressReviewList>;
+}
+
+export async function listWorkProgressReviewGallery(
+  params?: WorkProgressReviewQuery,
+): Promise<WorkProgressReviewGalleryResponse> {
+  const search = new URLSearchParams();
+  if (params?.company_id) {
+    search.set("company_id", params.company_id);
+  }
+  if (params?.user_id) {
+    search.set("user_id", params.user_id);
+  }
+  if (params?.location_id) {
+    search.set("location_id", params.location_id);
+  }
+  if (params?.status) {
+    search.set("status", params.status);
+  }
+  if (params?.date_from) {
+    search.set("date_from", params.date_from);
+  }
+  if (params?.date_to) {
+    search.set("date_to", params.date_to);
+  }
+  if (params?.title_search?.trim()) {
+    search.set("title_search", params.title_search.trim());
+  }
+  if (params?.limit != null) {
+    search.set("limit", String(params.limit));
+  }
+  if (params?.offset != null) {
+    search.set("offset", String(params.offset));
+  }
+  const q = search.toString();
+  const response = await fetch(
+    `${API_URL}/api/work-progress/review/attachments/gallery${q ? `?${q}` : ""}`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not load attachment gallery."));
+  }
+  return response.json() as Promise<WorkProgressReviewGalleryResponse>;
+}
+
+export async function bulkDownloadWorkProgressAttachments(fileIds: string[]): Promise<Blob> {
+  const response = await fetch(`${API_URL}/api/work-progress/review/attachments/bulk-download`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ file_ids: fileIds }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not download selected files."));
+  }
+  return response.blob();
+}
+
+export async function bulkDeleteWorkProgressAttachments(fileIds: string[]): Promise<void> {
+  const response = await fetch(`${API_URL}/api/work-progress/review/attachments/bulk-delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ file_ids: fileIds }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not delete selected files."));
+  }
 }
 
 export async function getWorkProgressReviewDetail(progressId: string): Promise<WorkProgressReviewDetail> {

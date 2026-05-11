@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+
 from pydantic import BaseModel, Field
 
 
@@ -18,6 +19,12 @@ class WorkProgressAttachmentPublic(BaseModel):
     original_filename: str
     content_type: str
     file_size_bytes: int
+    original_size_bytes: int | None = None
+    stored_size_bytes: int | None = None
+    stored_content_type: str | None = None
+    image_width: int | None = None
+    image_height: int | None = None
+    processing_version: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -34,6 +41,7 @@ class WorkProgressEntryListItem(BaseModel):
     workplace_name: str | None
     created_at: datetime
     updated_at: datetime
+    attachments: list[WorkProgressAttachmentPublic] = Field(default_factory=list)
 
 
 class WorkProgressEntryDetailResponse(BaseModel):
@@ -104,3 +112,24 @@ class WorkProgressCommentBody(BaseModel):
 class WorkProgressReviewDetailResponse(WorkProgressEntryDetailResponse):
     user_email: str
     employee_name: str | None = None
+
+
+class WorkProgressBulkFileIdsBody(BaseModel):
+    file_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=200)
+
+
+class WorkProgressReviewAttachmentGalleryItem(BaseModel):
+    attachment: WorkProgressAttachmentPublic
+    entry_id: uuid.UUID
+    work_date: date
+    title: str
+    location_id: uuid.UUID
+    location_name: str
+    user_id: uuid.UUID
+    user_email: str
+    employee_name: str | None = None
+
+
+class WorkProgressReviewAttachmentGalleryResponse(BaseModel):
+    items: list[WorkProgressReviewAttachmentGalleryItem]
+    total: int

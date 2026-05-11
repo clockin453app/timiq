@@ -61,6 +61,35 @@ def list_entries_for_user(
     return rows, total
 
 
+def _apply_review_entry_filters(
+    stmt,
+    *,
+    company_id_filter: uuid.UUID | None,
+    user_id_filter: uuid.UUID | None,
+    location_id_filter: uuid.UUID | None,
+    status_filter: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+):
+    if company_id_filter is not None:
+        stmt = stmt.where(WorkProgressEntry.company_id == company_id_filter)
+    if user_id_filter is not None:
+        stmt = stmt.where(WorkProgressEntry.user_id == user_id_filter)
+    if location_id_filter is not None:
+        stmt = stmt.where(WorkProgressEntry.location_id == location_id_filter)
+    if status_filter is not None:
+        stmt = stmt.where(WorkProgressEntry.status == status_filter)
+    if date_from is not None:
+        stmt = stmt.where(WorkProgressEntry.work_date >= date_from)
+    if date_to is not None:
+        stmt = stmt.where(WorkProgressEntry.work_date <= date_to)
+    if title_search and title_search.strip():
+        term = f"%{title_search.strip().replace('%', '\\%').replace('_', '\\_')}%"
+        stmt = stmt.where(WorkProgressEntry.title.ilike(term))
+    return stmt
+
+
 def list_review_entries(
     db_session: Session,
     *,
@@ -70,33 +99,131 @@ def list_review_entries(
     status_filter: str | None,
     date_from: date | None,
     date_to: date | None,
+    title_search: str | None,
     limit: int,
     offset: int,
 ) -> tuple[list[WorkProgressEntry], int]:
-    def apply_filters(stmt):
-        if company_id_filter is not None:
-            stmt = stmt.where(WorkProgressEntry.company_id == company_id_filter)
-        if user_id_filter is not None:
-            stmt = stmt.where(WorkProgressEntry.user_id == user_id_filter)
-        if location_id_filter is not None:
-            stmt = stmt.where(WorkProgressEntry.location_id == location_id_filter)
-        if status_filter is not None:
-            stmt = stmt.where(WorkProgressEntry.status == status_filter)
-        if date_from is not None:
-            stmt = stmt.where(WorkProgressEntry.work_date >= date_from)
-        if date_to is not None:
-            stmt = stmt.where(WorkProgressEntry.work_date <= date_to)
-        return stmt
-
-    count_stmt = apply_filters(select(func.count()).select_from(WorkProgressEntry))
+    count_stmt = _apply_review_entry_filters(
+        select(func.count()).select_from(WorkProgressEntry),
+        company_id_filter=company_id_filter,
+        user_id_filter=user_id_filter,
+        location_id_filter=location_id_filter,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+        title_search=title_search,
+    )
     total = int(db_session.scalar(count_stmt) or 0)
 
-    stmt = apply_filters(select(WorkProgressEntry))
+    stmt = _apply_review_entry_filters(
+        select(WorkProgressEntry),
+        company_id_filter=company_id_filter,
+        user_id_filter=user_id_filter,
+        location_id_filter=location_id_filter,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+        title_search=title_search,
+    )
     stmt = stmt.order_by(WorkProgressEntry.work_date.desc(), WorkProgressEntry.created_at.desc()).limit(
         limit
     ).offset(offset)
     rows = list(db_session.scalars(stmt).all())
     return rows, total
+
+
+def count_review_attachments(
+    db_session: Session,
+    *,
+    company_id_filter: uuid.UUID | None,
+    user_id_filter: uuid.UUID | None,
+    location_id_filter: uuid.UUID | None,
+    status_filter: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(WorkProgressAttachment)
+        .join(WorkProgressEntry, WorkProgressEntry.id == WorkProgressAttachment.entry_id)
+    )
+    stmt = _apply_review_entry_filters(
+        stmt,
+        company_id_filter=company_id_filter,
+        user_id_filter=user_id_filter,
+        location_id_filter=location_id_filter,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+        title_search=title_search,
+    )
+    return int(db_session.scalar(stmt) or 0)
+
+
+def list_review_attachments_page(
+    db_session: Session,
+    *,
+    company_id_filter: uuid.UUID | None,
+    user_id_filter: uuid.UUID | None,
+    location_id_filter: uuid.UUID | None,
+    status_filter: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+    limit: int,
+    offset: int,
+) -> list[tuple[WorkProgressAttachment, WorkProgressEntry]]:
+    stmt = (
+        select(WorkProgressAttachment, WorkProgressEntry)
+        .join(WorkProgressEntry, WorkProgressEntry.id == WorkProgressAttachment.entry_id)
+    )
+    stmt = _apply_review_entry_filters(
+        stmt,
+        company_id_filter=company_id_filter,
+        user_id_filter=user_id_filter,
+        location_id_filter=location_id_filter,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+        title_search=title_search,
+    )
+    stmt = stmt.order_by(WorkProgressAttachment.created_at.desc()).limit(limit).offset(offset)
+    rows = db_session.execute(stmt).all()
+    return [(r[0], r[1]) for r in rows]
+
+
+def list_attachments_for_entry_ids(
+    db_session: Session,
+    entry_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[WorkProgressAttachment]]:
+    if not entry_ids:
+        return {}
+    stmt = (
+        select(WorkProgressAttachment)
+        .where(WorkProgressAttachment.entry_id.in_(entry_ids))
+        .order_by(WorkProgressAttachment.entry_id.asc(), WorkProgressAttachment.created_at.asc())
+    )
+    rows = list(db_session.scalars(stmt).all())
+    out: dict[uuid.UUID, list[WorkProgressAttachment]] = {}
+    for r in rows:
+        out.setdefault(r.entry_id, []).append(r)
+    return out
+
+
+def list_attachments_by_ids_with_entries(
+    db_session: Session,
+    file_ids: list[uuid.UUID],
+) -> list[tuple[WorkProgressAttachment, WorkProgressEntry]]:
+    if not file_ids:
+        return []
+    stmt = (
+        select(WorkProgressAttachment, WorkProgressEntry)
+        .join(WorkProgressEntry, WorkProgressEntry.id == WorkProgressAttachment.entry_id)
+        .where(WorkProgressAttachment.id.in_(file_ids))
+    )
+    rows = db_session.execute(stmt).all()
+    return [(r[0], r[1]) for r in rows]
 
 
 def save_entry(db_session: Session, row: WorkProgressEntry) -> WorkProgressEntry:
@@ -112,6 +239,17 @@ def save_attachment(db_session: Session, row: WorkProgressAttachment) -> WorkPro
     db_session.commit()
     db_session.refresh(row)
     return row
+
+
+def delete_attachment_row(db_session: Session, row: WorkProgressAttachment) -> None:
+    db_session.delete(row)
+    db_session.commit()
+
+
+def delete_attachments_many(db_session: Session, rows: list[WorkProgressAttachment]) -> None:
+    for row in rows:
+        db_session.delete(row)
+    db_session.commit()
 
 
 def get_entry_with_owner(

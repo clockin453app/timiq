@@ -23,6 +23,7 @@ import {
   getMyWorkProgressDetail,
   listMyWorkProgress,
   uploadWorkProgressFile,
+  workProgressFileUrl,
   type WorkProgressAttachmentMeta,
   type WorkProgressEntryDetail,
   type WorkProgressListItem,
@@ -35,6 +36,44 @@ function formatDate(iso: string) {
     return iso;
   }
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function formatBytes(n: number | null | undefined) {
+  if (n == null || Number.isNaN(n)) {
+    return "—";
+  }
+  if (n < 1024) {
+    return `${n} B`;
+  }
+  if (n < 1024 * 1024) {
+    return `${(n / 1024).toFixed(1)} KB`;
+  }
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageAttachment(a: WorkProgressAttachmentMeta) {
+  const t = (a.stored_content_type || a.content_type || "").toLowerCase();
+  return t.startsWith("image/");
+}
+
+function AttachmentThumb({ att }: { att: WorkProgressAttachmentMeta }) {
+  if (!isImageAttachment(att)) {
+    return (
+      <span className="inline-flex h-12 w-12 items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-header)] text-[10px] font-bold text-[var(--color-text-soft)]">
+        PDF
+      </span>
+    );
+  }
+    return (
+    <img
+      alt=""
+      className="h-12 w-12 rounded border border-[var(--color-border)] object-cover"
+      height={48}
+      loading="lazy"
+      src={workProgressFileUrl(att.id)}
+      width={48}
+    />
+  );
 }
 
 export function SiteProgressClient() {
@@ -54,9 +93,13 @@ export function SiteProgressClient() {
   const [formError, setFormError] = useState("");
   const [formBusy, setFormBusy] = useState(false);
 
-  const [lastCreatedId, setLastCreatedId] = useState<string | null>(null);
-  const [detail, setDetail] = useState<WorkProgressEntryDetail | null>(null);
+  const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
+  const [activeDetail, setActiveDetail] = useState<WorkProgressEntryDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [uploadBusy, setUploadBusy] = useState(false);
+  const [stagedPhotoFiles, setStagedPhotoFiles] = useState<File[]>([]);
+  const [uploadNotice, setUploadNotice] = useState("");
+  const [uploadError, setUploadError] = useState("");
 
   const loadOptions = useCallback(async () => {
     setOptionsError("");
@@ -101,27 +144,38 @@ export function SiteProgressClient() {
   }, [loadList]);
 
   useEffect(() => {
-    if (!lastCreatedId) {
-      setDetail(null);
+    if (!activeEntryId) {
+      setActiveDetail(null);
       return;
     }
     let cancelled = false;
+    setDetailLoading(true);
     (async () => {
       try {
-        const d = await getMyWorkProgressDetail(lastCreatedId);
+        const d = await getMyWorkProgressDetail(activeEntryId);
         if (!cancelled) {
-          setDetail(d);
+          setActiveDetail(d);
         }
       } catch {
         if (!cancelled) {
-          setDetail(null);
+          setActiveDetail(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setDetailLoading(false);
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [lastCreatedId]);
+  }, [activeEntryId]);
+
+  useEffect(() => {
+    setStagedPhotoFiles([]);
+    setUploadNotice("");
+    setUploadError("");
+  }, [activeEntryId]);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -153,7 +207,7 @@ export function SiteProgressClient() {
         percent_complete: pct,
       };
       const created = await createMyWorkProgress(body);
-      setLastCreatedId(created.id);
+      setActiveEntryId(created.id);
       setTitle("");
       setNotes("");
       setPercent("");
@@ -165,21 +219,56 @@ export function SiteProgressClient() {
     }
   }
 
-  async function handleUpload(file: File | null) {
-    if (!file || !lastCreatedId) {
+  async function handleUploadPhotos() {
+    if (!activeEntryId || !activeDetail || stagedPhotoFiles.length === 0) {
       return;
     }
-    setUploadBusy(true);
-    setFormError("");
-    try {
-      const updated = await uploadWorkProgressFile(lastCreatedId, file);
-      setDetail(updated);
-      await loadList();
-    } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Upload failed.");
-    } finally {
-      setUploadBusy(false);
+    const room = Math.max(0, 8 - activeDetail.attachments.length);
+    const queue = stagedPhotoFiles.slice(0, room);
+    if (stagedPhotoFiles.length > room) {
+      const skipped = stagedPhotoFiles.slice(room);
+      setUploadNotice(
+        `Only ${room} file(s) can be added (8 per entry). Skipped: ${skipped.map((f) => f.name).join(", ")}`,
+      );
+    } else {
+      setUploadNotice("");
     }
+    if (queue.length === 0) {
+      setUploadError("This entry already has the maximum number of attachments (8).");
+      setStagedPhotoFiles([]);
+      return;
+    }
+
+    setUploadBusy(true);
+    setUploadError("");
+    let latestDetail: WorkProgressEntryDetail | null = activeDetail;
+    let failIdx = -1;
+    let failMessage = "";
+
+    for (let i = 0; i < queue.length; i++) {
+      const file = queue[i]!;
+      try {
+        latestDetail = await uploadWorkProgressFile(activeEntryId, file);
+      } catch (err) {
+        failIdx = i;
+        failMessage = err instanceof Error ? err.message : "Upload failed.";
+        break;
+      }
+    }
+
+    if (latestDetail) {
+      setActiveDetail(latestDetail);
+    }
+    await loadList();
+
+    if (failIdx >= 0) {
+      const failedFile = queue[failIdx]!;
+      setUploadError(`"${failedFile.name}": ${failMessage}`);
+      setStagedPhotoFiles(queue.slice(failIdx));
+    } else {
+      setStagedPhotoFiles([]);
+    }
+    setUploadBusy(false);
   }
 
   async function openAttachment(att: WorkProgressAttachmentMeta) {
@@ -196,7 +285,7 @@ export function SiteProgressClient() {
   return (
     <Sheet>
       <PageHeader
-        description="Log site work with photos or documents. Only locations you are assigned to appear below."
+        description="Log site work with photos. Only locations you are assigned to appear below. New uploads are JPEG, PNG, or WebP (optimised on the server)."
         title="Site progress"
       />
       <SheetBody className="space-y-4 md:p-5">
@@ -291,41 +380,94 @@ export function SiteProgressClient() {
           </form>
         </div>
 
-        {lastCreatedId && detail ? (
+        {activeEntryId ? (
           <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
             <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                Files for last submitted entry (max 8, 10 MB each)
+                Photos for selected entry (max 8, 10 MB each before optimisation)
               </p>
             </div>
             <div className="space-y-2 p-4 text-sm">
-              <p className="text-[var(--color-text-muted)]">
-                Attachments: {detail.attachments.length} / 8 — JPG, PNG, WebP, or PDF.
-              </p>
-              <input
-                accept=".jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/png,image/webp,application/pdf"
-                className="text-sm"
-                disabled={uploadBusy || detail.attachments.length >= 8}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  void handleUpload(f ?? null);
-                }}
-                type="file"
-              />
-              <ul className="divide-y divide-[var(--color-border)] border border-[var(--color-border)]">
-                {detail.attachments.map((a) => (
-                  <li className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5" key={a.id}>
-                    <span className="truncate">{a.original_filename}</span>
-                    <Button onClick={() => void openAttachment(a)} size="sm" type="button" variant="secondary">
-                      Open
-                    </Button>
-                  </li>
-                ))}
-              </ul>
+              {detailLoading ? <p className="text-[var(--color-text-muted)]">Loading entry…</p> : null}
+              {!detailLoading && activeDetail ? (
+                <>
+                  <p className="text-[var(--color-text-muted)]">
+                    Entry: {formatDate(activeDetail.work_date)} — {activeDetail.location_name} —{" "}
+                    {activeDetail.title}
+                  </p>
+                  <p className="text-[var(--color-text-muted)]">
+                    Attachments: {activeDetail.attachments.length} / 8 — JPEG, PNG, or WebP only.
+                  </p>
+                  <input
+                    accept="image/jpeg,image/png,image/webp"
+                    className="text-sm"
+                    disabled={uploadBusy || activeDetail.attachments.length >= 8}
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files ?? []);
+                      e.target.value = "";
+                      setUploadError("");
+                      setUploadNotice("");
+                      setStagedPhotoFiles(files);
+                    }}
+                    type="file"
+                  />
+                  {stagedPhotoFiles.length > 0 ? (
+                    <div className="text-xs text-[var(--color-text-muted)]">
+                      <p className="font-medium text-[var(--color-text)]">
+                        {stagedPhotoFiles.length} file(s) selected
+                      </p>
+                      <p className="mt-1 max-h-24 overflow-y-auto break-words">{stagedPhotoFiles.map((f) => f.name).join(", ")}</p>
+                    </div>
+                  ) : null}
+                  {uploadNotice ? <p className="text-xs text-[var(--color-text-muted)]">{uploadNotice}</p> : null}
+                  {uploadError ? <p className="text-sm text-[var(--color-danger-700)]">{uploadError}</p> : null}
+                  <Button
+                    disabled={
+                      uploadBusy || stagedPhotoFiles.length === 0 || activeDetail.attachments.length >= 8
+                    }
+                    onClick={() => void handleUploadPhotos()}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {uploadBusy ? "Uploading…" : "Upload photos"}
+                  </Button>
+                  <ul className="divide-y divide-[var(--color-border)] border border-[var(--color-border)]">
+                    {activeDetail.attachments.map((a) => (
+                      <li className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5" key={a.id}>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <AttachmentThumb att={a} />
+                            <div className="min-w-0">
+                              <p className="truncate font-medium">{a.original_filename}</p>
+                              <p className="text-[10px] text-[var(--color-text-muted)]">
+                                Stored {formatBytes(a.stored_size_bytes ?? a.file_size_bytes)}
+                                {a.original_size_bytes != null ? ` · original ${formatBytes(a.original_size_bytes)}` : ""}
+                                {a.image_width != null && a.image_height != null
+                                  ? ` · ${a.image_width}×${a.image_height}`
+                                  : ""}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                        <Button onClick={() => void openAttachment(a)} size="sm" type="button" variant="secondary">
+                          Open
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </>
+              ) : null}
+              {!detailLoading && !activeDetail ? (
+                <p className="text-[var(--color-danger-700)]">Could not load the selected entry.</p>
+              ) : null}
             </div>
           </div>
-        ) : null}
+        ) : (
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Submit an update or select a row below to attach photos to an entry.
+          </p>
+        )}
 
         <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
           <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
@@ -352,20 +494,51 @@ export function SiteProgressClient() {
                     <TableHead>Date</TableHead>
                     <TableHead>Site</TableHead>
                     <TableHead>Title</TableHead>
+                    <TableHead>Photos</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Review</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {items.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell>{formatDate(row.work_date)}</TableCell>
-                      <TableCell>{row.location_name}</TableCell>
-                      <TableCell>{row.title}</TableCell>
-                      <TableCell>{row.progress_status}</TableCell>
-                      <TableCell>{row.status}</TableCell>
-                    </TableRow>
-                  ))}
+                  {items.map((row) => {
+                    const selected = row.id === activeEntryId;
+                    return (
+                      <TableRow
+                        className={selected ? "bg-[var(--color-header)]" : "cursor-pointer"}
+                        key={row.id}
+                        onClick={() => setActiveEntryId(row.id)}
+                      >
+                        <TableCell>{formatDate(row.work_date)}</TableCell>
+                        <TableCell>{row.location_name}</TableCell>
+                        <TableCell className="max-w-[12rem] truncate">{row.title}</TableCell>
+                        <TableCell>
+                          <div className="flex flex-wrap gap-1">
+                            {(row.attachments ?? []).slice(0, 4).map((a) => (
+                              <button
+                                className="rounded border border-transparent hover:border-[var(--color-action-text)]"
+                                key={a.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void openAttachment(a);
+                                }}
+                                type="button"
+                              >
+                                <AttachmentThumb att={a} />
+                              </button>
+                            ))}
+                            {(row.attachments ?? []).length === 0 ? (
+                              <span className="text-xs text-[var(--color-text-muted)]">—</span>
+                            ) : null}
+                          </div>
+                          <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">
+                            {(row.attachments ?? []).length} file(s)
+                          </p>
+                        </TableCell>
+                        <TableCell>{row.progress_status}</TableCell>
+                        <TableCell>{row.status}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             ) : null}

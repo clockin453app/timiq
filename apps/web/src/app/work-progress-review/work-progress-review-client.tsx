@@ -19,11 +19,17 @@ import { isAdministrator, LogoutButton, RoleGuard, useCurrentUser } from "../../
 import { listCompanies, type Company } from "../../features/companies/api";
 import {
   acknowledgeWorkProgress,
+  bulkDeleteWorkProgressAttachments,
+  bulkDownloadWorkProgressAttachments,
   commentWorkProgress,
   fetchWorkProgressFileBlob,
   getWorkProgressReviewDetail,
   listWorkProgressReview,
+  listWorkProgressReviewGallery,
+  workProgressFileUrl,
+  type WorkProgressAttachmentMeta,
   type WorkProgressReviewDetail,
+  type WorkProgressReviewGalleryItem,
   type WorkProgressReviewListItem,
 } from "../../features/work-progress/api";
 
@@ -33,6 +39,60 @@ function formatDate(iso: string) {
     return iso;
   }
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+function formatBytes(n: number | null | undefined) {
+  if (n == null || Number.isNaN(n)) {
+    return "—";
+  }
+  if (n < 1024) {
+    return `${n} B`;
+  }
+  if (n < 1024 * 1024) {
+    return `${(n / 1024).toFixed(1)} KB`;
+  }
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function isImageAttachment(a: WorkProgressAttachmentMeta) {
+  const t = (a.stored_content_type || a.content_type || "").toLowerCase();
+  return t.startsWith("image/");
+}
+
+function GalleryThumb({ att, compact }: { att: WorkProgressAttachmentMeta; compact?: boolean }) {
+  if (!isImageAttachment(att)) {
+    return (
+      <div
+        className={`flex items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-header)] text-xs font-bold text-[var(--color-text-soft)] ${compact ? "h-12 w-12 text-[10px]" : "h-28 w-full"}`}
+      >
+        PDF
+      </div>
+    );
+  }
+  if (compact) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        alt=""
+        className="h-12 w-12 rounded border border-[var(--color-border)] object-cover"
+        height={48}
+        loading="lazy"
+        src={workProgressFileUrl(att.id)}
+        width={48}
+      />
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      alt=""
+      className="h-28 w-full rounded border border-[var(--color-border)] object-cover"
+      height={112}
+      loading="lazy"
+      src={workProgressFileUrl(att.id)}
+      width={200}
+    />
+  );
 }
 
 function ReviewAdminBody() {
@@ -46,11 +106,20 @@ function ReviewAdminBody() {
   const [dateTo, setDateTo] = useState("");
   const [userIdFilter, setUserIdFilter] = useState("");
   const [locationIdFilter, setLocationIdFilter] = useState("");
+  const [titleSearch, setTitleSearch] = useState("");
 
   const [items, setItems] = useState<WorkProgressReviewListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [listError, setListError] = useState("");
   const [listLoading, setListLoading] = useState(true);
+
+  const [galleryItems, setGalleryItems] = useState<WorkProgressReviewGalleryItem[]>([]);
+  const [galleryTotal, setGalleryTotal] = useState(0);
+  const [galleryError, setGalleryError] = useState("");
+  const [galleryLoading, setGalleryLoading] = useState(true);
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [galleryBulkError, setGalleryBulkError] = useState("");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<WorkProgressReviewDetail | null>(null);
@@ -74,38 +143,60 @@ function ReviewAdminBody() {
     }
   }, [adminAllCompanies]);
 
-  const loadList = useCallback(async () => {
+  const refreshListAndGallery = useCallback(async () => {
     setListLoading(true);
+    setGalleryLoading(true);
     setListError("");
+    setGalleryError("");
+    setSelectedFileIds(new Set());
+    const base = {
+      company_id: adminAllCompanies && companyFilter ? companyFilter : undefined,
+      user_id: userIdFilter.trim() || undefined,
+      location_id: locationIdFilter.trim() || undefined,
+      status: statusFilter.trim() || undefined,
+      date_from: dateFrom.trim() || undefined,
+      date_to: dateTo.trim() || undefined,
+      title_search: titleSearch.trim() || undefined,
+    };
     try {
-      const data = await listWorkProgressReview({
-        company_id: adminAllCompanies && companyFilter ? companyFilter : undefined,
-        user_id: userIdFilter.trim() || undefined,
-        location_id: locationIdFilter.trim() || undefined,
-        status: statusFilter.trim() || undefined,
-        date_from: dateFrom.trim() || undefined,
-        date_to: dateTo.trim() || undefined,
-        limit: 100,
-        offset: 0,
-      });
-      setItems(data.items);
-      setTotal(data.total);
+      const [listData, galData] = await Promise.all([
+        listWorkProgressReview({ ...base, limit: 100, offset: 0 }),
+        listWorkProgressReviewGallery({ ...base, limit: 48, offset: 0 }),
+      ]);
+      setItems(listData.items);
+      setTotal(listData.total);
+      setGalleryItems(galData.items);
+      setGalleryTotal(galData.total);
     } catch (err) {
-      setListError(err instanceof Error ? err.message : "Could not load list.");
+      const msg = err instanceof Error ? err.message : "Could not load data.";
+      setListError(msg);
+      setGalleryError(msg);
       setItems([]);
       setTotal(0);
+      setGalleryItems([]);
+      setGalleryTotal(0);
     } finally {
       setListLoading(false);
+      setGalleryLoading(false);
     }
-  }, [adminAllCompanies, companyFilter, dateFrom, dateTo, locationIdFilter, statusFilter, userIdFilter]);
+  }, [
+    adminAllCompanies,
+    companyFilter,
+    dateFrom,
+    dateTo,
+    locationIdFilter,
+    statusFilter,
+    titleSearch,
+    userIdFilter,
+  ]);
 
   useEffect(() => {
     void loadCompanies();
   }, [loadCompanies]);
 
   useEffect(() => {
-    void loadList();
-  }, [loadList]);
+    void refreshListAndGallery();
+  }, [refreshListAndGallery]);
 
   const openDetail = useCallback(async (id: string) => {
     setSelectedId(id);
@@ -136,7 +227,7 @@ function ReviewAdminBody() {
       const d = await acknowledgeWorkProgress(selectedId, ackNote.trim() || null);
       setDetail(d);
       setAckNote("");
-      await loadList();
+      await refreshListAndGallery();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Acknowledge failed.");
     } finally {
@@ -155,7 +246,7 @@ function ReviewAdminBody() {
       const d = await commentWorkProgress(selectedId, commentText.trim());
       setDetail(d);
       setCommentText("");
-      await loadList();
+      await refreshListAndGallery();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Comment failed.");
     } finally {
@@ -173,6 +264,67 @@ function ReviewAdminBody() {
       // ignore
     }
   }
+
+  function toggleFileSelection(fileId: string) {
+    setSelectedFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) {
+        next.delete(fileId);
+      } else {
+        next.add(fileId);
+      }
+      return next;
+    });
+  }
+
+  async function handleBulkDownload() {
+    if (selectedFileIds.size === 0) {
+      return;
+    }
+    setBulkBusy(true);
+    setGalleryBulkError("");
+    try {
+      const blob = await bulkDownloadWorkProgressAttachments(Array.from(selectedFileIds));
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "work-progress-attachments.zip";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      setGalleryBulkError(err instanceof Error ? err.message : "Download failed.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (selectedFileIds.size === 0) {
+      return;
+    }
+    if (!window.confirm(`Delete ${selectedFileIds.size} selected attachment(s)? This cannot be undone.`)) {
+      return;
+    }
+    setBulkBusy(true);
+    setGalleryBulkError("");
+    try {
+      await bulkDeleteWorkProgressAttachments(Array.from(selectedFileIds));
+      setSelectedFileIds(new Set());
+      await refreshListAndGallery();
+      if (selectedId) {
+        await openDetail(selectedId);
+      }
+    } catch (err) {
+      setGalleryBulkError(err instanceof Error ? err.message : "Delete failed.");
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  const selectedCount = selectedFileIds.size;
 
   return (
     <div className="space-y-4">
@@ -228,17 +380,26 @@ function ReviewAdminBody() {
               value={locationIdFilter}
             />
           </label>
+          <label className="block text-xs font-bold text-[var(--color-text-soft)] sm:col-span-2">
+            <span className="text-[var(--color-text)]">Title / tag search</span>
+            <Input
+              className="mt-1"
+              onChange={(e) => setTitleSearch(e.target.value)}
+              placeholder="Matches entry title"
+              value={titleSearch}
+            />
+          </label>
         </div>
         <div className="mt-3">
-          <Button onClick={() => void loadList()} type="button" variant="secondary">
+          <Button onClick={() => void refreshListAndGallery()} type="button" variant="secondary">
             Apply filters
           </Button>
         </div>
       </div>
 
-      {listError ? (
+      {listError || galleryError ? (
         <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
-          {listError}
+          {listError || galleryError}
         </div>
       ) : null}
 
@@ -284,6 +445,88 @@ function ReviewAdminBody() {
                 ))}
               </TableBody>
             </Table>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+            Attachment gallery ({galleryTotal})
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-[var(--color-text-muted)]">Selected: {selectedCount}</span>
+            <Button
+              disabled={bulkBusy || selectedCount === 0}
+              onClick={() => void handleBulkDownload()}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              {bulkBusy ? "Working…" : "Download ZIP"}
+            </Button>
+            <Button
+              disabled={bulkBusy || selectedCount === 0}
+              onClick={() => void handleBulkDelete()}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              {bulkBusy ? "Working…" : "Delete selected"}
+            </Button>
+          </div>
+        </div>
+        {galleryBulkError ? (
+          <p className="border-b border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
+            {galleryBulkError}
+          </p>
+        ) : null}
+        <div className="p-3">
+          {galleryLoading ? <p className="text-sm text-[var(--color-text-muted)]">Loading gallery…</p> : null}
+          {!galleryLoading && galleryItems.length === 0 ? (
+            <p className="text-sm text-[var(--color-text-muted)]">No attachments match the current filters.</p>
+          ) : null}
+          {!galleryLoading && galleryItems.length > 0 ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {galleryItems.map((row) => {
+                const id = row.attachment.id;
+                const checked = selectedFileIds.has(id);
+                return (
+                  <div
+                    className="relative overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2 text-xs"
+                    key={id}
+                  >
+                    <label className="absolute left-2 top-2 z-10 flex cursor-pointer items-center gap-1 rounded bg-[var(--color-cell)]/90 px-1.5 py-0.5">
+                      <input
+                        checked={checked}
+                        className="h-3.5 w-3.5"
+                        onChange={() => toggleFileSelection(id)}
+                        type="checkbox"
+                      />
+                    </label>
+                    <button
+                      className="block w-full text-left"
+                      onClick={() => void openFile(id)}
+                      type="button"
+                    >
+                      <GalleryThumb att={row.attachment} />
+                    </button>
+                    <p className="mt-2 font-medium text-[var(--color-text)]">
+                      {row.employee_name || row.user_email}
+                    </p>
+                    <p className="text-[var(--color-text-muted)]">{row.location_name}</p>
+                    <p className="text-[var(--color-text-muted)]">{formatDate(row.work_date)}</p>
+                    <p className="mt-1 line-clamp-2 font-medium text-[var(--color-text)]">{row.title}</p>
+                    <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">
+                      {row.attachment.original_filename} · stored {formatBytes(row.attachment.stored_size_bytes ?? row.attachment.file_size_bytes)}
+                      {row.attachment.image_width != null && row.attachment.image_height != null
+                        ? ` · ${row.attachment.image_width}×${row.attachment.image_height}`
+                        : ""}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
           ) : null}
         </div>
       </div>
@@ -345,7 +588,20 @@ function ReviewAdminBody() {
                   <ul className="mt-1 divide-y divide-[var(--color-border)] border border-[var(--color-border)]">
                     {detail.attachments.map((a) => (
                       <li className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5" key={a.id}>
-                        <span className="truncate">{a.original_filename}</span>
+                        <div className="flex min-w-0 flex-1 items-center gap-2">
+                          <div className="shrink-0">
+                            <GalleryThumb att={a} compact />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="truncate">{a.original_filename}</p>
+                            <p className="text-[10px] text-[var(--color-text-muted)]">
+                              {formatBytes(a.stored_size_bytes ?? a.file_size_bytes)}
+                              {a.image_width != null && a.image_height != null
+                                ? ` · ${a.image_width}×${a.image_height}`
+                                : ""}
+                            </p>
+                          </div>
+                        </div>
                         <Button onClick={() => void openFile(a.id)} size="sm" type="button" variant="secondary">
                           Open
                         </Button>
