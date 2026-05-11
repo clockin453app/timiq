@@ -52,7 +52,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
 
               {managementGroups.length > 0 ? (
                 <div className="mt-3 border-t border-[var(--color-border)] pt-3">
-                  <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[#374151]">
+                  <p className="mb-2 px-2 text-xs font-medium tracking-normal text-[#374151]">
                     Management
                   </p>
                   <GroupedNavBlock

@@ -47,7 +47,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
 
         {managementGroups.length > 0 ? (
           <div className="mt-5 border-t border-[var(--color-border)] pt-4">
-            <p className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[#374151]">
+            <p className="mb-2 px-2 text-xs font-medium tracking-normal text-[#374151]">
               Management
             </p>
             <GroupedNavBlock

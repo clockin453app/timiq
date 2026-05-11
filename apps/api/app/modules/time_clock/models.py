@@ -48,6 +48,21 @@ class TimeShift(Base):
         nullable=False,
         default="open",
     )
+    clock_source: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="employee",
+    )
+    manual_reason: Mapped[str] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+    admin_actor_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
     clock_in_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -7,6 +7,7 @@ from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.companies.router import router as companies_router
 from app.modules.employee_profiles.router import router as employee_profiles_router
+from app.modules.live_attendance.router import router as live_attendance_router
 from app.modules.locations.router import router as locations_router
 from app.modules.site_access.router import router as site_access_router
 from app.modules.system_health.router import router as system_health_router
@@ -46,6 +47,7 @@ app.include_router(workplaces_router)
 app.include_router(employee_profiles_router)
 app.include_router(system_health_router)
 app.include_router(time_clock_router)
+app.include_router(live_attendance_router)
 app.include_router(time_records_router)
 app.include_router(timesheets_router)
 app.include_router(payroll_router)

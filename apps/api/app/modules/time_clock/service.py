@@ -382,6 +382,7 @@ def clock_in(
         company_id=actor.company_id,
         location_id=matched_location.id,
         status="open",
+        clock_source="employee",
         clock_in_at=_utc_now(),
         clock_in_latitude=latitude,
         clock_in_longitude=longitude,

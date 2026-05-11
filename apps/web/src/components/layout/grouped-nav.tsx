@@ -60,12 +60,12 @@ function saveStoredOpen(scope: string, state: Record<string, boolean>) {
 function linkClass(active: boolean, variant: GroupedNavVariant): string {
   const base =
     variant === "sidebar"
-      ? "block rounded-[var(--radius-md)] border px-2.5 py-2 text-[#1f2937] transition-colors"
-      : "block rounded-[var(--radius-md)] border px-2.5 py-2 text-[#1f2937]";
+      ? "block rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937] transition-colors"
+      : "block rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]";
   if (active) {
-    return `${base} border-[var(--color-border-dark)] bg-[#e5e7eb] font-bold text-[#111827]`;
+    return `${base} border-[var(--color-border-dark)] bg-[#e5e7eb] font-semibold text-[#111827]`;
   }
-  return `${base} border-transparent font-medium hover:border-[var(--color-border)] hover:bg-[#e5e7eb] hover:text-[#111827]`;
+  return `${base} border-transparent hover:border-[var(--color-border)] hover:bg-[#e5e7eb] hover:text-[#111827]`;
 }
 
 export function GroupedNavBlock({
@@ -138,10 +138,10 @@ export function GroupedNavBlock({
             <button
               aria-expanded={isOpen}
               className={[
-                "flex w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2 py-2.5 text-left text-xs font-bold uppercase tracking-wide",
+                "flex w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2.5 py-2 text-left text-sm font-medium text-[#1f2937]",
                 isOpen
                   ? "border-[var(--color-border-dark)] bg-[#e5e7eb] text-[#111827]"
-                  : "border-transparent text-[#111827] hover:border-[var(--color-border)] hover:bg-[#e5e7eb]/80",
+                  : "border-transparent text-[#1f2937] hover:border-[var(--color-border)] hover:bg-[#e5e7eb]/80",
               ].join(" ")}
               type="button"
               onClick={() => toggle(group.id)}
@@ -150,7 +150,7 @@ export function GroupedNavBlock({
               <span
                 aria-hidden
                 className={[
-                  "inline-flex shrink-0 select-none text-base font-bold leading-none text-[#111827] transition-transform duration-150",
+                  "inline-flex w-4 shrink-0 select-none justify-end text-[11px] font-medium leading-none text-[#6b7280] transition-transform duration-150",
                   isOpen ? "rotate-90" : "",
                 ].join(" ")}
               >
