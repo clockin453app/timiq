@@ -143,3 +143,39 @@ class PayHistoryEntry(BaseModel):
     approved_at: datetime | None
     paid_at: datetime | None
     rate_missing: bool
+    company_name: str = ""
+    payment_mode: str | None = None
+    can_open_payslip: bool = True
+    effective_cis_tax_amount: Decimal | None = None
+    effective_net_amount: Decimal | None = None
+    timezone_name: str = ""
+
+
+class PayrollItemCompanySnippet(BaseModel):
+    id: uuid.UUID
+    name: str
+
+
+class PayrollItemSummaryResponse(BaseModel):
+    item_id: uuid.UUID
+    company: PayrollItemCompanySnippet
+    employee_display_name: str
+    timezone_name: str
+    week_start: date
+    week_end: date
+    status: str
+    approved_at: datetime | None
+    paid_at: datetime | None
+    payment_mode: str | None
+    payment_mode_label: str
+    regular_seconds: int
+    overtime_seconds: int
+    rounded_total_seconds: int
+    gross_amount: Decimal | None
+    cis_tax_amount: Decimal | None
+    net_amount: Decimal | None
+    other_deductions_amount: Decimal
+    hourly_rate_snapshot: Decimal | None
+    rate_missing: bool
+    ytd_taxable_pay: Decimal
+    ytd_cis_deducted: Decimal

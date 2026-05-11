@@ -12,6 +12,7 @@ from app.modules.payroll.schemas import (
     PayrollApproveAllRequest,
     PayrollItemPatchRequest,
     PayrollItemResponse,
+    PayrollItemSummaryResponse,
     PayrollMonthSummaryResponse,
     PayrollRecalculateRequest,
     PayrollReportResponse,
@@ -19,6 +20,7 @@ from app.modules.payroll.schemas import (
 from app.modules.payroll.service import (
     PayrollApprovedBlockingError,
     PayrollError,
+    PayrollItemNotFoundError,
     PayrollItemStateError,
     PayrollPaidBlockingError,
     PayrollPermissionError,
@@ -26,12 +28,14 @@ from app.modules.payroll.service import (
     approve_item,
     export_csv_report,
     export_print_html,
+    get_payroll_item_summary,
     get_payroll_month_summary,
     get_payroll_report,
     list_my_pay_history,
     mark_paid_item,
     patch_payroll_item,
     recalculate_payroll,
+    render_payroll_item_payslip_html,
     unlock_item,
 )
 
@@ -200,6 +204,53 @@ def payroll_pay_history_me(
     current_user: User = Depends(get_current_user),
 ) -> list[PayHistoryEntry]:
     return list_my_pay_history(db_session, current_user)
+
+
+@router.get("/items/{item_id}/summary", response_model=PayrollItemSummaryResponse)
+def payroll_item_summary(
+    item_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> PayrollItemSummaryResponse:
+    try:
+        return get_payroll_item_summary(db_session, current_user, item_id)
+    except PayrollItemNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PayrollPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get("/items/{item_id}/payslip")
+def payroll_item_payslip(
+    item_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        body = render_payroll_item_payslip_html(db_session, current_user, item_id)
+    except PayrollItemNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PayrollPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    return Response(
+        content=body,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": f'inline; filename="payslip-{item_id}.html"',
+        },
+    )
 
 
 @router.get("/export.csv")

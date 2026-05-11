@@ -116,7 +116,17 @@ export type PayHistoryEntry = {
   approved_at: string | null;
   paid_at: string | null;
   rate_missing: boolean;
+  company_name?: string;
+  payment_mode?: string | null;
+  can_open_payslip?: boolean;
+  effective_cis_tax_amount?: string | null;
+  effective_net_amount?: string | null;
+  timezone_name?: string;
 };
+
+export function payrollItemPayslipUrl(itemId: string): string {
+  return `${API_URL}/api/payroll/items/${encodeURIComponent(itemId)}/payslip`;
+}
 
 function qs(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams();

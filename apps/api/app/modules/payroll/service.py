@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import csv
+import html
 import io
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
@@ -18,6 +19,7 @@ from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
+from app.modules.onboarding.repository import get_approved_onboarding_national_insurance_number
 from app.modules.payroll.calculation import (
     compute_money_bundle,
     policy_snapshot_dict,
@@ -29,6 +31,7 @@ from app.modules.payroll.calculation import (
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.payroll.permissions import (
     PayrollPermissionError,
+    assert_actor_can_view_payroll_item,
     assert_payroll_admin_or_administrator,
     assert_payroll_company_scope,
 )
@@ -41,6 +44,7 @@ from app.modules.payroll.repository import (
     list_employee_users_for_company,
     list_items_for_period,
     list_items_for_user_pay_history,
+    list_payroll_items_for_user_company_ytd_calendar_year,
     list_periods_for_company_month,
     max_employee_shift_updated_at_in_payroll_week,
     period_has_approved_item,
@@ -51,8 +55,10 @@ from app.modules.payroll.repository import (
 )
 from app.modules.payroll.schemas import (
     PayHistoryEntry,
+    PayrollItemCompanySnippet,
     PayrollItemPatchRequest,
     PayrollItemResponse,
+    PayrollItemSummaryResponse,
     PayrollMonthSummaryResponse,
     PayrollPaySplit,
     PayrollPeriodSummary,
@@ -77,6 +83,10 @@ class PayrollItemStateError(PayrollError):
     pass
 
 
+class PayrollItemNotFoundError(Exception):
+    """Missing payroll item or period (maps to HTTP 404)."""
+
+
 def _decimal_or_none(value: object | None) -> Decimal | None:
     if value is None:
         return None
@@ -92,6 +102,188 @@ def _effective_tax_amount_for_item(item: PayrollItem) -> Decimal | None:
             return calculated
         return display
     return calculated
+
+
+def _effective_net_amount_for_item(item: PayrollItem) -> Decimal | None:
+    display = _decimal_or_none(item.display_net_amount)
+    if display is not None:
+        return display
+    return _decimal_or_none(item.net_amount)
+
+
+def _payment_mode_label(payment_mode: str | None) -> str:
+    if payment_mode == "net_payment":
+        return "Net payment"
+    if payment_mode == "gross_payment":
+        return "Gross payment"
+    return "Not set"
+
+
+def _week_end_display(week_start: date) -> date:
+    return week_start + timedelta(days=6)
+
+
+def _employee_primary_name(db_session: Session, user_id: uuid.UUID) -> str:
+    email, name, _jt = _employee_display(db_session, user_id)
+    if name and str(name).strip():
+        return str(name).strip()
+    return email or "Employee"
+
+
+def _compute_ytd_for_item(
+    db_session: Session,
+    item: PayrollItem,
+    period: PayrollPeriod,
+) -> tuple[Decimal, Decimal]:
+    calendar_year = period.week_start.year
+    rows = list_payroll_items_for_user_company_ytd_calendar_year(
+        db_session,
+        user_id=item.user_id,
+        company_id=item.company_id,
+        calendar_year=calendar_year,
+        through_week_start=period.week_start,
+    )
+    gross_sum = Decimal(0)
+    cis_sum = Decimal(0)
+    for row in rows:
+        if row.gross_amount is not None:
+            gross_sum += Decimal(str(row.gross_amount))
+        t = _effective_tax_amount_for_item(row)
+        if t is not None:
+            cis_sum += t
+    return gross_sum, cis_sum
+
+
+def _load_item_period_owner(
+    db_session: Session,
+    item_id: uuid.UUID,
+) -> tuple[PayrollItem, PayrollPeriod, User]:
+    item = get_item_by_id(db_session, item_id)
+    if item is None:
+        raise PayrollItemNotFoundError("Payroll item not found.")
+    period = db_session.get(PayrollPeriod, item.period_id)
+    if period is None:
+        raise PayrollItemNotFoundError("Payroll item not found.")
+    owner = get_user_by_id(db_session, item.user_id)
+    if owner is None:
+        raise PayrollItemNotFoundError("Payroll item not found.")
+    return item, period, owner
+
+
+def get_payroll_item_summary(db_session: Session, actor: User, item_id: uuid.UUID) -> PayrollItemSummaryResponse:
+    item, period, owner = _load_item_period_owner(db_session, item_id)
+    assert_actor_can_view_payroll_item(actor, item, owner)
+    ytd_pay, ytd_cis = _compute_ytd_for_item(db_session, item, period)
+    company = get_company_by_id(db_session, item.company_id)
+    cis = _effective_tax_amount_for_item(item)
+    net_eff = _effective_net_amount_for_item(item)
+    return PayrollItemSummaryResponse(
+        item_id=item.id,
+        company=PayrollItemCompanySnippet(
+            id=item.company_id,
+            name=company.name if company is not None else "Company",
+        ),
+        employee_display_name=_employee_primary_name(db_session, item.user_id),
+        timezone_name=period.timezone_name,
+        week_start=period.week_start,
+        week_end=_week_end_display(period.week_start),
+        status=item.status,
+        approved_at=item.approved_at,
+        paid_at=item.paid_at,
+        payment_mode=item.payment_mode,
+        payment_mode_label=_payment_mode_label(item.payment_mode),
+        regular_seconds=item.regular_seconds,
+        overtime_seconds=item.overtime_seconds,
+        rounded_total_seconds=item.rounded_total_seconds,
+        gross_amount=_decimal_or_none(item.gross_amount),
+        cis_tax_amount=cis,
+        net_amount=net_eff,
+        other_deductions_amount=Decimal(str(item.other_deductions_amount or 0)),
+        hourly_rate_snapshot=_decimal_or_none(item.hourly_rate_snapshot),
+        rate_missing=item.rate_missing,
+        ytd_taxable_pay=ytd_pay,
+        ytd_cis_deducted=ytd_cis,
+    )
+
+
+def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: uuid.UUID) -> str:
+    item, period, owner = _load_item_period_owner(db_session, item_id)
+    assert_actor_can_view_payroll_item(actor, item, owner)
+    ytd_pay, ytd_cis = _compute_ytd_for_item(db_session, item, period)
+    company = get_company_by_id(db_session, item.company_id)
+    cname = html.escape(company.name if company is not None else "Company")
+    ename = html.escape(_employee_primary_name(db_session, item.user_id))
+    ni = get_approved_onboarding_national_insurance_number(db_session, item.user_id)
+    ni_esc = html.escape(ni) if ni else ""
+    cis = _effective_tax_amount_for_item(item)
+    net_eff = _effective_net_amount_for_item(item)
+    gross = _decimal_or_none(item.gross_amount)
+    other_d = Decimal(str(item.other_deductions_amount or 0))
+    reg_h = item.regular_seconds / 3600
+    ot_h = item.overtime_seconds / 3600
+    tot_h = item.rounded_total_seconds / 3600
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    mode_label = html.escape(_payment_mode_label(item.payment_mode))
+    paid_line = ""
+    if item.paid_at is not None:
+        paid_line = f"<p><strong>Paid at:</strong> {html.escape(item.paid_at.isoformat())}</p>"
+    elif item.approved_at is not None:
+        paid_line = f"<p><strong>Approved at:</strong> {html.escape(item.approved_at.isoformat())}</p>"
+
+    other_block = ""
+    if other_d != 0:
+        other_block = f'<tr><td>Other deductions</td><td class="num">£{other_d:.2f}</td></tr>'
+
+    ni_block = ""
+    if ni_esc:
+        ni_block = f"<p><strong>NI number:</strong> {ni_esc}</p>"
+
+    net_display = f"£{net_eff:.2f}" if net_eff is not None else "—"
+    gross_display = f"£{gross:.2f}" if gross is not None else "—"
+    cis_display = f"£{cis:.2f}" if cis is not None else "—"
+
+    html_out = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"/><title>Payslip — {cname}</title>
+<style>
+body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; max-width: 720px; }}
+h1 {{ font-size: 1.25rem; }}
+.num {{ text-align: right; }}
+table {{ border-collapse: collapse; width: 100%; margin-top: 16px; }}
+th, td {{ border: 1px solid #ccc; padding: 8px; font-size: 0.875rem; }}
+th {{ background: #f4f4f5; text-align: left; }}
+@media print {{ body {{ margin: 12px; }} }}
+</style></head><body>
+<h1>Payslip</h1>
+<p><strong>{cname}</strong></p>
+<p><strong>Employee:</strong> {ename}</p>
+{ni_block}
+<p><strong>Period:</strong> week starting {html.escape(str(period.week_start))} ({html.escape(period.timezone_name)}) (Mon–Sun)</p>
+<p><strong>Generated:</strong> {html.escape(generated)}</p>
+{paid_line}
+<p><strong>Payment type:</strong> {mode_label}</p>
+<table><tbody>
+<tr><th>Hours (rounded total)</th><td class="num">{tot_h:.2f} h</td></tr>
+<tr><th>Regular / overtime hours</th><td class="num">{reg_h:.2f} / {ot_h:.2f} h</td></tr>
+<tr><th>Gross pay</th><td class="num">{gross_display}</td></tr>
+<tr><th>CIS tax</th><td class="num">{cis_display}</td></tr>
+{other_block}
+<tr><th>Total net pay</th><td class="num">{net_display}</td></tr>
+<tr><th>YTD taxable pay ({period.week_start.year})</th><td class="num">£{ytd_pay:.2f}</td></tr>
+<tr><th>YTD CIS deducted ({period.week_start.year})</th><td class="num">£{ytd_cis:.2f}</td></tr>
+</tbody></table>
+<p style="margin-top:16px;font-size:12px;color:#666;">Use browser Print → Save as PDF if needed.</p>
+</body></html>"""
+
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="payroll.payslip_viewed",
+        entity_type="payroll_item",
+        entity_id=str(item.id),
+        company_id=item.company_id,
+        details={"subject_user_id": str(item.user_id), "item_id": str(item.id)},
+    )
+    return html_out
 
 
 def _employee_display(
@@ -688,10 +880,16 @@ def list_my_pay_history(db_session: Session, actor: User) -> list[PayHistoryEntr
         return []
     items = list_items_for_user_pay_history(db_session, actor.id)
     result: list[PayHistoryEntry] = []
+    company_names: dict[uuid.UUID, str] = {}
     for i in items:
         period = db_session.get(PayrollPeriod, i.period_id)
         if period is None:
             continue
+        if i.company_id not in company_names:
+            co = get_company_by_id(db_session, i.company_id)
+            company_names[i.company_id] = co.name if co is not None else "Company"
+        eff_cis = _effective_tax_amount_for_item(i)
+        eff_net = _effective_net_amount_for_item(i)
         result.append(
             PayHistoryEntry(
                 id=i.id,
@@ -711,6 +909,12 @@ def list_my_pay_history(db_session: Session, actor: User) -> list[PayHistoryEntr
                 approved_at=i.approved_at,
                 paid_at=i.paid_at,
                 rate_missing=i.rate_missing,
+                company_name=company_names[i.company_id],
+                payment_mode=i.payment_mode,
+                can_open_payslip=True,
+                effective_cis_tax_amount=eff_cis,
+                effective_net_amount=eff_net,
+                timezone_name=period.timezone_name,
             )
         )
     return result

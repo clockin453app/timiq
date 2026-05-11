@@ -186,3 +186,28 @@ def list_items_for_user_pay_history(
         .order_by(PayrollItem.updated_at.desc())
     )
     return list(db_session.scalars(statement).all())
+
+
+def list_payroll_items_for_user_company_ytd_calendar_year(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    company_id: uuid.UUID,
+    calendar_year: int,
+    through_week_start: date,
+) -> list[PayrollItem]:
+    """Approved/paid items for user+company with period.week_start in [Jan 1, min(through, Dec 31)] of calendar_year."""
+    year_start = date(calendar_year, 1, 1)
+    year_end = date(calendar_year, 12, 31)
+    cap = through_week_start if through_week_start <= year_end else year_end
+    statement = (
+        select(PayrollItem)
+        .join(PayrollPeriod, PayrollItem.period_id == PayrollPeriod.id)
+        .where(PayrollItem.user_id == user_id)
+        .where(PayrollItem.company_id == company_id)
+        .where(PayrollItem.status.in_(("approved", "paid")))
+        .where(PayrollPeriod.week_start >= year_start)
+        .where(PayrollPeriod.week_start <= cap)
+        .order_by(PayrollPeriod.week_start.asc())
+    )
+    return list(db_session.scalars(statement).all())
