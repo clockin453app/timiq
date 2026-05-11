@@ -17,10 +17,14 @@ export function WeekPickerBar({
   onWeekChange,
 }: WeekPickerBarProps) {
   return (
-    <div className="flex flex-col gap-2 border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2.5 text-sm sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2 md:px-4">
-      <div className="min-w-0 flex-1">
-        <p className="timiq-caption text-[var(--color-text-soft)]">Payroll week</p>
-        <p className="mt-0.5 truncate font-semibold text-[var(--color-text)]">
+    <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] text-sm">
+      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 md:px-4">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+          Payroll week
+        </p>
+      </div>
+      <div className="flex flex-col gap-2 bg-[var(--color-cell)] px-3 py-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-2 md:px-4">
+        <p className="min-w-0 flex-1 truncate font-semibold text-[var(--color-text)]">
           Week starting <span className="tabular-nums">{weekStartIso}</span>
           {timezoneLabel ? (
             <span className="font-normal text-[var(--color-text-muted)]">
@@ -29,26 +33,26 @@ export function WeekPickerBar({
             </span>
           ) : null}
         </p>
-      </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <Button
-          disabled={disabled}
-          onClick={() => onWeekChange(addDaysIsoYmd(weekStartIso, -7))}
-          size="sm"
-          type="button"
-          variant="secondary"
-        >
-          Previous
-        </Button>
-        <Button
-          disabled={disabled}
-          onClick={() => onWeekChange(addDaysIsoYmd(weekStartIso, 7))}
-          size="sm"
-          type="button"
-          variant="secondary"
-        >
-          Next
-        </Button>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          <Button
+            disabled={disabled}
+            onClick={() => onWeekChange(addDaysIsoYmd(weekStartIso, -7))}
+            size="sm"
+            type="button"
+            variant="secondary"
+          >
+            Previous
+          </Button>
+          <Button
+            disabled={disabled}
+            onClick={() => onWeekChange(addDaysIsoYmd(weekStartIso, 7))}
+            size="sm"
+            type="button"
+            variant="secondary"
+          >
+            Next
+          </Button>
+        </div>
       </div>
     </div>
   );

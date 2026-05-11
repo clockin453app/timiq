@@ -24,11 +24,11 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
       <div className="flex items-center justify-between gap-3 px-3 py-2.5">
         <div className="min-w-0">
           <p className="truncate font-bold tracking-tight text-[var(--color-text)]">TimIQ</p>
-          <p className="truncate text-xs text-[var(--color-text-soft)]">Payroll & workforce</p>
+          <p className="truncate text-xs text-[#4b5563]">Payroll & workforce</p>
         </div>
 
         <details className="relative shrink-0">
-          <summary className="list-none rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-primary)] px-3 py-1.5 text-sm font-semibold text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
+          <summary className="list-none rounded-[var(--radius-md)] border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] px-3 py-1.5 text-sm font-semibold text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
             Menu
           </summary>
 
@@ -38,8 +38,8 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                 <Link
                   className={
                     item.href === activeHref
-                      ? "block rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-2.5 py-2 font-semibold text-[var(--color-text)]"
-                      : "block rounded-[var(--radius-md)] border border-transparent px-2.5 py-2 text-[var(--color-text-muted)] hover:bg-[var(--color-header)]"
+                      ? "block rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[#e5e7eb] px-2.5 py-2 font-bold text-[#111827]"
+                      : "block rounded-[var(--radius-md)] border border-transparent px-2.5 py-2 font-medium text-[#111827] hover:bg-[#e5e7eb]"
                   }
                   href={item.href}
                   key={item.href}
@@ -50,7 +50,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
 
               {managementLinks.length > 0 ? (
                 <>
-                  <p className="mt-3 border-t border-[var(--color-border)] px-2.5 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+                  <p className="mt-3 border-t border-[var(--color-border)] px-2.5 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wider text-[#374151]">
                     Management
                   </p>
 
@@ -58,8 +58,8 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                     <Link
                       className={
                         item.href === activeHref
-                          ? "block rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-2.5 py-2 font-semibold text-[var(--color-text)]"
-                          : "block rounded-[var(--radius-md)] border border-transparent px-2.5 py-2 text-[var(--color-text-muted)] hover:bg-[var(--color-header)]"
+                          ? "block rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[#e5e7eb] px-2.5 py-2 font-bold text-[#111827]"
+                          : "block rounded-[var(--radius-md)] border border-transparent px-2.5 py-2 font-medium text-[#111827] hover:bg-[#e5e7eb]"
                       }
                       href={item.href}
                       key={item.href}

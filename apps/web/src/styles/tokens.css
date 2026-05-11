@@ -1,31 +1,49 @@
 :root {
-  /* Cool neutrals — main chrome (no warm cream/beige) */
-  --color-page: #f8fafc;
+  /* Silver-grey field / construction workspace */
+  --color-page: #eef0f2;
+  --color-sidebar-bg: #e8eaed;
   --color-sheet: #ffffff;
   --color-cell: #ffffff;
-  --color-header: #f3f4f6;
-  --color-border: #e5e7eb;
-  --color-border-dark: #d1d5db;
+  --color-header: #d5d9de;
+  --color-table-header: #d9dde2;
+  --color-toolbar-well: #c9d0d8;
 
-  --color-text: #111827;
-  --color-text-muted: #4b5563;
-  --color-text-soft: #6b7280;
+  --color-border: #c8ced6;
+  --color-border-dark: #b8c0c8;
 
-  /* Default / primary actions: white field, grey border */
+  --color-text: #1a1d21;
+  --color-text-muted: #3d4349;
+  --color-text-soft: #5c636b;
+
+  /* Default field button (grey) */
+  --color-btn-default-bg: #f8f9fa;
+  --color-btn-default-border: #aeb6bf;
+  --color-btn-default-hover: #e9ecef;
+  --color-btn-active-bg: #ffffff;
+  --color-btn-active-border: #8b95a1; /* active tab / segment */
+
+  /* Primary / action outline (blue, business software) */
+  --color-action-border: #2f6fae;
+  --color-action-text: #2f6fae;
+  --color-action-hover-bg: #eef5fc;
+
+  /* Legacy names used by timiq-button-primary + some Tailwind refs */
   --color-primary: #ffffff;
-  --color-primary-hover: #e5e7eb;
-  --color-primary-border: #d1d5db;
+  --color-primary-hover: var(--color-action-hover-bg);
+  --color-primary-border: var(--color-action-border);
 
   --color-input: #ffffff;
+
+  --color-table-total-bg: #e8ebef;
+  --color-empty-panel-bg: #e4e7eb;
 
   --color-danger-50: #fef2f2;
   --color-danger-700: #991b1b;
 
-  --color-success-50: #ecfdf5;
+  --color-success-50: #e8f5eb;
   --color-success-700: #166534;
 
-  /* Panel tint only — pair with border/text for status */
-  --color-warning-50: #f3f4f6;
+  --color-warning-50: #e8eaed;
   --color-warning-700: #b45309;
 
   --font-sans:
@@ -44,5 +62,5 @@
   --layout-topbar-height: 3.25rem;
   --layout-mobile-bottom-nav-height: 4rem;
 
-  --focus-ring: 0 0 0 2px rgba(120, 120, 120, 0.35);
+  --focus-ring: 0 0 0 2px rgba(47, 111, 174, 0.35);
 }

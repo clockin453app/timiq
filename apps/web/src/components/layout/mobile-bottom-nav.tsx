@@ -19,7 +19,7 @@ export function MobileBottomNav({ activeHref = "/dashboard" }: MobileBottomNavPr
         <Link
           className={
             item.href === activeHref
-              ? "border-r border-[var(--color-border)] bg-[var(--color-cell)] px-1.5 py-2 text-center font-semibold text-[var(--color-text)]"
+              ? "border-r border-[var(--color-border)] bg-[var(--color-btn-active-bg)] px-1.5 py-2 text-center font-bold text-[var(--color-text)]"
               : "border-r border-[var(--color-border)] px-1.5 py-2 text-center text-[var(--color-text-muted)] hover:bg-[var(--color-cell)]"
           }
           href={item.href}

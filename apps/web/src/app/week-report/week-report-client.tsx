@@ -24,26 +24,30 @@ import {
 
 function StatCard(props: { label: string; value: string; hint?: string }) {
   return (
-    <div className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-        {props.label}
-      </p>
-      <p className="text-xl font-semibold tabular-nums tracking-tight text-[var(--color-text)]">
-        {props.value}
-      </p>
-      {props.hint ? (
-        <p className="mt-1 text-xs leading-snug text-[var(--color-text-muted)]">{props.hint}</p>
-      ) : null}
+    <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+          {props.label}
+        </p>
+      </div>
+      <div className="px-3 py-3">
+        <p className="text-xl font-semibold tabular-nums tracking-tight text-[var(--color-text)]">
+          {props.value}
+        </p>
+        {props.hint ? (
+          <p className="mt-2 text-xs leading-snug text-[var(--color-text-muted)]">{props.hint}</p>
+        ) : null}
+      </div>
     </div>
   );
 }
 
 function segmentBtnClass(active: boolean) {
   return [
-    "rounded-[var(--radius-sm)] px-3 py-1.5 text-sm font-semibold transition-colors",
+    "rounded-[var(--radius-sm)] px-3 py-1.5 text-sm",
     active
-      ? "border border-[var(--color-border-dark)] bg-[var(--color-cell)] text-[var(--color-text)]"
-      : "border border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+      ? "border border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] font-bold text-[var(--color-text)]"
+      : "border border-transparent font-semibold text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]",
   ].join(" ");
 }
 
@@ -149,7 +153,7 @@ export function WeekReportClient() {
         {management ? (
           <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2.5 md:flex-row md:flex-wrap md:items-center md:justify-between">
             <div
-              className="inline-flex w-fit rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-0.5"
+              className="inline-flex w-fit rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-toolbar-well)] p-0.5"
               role="group"
               aria-label="Week report view"
             >
@@ -251,30 +255,34 @@ export function WeekReportClient() {
         ) : null}
 
         {!loading && sheet ? (
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              Activity
-            </p>
-            {activityEmpty ? (
-              <div className="mt-4 rounded border border-dashed border-[var(--color-border)] bg-[var(--color-header)] px-4 py-5 text-center">
-                <p className="text-sm font-semibold text-[var(--color-text)]">No shift activity this week</p>
-                <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
-                  Completed shift segments will be counted here. If you are still clocked in, close the shift
-                  to refresh totals.
-                </p>
-              </div>
-            ) : (
-              <>
-                <p className="mt-3 text-sm text-[var(--color-text)]">
-                  Completed shift segments in range:{" "}
-                  <span className="font-semibold tabular-nums">{sheet.shift_count}</span>
-                </p>
-                <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-                  Locations:{" "}
-                  {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}
-                </p>
-              </>
-            )}
+          <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+            <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+                Activity
+              </p>
+            </div>
+            <div className="p-3">
+              {activityEmpty ? (
+                <div className="rounded border border-dashed border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-4 text-center">
+                  <p className="text-sm font-semibold text-[var(--color-text)]">No shift activity this week</p>
+                  <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
+                    Completed shift segments will be counted here. If you are still clocked in, close the shift
+                    to refresh totals.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-[var(--color-text)]">
+                    Completed shift segments in range:{" "}
+                    <span className="font-semibold tabular-nums">{sheet.shift_count}</span>
+                  </p>
+                  <p className="mt-2 text-sm text-[var(--color-text-muted)]">
+                    Locations:{" "}
+                    {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}
+                  </p>
+                </>
+              )}
+            </div>
           </div>
         ) : null}
       </SheetBody>

@@ -46,21 +46,25 @@ function formatDay(isoDate: string) {
 
 function TimesheetSummaryCard(props: { label: string; value: string }) {
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-        {props.label}
-      </p>
-      <p className="mt-1.5 text-lg font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
+    <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+          {props.label}
+        </p>
+      </div>
+      <div className="px-3 py-2.5">
+        <p className="text-lg font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
+      </div>
     </div>
   );
 }
 
 function segmentBtnClass(active: boolean) {
   return [
-    "rounded-[var(--radius-sm)] px-3 py-1.5 text-sm font-semibold transition-colors",
+    "rounded-[var(--radius-sm)] px-3 py-1.5 text-sm",
     active
-      ? "border border-[var(--color-border-dark)] bg-[var(--color-cell)] text-[var(--color-text)]"
-      : "border border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text)]",
+      ? "border border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] font-bold text-[var(--color-text)]"
+      : "border border-transparent font-semibold text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]",
   ].join(" ");
 }
 
@@ -166,7 +170,7 @@ export function TimesheetsClient() {
         {management ? (
           <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2.5 md:flex-row md:flex-wrap md:items-center md:justify-between">
             <div
-              className="inline-flex w-fit rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-0.5"
+              className="inline-flex w-fit rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-toolbar-well)] p-0.5"
               role="group"
               aria-label="Timesheet view"
             >
@@ -255,7 +259,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {showEmptyShifts ? (
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-4 py-5 text-center">
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-5 text-center">
             <p className="text-sm font-semibold text-[var(--color-text)]">No completed shifts this week</p>
             <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
               When you clock in and out for this payroll week, day rows and totals will appear in the table
@@ -300,7 +304,7 @@ export function TimesheetsClient() {
                 ))
               : null}
             {!loading && sheet ? (
-              <TableRow>
+              <TableRow className="timiq-table-total-row">
                 <TableCell className="font-semibold">Week total</TableCell>
                 <TableCell className="tabular-nums text-xs font-semibold">
                   {formatDurationSeconds(sheet.week_actual_seconds)}

@@ -50,16 +50,18 @@ function ManagementMetricCard(props: {
   badgeTone: "success" | "warning" | "muted";
 }) {
   return (
-    <div className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4">
-      <div className="flex items-start justify-between gap-2">
+    <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+      <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
         <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
           {props.label}
         </p>
         <StatusBadge tone={props.badgeTone}>{props.badge}</StatusBadge>
       </div>
-      <p className="text-xl font-semibold tabular-nums tracking-tight text-[var(--color-text)]">
-        {props.value}
-      </p>
+      <div className="px-3 py-3">
+        <p className="text-xl font-semibold tabular-nums tracking-tight text-[var(--color-text)]">
+          {props.value}
+        </p>
+      </div>
     </div>
   );
 }
@@ -118,8 +120,8 @@ function EmployeeDashboard() {
       />
 
       <SheetBody className="space-y-4 md:p-5">
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4">
-          <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
               Clock & shift
             </p>
@@ -130,12 +132,13 @@ function EmployeeDashboard() {
             ) : null}
           </div>
 
+          <div className="p-4">
           {clockLoading ? (
-            <p className="mt-3 text-sm text-[var(--color-text-muted)]">Loading clock status…</p>
+            <p className="text-sm text-[var(--color-text-muted)]">Loading clock status…</p>
           ) : null}
 
           {!clockLoading && clockError ? (
-            <p className="mt-3 text-sm text-[var(--color-danger-700)]">{clockError}</p>
+            <p className="text-sm text-[var(--color-danger-700)]">{clockError}</p>
           ) : null}
 
           {!clockLoading && clockStatus ? (
@@ -165,10 +168,11 @@ function EmployeeDashboard() {
               </div>
             </dl>
           ) : null}
+          </div>
         </div>
 
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-          <div className="border-b border-[var(--color-border)] px-4 py-3">
+        <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+          <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
               Quick links
             </p>
@@ -178,7 +182,7 @@ function EmployeeDashboard() {
               <li key={item.label}>
                 {item.href ? (
                   <Link
-                    className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-header)]"
+                    className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
                     href={item.href}
                   >
                     <span>{item.label}</span>

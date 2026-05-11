@@ -13,9 +13,9 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "border border-[var(--color-primary-border)] bg-[var(--color-primary)] text-[var(--color-text)] hover:bg-[var(--color-primary-hover)]",
+    "border border-[var(--color-action-border)] bg-[var(--color-primary)] text-[var(--color-action-text)] hover:bg-[var(--color-action-hover-bg)]",
   secondary:
-    "border border-[var(--color-border-dark)] bg-[var(--color-header)] text-[var(--color-text)] hover:bg-[var(--color-primary-hover)]",
+    "border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]",
   ghost:
     "border border-transparent bg-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)]",
   danger:
