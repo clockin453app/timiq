@@ -69,7 +69,7 @@ const PROFILE: NavigationItem = {
 
 const OVERVIEW: NavigationItem = {
   label: "Overview",
-  href: "/management",
+  href: "/overview",
   allowedRoles: ["administrator", "admin"],
 };
 

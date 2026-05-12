@@ -241,37 +241,141 @@ def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: 
     net_display = f"£{net_eff:.2f}" if net_eff is not None else "—"
     gross_display = f"£{gross:.2f}" if gross is not None else "—"
     cis_display = f"£{cis:.2f}" if cis is not None else "—"
+    statement_heading = "CIS pay statement" if cis is not None and cis != 0 else "Payslip"
 
     html_out = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"/><title>Payslip — {cname}</title>
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Payslip — {cname}</title>
 <style>
-body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; max-width: 720px; }}
-h1 {{ font-size: 1.25rem; }}
-.num {{ text-align: right; }}
-table {{ border-collapse: collapse; width: 100%; margin-top: 16px; }}
-th, td {{ border: 1px solid #ccc; padding: 8px; font-size: 0.875rem; }}
-th {{ background: #f4f4f5; text-align: left; }}
-@media print {{ body {{ margin: 12px; }} }}
+html {{ box-sizing: border-box; }}
+*, *::before, *::after {{ box-sizing: inherit; }}
+body {{
+  margin: 0;
+  padding: 0;
+  background: #f3f4f6;
+  color: #111827;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: clamp(14px, 2.8vw, 16px);
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}}
+.payslip-wrap {{
+  width: 100%;
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 16px;
+}}
+@media (min-width: 768px) {{
+  .payslip-wrap {{ padding: 24px 28px 32px; }}
+}}
+.payslip-card {{
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 18px 16px 20px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}}
+@media (min-width: 768px) {{
+  .payslip-card {{ padding: 22px 24px 24px; }}
+}}
+.payslip-head {{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}}
+.payslip-head-left {{ flex: 1 1 12rem; min-width: 0; }}
+.payslip-head-right {{ flex: 0 1 auto; text-align: right; }}
+.co-name {{
+  font-size: clamp(1.05rem, 3vw, 1.2rem);
+  font-weight: 700;
+  word-break: break-word;
+}}
+.doc-type {{
+  font-size: clamp(0.95rem, 2.6vw, 1.05rem);
+  font-weight: 700;
+  color: #374151;
+  white-space: nowrap;
+}}
+.meta-block p {{ margin: 0.35rem 0; }}
+.meta-block strong {{ color: #374151; }}
+.pay-table {{
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1.1rem;
+  table-layout: fixed;
+}}
+.pay-table td {{
+  border: 1px solid #d1d5db;
+  padding: 0.6rem 0.65rem;
+  vertical-align: top;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}}
+.pay-table td:first-child {{
+  font-weight: 600;
+  color: #374151;
+  width: 54%;
+  background: #f9fafb;
+}}
+.pay-table .num {{
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}}
+.pay-table tr.section td:first-child {{
+  background: #eef2f7;
+}}
+.foot-note {{
+  margin-top: 1.25rem;
+  font-size: 0.8rem;
+  color: #6b7280;
+}}
+@media print {{
+  body {{ background: #fff; font-size: 11pt; }}
+  .payslip-wrap {{ max-width: none; padding: 0; }}
+  .payslip-card {{ border: none; box-shadow: none; border-radius: 0; padding: 0; }}
+  .pay-table td {{ padding: 0.45rem 0.5rem; }}
+  @page {{ size: A4; margin: 12mm; }}
+}}
 </style></head><body>
-<h1>Payslip</h1>
-<p><strong>{cname}</strong></p>
-<p><strong>Employee:</strong> {ename}</p>
-{ni_block}
-<p><strong>Period:</strong> week starting {html.escape(str(period.week_start))} ({html.escape(period.timezone_name)}) (Mon–Sun)</p>
-<p><strong>Generated:</strong> {html.escape(generated)}</p>
-{paid_line}
-<p><strong>Payment type:</strong> {mode_label}</p>
-<table><tbody>
-<tr><th>Hours (rounded total)</th><td class="num">{tot_h:.2f} h</td></tr>
-<tr><th>Regular / overtime hours</th><td class="num">{reg_h:.2f} / {ot_h:.2f} h</td></tr>
-<tr><th>Gross pay</th><td class="num">{gross_display}</td></tr>
-<tr><th>CIS tax</th><td class="num">{cis_display}</td></tr>
-{other_block}
-<tr><th>Total net pay</th><td class="num">{net_display}</td></tr>
-<tr><th>YTD taxable pay ({period.week_start.year})</th><td class="num">£{ytd_pay:.2f}</td></tr>
-<tr><th>YTD CIS deducted ({period.week_start.year})</th><td class="num">£{ytd_cis:.2f}</td></tr>
-</tbody></table>
-<p style="margin-top:16px;font-size:12px;color:#666;">Use browser Print → Save as PDF if needed.</p>
+<div class="payslip-wrap">
+  <div class="payslip-card">
+    <header class="payslip-head">
+      <div class="payslip-head-left">
+        <div class="co-name">{cname}</div>
+      </div>
+      <div class="payslip-head-right">
+        <div class="doc-type">{html.escape(statement_heading)}</div>
+      </div>
+    </header>
+    <div class="meta-block">
+      <p><strong>Employee:</strong> {ename}</p>
+      {ni_block}
+      <p><strong>Period:</strong> week starting {html.escape(str(period.week_start))} ({html.escape(period.timezone_name)}) (Mon–Sun)</p>
+      <p><strong>Generated:</strong> {html.escape(generated)}</p>
+      {paid_line}
+      <p><strong>Payment type:</strong> {mode_label}</p>
+    </div>
+    <table class="pay-table"><tbody>
+      <tr><td>Hours worked (rounded total)</td><td class="num">{tot_h:.2f} h</td></tr>
+      <tr><td>Regular / overtime hours</td><td class="num">{reg_h:.2f} / {ot_h:.2f} h</td></tr>
+      <tr class="section"><td>Gross pay</td><td class="num">{gross_display}</td></tr>
+      <tr><td>CIS tax</td><td class="num">{cis_display}</td></tr>
+      {other_block}
+      <tr class="section"><td>Total net pay</td><td class="num">{net_display}</td></tr>
+      <tr><td>YTD taxable pay ({period.week_start.year})</td><td class="num">£{ytd_pay:.2f}</td></tr>
+      <tr><td>YTD CIS deducted ({period.week_start.year})</td><td class="num">£{ytd_cis:.2f}</td></tr>
+    </tbody></table>
+    <p class="foot-note">Use your browser&rsquo;s Print dialog to print or save as PDF.</p>
+  </div>
+</div>
 </body></html>"""
 
     create_internal_audit_event(

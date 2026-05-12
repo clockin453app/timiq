@@ -6,6 +6,7 @@ from app.core.health import router as health_router
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.companies.router import router as companies_router
+from app.modules.dashboard.router import router as dashboard_router
 from app.modules.employee_profiles.router import router as employee_profiles_router
 from app.modules.live_attendance.router import router as live_attendance_router
 from app.modules.locations.router import router as locations_router
@@ -40,6 +41,7 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(companies_router)
+app.include_router(dashboard_router)
 app.include_router(locations_router)
 app.include_router(site_access_router)
 app.include_router(audit_router)
