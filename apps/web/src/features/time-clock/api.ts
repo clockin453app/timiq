@@ -17,6 +17,20 @@ export type ClockStatus = {
   active_location_count: number;
   current_break_open: boolean;
   assigned_sites: ClockAssignedSite[];
+  current_status:
+    | "not_clocked_in"
+    | "on_shift"
+    | "open_break"
+    | "completed_today"
+    | "no_assigned_sites";
+  has_completed_shift_today: boolean;
+  open_break_id: string | null;
+  open_shift_location_id: string | null;
+  open_shift_location_name: string | null;
+  can_clock_in: boolean;
+  can_clock_out: boolean;
+  clock_in_blocked_reason: string | null;
+  clock_out_blocked_reason: string | null;
 };
 
 export type ClockActionResponse = {

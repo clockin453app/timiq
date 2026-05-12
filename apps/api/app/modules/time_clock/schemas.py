@@ -34,6 +34,19 @@ class ClockStatusResponse(BaseModel):
     active_location_count: int
     current_break_open: bool
     assigned_sites: list[AssignedSiteStatus]
+    current_status: str = Field(
+        description=(
+            "UI flow: not_clocked_in | on_shift | open_break | completed_today | no_assigned_sites"
+        ),
+    )
+    has_completed_shift_today: bool = False
+    open_break_id: uuid.UUID | None = None
+    open_shift_location_id: uuid.UUID | None = None
+    open_shift_location_name: str | None = None
+    can_clock_in: bool = False
+    can_clock_out: bool = False
+    clock_in_blocked_reason: str | None = None
+    clock_out_blocked_reason: str | None = None
 
 
 class ClockActionResponse(BaseModel):

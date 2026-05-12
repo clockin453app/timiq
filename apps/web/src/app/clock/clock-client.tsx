@@ -1,7 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ClockSitesMap } from "../../components/maps";
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
@@ -30,13 +30,49 @@ type ActiveSelfiePhase = "clock_in" | "clock_out";
 
 type GpsFailure = null | "denied" | "failed" | "unsupported";
 
-const CAMERA_UNSUPPORTED =
-  "Your browser does not support camera capture.";
-const CAMERA_REQUIRED =
-  "Camera permission is required to clock in or out.";
+type FlowStatus = ClockStatus["current_status"];
+
+const CAMERA_UNSUPPORTED = "Your browser does not support camera capture.";
+const CAMERA_REQUIRED = "Camera permission is required to clock in or out.";
 
 function stopMediaStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
+}
+
+function deriveFlowStatus(cs: ClockStatus): FlowStatus {
+  if (cs.current_status) {
+    return cs.current_status;
+  }
+  if (cs.active_location_count === 0) {
+    return "no_assigned_sites";
+  }
+  if (cs.has_completed_shift_today && !cs.has_open_shift) {
+    return "completed_today";
+  }
+  if (cs.has_open_shift && cs.current_break_open) {
+    return "open_break";
+  }
+  if (cs.has_open_shift) {
+    return "on_shift";
+  }
+  return "not_clocked_in";
+}
+
+function statusCardTitle(flow: FlowStatus): string {
+  switch (flow) {
+    case "no_assigned_sites":
+      return "No assigned sites";
+    case "completed_today":
+      return "Shift completed today";
+    case "open_break":
+      return "Break in progress";
+    case "on_shift":
+      return "On shift";
+    case "not_clocked_in":
+      return "Not clocked in";
+    default:
+      return "Clock";
+  }
 }
 
 export function ClockClient() {
@@ -48,9 +84,7 @@ export function ClockClient() {
   const [selfieClockIn, setSelfieClockIn] = useState<File | null>(null);
   const [selfieClockOut, setSelfieClockOut] = useState<File | null>(null);
 
-  const [activeSelfiePhase, setActiveSelfiePhase] = useState<ActiveSelfiePhase | null>(
-    null,
-  );
+  const [activeSelfiePhase, setActiveSelfiePhase] = useState<ActiveSelfiePhase | null>(null);
 
   const [clockInPreviewUrl, setClockInPreviewUrl] = useState<string | null>(null);
   const [clockOutPreviewUrl, setClockOutPreviewUrl] = useState<string | null>(null);
@@ -69,8 +103,14 @@ export function ClockClient() {
     "idle" | "searching" | "improving" | "captured" | "too_low" | "denied" | "failed" | "unsupported"
   >("idle");
 
-  /** Avoid re-running GPS acquisition when only the `clockStatus` object reference changes. */
   const siteCountForGps = clockStatus === null ? undefined : clockStatus.active_location_count;
+
+  const flowStatus: FlowStatus = useMemo(() => {
+    if (!clockStatus) {
+      return "not_clocked_in";
+    }
+    return deriveFlowStatus(clockStatus);
+  }, [clockStatus]);
 
   const nearestSiteSummary = useMemo(() => {
     if (!geoCapture || !(clockStatus?.assigned_sites?.length)) {
@@ -94,6 +134,22 @@ export function ClockClient() {
   }, [geoCapture, clockStatus?.assigned_sites]);
 
   const gpsAcceptable = Boolean(geoCapture && isGpsClientSubmittable(geoCapture));
+
+  const refreshStatus = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      const data = await getClockStatus();
+      setClockStatus(data);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not load clock status.");
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshStatus();
+  }, [refreshStatus]);
 
   useEffect(() => {
     if (!selfieClockIn) {
@@ -139,6 +195,19 @@ export function ClockClient() {
       streamRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    if (clockStatus?.has_open_shift) {
+      setSelfieClockIn(null);
+    }
+  }, [clockStatus?.has_open_shift]);
+
+  useEffect(() => {
+    if (clockStatus?.has_completed_shift_today) {
+      setSelfieClockIn(null);
+      setSelfieClockOut(null);
+    }
+  }, [clockStatus?.has_completed_shift_today]);
 
   useEffect(() => {
     if (!activeSelfiePhase) {
@@ -188,7 +257,7 @@ export function ClockClient() {
       }
     }
 
-    attachCamera();
+    void attachCamera();
 
     return () => {
       cancelled = true;
@@ -200,24 +269,6 @@ export function ClockClient() {
       }
     };
   }, [activeSelfiePhase]);
-
-  async function refreshStatus() {
-    setIsRefreshing(true);
-    try {
-      const data = await getClockStatus();
-      setClockStatus(data);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Could not load clock status.",
-      );
-    } finally {
-      setIsRefreshing(false);
-    }
-  }
-
-  useEffect(() => {
-    refreshStatus();
-  }, []);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -284,9 +335,8 @@ export function ClockClient() {
         setGeoCapture(capture);
         setGpsAcquiring(false);
         setGpsFailure(null);
-        setGpsPhaseText(
-          capture.payload.accuracy_meters <= 100 ? "captured" : "too_low",
-        );
+        setGpsPhaseText(capture.payload.accuracy_meters <= 100 ? "captured" : "too_low");
+        void refreshStatus();
       } catch (error) {
         if (cancelled) {
           return;
@@ -309,7 +359,7 @@ export function ClockClient() {
     return () => {
       cancelled = true;
     };
-  }, [siteCountForGps, gpsAcquisitionKey]);
+  }, [siteCountForGps, gpsAcquisitionKey, refreshStatus]);
 
   function handleRetryGps() {
     setErrorMessage("");
@@ -365,11 +415,10 @@ export function ClockClient() {
           setSelfieClockOut(file);
         }
         setSuccessMessage(
-          phase === "clock_in"
-            ? "Clock-in selfie captured."
-            : "Clock-out selfie captured.",
+          phase === "clock_in" ? "Clock-in selfie captured." : "Clock-out selfie captured.",
         );
         setActiveSelfiePhase(null);
+        void refreshStatus();
       },
       "image/jpeg",
       0.92,
@@ -395,11 +444,10 @@ export function ClockClient() {
       setSuccessMessage("Clock-in successful.");
       setSelfieClockIn(null);
       setSelfieClockOut(null);
-      setGeoCapture(null);
-      setGpsAcquisitionKey((key) => key + 1);
       await refreshStatus();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Clock-in failed.");
+      void refreshStatus();
     } finally {
       setIsSubmitting(false);
     }
@@ -429,6 +477,7 @@ export function ClockClient() {
       await refreshStatus();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Clock-out failed.");
+      void refreshStatus();
     } finally {
       setIsSubmitting(false);
     }
@@ -444,6 +493,7 @@ export function ClockClient() {
       await refreshStatus();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Could not start break.");
+      void refreshStatus();
     } finally {
       setIsSubmitting(false);
     }
@@ -459,6 +509,7 @@ export function ClockClient() {
       await refreshStatus();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Could not end break.");
+      void refreshStatus();
     } finally {
       setIsSubmitting(false);
     }
@@ -466,33 +517,139 @@ export function ClockClient() {
 
   const hasOpenShift = Boolean(clockStatus?.has_open_shift);
   const noAssignedSites = Boolean(clockStatus && clockStatus.active_location_count === 0);
+  const canClockInServer = Boolean(clockStatus?.can_clock_in);
+  const canClockOutServer = Boolean(clockStatus?.can_clock_out);
 
   const currentShiftDuration = useLiveShiftDuration(
     clockStatus?.open_shift_clock_in_at,
     Boolean(clockStatus?.has_open_shift && clockStatus?.open_shift_clock_in_at),
   );
 
+  const selfieGateIdle = activeSelfiePhase === null;
+
   const clockInEnabled =
+    canClockInServer &&
     gpsAcceptable &&
     Boolean(selfieClockIn) &&
-    !hasOpenShift &&
     !isSubmitting &&
-    !gpsAcquiring &&
-    activeSelfiePhase === null;
+    selfieGateIdle;
 
   const clockOutEnabled =
+    canClockOutServer &&
     gpsAcceptable &&
     Boolean(selfieClockOut) &&
+    !isSubmitting &&
+    selfieGateIdle;
+
+  const clockInDisabledReason = useMemo(() => {
+    if (!clockStatus) {
+      return "Loading status…";
+    }
+    if (!canClockInServer) {
+      return (
+        clockStatus.clock_in_blocked_reason ??
+        "You cannot clock in right now."
+      );
+    }
+    if (gpsFailure === "denied") {
+      return "Allow location access first.";
+    }
+    if (gpsFailure === "unsupported") {
+      return "Geolocation is not supported in this browser.";
+    }
+    if (gpsFailure === "failed") {
+      return "Could not get a reliable GPS fix. Use Retry location.";
+    }
+    if (gpsAcquiring && !gpsAcceptable) {
+      return "Waiting for accurate GPS.";
+    }
+    if (!gpsAcceptable) {
+      if (geoCapture) {
+        return "Waiting for accurate GPS.";
+      }
+      return "Waiting for location…";
+    }
+    if (nearestSiteSummary?.outside) {
+      return "You may be outside the nearest assigned site; the server will confirm on submit.";
+    }
+    if (!selfieClockIn) {
+      return "Take a clock-in selfie.";
+    }
+    if (!selfieGateIdle) {
+      return "Finish or cancel the camera capture.";
+    }
+    return null;
+  }, [
+    clockStatus,
+    canClockInServer,
+    gpsFailure,
+    gpsAcquiring,
+    gpsAcceptable,
+    geoCapture,
+    nearestSiteSummary?.outside,
+    selfieClockIn,
+    selfieGateIdle,
+  ]);
+
+  const clockOutDisabledReason = useMemo(() => {
+    if (!clockStatus) {
+      return "Loading status…";
+    }
+    if (!canClockOutServer) {
+      return (
+        clockStatus.clock_out_blocked_reason ??
+        "You cannot clock out right now."
+      );
+    }
+    if (gpsFailure === "denied") {
+      return "Allow location access first.";
+    }
+    if (gpsFailure === "unsupported") {
+      return "Geolocation is not supported in this browser.";
+    }
+    if (gpsFailure === "failed") {
+      return "Could not get a reliable GPS fix. Use Retry location.";
+    }
+    if (gpsAcquiring && !gpsAcceptable) {
+      return "Waiting for accurate GPS.";
+    }
+    if (!gpsAcceptable) {
+      if (geoCapture) {
+        return "Waiting for accurate GPS.";
+      }
+      return "Waiting for location…";
+    }
+    if (!selfieClockOut) {
+      return "Take a clock-out selfie.";
+    }
+    if (!selfieGateIdle) {
+      return "Finish or cancel the camera capture.";
+    }
+    return null;
+  }, [
+    clockStatus,
+    canClockOutServer,
+    gpsFailure,
+    gpsAcquiring,
+    gpsAcceptable,
+    geoCapture,
+    selfieClockOut,
+    selfieGateIdle,
+  ]);
+
+  const breakStartEnabled =
     hasOpenShift &&
     !Boolean(clockStatus?.current_break_open) &&
     !isSubmitting &&
-    !gpsAcquiring &&
-    activeSelfiePhase === null;
+    selfieGateIdle &&
+    flowStatus === "on_shift";
 
-  const takeClockInLabel = selfieClockIn ? "Retake clock-in selfie" : "Take clock-in selfie";
-  const takeClockOutLabel = selfieClockOut
-    ? "Retake clock-out selfie"
-    : "Take clock-out selfie";
+  const breakEndEnabled =
+    hasOpenShift &&
+    Boolean(clockStatus?.current_break_open) &&
+    !isSubmitting &&
+    selfieGateIdle &&
+    flowStatus === "open_break";
 
   const showGpsRetry = Boolean(gpsFailure);
 
@@ -517,49 +674,126 @@ export function ClockClient() {
     gpsStatusLine = "Preparing location…";
   }
 
+  const locationOk = !noAssignedSites && gpsFailure !== "denied" && gpsFailure !== "unsupported";
+  const assignedSitesFound = Boolean(clockStatus && clockStatus.active_location_count > 0);
+  const gpsAccuracyOk = gpsAcceptable;
+  const clockInSelfieOk = Boolean(selfieClockIn);
+  const clockOutSelfieOk = Boolean(selfieClockOut);
+
   return (
     <Sheet>
       <PageHeader
         title="Clock In / Out"
         description="GPS and a live camera selfie are required for each clock-in and clock-out."
       />
-      <SheetBody className="min-w-0">
-        <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
-          {isRefreshing ? "Loading status..." : null}
-          {!isRefreshing && clockStatus
-            ? `Current status: ${clockStatus.status.replace("_", " ")}`
-            : null}
-        </div>
-
-        <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
-          <p className="font-bold text-[var(--color-text)]">Current shift</p>
-          {!clockStatus?.has_open_shift ? (
-            <p className="mt-1 text-[var(--color-text-muted)]">No open shift</p>
-          ) : (
+      <SheetBody className="min-w-0 space-y-4 pb-6 sm:pb-8">
+        <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-4 text-sm">
+          <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+            Current status
+          </p>
+          {isRefreshing && !clockStatus ? (
+            <p className="mt-2 text-[var(--color-text-muted)]">Loading…</p>
+          ) : null}
+          {clockStatus ? (
             <>
-              <p className="mt-1 font-semibold text-[var(--color-text)]">
-                {clockStatus.open_shift_clock_in_at && currentShiftDuration
-                  ? `Current shift duration: ${currentShiftDuration}`
-                  : "Current shift duration: —"}
+              <p className="mt-2 text-xl font-semibold text-[var(--color-text)]">
+                {statusCardTitle(flowStatus)}
               </p>
-              <p className="mt-1 text-[var(--color-text-muted)]">
-                Break status: {clockStatus.current_break_open ? "Open break" : "No open break"}
-              </p>
-              {clockStatus.open_shift_id ? (
-                <details className="mt-2 text-[10px] text-[var(--color-text-muted)]">
-                  <summary className="cursor-pointer select-none text-[var(--color-text-muted)]">
-                    Shift reference
-                  </summary>
-                  <p className="mt-1 break-all font-mono text-[var(--color-text-muted)]">
-                    Shift ID: {clockStatus.open_shift_id}
-                  </p>
-                </details>
+              {flowStatus === "on_shift" || flowStatus === "open_break" ? (
+                <div className="mt-2 space-y-1 text-[var(--color-text-muted)]">
+                  {clockStatus.open_shift_location_name ? (
+                    <p>
+                      Site:{" "}
+                      <span className="font-medium text-[var(--color-text)]">
+                        {clockStatus.open_shift_location_name}
+                      </span>
+                    </p>
+                  ) : null}
+                  {clockStatus.open_shift_clock_in_at && currentShiftDuration ? (
+                    <p>
+                      Time on shift:{" "}
+                      <span className="font-mono font-medium text-[var(--color-text)]">
+                        {currentShiftDuration}
+                      </span>
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              {flowStatus === "completed_today" ? (
+                <p className="mt-2 text-[var(--color-text-muted)]">
+                  A second shift today is not allowed by current policy.
+                </p>
+              ) : null}
+              {flowStatus === "no_assigned_sites" ? (
+                <p className="mt-2 text-[var(--color-text-muted)]">
+                  Ask your administrator to assign you to an active site before you can clock in.
+                </p>
               ) : null}
             </>
-          )}
+          ) : null}
         </div>
 
-        <div className="mb-3 min-w-0 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm break-words">
+        {clockStatus && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
+          <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-4 text-sm">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+              Requirements
+            </p>
+            <ul className="mt-3 space-y-2 text-[var(--color-text)]">
+              <li className="flex flex-wrap items-start justify-between gap-2">
+                <span>Location access</span>
+                <span className={locationOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"}>
+                  {gpsFailure === "denied" ? "Permission needed" : locationOk ? "OK" : "—"}
+                </span>
+              </li>
+              <li className="flex flex-wrap items-start justify-between gap-2">
+                <span>Assigned site</span>
+                <span
+                  className={assignedSitesFound ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"}
+                >
+                  {assignedSitesFound ? "Found" : "None"}
+                </span>
+              </li>
+              <li className="flex flex-wrap items-start justify-between gap-2">
+                <span>GPS accuracy (≤{BACKEND_MAX_ACCURACY_M}m)</span>
+                <span className={gpsAccuracyOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"}>
+                  {gpsAccuracyOk ? "OK" : gpsAcquiring ? "Improving…" : geoCapture ? "Too low" : "—"}
+                </span>
+              </li>
+              {flowStatus === "not_clocked_in" ? (
+                <li className="flex flex-wrap items-start justify-between gap-2">
+                  <span>Clock-in selfie</span>
+                  <span
+                    className={
+                      clockInSelfieOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"
+                    }
+                  >
+                    {clockInSelfieOk ? "Captured" : "Needed"}
+                  </span>
+                </li>
+              ) : null}
+              {(flowStatus === "on_shift" || flowStatus === "open_break") && canClockOutServer ? (
+                <li className="flex flex-wrap items-start justify-between gap-2">
+                  <span>Clock-out selfie</span>
+                  <span
+                    className={
+                      clockOutSelfieOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"
+                    }
+                  >
+                    {clockOutSelfieOk ? "Captured" : "Needed"}
+                  </span>
+                </li>
+              ) : null}
+              {flowStatus === "open_break" ? (
+                <li className="flex flex-wrap items-start justify-between gap-2">
+                  <span>Break</span>
+                  <span className="text-[var(--color-warning-700)]">End break before clock out</span>
+                </li>
+              ) : null}
+            </ul>
+          </div>
+        ) : null}
+
+        <div className="min-w-0 rounded border border-[var(--color-border)] bg-[var(--color-header)] p-3 text-sm break-words">
           <p className="font-bold text-[var(--color-text)]">GPS</p>
           <p className="mt-1 break-words text-[var(--color-text-muted)]">{gpsStatusLine}</p>
           <p className="mt-1 break-words text-[var(--color-text-muted)]">
@@ -567,13 +801,13 @@ export function ClockClient() {
           </p>
           {geoCapture ? (
             <p className="mt-1 text-[var(--color-text-muted)]">
-              GPS accuracy: {Math.round(geoCapture.payload.accuracy_meters)}m (must be ≤{" "}
-              {BACKEND_MAX_ACCURACY_M}m)
+              GPS accuracy: {Math.round(geoCapture.payload.accuracy_meters)}m (must be ≤ {BACKEND_MAX_ACCURACY_M}m)
             </p>
           ) : null}
           {gpsAcquiring || gpsBestAccuracy !== null ? (
             <p className="mt-1 text-[var(--color-text-muted)]">
-              Best accuracy so far: {gpsBestAccuracy !== null ? `${Math.round(gpsBestAccuracy)}m` : "—"} · Samples: {gpsSamples}
+              Best accuracy so far: {gpsBestAccuracy !== null ? `${Math.round(gpsBestAccuracy)}m` : "—"} · Samples:{" "}
+              {gpsSamples}
             </p>
           ) : null}
           {nearestSiteSummary ? (
@@ -588,21 +822,14 @@ export function ClockClient() {
                   Your position may be outside that site; the server will confirm the geofence on submit.
                 </p>
               ) : null}
-              {!nearestSiteSummary.outside && geoCapture && geoCapture.payload.accuracy_meters > BACKEND_MAX_ACCURACY_M ? (
-                <p className="text-[var(--color-warning-700)]">
-                  You appear near the site, but GPS accuracy is too low to verify securely.
-                </p>
-              ) : null}
             </div>
           ) : null}
           {!noAssignedSites && geoCapture && geoCapture.payload.accuracy_meters > BACKEND_MAX_ACCURACY_M ? (
-            <div className="mt-2 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+            <div className="mt-2 border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
               <p className="font-semibold text-[var(--color-text)]">GPS accuracy is too low for secure clocking.</p>
               <ul className="mt-1 list-disc space-y-0.5 pl-5">
                 <li>Move near open sky or a window and retry.</li>
                 <li>On mobile, enable Precise Location for your browser.</li>
-                <li>Desktop/laptop GPS may be inaccurate; use mobile if possible.</li>
-                <li>If you are on site but still blocked, ask an admin to use manual clock-out with a reason.</li>
               </ul>
             </div>
           ) : null}
@@ -620,20 +847,17 @@ export function ClockClient() {
           ) : null}
         </div>
 
-        {geoCapture ? (
-          <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
+        {geoCapture && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
+          <div className="min-w-0 rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
             <p className="font-bold text-[var(--color-text)]">Map</p>
             {(clockStatus?.assigned_sites ?? []).length === 0 ? (
-              <p className="mt-1 text-[var(--color-text-muted)]">
-                No assigned active locations. Your administrator must assign you to an active site before you can
-                clock in at a geofence.
-              </p>
+              <p className="mt-1 text-[var(--color-text-muted)]">No map data.</p>
             ) : (
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Blue dot: your latest GPS fix. Rings: assigned active sites (teal = nearest site center).
+                Supporting view only — GPS validation still runs on the server.
               </p>
             )}
-            <div className="mt-2 w-full min-w-0 max-w-full">
+            <div className="mt-2 w-full min-w-0 max-w-full overflow-x-hidden">
               <ClockSitesMap
                 accuracyMeters={geoCapture.payload.accuracy_meters}
                 employeeLatitude={geoCapture.payload.latitude}
@@ -644,111 +868,122 @@ export function ClockClient() {
           </div>
         ) : null}
 
-        <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
-          <p className="font-bold text-[var(--color-text)]">Selfies</p>
-          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-            Camera opens only when you take or retake a selfie. Permission is requested at that time.
-          </p>
+        {clockStatus && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
+          <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-4 text-sm">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+              {flowStatus === "not_clocked_in" ? "Clock in" : flowStatus === "open_break" ? "Break" : "Clock out"}
+            </p>
 
-          {!hasOpenShift ? (
-            <div className="mt-3 space-y-2">
-              <div className="flex flex-wrap gap-2">
+            {flowStatus === "not_clocked_in" ? (
+              <div className="mt-3 space-y-4">
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  Step 1: Location is captured automatically when permission is granted. Step 2: Take your clock-in
+                  selfie. Step 3: Clock in.
+                </p>
                 <Button
+                  className="w-full min-h-[3rem] text-base sm:w-auto"
                   disabled={isSubmitting || activeSelfiePhase !== null}
                   onClick={() => openSelfieCapture("clock_in")}
                   type="button"
                 >
-                  {takeClockInLabel}
+                  {selfieClockIn ? "Retake clock-in selfie" : "Take clock-in selfie"}
                 </Button>
-              </div>
-              {selfieClockIn && clockInPreviewUrl ? (
-                <div className="mt-2 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    alt="Clock-in selfie preview"
-                    className="mx-auto max-h-28 max-w-full object-contain"
-                    src={clockInPreviewUrl}
-                  />
-                  <p className="mt-2 text-center text-xs text-[var(--color-text-muted)]">
-                    Clock-in selfie captured
-                  </p>
+                {selfieClockIn && clockInPreviewUrl ? (
+                  <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      alt="Clock-in selfie preview"
+                      className="mx-auto max-h-36 max-w-full object-contain"
+                      src={clockInPreviewUrl}
+                    />
+                  </div>
+                ) : null}
+                <div className="space-y-2">
+                  <Button
+                    className="w-full min-h-[3rem] text-base"
+                    disabled={!clockInEnabled}
+                    onClick={handleClockIn}
+                    type="button"
+                  >
+                    Clock in
+                  </Button>
+                  {!clockInEnabled && clockInDisabledReason ? (
+                    <p className="text-xs text-[var(--color-text-muted)]">{clockInDisabledReason}</p>
+                  ) : null}
                 </div>
-              ) : (
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  Clock-in selfie: not captured
-                </p>
-              )}
-            </div>
-          ) : null}
+              </div>
+            ) : null}
 
-          {hasOpenShift ? (
-            <div className="mt-3 space-y-2">
-              <div className="flex flex-wrap gap-2">
+            {flowStatus === "open_break" ? (
+              <div className="mt-3 space-y-3">
+                <p className="text-xs text-[var(--color-text-muted)]">End your break before you can clock out.</p>
                 <Button
+                  className="w-full min-h-[3rem] text-base"
+                  disabled={!breakEndEnabled}
+                  onClick={handleBreakEnd}
+                  type="button"
+                >
+                  End break
+                </Button>
+                {!breakEndEnabled && isSubmitting ? (
+                  <p className="text-xs text-[var(--color-text-muted)]">Working…</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {flowStatus === "on_shift" ? (
+              <div className="mt-3 space-y-4">
+                <Button
+                  className="w-full min-h-[3rem] text-base sm:w-auto"
                   disabled={isSubmitting || activeSelfiePhase !== null}
                   onClick={() => openSelfieCapture("clock_out")}
                   type="button"
                 >
-                  {takeClockOutLabel}
+                  {selfieClockOut ? "Retake clock-out selfie" : "Take clock-out selfie"}
                 </Button>
-              </div>
-              {selfieClockOut && clockOutPreviewUrl ? (
-                <div className="mt-2 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    alt="Clock-out selfie preview"
-                    className="mx-auto max-h-28 max-w-full object-contain"
-                    src={clockOutPreviewUrl}
-                  />
-                  <p className="mt-2 text-center text-xs text-[var(--color-text-muted)]">
-                    Clock-out selfie captured
-                  </p>
+                {selfieClockOut && clockOutPreviewUrl ? (
+                  <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      alt="Clock-out selfie preview"
+                      className="mx-auto max-h-36 max-w-full object-contain"
+                      src={clockOutPreviewUrl}
+                    />
+                  </div>
+                ) : null}
+                <div className="space-y-2">
+                  <Button
+                    className="w-full min-h-[3rem] text-base"
+                    disabled={!clockOutEnabled}
+                    onClick={handleClockOut}
+                    type="button"
+                  >
+                    Clock out
+                  </Button>
+                  {!clockOutEnabled && clockOutDisabledReason ? (
+                    <p className="text-xs text-[var(--color-text-muted)]">{clockOutDisabledReason}</p>
+                  ) : null}
                 </div>
-              ) : (
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  Clock-out selfie: not captured
-                </p>
-              )}
-            </div>
-          ) : null}
-        </div>
+                {breakStartEnabled ? (
+                  <Button disabled={!breakStartEnabled} onClick={handleBreakStart} type="button" variant="secondary">
+                    Start break
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
 
-        <div className="flex flex-wrap gap-2">
-          <Button disabled={!clockInEnabled} onClick={handleClockIn} type="button">
-            Clock in
-          </Button>
-          <Button disabled={!clockOutEnabled} onClick={handleClockOut} type="button">
-            Clock out
-          </Button>
-          <Button
-            disabled={
-              isSubmitting ||
-              activeSelfiePhase !== null ||
-              !clockStatus?.has_open_shift ||
-              Boolean(clockStatus?.current_break_open)
-            }
-            onClick={handleBreakStart}
-            type="button"
-          >
-            Break start
-          </Button>
-          <Button
-            disabled={
-              isSubmitting ||
-              activeSelfiePhase !== null ||
-              !clockStatus?.has_open_shift ||
-              !Boolean(clockStatus?.current_break_open)
-            }
-            onClick={handleBreakEnd}
-            type="button"
-          >
-            Break end
-          </Button>
-          <Button
-            disabled={isSubmitting || activeSelfiePhase !== null}
-            onClick={refreshStatus}
-            type="button"
-          >
+        {flowStatus === "on_shift" || flowStatus === "not_clocked_in" ? (
+          <p className="text-xs text-[var(--color-text-muted)]">
+            {flowStatus === "on_shift"
+              ? "Clock in is not available while you are on shift."
+              : "Clock out is available after you start a shift."}
+          </p>
+        ) : null}
+
+        <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
+          <Button disabled={isSubmitting || activeSelfiePhase !== null} onClick={() => void refreshStatus()} type="button" variant="secondary">
             Refresh status
           </Button>
         </div>
@@ -780,7 +1015,7 @@ export function ClockClient() {
                     <Button onClick={handleConfirmSelfieCapture} type="button">
                       Capture
                     </Button>
-                    <Button onClick={handleCancelSelfieCapture} type="button">
+                    <Button onClick={handleCancelSelfieCapture} type="button" variant="secondary">
                       Cancel
                     </Button>
                   </div>
@@ -791,12 +1026,12 @@ export function ClockClient() {
           : null}
 
         {errorMessage ? (
-          <div className="mt-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
+          <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
             {errorMessage}
           </div>
         ) : null}
         {successMessage ? (
-          <div className="mt-3 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
+          <div className="border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
             {successMessage}
           </div>
         ) : null}

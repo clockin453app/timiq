@@ -10,6 +10,7 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
+from app.modules.locations.repository import get_location_by_id
 from app.modules.time_clock.geofence import haversine_distance_meters, is_inside_geofence
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
 from app.modules.time_clock.permissions import can_view_shift_owner_selfies
@@ -135,14 +136,69 @@ def get_clock_status(db_session: Session, actor: User) -> dict:
         for loc in active_locations
     ]
 
+    now = _utc_now()
+    day_start, day_end = _utc_day_window(now)
+    completed_today_no_open = (
+        open_shift is None
+        and has_completed_shift_for_user_on_utc_day(db_session, actor.id, day_start, day_end)
+    )
+    active_count = len(active_locations)
+
+    if active_count == 0:
+        current_status = "no_assigned_sites"
+    elif completed_today_no_open:
+        current_status = "completed_today"
+    elif open_shift is not None and current_break is not None:
+        current_status = "open_break"
+    elif open_shift is not None:
+        current_status = "on_shift"
+    else:
+        current_status = "not_clocked_in"
+
+    open_shift_location_id: uuid.UUID | None = None
+    open_shift_location_name: str | None = None
+    if open_shift is not None:
+        loc_row = get_location_by_id(db_session, open_shift.location_id)
+        if loc_row is not None:
+            open_shift_location_id = loc_row.id
+            open_shift_location_name = loc_row.name
+
+    can_clock_in = active_count > 0 and open_shift is None and not completed_today_no_open
+    can_clock_out = open_shift is not None and current_break is None
+
+    clock_in_blocked_reason: str | None = None
+    if not can_clock_in:
+        if active_count == 0:
+            clock_in_blocked_reason = "No active assigned locations."
+        elif open_shift is not None:
+            clock_in_blocked_reason = "You are already on shift."
+        elif completed_today_no_open:
+            clock_in_blocked_reason = "A second shift today is not allowed by current policy."
+
+    clock_out_blocked_reason: str | None = None
+    if not can_clock_out:
+        if open_shift is None:
+            clock_out_blocked_reason = "Clock in first to start a shift."
+        elif current_break is not None:
+            clock_out_blocked_reason = "End your break before clocking out."
+
     return {
         "has_open_shift": open_shift is not None,
         "open_shift_id": open_shift.id if open_shift is not None else None,
         "open_shift_clock_in_at": open_shift.clock_in_at if open_shift is not None else None,
         "status": "clocked_in" if open_shift is not None else "clocked_out",
-        "active_location_count": len(active_locations),
+        "active_location_count": active_count,
         "current_break_open": current_break is not None,
         "assigned_sites": assigned_sites,
+        "current_status": current_status,
+        "has_completed_shift_today": completed_today_no_open,
+        "open_break_id": current_break.id if current_break is not None else None,
+        "open_shift_location_id": open_shift_location_id,
+        "open_shift_location_name": open_shift_location_name,
+        "can_clock_in": can_clock_in,
+        "can_clock_out": can_clock_out,
+        "clock_in_blocked_reason": clock_in_blocked_reason,
+        "clock_out_blocked_reason": clock_out_blocked_reason,
     }
 
 
