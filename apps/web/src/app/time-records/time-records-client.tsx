@@ -139,7 +139,7 @@ export function TimeRecordsClient() {
         title="Time records"
         description="Stored clock times are unchanged; payable and payroll durations follow company time policy."
       />
-      <SheetBody className="space-y-3">
+      <SheetBody className="min-w-0 space-y-3">
         {management ? (
           <div className="flex flex-wrap items-center gap-3 border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-sm">
             <label className="flex items-center gap-2 font-semibold text-[var(--color-text)]">

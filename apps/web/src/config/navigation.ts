@@ -194,6 +194,7 @@ function filterGroup(role: SystemRole, group: NavigationGroupDefinition): Naviga
 /**
  * Primary (workforce) nav groups. For admin/administrator, "Time" only shows Clock here;
  * time records / timesheets / week report appear under Management → Attendance to avoid duplicate links.
+ * Employees never receive management groups (see getManagementNavigationGroups).
  */
 export function getEmployeeNavigationGroups(role: SystemRole): NavigationGroupDefinition[] {
   const isMgmt = role === "admin" || role === "administrator";
@@ -206,6 +207,9 @@ export function getEmployeeNavigationGroups(role: SystemRole): NavigationGroupDe
 }
 
 export function getManagementNavigationGroups(role: SystemRole): NavigationGroupDefinition[] {
+  if (role === "employee") {
+    return [];
+  }
   return MANAGEMENT_NAV_GROUP_DEFS.map((group) => filterGroup(role, group)).filter(
     (g): g is NavigationGroupDefinition => g !== null,
   );

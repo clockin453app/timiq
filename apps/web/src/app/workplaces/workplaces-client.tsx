@@ -122,7 +122,7 @@ export function WorkplacesClient() {
         description="Create and manage workplace records by company scope."
       />
 
-      <SheetBody>
+      <SheetBody className="min-w-0">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={

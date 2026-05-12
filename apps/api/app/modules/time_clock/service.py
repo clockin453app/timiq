@@ -138,6 +138,7 @@ def get_clock_status(db_session: Session, actor: User) -> dict:
     return {
         "has_open_shift": open_shift is not None,
         "open_shift_id": open_shift.id if open_shift is not None else None,
+        "open_shift_clock_in_at": open_shift.clock_in_at if open_shift is not None else None,
         "status": "clocked_in" if open_shift is not None else "clocked_out",
         "active_location_count": len(active_locations),
         "current_break_open": current_break is not None,

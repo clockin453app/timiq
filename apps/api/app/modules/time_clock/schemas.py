@@ -26,6 +26,10 @@ class AssignedSiteStatus(BaseModel):
 class ClockStatusResponse(BaseModel):
     has_open_shift: bool
     open_shift_id: uuid.UUID | None = None
+    open_shift_clock_in_at: datetime | None = Field(
+        default=None,
+        description="UTC clock-in time for the user's open shift; null when not clocked in.",
+    )
     status: str
     active_location_count: int
     current_break_open: bool

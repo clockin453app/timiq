@@ -82,7 +82,7 @@ export function GroupedNavBlock({
 
   useEffect(() => {
     const defaults = defaultOpenMap(groups, activeHref);
-    const stored = loadStoredOpen(mergedScope);
+    const stored = variant === "drawer" ? null : loadStoredOpen(mergedScope);
     const next: Record<string, boolean> = { ...defaults };
     if (stored) {
       for (const g of groups) {
@@ -97,17 +97,19 @@ export function GroupedNavBlock({
       }
     }
     setOpen(next);
-  }, [groups, activeHref, mergedScope]);
+  }, [groups, activeHref, mergedScope, variant]);
 
   const toggle = useCallback(
     (groupId: string) => {
       setOpen((prev) => {
         const next = { ...prev, [groupId]: !prev[groupId] };
-        saveStoredOpen(mergedScope, next);
+        if (variant !== "drawer") {
+          saveStoredOpen(mergedScope, next);
+        }
         return next;
       });
     },
-    [mergedScope],
+    [mergedScope, variant],
   );
 
   if (groups.length === 0) {
@@ -139,7 +141,7 @@ export function GroupedNavBlock({
             <button
               aria-expanded={isOpen}
               className={[
-                "flex w-full items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2.5 py-2 text-left text-sm font-medium text-[#1f2937]",
+                "flex w-full min-w-0 items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2.5 py-2 text-left text-sm font-medium text-[#1f2937]",
                 isOpen
                   ? "border-[var(--color-border-dark)] bg-[#e5e7eb] text-[#111827]"
                   : "border-transparent text-[#1f2937] hover:border-[var(--color-border)] hover:bg-[#e5e7eb]/80",

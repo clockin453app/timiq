@@ -104,7 +104,9 @@ def compute_shift_metrics(
 
     gross_span_seconds = max(0, int((span_end - counted_in).total_seconds()))
 
-    # Payable span (counted clock-in to counted end) must reach threshold before automatic break floor applies.
+    # Automatic break floor (break_deduction_minutes) applies only once payable span
+    # (counted clock-in → counted end / now) reaches break_deduction_after_minutes (default 360).
+    # Tracked breaks still use max(tracked, automatic_floor) when the floor applies.
     threshold_minutes = (
         int(policy.break_deduction_after_minutes)
         if policy.break_deduction_after_minutes is not None

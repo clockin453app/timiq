@@ -168,7 +168,7 @@ export function CompaniesClient() {
         description="Create, review, edit, activate, and deactivate company accounts."
       />
 
-      <SheetBody>
+      <SheetBody className="min-w-0">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={

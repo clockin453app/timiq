@@ -488,7 +488,7 @@ export function OnboardingReviewClient() {
         description="Review submitted starter forms, download documents, approve or reject with a reason."
         action={<LogoutButton />}
       />
-      <SheetBody className="space-y-6">
+      <SheetBody className="min-w-0 space-y-6">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={

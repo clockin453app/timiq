@@ -508,14 +508,14 @@ export function PayrollReportClient() {
         description="Weekly payroll, approvals, and exports. Week is defined by the company time policy timezone."
         titleClassName="text-xl font-bold tracking-tight text-[#111827] md:text-2xl"
       />
-      <SheetBody className="space-y-5">
+      <SheetBody className="min-w-0 space-y-5">
         <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-sm">
           <div className="space-y-4">
             {isAdministrator(user) ? (
               <div>
                 <label className="block text-xs font-bold text-[#111827]">Company</label>
                 <select
-                  className="timiq-select mt-1.5 h-10 w-full max-w-xl rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] pl-3 text-sm font-medium text-[#111827]"
+                  className="timiq-select mt-1.5 h-10 w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] pl-3 text-sm font-medium text-[#111827]"
                   onChange={(event) => setCompanyOverride(event.target.value || null)}
                   value={companyOverride ?? ""}
                 >
@@ -663,7 +663,7 @@ export function PayrollReportClient() {
           </div>
         ) : null}
 
-        <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:gap-5">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-5">
           <div className="min-w-0 w-full flex-1 space-y-5 xl:min-w-0">
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
@@ -896,7 +896,7 @@ export function PayrollReportClient() {
                                     No shifts in this date window, or none returned (max 100).
                                   </p>
                                 ) : (
-                                  <div className="overflow-x-auto">
+                                  <div className="min-w-0 max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
                                     <table className="w-full min-w-[32rem] border-collapse text-left text-xs">
                                       <thead>
                                         <tr className="border-b border-[var(--color-border-dark)] text-[var(--color-text-soft)]">
@@ -978,7 +978,7 @@ export function PayrollReportClient() {
             ) : null}
           </div>
 
-          <aside className="w-full min-w-0 shrink-0 space-y-3 xl:w-72 xl:max-w-[20rem]">
+          <aside className="w-full min-w-0 max-w-full shrink-0 space-y-3 lg:w-64 lg:max-w-[min(20rem,calc(100vw-2rem))] xl:w-72">
             <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 text-sm shadow-sm">
               <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Payroll summary</p>
               {!hasCompany ? (

@@ -9,16 +9,19 @@
 html {
   min-height: 100%;
   max-width: 100%;
+  min-width: 0;
   background: var(--color-page);
   color: var(--color-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;
+  overscroll-behavior-x: none;
 }
 
 body {
   min-height: 100%;
   max-width: 100%;
+  min-width: 0;
   margin: 0;
   background: var(--color-page);
   color: var(--color-text);

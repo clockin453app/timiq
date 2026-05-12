@@ -299,7 +299,7 @@ export function LocationsClient() {
         }
       />
 
-      <SheetBody>
+      <SheetBody className="min-w-0">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={

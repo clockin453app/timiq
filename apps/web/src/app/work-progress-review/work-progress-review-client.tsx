@@ -332,7 +332,7 @@ function ReviewAdminBody() {
         <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">Filters</p>
         <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
           {adminAllCompanies ? (
-            <label className="block text-xs font-bold text-[var(--color-text-soft)]">
+            <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
               <span className="text-[var(--color-text)]">Company</span>
               <select
                 className="mt-1 h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
@@ -348,7 +348,7 @@ function ReviewAdminBody() {
               </select>
             </label>
           ) : null}
-          <label className="block text-xs font-bold text-[var(--color-text-soft)]">
+          <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
             <span className="text-[var(--color-text)]">Status</span>
             <select
               className="mt-1 h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
@@ -360,19 +360,19 @@ function ReviewAdminBody() {
               <option value="reviewed">Reviewed</option>
             </select>
           </label>
-          <label className="block text-xs font-bold text-[var(--color-text-soft)]">
+          <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
             <span className="text-[var(--color-text)]">Date from</span>
             <Input className="mt-1" onChange={(e) => setDateFrom(e.target.value)} type="date" value={dateFrom} />
           </label>
-          <label className="block text-xs font-bold text-[var(--color-text-soft)]">
+          <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
             <span className="text-[var(--color-text)]">Date to</span>
             <Input className="mt-1" onChange={(e) => setDateTo(e.target.value)} type="date" value={dateTo} />
           </label>
-          <label className="block text-xs font-bold text-[var(--color-text-soft)]">
+          <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
             <span className="text-[var(--color-text)]">Employee user ID</span>
             <Input className="mt-1 font-mono text-xs" onChange={(e) => setUserIdFilter(e.target.value)} value={userIdFilter} />
           </label>
-          <label className="block text-xs font-bold text-[var(--color-text-soft)]">
+          <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
             <span className="text-[var(--color-text)]">Location ID</span>
             <Input
               className="mt-1 font-mono text-xs"
@@ -380,7 +380,7 @@ function ReviewAdminBody() {
               value={locationIdFilter}
             />
           </label>
-          <label className="block text-xs font-bold text-[var(--color-text-soft)] sm:col-span-2">
+          <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)] sm:col-span-2">
             <span className="text-[var(--color-text)]">Title / tag search</span>
             <Input
               className="mt-1"
@@ -655,7 +655,7 @@ export function WorkProgressReviewClient() {
         description="Review site progress from employees you manage. Files open in a protected session."
         title="Work progress review"
       />
-      <SheetBody className="space-y-4 md:p-5">
+      <SheetBody className="min-w-0 space-y-4 md:p-5">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={

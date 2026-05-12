@@ -257,7 +257,7 @@ export function WeekReportClient() {
         description="Summary for the selected week using payable and payroll time from company policy."
         title="Week report"
       />
-      <SheetBody className="space-y-3 md:p-5">
+      <SheetBody className="min-w-0 space-y-3 md:p-5">
         {management ? (
           <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2.5 md:flex-row md:flex-wrap md:items-center md:justify-between">
             <div

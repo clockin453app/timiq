@@ -21,6 +21,7 @@ import {
   isGpsClientSubmittable,
   stabilizeGpsFix,
 } from "../../features/time-clock/gps";
+import { useLiveShiftDuration } from "../../features/time-clock/shift-duration";
 import { haversineDistanceMeters } from "../../lib/geo";
 
 const EMPTY_ASSIGNED_SITES: ClockAssignedSite[] = [];
@@ -466,6 +467,11 @@ export function ClockClient() {
   const hasOpenShift = Boolean(clockStatus?.has_open_shift);
   const noAssignedSites = Boolean(clockStatus && clockStatus.active_location_count === 0);
 
+  const currentShiftDuration = useLiveShiftDuration(
+    clockStatus?.open_shift_clock_in_at,
+    Boolean(clockStatus?.has_open_shift && clockStatus?.open_shift_clock_in_at),
+  );
+
   const clockInEnabled =
     gpsAcceptable &&
     Boolean(selfieClockIn) &&
@@ -517,7 +523,7 @@ export function ClockClient() {
         title="Clock In / Out"
         description="GPS and a live camera selfie are required for each clock-in and clock-out."
       />
-      <SheetBody>
+      <SheetBody className="min-w-0">
         <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
           {isRefreshing ? "Loading status..." : null}
           {!isRefreshing && clockStatus
@@ -527,20 +533,36 @@ export function ClockClient() {
 
         <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
           <p className="font-bold text-[var(--color-text)]">Current shift</p>
-          <p className="mt-1 text-[var(--color-text-muted)]">
-            {clockStatus?.has_open_shift
-              ? `Open shift ID: ${clockStatus.open_shift_id}`
-              : "No open shift"}
-          </p>
-          <p className="mt-1 text-[var(--color-text-muted)]">
-            Break status: {clockStatus?.current_break_open ? "Open break" : "No open break"}
-          </p>
+          {!clockStatus?.has_open_shift ? (
+            <p className="mt-1 text-[var(--color-text-muted)]">No open shift</p>
+          ) : (
+            <>
+              <p className="mt-1 font-semibold text-[var(--color-text)]">
+                {clockStatus.open_shift_clock_in_at && currentShiftDuration
+                  ? `Current shift duration: ${currentShiftDuration}`
+                  : "Current shift duration: —"}
+              </p>
+              <p className="mt-1 text-[var(--color-text-muted)]">
+                Break status: {clockStatus.current_break_open ? "Open break" : "No open break"}
+              </p>
+              {clockStatus.open_shift_id ? (
+                <details className="mt-2 text-[10px] text-[var(--color-text-muted)]">
+                  <summary className="cursor-pointer select-none text-[var(--color-text-muted)]">
+                    Shift reference
+                  </summary>
+                  <p className="mt-1 break-all font-mono text-[var(--color-text-muted)]">
+                    Shift ID: {clockStatus.open_shift_id}
+                  </p>
+                </details>
+              ) : null}
+            </>
+          )}
         </div>
 
-        <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
+        <div className="mb-3 min-w-0 border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm break-words">
           <p className="font-bold text-[var(--color-text)]">GPS</p>
-          <p className="mt-1 text-[var(--color-text-muted)]">{gpsStatusLine}</p>
-          <p className="mt-1 text-[var(--color-text-muted)]">
+          <p className="mt-1 break-words text-[var(--color-text-muted)]">{gpsStatusLine}</p>
+          <p className="mt-1 break-words text-[var(--color-text-muted)]">
             Active assigned locations: {clockStatus?.active_location_count ?? 0}
           </p>
           {geoCapture ? (
@@ -555,8 +577,8 @@ export function ClockClient() {
             </p>
           ) : null}
           {nearestSiteSummary ? (
-            <div className="mt-2 space-y-1 text-[var(--color-text-muted)]">
-              <p>
+            <div className="mt-2 space-y-1 break-words text-[var(--color-text-muted)]">
+              <p className="break-words">
                 Nearest assigned site: <span className="font-semibold">{nearestSiteSummary.site.name}</span> (
                 about {nearestSiteSummary.distanceM}m to center, radius{" "}
                 {nearestSiteSummary.site.geofence_radius_meters}m)

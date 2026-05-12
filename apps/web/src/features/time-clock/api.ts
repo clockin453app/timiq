@@ -11,6 +11,8 @@ export type ClockAssignedSite = {
 export type ClockStatus = {
   has_open_shift: boolean;
   open_shift_id: string | null;
+  /** ISO 8601 clock-in time for the open shift; absent on older API responses. */
+  open_shift_clock_in_at?: string | null;
   status: string;
   active_location_count: number;
   current_break_open: boolean;

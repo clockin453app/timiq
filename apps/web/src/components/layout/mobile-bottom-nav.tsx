@@ -14,7 +14,7 @@ const mobilePrimaryLinks = [
 
 export function MobileBottomNav({ activeHref = "/dashboard" }: MobileBottomNavProps) {
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[var(--color-border-dark)] bg-[var(--color-header)] text-[11px] leading-tight md:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[var(--color-border-dark)] bg-[var(--color-header)] text-[11px] leading-tight lg:hidden">
       {mobilePrimaryLinks.map((item) => (
         <Link
           className={

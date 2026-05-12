@@ -436,7 +436,7 @@ export function SiteProgressClient() {
         description="Log site work with photos. Only locations you are assigned to appear below. Photos are resized in your browser before upload, then validated and optimised again on the server (JPEG, PNG, or WebP)."
         title="Site progress"
       />
-      <SheetBody className="space-y-4 md:p-5">
+      <SheetBody className="min-w-0 space-y-4 md:p-5">
         {optionsError ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
             {optionsError}
@@ -702,7 +702,7 @@ export function SiteProgressClient() {
                         <TableCell>{row.location_name}</TableCell>
                         <TableCell className="max-w-[12rem] truncate">{row.title}</TableCell>
                         <TableCell>
-                          <div className="flex flex-wrap gap-1">
+                          <div className="grid grid-cols-2 gap-1 sm:flex sm:flex-wrap">
                             {(row.attachments ?? []).slice(0, 4).map((a) => (
                               <button
                                 className="rounded border border-transparent hover:border-[var(--color-action-text)]"

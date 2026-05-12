@@ -276,8 +276,9 @@ export function CompanyTimePolicyModal({
                 value={breakDeductionAfterMinutes}
               />
               <span className="mt-1 block text-xs font-normal leading-snug text-[var(--color-text-muted)]">
-                Example: 360 minutes means the automatic break deduction applies only after 6 hours worked (payable
-                span). Tracked breaks that exceed the automatic deduction still apply on shorter shifts.
+                Example: 360 minutes means the automatic break deduction applies only after 6 hours worked. Uses the
+                payable span (counted clock-in to clock-out, or now for an open shift). If tracked breaks exceed the
+                automatic deduction, the larger value still applies, including on shorter shifts.
               </span>
             </label>
 

@@ -299,7 +299,7 @@ export function LiveAttendanceClient() {
         title="Live Attendance"
         description="Snapshot of today’s roster, open shifts, and manual clock controls for administrators."
       />
-      <SheetBody>
+      <SheetBody className="min-w-0">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={

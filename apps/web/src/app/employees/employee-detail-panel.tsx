@@ -262,7 +262,7 @@ export function EmployeeDetailPanel({
     >
       <div className="timiq-sheet mx-auto my-4 w-full max-w-[min(32rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
         <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
-          <div>
+          <div className="min-w-0">
             <p className="text-sm font-bold text-[var(--color-text)]">Edit employee</p>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{user.email}</p>
             {canManageUser(currentUser, user) ? (

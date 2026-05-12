@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { PageHeader, Sheet, SheetBody } from "../../components/ui";
 import { isEmployee, LogoutButton, useCurrentUser } from "../../features/auth";
 import { getClockStatus, type ClockStatus } from "../../features/time-clock/api";
+import { useLiveShiftDuration } from "../../features/time-clock/shift-duration";
 
 function describeShift(clock: ClockStatus): string {
   if (!clock.has_open_shift) {
@@ -72,6 +73,11 @@ function EmployeeDashboard() {
   const [clockError, setClockError] = useState("");
   const [clockLoading, setClockLoading] = useState(true);
 
+  const onShiftDuration = useLiveShiftDuration(
+    clockStatus?.open_shift_clock_in_at,
+    Boolean(clockStatus?.has_open_shift && clockStatus?.open_shift_clock_in_at),
+  );
+
   useEffect(() => {
     let cancelled = false;
 
@@ -119,7 +125,7 @@ function EmployeeDashboard() {
         title="Dashboard"
       />
 
-      <SheetBody className="space-y-4 md:p-5">
+      <SheetBody className="min-w-0 space-y-4 md:p-5">
         <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
           <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
@@ -149,13 +155,14 @@ function EmployeeDashboard() {
               </div>
               <div className="flex flex-col gap-1">
                 <dt className="text-xs text-[var(--color-text-muted)]">Today hours</dt>
-                <dd className="font-semibold text-[var(--color-text)]">
-                  Coming in next batch{" "}
-                  <span className="font-normal text-[var(--color-text-muted)]">
-                    (time records / reporting)
-                  </span>
-                </dd>
+                <dd className="font-semibold text-[var(--color-text)]">Calculated after clock-out</dd>
               </div>
+              {clockStatus.has_open_shift && onShiftDuration ? (
+                <div className="flex flex-col gap-1 sm:col-span-2">
+                  <dt className="text-xs text-[var(--color-text-muted)]">Live shift time</dt>
+                  <dd className="font-semibold text-[var(--color-text)]">On shift for {onShiftDuration}</dd>
+                </div>
+              ) : null}
               <div className="flex flex-col gap-1 sm:col-span-2">
                 <dt className="text-xs text-[var(--color-text-muted)]">Shift status</dt>
                 <dd className="font-semibold text-[var(--color-text)]">{describeShift(clockStatus)}</dd>
@@ -214,7 +221,7 @@ function ManagementDashboard() {
         title="Dashboard"
       />
 
-      <SheetBody className="md:p-5">
+      <SheetBody className="min-w-0 md:p-5">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <ManagementMetricCard
             badge="Ready"
