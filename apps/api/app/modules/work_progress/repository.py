@@ -132,6 +132,26 @@ def list_review_entries(
     return rows, total
 
 
+def count_review_entries(
+    db_session: Session,
+    *,
+    company_id_filter: uuid.UUID | None,
+    status_filter: str | None,
+) -> int:
+    """Count review-queue entries with the same filters as list_review_entries (no pagination)."""
+    stmt = _apply_review_entry_filters(
+        select(func.count()).select_from(WorkProgressEntry),
+        company_id_filter=company_id_filter,
+        user_id_filter=None,
+        location_id_filter=None,
+        status_filter=status_filter,
+        date_from=None,
+        date_to=None,
+        title_search=None,
+    )
+    return int(db_session.scalar(stmt) or 0)
+
+
 def count_review_attachments(
     db_session: Session,
     *,

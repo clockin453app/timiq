@@ -7,11 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
 from app.modules.companies.service import ensure_company_time_policy
+from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.payroll.repository import list_employee_users_for_company
+from app.modules.site_access.models import EmployeeLocationAccess
 from app.modules.time_clock.models import TimeShift
 from app.modules.workplaces.models import Workplace
+
+# Open shifts older than this (UTC elapsed time since clock-in) appear in Needs Attention.
+LONG_OPEN_SHIFT_THRESHOLD_HOURS = 12
 
 
 def count_active_employees_for_company(db_session: Session, company_id: uuid.UUID) -> int:
@@ -188,6 +193,65 @@ def list_recent_payroll_items(
     )
     rows = db_session.execute(statement).all()
     return [(row[0], row[1]) for row in rows]
+
+
+def count_long_open_shifts_for_companies(
+    db_session: Session,
+    company_ids: list[uuid.UUID],
+    *,
+    now_utc: datetime,
+    threshold_hours: int = LONG_OPEN_SHIFT_THRESHOLD_HOURS,
+) -> int:
+    """Open time shifts whose clock-in is at least threshold_hours ago (UTC)."""
+    if not company_ids:
+        return 0
+    cutoff = now_utc - timedelta(hours=threshold_hours)
+    statement = (
+        select(func.count())
+        .select_from(TimeShift)
+        .join(User, TimeShift.user_id == User.id)
+        .where(TimeShift.status == "open")
+        .where(TimeShift.clock_in_at <= cutoff)
+        .where(User.company_id.in_(company_ids))
+    )
+    return int(db_session.scalar(statement) or 0)
+
+
+def count_employees_missing_hourly_rate_for_companies(
+    db_session: Session,
+    company_ids: list[uuid.UUID],
+) -> int:
+    if not company_ids:
+        return 0
+    statement = (
+        select(func.count())
+        .select_from(User)
+        .outerjoin(EmployeeProfile, EmployeeProfile.user_id == User.id)
+        .where(User.company_id.in_(company_ids))
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
+        .where(or_(EmployeeProfile.id.is_(None), EmployeeProfile.hourly_rate.is_(None)))
+    )
+    return int(db_session.scalar(statement) or 0)
+
+
+def count_employees_without_site_access_for_companies(
+    db_session: Session,
+    company_ids: list[uuid.UUID],
+) -> int:
+    """Active employees in scope with no EmployeeLocationAccess rows."""
+    if not company_ids:
+        return 0
+    access_any = select(EmployeeLocationAccess.id).where(EmployeeLocationAccess.user_id == User.id).exists()
+    statement = (
+        select(func.count())
+        .select_from(User)
+        .where(User.company_id.in_(company_ids))
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
+        .where(~access_any)
+    )
+    return int(db_session.scalar(statement) or 0)
 
 
 def aggregate_active_counts(

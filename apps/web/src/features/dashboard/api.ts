@@ -19,6 +19,52 @@ export type ManagementSummary = {
   payroll_message: string | null;
 };
 
+export type NeedsAttentionItem = {
+  code: string;
+  label: string;
+  count: number;
+  severity: "info" | "warning" | "critical";
+  href: string;
+};
+
+export type TodayLiveRow = {
+  display_name: string;
+  email: string | null;
+  location_name: string | null;
+  clock_in_at: string;
+  running_seconds: number;
+  href: string;
+};
+
+export type PayrollReadinessPanel = {
+  payroll_status: string;
+  week_start: string | null;
+  week_end: string | null;
+  total_items: number;
+  pending_count: number;
+  approved_count: number;
+  paid_count: number;
+  rate_missing_count: number;
+  payroll_period_not_calculated: boolean;
+  payroll_needs_recalculation: boolean;
+  open_shifts_started_in_week_count: number;
+  total_gross: number | null;
+  total_hours_seconds: number;
+  href: string;
+  scope_note: string | null;
+};
+
+export type SetupHealthPanel = {
+  active_employee_count: number;
+  active_location_count: number;
+  active_workplace_count: number;
+  employees_missing_hourly_rate_count: number;
+  employees_without_site_access_count: number;
+  time_policy_row_present: boolean;
+  time_policy_configured: boolean;
+  scope_note: string | null;
+};
+
 export type OverviewData = ManagementSummary & {
   attendance_trend: Array<{
     date: string;
@@ -36,6 +82,12 @@ export type OverviewData = ManagementSummary & {
     summary: string;
     detail: string | null;
   }>;
+  long_open_shift_threshold_hours: number;
+  needs_attention: NeedsAttentionItem[];
+  needs_attention_scope_note: string | null;
+  today_live: TodayLiveRow[];
+  payroll_readiness: PayrollReadinessPanel | null;
+  setup_health: SetupHealthPanel | null;
 };
 
 function buildCompanyQuery(companyId: string | null | undefined): string {

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
 import { isAdministrator, LogoutButton, useCurrentUser } from "../../features/auth";
@@ -30,6 +30,24 @@ function toneForPayrollStatus(status: string): "success" | "warning" | "muted" {
     return "muted";
   }
   return "warning";
+}
+
+const NEEDS_ATTENTION_SEVERITY_CLASS: Record<string, string> = {
+  critical: "border-l-[3px] border-[#b91c1c] bg-[#fef2f2]",
+  warning: "border-l-[3px] border-[#b45309] bg-[#fffbeb]",
+  info: "border-l-[3px] border-[#64748b] bg-[#f8fafc]",
+};
+
+function PanelFrame(props: { title: string; children: ReactNode; headerRight?: ReactNode }) {
+  return (
+    <div className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
+        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">{props.title}</p>
+        {props.headerRight}
+      </div>
+      {props.children}
+    </div>
+  );
 }
 
 function formatPercent(rate: number | null | undefined): string {
@@ -313,6 +331,223 @@ export function OverviewClient() {
                 }
                 title="Payroll this week"
               />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <PanelFrame title="Needs attention">
+                <div className="p-3">
+                  {data.needs_attention_scope_note ? (
+                    <p className="mb-3 text-[11px] text-[var(--color-text-muted)]">{data.needs_attention_scope_note}</p>
+                  ) : null}
+                  {data.needs_attention.length === 0 ? (
+                    <p className="text-sm text-[var(--color-text-muted)]">No urgent items.</p>
+                  ) : (
+                    <ul className="divide-y divide-[var(--color-border)]">
+                      {data.needs_attention.map((item) => (
+                        <li key={item.code}>
+                          <Link
+                            className={`flex items-center justify-between gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-[var(--color-header)] ${NEEDS_ATTENTION_SEVERITY_CLASS[item.severity] ?? NEEDS_ATTENTION_SEVERITY_CLASS.info}`}
+                            href={item.href}
+                          >
+                            <span className="min-w-0 font-medium text-[var(--color-text)]">{item.label}</span>
+                            <span className="shrink-0 tabular-nums font-semibold text-[var(--color-text)]">
+                              {item.count}
+                            </span>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </PanelFrame>
+
+              <PanelFrame
+                headerRight={
+                  <Link className="text-xs font-medium text-[var(--color-link)] underline" href="/live-attendance">
+                    View all
+                  </Link>
+                }
+                title="Today live"
+              >
+                <div className="p-3">
+                  {data.today_live.length === 0 ? (
+                    <p className="text-sm text-[var(--color-text-muted)]">No open shifts right now.</p>
+                  ) : (
+                    <ul className="divide-y divide-[var(--color-border)]">
+                      {data.today_live.map((row, idx) => (
+                        <li key={`${row.display_name}-${row.clock_in_at}-${idx}`}>
+                          <Link
+                            className="flex flex-col gap-0.5 px-3 py-2.5 text-sm transition-colors hover:bg-[var(--color-header)] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                            href={row.href}
+                          >
+                            <div className="min-w-0">
+                              <p className="font-medium text-[var(--color-text)]">{row.display_name}</p>
+                              <p className="text-xs text-[var(--color-text-muted)]">
+                                {row.location_name ?? "—"}
+                                {row.email ? ` · ${row.email}` : null}
+                              </p>
+                            </div>
+                            <p className="shrink-0 text-xs tabular-nums text-[var(--color-text-muted)] sm:text-right">
+                              {formatDurationSeconds(row.running_seconds)}
+                              <span className="hidden sm:inline"> · </span>
+                              <span className="block sm:inline">
+                                {new Date(row.clock_in_at).toLocaleString()}
+                              </span>
+                            </p>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </PanelFrame>
+
+              <PanelFrame title="Payroll readiness">
+                <div className="space-y-3 p-3">
+                  {!data.payroll_readiness ? (
+                    <p className="text-sm text-[var(--color-text-muted)]">Payroll readiness is unavailable.</p>
+                  ) : (
+                    <>
+                      {data.payroll_readiness.scope_note ? (
+                        <p className="text-[11px] text-[var(--color-text-muted)]">{data.payroll_readiness.scope_note}</p>
+                      ) : null}
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span
+                          className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                            toneForPayrollStatus(data.payroll_readiness.payroll_status) === "success"
+                              ? "border-[var(--color-success-700)] bg-[var(--color-success-50)] text-[var(--color-success-700)]"
+                              : toneForPayrollStatus(data.payroll_readiness.payroll_status) === "muted"
+                                ? "border-[var(--color-border-dark)] bg-[var(--color-header)] text-[var(--color-text-muted)]"
+                                : "border-[var(--color-warning-700)] bg-[var(--color-warning-50)] text-[var(--color-warning-700)]"
+                          }`}
+                        >
+                          {PAYROLL_STATUS_LABEL[data.payroll_readiness.payroll_status] ??
+                            data.payroll_readiness.payroll_status}
+                        </span>
+                        <Link
+                          className="text-xs font-medium text-[var(--color-link)] underline"
+                          href={data.payroll_readiness.href}
+                        >
+                          Open payroll report →
+                        </Link>
+                      </div>
+                      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3">
+                        <div>
+                          <dt className="text-[var(--color-text-soft)]">Items</dt>
+                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
+                            {data.payroll_readiness.total_items}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-[var(--color-text-soft)]">Pending</dt>
+                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
+                            {data.payroll_readiness.pending_count}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-[var(--color-text-soft)]">Approved</dt>
+                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
+                            {data.payroll_readiness.approved_count}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-[var(--color-text-soft)]">Paid</dt>
+                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
+                            {data.payroll_readiness.paid_count}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-[var(--color-text-soft)]">Rate missing</dt>
+                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
+                            {data.payroll_readiness.rate_missing_count}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-[var(--color-text-soft)]">Open shifts (week)</dt>
+                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
+                            {data.payroll_readiness.open_shifts_started_in_week_count}
+                          </dd>
+                        </div>
+                        <div className="col-span-2 sm:col-span-3">
+                          <dt className="text-[var(--color-text-soft)]">Not calculated</dt>
+                          <dd className="font-medium text-[var(--color-text)]">
+                            {data.payroll_readiness.payroll_period_not_calculated ? "Yes" : "No"}
+                          </dd>
+                        </div>
+                        <div className="col-span-2 sm:col-span-3">
+                          <dt className="text-[var(--color-text-soft)]">Needs recalc</dt>
+                          <dd className="font-medium text-[var(--color-text)]">
+                            {data.payroll_readiness.payroll_needs_recalculation ? "Yes" : "No"}
+                          </dd>
+                        </div>
+                        <div className="col-span-2 sm:col-span-3">
+                          <dt className="text-[var(--color-text-soft)]">Gross / hours</dt>
+                          <dd className="font-medium text-[var(--color-text)]">
+                            {data.payroll_readiness.total_gross != null
+                              ? formatMoneyGBP(String(data.payroll_readiness.total_gross))
+                              : "—"}{" "}
+                            · {formatDurationSeconds(data.payroll_readiness.total_hours_seconds)}
+                          </dd>
+                        </div>
+                      </dl>
+                    </>
+                  )}
+                </div>
+              </PanelFrame>
+
+              <PanelFrame title="Setup health">
+                <div className="p-3">
+                  {!data.setup_health ? (
+                    <p className="text-sm text-[var(--color-text-muted)]">No company scope.</p>
+                  ) : (
+                    <>
+                      {data.setup_health.scope_note ? (
+                        <p className="mb-3 text-[11px] text-[var(--color-text-muted)]">{data.setup_health.scope_note}</p>
+                      ) : null}
+                      <ul className="space-y-1.5 text-xs text-[var(--color-text)]">
+                        <li className="flex justify-between gap-2">
+                          <span className="text-[var(--color-text-muted)]">Active employees</span>
+                          <span className="tabular-nums font-medium">{data.setup_health.active_employee_count}</span>
+                        </li>
+                        <li className="flex justify-between gap-2">
+                          <span className="text-[var(--color-text-muted)]">Active locations</span>
+                          <span className="tabular-nums font-medium">{data.setup_health.active_location_count}</span>
+                        </li>
+                        <li className="flex justify-between gap-2">
+                          <span className="text-[var(--color-text-muted)]">Active workplaces</span>
+                          <span className="tabular-nums font-medium">{data.setup_health.active_workplace_count}</span>
+                        </li>
+                        <li className="flex justify-between gap-2">
+                          <span className="text-[var(--color-text-muted)]">Missing hourly rate</span>
+                          <Link className="font-medium text-[var(--color-link)] underline" href="/employees">
+                            {data.setup_health.employees_missing_hourly_rate_count}
+                          </Link>
+                        </li>
+                        <li className="flex justify-between gap-2">
+                          <span className="text-[var(--color-text-muted)]">No site access</span>
+                          <Link className="font-medium text-[var(--color-link)] underline" href="/site-access">
+                            {data.setup_health.employees_without_site_access_count}
+                          </Link>
+                        </li>
+                        <li className="flex justify-between gap-2 border-t border-[var(--color-border)] pt-2">
+                          <span className="text-[var(--color-text-muted)]">Time policy row</span>
+                          <span className="font-medium">{data.setup_health.time_policy_row_present ? "Present" : "—"}</span>
+                        </li>
+                        <li className="flex justify-between gap-2">
+                          <span className="text-[var(--color-text-muted)]">Time policy customised</span>
+                          <span className="font-medium">
+                            {data.setup_health.time_policy_configured ? "Likely yes" : "Default-like"}
+                          </span>
+                        </li>
+                      </ul>
+                      <p className="mt-2 text-[10px] text-[var(--color-text-soft)]">
+                        Long-open shift threshold on this page: {data.long_open_shift_threshold_hours}h UTC since
+                        clock-in.
+                      </p>
+                    </>
+                  )}
+                </div>
+              </PanelFrame>
             </div>
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

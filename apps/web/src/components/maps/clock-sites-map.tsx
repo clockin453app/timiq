@@ -2,11 +2,14 @@
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ClockAssignedSite } from "../../features/time-clock/api";
 import { nearestSiteId } from "../../lib/geo";
 import { OSM_TILE_ATTRIBUTION, OSM_TILE_LAYER_URL } from "./leaflet-default-tiles";
+
+const MAP_FALLBACK_MESSAGE =
+  "Map temporarily unavailable. GPS validation still active.";
 
 function siteMarkerIcon(isNearest: boolean) {
   const cls = isNearest
@@ -28,16 +31,48 @@ export type ClockSitesMapProps = {
   sites: ClockAssignedSite[];
 };
 
-/** Employee GPS position plus assigned active sites and geofence circles (nearest site emphasized). */
-export function ClockSitesMap({
-  employeeLatitude,
-  employeeLongitude,
-  accuracyMeters,
-  sites,
-}: ClockSitesMapProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [mapFault, setMapFault] = useState<string | null>(null);
+type BoundaryState = { hasError: boolean };
 
+/** Catches React render/lifecycle errors from the map subtree only (not async Leaflet handlers). */
+class ClockSitesMapErrorBoundary extends Component<
+  { children: ReactNode },
+  BoundaryState
+> {
+  state: BoundaryState = { hasError: false };
+
+  static getDerivedStateFromError(): BoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(_error: Error, _info: ErrorInfo) {
+    /* optional: log to monitoring */
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div
+          className="timiq-leaflet-shell flex min-h-[260px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] px-3 py-6 text-center text-sm text-[var(--color-text-muted)]"
+          style={{ width: "100%" }}
+        >
+          {MAP_FALLBACK_MESSAGE}
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+/**
+ * Rounded keys limit effect re-runs while GPS is stabilising (avoids destroy/recreate loops that
+ * break Leaflet panes on mobile — common source of `el._leaflet_pos` errors).
+ */
+function useMapEffectKeys(
+  employeeLatitude: number,
+  employeeLongitude: number,
+  accuracyMeters: number | undefined,
+  sites: ClockAssignedSite[],
+) {
   const sitesSignature = useMemo(
     () =>
       sites
@@ -46,8 +81,55 @@ export function ClockSitesMap({
     [sites],
   );
 
+  const coordsKey = useMemo(() => {
+    if (
+      !Number.isFinite(employeeLatitude) ||
+      !Number.isFinite(employeeLongitude) ||
+      Math.abs(employeeLatitude) > 90 ||
+      Math.abs(employeeLongitude) > 180
+    ) {
+      return "invalid";
+    }
+    return `${employeeLatitude.toFixed(4)},${employeeLongitude.toFixed(4)}`;
+  }, [employeeLatitude, employeeLongitude]);
+
+  const accuracyKey = useMemo(() => {
+    if (accuracyMeters === undefined || !Number.isFinite(accuracyMeters)) {
+      return "na";
+    }
+    return String(Math.round(accuracyMeters / 10) * 10);
+  }, [accuracyMeters]);
+
+  return { coordsKey, accuracyKey, sitesSignature };
+}
+
+function ClockSitesMapInner({
+  employeeLatitude,
+  employeeLongitude,
+  accuracyMeters,
+  sites,
+}: ClockSitesMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [mapFault, setMapFault] = useState<string | null>(null);
+  const [clientReady, setClientReady] = useState(false);
+
+  const { coordsKey, accuracyKey, sitesSignature } = useMapEffectKeys(
+    employeeLatitude,
+    employeeLongitude,
+    accuracyMeters,
+    sites,
+  );
+
+  useEffect(() => {
+    setClientReady(true);
+  }, []);
+
   useEffect(() => {
     setMapFault(null);
+
+    if (!clientReady) {
+      return undefined;
+    }
 
     const employeeOk =
       Number.isFinite(employeeLatitude) &&
@@ -79,11 +161,16 @@ export function ClockSitesMap({
 
     let map: L.Map | null = null;
     let ro: ResizeObserver | null = null;
-    let cancelled = false;
+    let alive = true;
     let layoutAttempts = 0;
+    let invalidateTimer: number | null = null;
 
     const safeInvalidate = () => {
-      if (!map || cancelled) {
+      if (!alive || !map) {
+        return;
+      }
+      const el = map.getContainer();
+      if (!el.isConnected) {
         return;
       }
       try {
@@ -93,13 +180,34 @@ export function ClockSitesMap({
       }
     };
 
-    const onWinResize = () => safeInvalidate();
-    const onOrientation = () => window.requestAnimationFrame(() => safeInvalidate());
+    const scheduleInvalidate = () => {
+      if (!alive) {
+        return;
+      }
+      if (invalidateTimer !== null) {
+        window.clearTimeout(invalidateTimer);
+      }
+      invalidateTimer = window.setTimeout(() => {
+        invalidateTimer = null;
+        safeInvalidate();
+      }, 120);
+    };
+
+    const onWinResize = () => scheduleInvalidate();
+    const onOrientation = () => window.requestAnimationFrame(() => scheduleInvalidate());
+    const onVisViewport = () => scheduleInvalidate();
 
     const teardown = () => {
-      cancelled = true;
+      alive = false;
+      if (invalidateTimer !== null) {
+        window.clearTimeout(invalidateTimer);
+        invalidateTimer = null;
+      }
       window.removeEventListener("resize", onWinResize);
       window.removeEventListener("orientationchange", onOrientation);
+      if (typeof window !== "undefined" && window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", onVisViewport);
+      }
       if (ro) {
         try {
           ro.disconnect();
@@ -116,10 +224,18 @@ export function ClockSitesMap({
         }
         map = null;
       }
+      const el = containerRef.current;
+      if (el) {
+        try {
+          el.replaceChildren();
+        } catch {
+          /* ignore */
+        }
+      }
     };
 
     const tryInit = () => {
-      if (cancelled) {
+      if (!alive) {
         return;
       }
       const el = containerRef.current;
@@ -139,17 +255,24 @@ export function ClockSitesMap({
       }
 
       try {
-        map = L.map(el).setView([employeeLatitude, employeeLongitude], 15);
+        map = L.map(el, { preferCanvas: false }).setView([employeeLatitude, employeeLongitude], 15);
       } catch {
-        setMapFault("Could not initialise the map on this device.");
+        setMapFault(MAP_FALLBACK_MESSAGE);
         teardown();
         return;
       }
 
-      const layerMap = map;
-      if (!layerMap) {
+      if (!alive || !map) {
+        try {
+          map?.remove();
+        } catch {
+          /* ignore */
+        }
+        map = null;
         return;
       }
+
+      const layerMap = map;
 
       try {
         L.tileLayer(OSM_TILE_LAYER_URL, {
@@ -207,18 +330,33 @@ export function ClockSitesMap({
 
         layerMap.fitBounds(bounds.pad(0.12));
       } catch {
-        setMapFault("Could not draw the map layers.");
+        setMapFault(MAP_FALLBACK_MESSAGE);
+        teardown();
+        return;
+      }
+
+      if (!alive) {
         teardown();
         return;
       }
 
       ro = new ResizeObserver(() => {
-        safeInvalidate();
+        if (!alive) {
+          return;
+        }
+        scheduleInvalidate();
       });
       ro.observe(el);
       window.addEventListener("resize", onWinResize);
       window.addEventListener("orientationchange", onOrientation);
-      window.requestAnimationFrame(() => safeInvalidate());
+      if (typeof window !== "undefined" && window.visualViewport) {
+        window.visualViewport.addEventListener("resize", onVisViewport);
+      }
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          scheduleInvalidate();
+        });
+      });
     };
 
     window.requestAnimationFrame(() => {
@@ -226,7 +364,8 @@ export function ClockSitesMap({
     });
 
     return teardown;
-  }, [employeeLatitude, employeeLongitude, accuracyMeters, sitesSignature, sites]);
+    /* sites + raw lat/lng omitted: sitesSignature + coordsKey + accuracyKey avoid remounting on every GPS tick. */
+  }, [clientReady, coordsKey, accuracyKey, sitesSignature]);
 
   if (mapFault) {
     return (
@@ -245,5 +384,14 @@ export function ClockSitesMap({
       ref={containerRef}
       style={{ height: "260px", width: "100%", minHeight: "260px" }}
     />
+  );
+}
+
+/** Employee GPS position plus assigned active sites and geofence circles (nearest site emphasized). */
+export function ClockSitesMap(props: ClockSitesMapProps) {
+  return (
+    <ClockSitesMapErrorBoundary>
+      <ClockSitesMapInner {...props} />
+    </ClockSitesMapErrorBoundary>
   );
 }
