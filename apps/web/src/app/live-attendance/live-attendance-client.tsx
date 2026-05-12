@@ -491,7 +491,7 @@ export function LiveAttendanceClient() {
               <div
                 role="dialog"
                 aria-modal="true"
-                className="mx-auto mt-8 w-full max-w-[min(32rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg"
+                className="mx-auto mt-8 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg sm:max-w-[min(40rem,calc(100vw-3rem))]"
               >
                 <h2 className="mb-1 text-lg font-semibold">Manual clock in</h2>
                 <p className="mb-3 text-sm text-[var(--color-text-muted)]">
@@ -557,7 +557,7 @@ export function LiveAttendanceClient() {
               <div
                 role="dialog"
                 aria-modal="true"
-                className="mx-auto mt-8 w-full max-w-[min(32rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg"
+                className="mx-auto mt-8 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg sm:max-w-[min(40rem,calc(100vw-3rem))]"
               >
                 <h2 className="mb-1 text-lg font-semibold">Manual clock out</h2>
                 <p className="mb-3 text-sm text-[var(--color-text-muted)]">

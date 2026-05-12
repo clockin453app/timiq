@@ -131,7 +131,7 @@ export function WorkplacesClient() {
             </div>
           }
         >
-          <form className="mb-4 border border-[var(--color-border)] bg-[var(--color-cell)] p-3" onSubmit={handleCreate}>
+          <form className="mb-4 w-full max-w-[min(48rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3" onSubmit={handleCreate}>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,180px)_minmax(0,1fr)_auto]">
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Name

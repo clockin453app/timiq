@@ -5,15 +5,19 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { NavigationGroupDefinition, SystemRole } from "../../config/navigation";
 
-/** Bump version to ignore legacy open-state blobs that left many groups expanded. */
-const STORAGE_PREFIX = "timiq-nav-groups:v2:";
+/**
+ * v3: open state is route-driven on each navigation — we do not merge legacy localStorage blobs
+ * that left Profile / Sites / Attendance expanded for everyone. User toggles apply until the next
+ * activeHref change (desktop drawer matches: no persisted drawer state).
+ */
+const LEGACY_STORAGE_PREFIXES = ["timiq-nav-groups:v1:", "timiq-nav-groups:v2:"] as const;
 
 type GroupedNavVariant = "sidebar" | "drawer";
 
 type GroupedNavBlockProps = {
   groups: NavigationGroupDefinition[];
   activeHref: string;
-  /** Unique per surface + role, e.g. sidebar-desktop-admin */
+  /** Reserved for future optional persistence; unused in v3. */
   storageScope: string;
   variant: GroupedNavVariant;
   role: SystemRole;
@@ -31,30 +35,18 @@ function defaultOpenMap(groups: NavigationGroupDefinition[], activeHref: string)
   return map;
 }
 
-function loadStoredOpen(scope: string): Record<string, boolean> | null {
+/** One-time cleanup of old keys so they never get re-introduced by tooling or merges. */
+function clearLegacyNavStorage(scope: string, role: SystemRole) {
   if (typeof window === "undefined") {
-    return null;
+    return;
   }
-  try {
-    const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${scope}`);
-    if (!raw) {
-      return null;
+  const merged = `${scope}:${role}`;
+  for (const prefix of LEGACY_STORAGE_PREFIXES) {
+    try {
+      window.localStorage.removeItem(`${prefix}${merged}`);
+    } catch {
+      /* ignore */
     }
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-    return parsed as Record<string, boolean>;
-  } catch {
-    return null;
-  }
-}
-
-function saveStoredOpen(scope: string, state: Record<string, boolean>) {
-  try {
-    window.localStorage.setItem(`${STORAGE_PREFIX}${scope}`, JSON.stringify(state));
-  } catch {
-    /* ignore quota / private mode */
   }
 }
 
@@ -72,52 +64,41 @@ function linkClass(active: boolean, variant: GroupedNavVariant): string {
 export function GroupedNavBlock({
   groups,
   activeHref,
-  storageScope,
+  storageScope: _storageScope,
   variant,
   role,
 }: GroupedNavBlockProps) {
-  const mergedScope = `${storageScope}:${role}`;
-
   const [open, setOpen] = useState<Record<string, boolean>>(() => defaultOpenMap(groups, activeHref));
 
   useEffect(() => {
-    const defaults = defaultOpenMap(groups, activeHref);
-    const stored = variant === "drawer" ? null : loadStoredOpen(mergedScope);
-    const next: Record<string, boolean> = { ...defaults };
-    if (stored) {
-      for (const g of groups) {
-        if (typeof stored[g.id] === "boolean") {
-          next[g.id] = stored[g.id];
-        }
-      }
-    }
-    for (const g of groups) {
-      if (groupContainsHref(g, activeHref)) {
-        next[g.id] = true;
-      }
-    }
-    setOpen(next);
-  }, [groups, activeHref, mergedScope, variant]);
+    clearLegacyNavStorage(_storageScope, role);
+  }, [_storageScope, role]);
+
+  useEffect(() => {
+    setOpen(defaultOpenMap(groups, activeHref));
+  }, [groups, activeHref]);
 
   const toggle = useCallback(
     (groupId: string) => {
       setOpen((prev) => {
-        const next = { ...prev, [groupId]: !prev[groupId] };
-        if (variant !== "drawer") {
-          saveStoredOpen(mergedScope, next);
+        const group = groups.find((g) => g.id === groupId);
+        if (group && groupContainsHref(group, activeHref) && prev[groupId]) {
+          return prev;
         }
-        return next;
+        return { ...prev, [groupId]: !prev[groupId] };
       });
     },
-    [mergedScope, variant],
+    [groups, activeHref],
   );
 
   if (groups.length === 0) {
     return null;
   }
 
+  const outerSpacing = variant === "sidebar" ? "space-y-2" : "space-y-1.5";
+
   return (
-    <div className={variant === "sidebar" ? "space-y-2" : "space-y-1.5"}>
+    <div className={outerSpacing}>
       {groups.map((group) => {
         const visible = group.items;
         if (visible.length === 0) {

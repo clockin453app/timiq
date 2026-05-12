@@ -217,7 +217,7 @@ export function EmployeeClockSelfiesClient({ userId }: EmployeeClockSelfiesClien
               className="fixed inset-0 z-40 flex items-center justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3"
               role="dialog"
             >
-              <div className="mx-auto w-full max-w-[min(32rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md">
+              <div className="mx-auto w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md sm:max-w-[min(36rem,calc(100vw-3rem))]">
                 <p className="text-sm font-bold text-[var(--color-text)]">Selfie preview</p>
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                   Loaded through a protected server request using your session.

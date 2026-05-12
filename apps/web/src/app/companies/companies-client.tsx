@@ -185,7 +185,7 @@ export function CompaniesClient() {
 
           {isAdministrator(currentUser) ? (
             <form
-              className="mb-4 border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
+              className="mb-4 w-full max-w-[min(40rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
               onSubmit={handleCreateCompany}
             >
               <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1fr)_auto]">

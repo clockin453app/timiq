@@ -505,7 +505,7 @@ export function ProfileClient() {
               </div>
 
               <form
-                className="border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
+                className="max-w-[min(42rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
                 onSubmit={handleSave}
               >
                 <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">

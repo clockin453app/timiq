@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../../components/ui";
 import {
@@ -66,50 +66,80 @@ export function EmployeeDetailPanel({
   const [hourlyRateStr, setHourlyRateStr] = useState("");
   const [taxRateStr, setTaxRateStr] = useState("");
   const [employeeProfileLoaded, setEmployeeProfileLoaded] = useState(false);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   const [isUpdatingEarlyAccess, setIsUpdatingEarlyAccess] = useState(false);
   const [isSavingPayrollRates, setIsSavingPayrollRates] = useState(false);
 
   const showEmployeeExtendedFields =
     canManageUser(currentUser, user) && user.system_role === "employee";
 
+  const profileFetchGeneration = useRef(0);
+
+  const reloadEmployeeProfile = useCallback(async () => {
+    if (!showEmployeeExtendedFields) {
+      return;
+    }
+    const generation = (() => {
+      profileFetchGeneration.current += 1;
+      return profileFetchGeneration.current;
+    })();
+    setProfileLoading(true);
+    setProfileLoadError(null);
+    setEmployeeProfileLoaded(false);
+    try {
+      const profile = await getManagedEmployeeProfile(user.id);
+      if (generation !== profileFetchGeneration.current) {
+        return;
+      }
+      setEarlyAccessEnabled(profile.early_access_enabled);
+      setHourlyRateStr(profile.hourly_rate ?? "");
+      setTaxRateStr(profile.tax_rate ?? "");
+      setEmployeeProfileLoaded(true);
+    } catch {
+      if (generation !== profileFetchGeneration.current) {
+        return;
+      }
+      setEmployeeProfileLoaded(false);
+      setProfileLoadError("Could not load employee profile.");
+    } finally {
+      if (generation === profileFetchGeneration.current) {
+        setProfileLoading(false);
+      }
+    }
+  }, [showEmployeeExtendedFields, user.id]);
+
   useEffect(() => {
     setEmail(user.email);
     setSystemRole(user.system_role);
     setCompanyId(user.company_id ?? "");
     setResetPassword(user.system_role === "admin" ? "Admin12345" : "Employee12345");
+  }, [user]);
+
+  useEffect(() => {
     setLocalError("");
     setLocalSuccess("");
     setClearHistoryPhrase("");
     setDeletePhrase("");
-    setEmployeeProfileLoaded(false);
-    setHourlyRateStr("");
-    setTaxRateStr("");
-  }, [user]);
+  }, [user.id]);
+
+  useEffect(() => {
+    if (!localSuccess) {
+      return undefined;
+    }
+    const id = window.setTimeout(() => setLocalSuccess(""), 5000);
+    return () => window.clearTimeout(id);
+  }, [localSuccess]);
 
   useEffect(() => {
     if (!showEmployeeExtendedFields) {
+      setProfileLoading(false);
+      setProfileLoadError(null);
+      setEmployeeProfileLoaded(false);
       return;
     }
-    let cancelled = false;
-    (async () => {
-      try {
-        const profile = await getManagedEmployeeProfile(user.id);
-        if (!cancelled) {
-          setEarlyAccessEnabled(profile.early_access_enabled);
-          setHourlyRateStr(profile.hourly_rate ?? "");
-          setTaxRateStr(profile.tax_rate ?? "");
-          setEmployeeProfileLoaded(true);
-        }
-      } catch {
-        if (!cancelled) {
-          setEmployeeProfileLoaded(false);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [showEmployeeExtendedFields, user.id]);
+    void reloadEmployeeProfile();
+  }, [showEmployeeExtendedFields, user.id, reloadEmployeeProfile]);
 
   const showCompanyField =
     isAdministrator(currentUser) && systemRole !== "administrator";
@@ -131,6 +161,7 @@ export function EmployeeDetailPanel({
       });
       setLocalSuccess("Payroll rates saved.");
       await onRefresh();
+      await reloadEmployeeProfile();
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : "Could not save payroll rates.");
     } finally {
@@ -148,6 +179,7 @@ export function EmployeeDetailPanel({
       await patchManagedEmployeeProfile(user.id, { early_access_enabled: next });
       setLocalSuccess("Early access updated.");
       await onRefresh();
+      await reloadEmployeeProfile();
     } catch (error) {
       setEarlyAccessEnabled(previous);
       setLocalError(
@@ -172,8 +204,11 @@ export function EmployeeDetailPanel({
             ? companyId || null
             : null,
       });
-      setLocalSuccess("User saved.");
+      setLocalSuccess("User details saved.");
       await onRefresh();
+      if (canManageUser(currentUser, user) && user.system_role === "employee") {
+        await reloadEmployeeProfile();
+      }
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : "Could not save user.");
     } finally {
@@ -187,7 +222,7 @@ export function EmployeeDetailPanel({
     setIsResettingPassword(true);
     try {
       await resetManagedUserPassword(user.id, resetPassword);
-      setLocalSuccess("Password updated.");
+      setLocalSuccess("Password reset.");
       await onRefresh();
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : "Could not reset password.");
@@ -206,7 +241,7 @@ export function EmployeeDetailPanel({
     setIsTogglingStatus(true);
     try {
       await updateManagedUserStatus(user.id, !user.is_active);
-      setLocalSuccess(user.is_active ? "User deactivated." : "User activated.");
+      setLocalSuccess(user.is_active ? "Employee deactivated." : "Employee activated.");
       await onRefresh();
     } catch (error) {
       setLocalError(error instanceof Error ? error.message : "Could not update status.");
@@ -260,7 +295,7 @@ export function EmployeeDetailPanel({
       className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6"
       role="dialog"
     >
-      <div className="timiq-sheet mx-auto my-4 w-full max-w-[min(32rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
+      <div className="timiq-sheet mx-auto my-4 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md sm:max-w-[min(56rem,calc(100vw-3rem))]">
         <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
           <div className="min-w-0">
             <p className="text-sm font-bold text-[var(--color-text)]">Edit employee</p>
@@ -362,14 +397,30 @@ export function EmployeeDetailPanel({
             <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
               Clock rules
             </p>
-            {!employeeProfileLoaded ? (
+            {profileLoadError ? (
+              <div className="space-y-2">
+                <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
+                  {profileLoadError}
+                </div>
+                <Button
+                  onClick={() => {
+                    setProfileLoadError(null);
+                    void reloadEmployeeProfile();
+                  }}
+                  type="button"
+                  variant="secondary"
+                >
+                  Retry loading profile
+                </Button>
+              </div>
+            ) : profileLoading ? (
               <p className="text-xs text-[var(--color-text-muted)]">Loading profile…</p>
-            ) : (
+            ) : employeeProfileLoaded ? (
               <label className="flex items-start gap-2 text-sm text-[var(--color-text)]">
                 <input
                   checked={earlyAccessEnabled}
                   className="mt-1 h-4 w-4 shrink-0"
-                  disabled={isUpdatingEarlyAccess}
+                  disabled={isUpdatingEarlyAccess || profileLoading}
                   onChange={(event) => handleEarlyAccessChange(event.target.checked)}
                   type="checkbox"
                 />
@@ -381,20 +432,27 @@ export function EmployeeDetailPanel({
                   </span>
                 </span>
               </label>
+            ) : (
+              <p className="text-xs text-[var(--color-text-muted)]">Loading profile…</p>
             )}
 
             <div className="border-t border-[var(--color-border)] pt-3">
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
                 Payroll rates
               </p>
-              {!employeeProfileLoaded ? (
-                <p className="text-xs text-[var(--color-text-muted)]">Loading profile…</p>
-              ) : (
+              {profileLoadError ? (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  Fix profile loading above to edit payroll rates.
+                </p>
+              ) : profileLoading ? (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">Loading profile…</p>
+              ) : employeeProfileLoaded ? (
                 <div className="mt-2 space-y-2">
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Hourly rate
                     <input
                       className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={profileLoading || isSavingPayrollRates}
                       onChange={(event) => setHourlyRateStr(event.target.value)}
                       placeholder="Leave blank if not set"
                       type="text"
@@ -405,6 +463,7 @@ export function EmployeeDetailPanel({
                     CIS tax % (employee override)
                     <input
                       className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={profileLoading || isSavingPayrollRates}
                       onChange={(event) => setTaxRateStr(event.target.value)}
                       placeholder="Uses company default if blank"
                       type="text"
@@ -412,13 +471,15 @@ export function EmployeeDetailPanel({
                     />
                   </label>
                   <Button
-                    disabled={isSavingPayrollRates}
+                    disabled={isSavingPayrollRates || profileLoading}
                     onClick={handleSavePayrollRates}
                     type="button"
                   >
                     {isSavingPayrollRates ? "Saving…" : "Save payroll rates"}
                   </Button>
                 </div>
+              ) : (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">Loading profile…</p>
               )}
             </div>
           </div>

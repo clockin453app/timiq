@@ -197,7 +197,7 @@ export function EmployeesClient() {
           </div>
 
           <form
-            className="mb-4 border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
+            className="mb-4 w-full max-w-[min(48rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
             onSubmit={handleCreateUser}
           >
             <div className={formGridClassName}>
