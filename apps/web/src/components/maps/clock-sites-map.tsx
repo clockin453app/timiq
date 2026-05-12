@@ -8,8 +8,8 @@ import type { ClockAssignedSite } from "../../features/time-clock/api";
 import { nearestSiteId } from "../../lib/geo";
 import { OSM_TILE_ATTRIBUTION, OSM_TILE_LAYER_URL } from "./leaflet-default-tiles";
 
-const MAP_FALLBACK_MESSAGE =
-  "Map temporarily unavailable. GPS validation still active.";
+export const CLOCK_MAP_FALLBACK_MESSAGE =
+  "Map temporarily unavailable. GPS validation is still active.";
 
 function siteMarkerIcon(isNearest: boolean) {
   const cls = isNearest
@@ -29,13 +29,15 @@ export type ClockSitesMapProps = {
   employeeLongitude: number;
   accuracyMeters?: number;
   sites: ClockAssignedSite[];
+  /** Called when the map hits a fault (catch, init failure, or error boundary). Parent may disable Leaflet for the session. */
+  onMapFault?: () => void;
 };
 
 type BoundaryState = { hasError: boolean };
 
 /** Catches React render/lifecycle errors from the map subtree only (not async Leaflet handlers). */
 class ClockSitesMapErrorBoundary extends Component<
-  { children: ReactNode },
+  { children: ReactNode; onMapFault?: () => void },
   BoundaryState
 > {
   state: BoundaryState = { hasError: false };
@@ -45,7 +47,7 @@ class ClockSitesMapErrorBoundary extends Component<
   }
 
   componentDidCatch(_error: Error, _info: ErrorInfo) {
-    /* optional: log to monitoring */
+    this.props.onMapFault?.();
   }
 
   render() {
@@ -55,7 +57,7 @@ class ClockSitesMapErrorBoundary extends Component<
           className="timiq-leaflet-shell flex min-h-[260px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] px-3 py-6 text-center text-sm text-[var(--color-text-muted)]"
           style={{ width: "100%" }}
         >
-          {MAP_FALLBACK_MESSAGE}
+          {CLOCK_MAP_FALLBACK_MESSAGE}
         </div>
       );
     }
@@ -90,7 +92,7 @@ function useMapEffectKeys(
     ) {
       return "invalid";
     }
-    return `${employeeLatitude.toFixed(4)},${employeeLongitude.toFixed(4)}`;
+    return `${employeeLatitude.toFixed(3)},${employeeLongitude.toFixed(3)}`;
   }, [employeeLatitude, employeeLongitude]);
 
   const accuracyKey = useMemo(() => {
@@ -108,10 +110,16 @@ function ClockSitesMapInner({
   employeeLongitude,
   accuracyMeters,
   sites,
+  onMapFault,
 }: ClockSitesMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [mapFault, setMapFault] = useState<string | null>(null);
   const [clientReady, setClientReady] = useState(false);
+
+  function reportMapFault(message: string) {
+    onMapFault?.();
+    setMapFault(message);
+  }
 
   const { coordsKey, accuracyKey, sitesSignature } = useMapEffectKeys(
     employeeLatitude,
@@ -164,19 +172,32 @@ function ClockSitesMapInner({
     let alive = true;
     let layoutAttempts = 0;
     let invalidateTimer: number | null = null;
+    let bootstrapRaf1: number | null = null;
+    let bootstrapRaf2: number | null = null;
+    let tryInitRaf: number | null = null;
+    let postInitRaf1: number | null = null;
+    let postInitRaf2: number | null = null;
 
     const safeInvalidate = () => {
       if (!alive || !map) {
         return;
       }
-      const el = map.getContainer();
-      if (!el.isConnected) {
+      let container: HTMLElement;
+      try {
+        container = map.getContainer();
+      } catch {
+        return;
+      }
+      if (!container?.isConnected) {
+        return;
+      }
+      if (container.offsetWidth < 2 || container.offsetHeight < 2) {
         return;
       }
       try {
         map.invalidateSize({ animate: false });
       } catch {
-        /* Leaflet can throw if panes are mid-teardown */
+        /* Leaflet can throw if panes are mid-teardown (e.g. el._leaflet_pos undefined) */
       }
     };
 
@@ -189,6 +210,9 @@ function ClockSitesMapInner({
       }
       invalidateTimer = window.setTimeout(() => {
         invalidateTimer = null;
+        if (!alive) {
+          return;
+        }
         safeInvalidate();
       }, 120);
     };
@@ -199,6 +223,26 @@ function ClockSitesMapInner({
 
     const teardown = () => {
       alive = false;
+      if (bootstrapRaf1 !== null) {
+        window.cancelAnimationFrame(bootstrapRaf1);
+        bootstrapRaf1 = null;
+      }
+      if (bootstrapRaf2 !== null) {
+        window.cancelAnimationFrame(bootstrapRaf2);
+        bootstrapRaf2 = null;
+      }
+      if (tryInitRaf !== null) {
+        window.cancelAnimationFrame(tryInitRaf);
+        tryInitRaf = null;
+      }
+      if (postInitRaf1 !== null) {
+        window.cancelAnimationFrame(postInitRaf1);
+        postInitRaf1 = null;
+      }
+      if (postInitRaf2 !== null) {
+        window.cancelAnimationFrame(postInitRaf2);
+        postInitRaf2 = null;
+      }
       if (invalidateTimer !== null) {
         window.clearTimeout(invalidateTimer);
         invalidateTimer = null;
@@ -250,14 +294,17 @@ function ClockSitesMapInner({
       const w = el.offsetWidth;
       const h = el.offsetHeight;
       if (w < 2 || h < 2) {
-        window.requestAnimationFrame(tryInit);
+        tryInitRaf = window.requestAnimationFrame(() => {
+          tryInitRaf = null;
+          tryInit();
+        });
         return;
       }
 
       try {
         map = L.map(el, { preferCanvas: false }).setView([employeeLatitude, employeeLongitude], 15);
       } catch {
-        setMapFault(MAP_FALLBACK_MESSAGE);
+        reportMapFault(CLOCK_MAP_FALLBACK_MESSAGE);
         teardown();
         return;
       }
@@ -330,7 +377,7 @@ function ClockSitesMapInner({
 
         layerMap.fitBounds(bounds.pad(0.12));
       } catch {
-        setMapFault(MAP_FALLBACK_MESSAGE);
+        reportMapFault(CLOCK_MAP_FALLBACK_MESSAGE);
         teardown();
         return;
       }
@@ -352,15 +399,21 @@ function ClockSitesMapInner({
       if (typeof window !== "undefined" && window.visualViewport) {
         window.visualViewport.addEventListener("resize", onVisViewport);
       }
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
+      postInitRaf1 = window.requestAnimationFrame(() => {
+        postInitRaf1 = null;
+        postInitRaf2 = window.requestAnimationFrame(() => {
+          postInitRaf2 = null;
           scheduleInvalidate();
         });
       });
     };
 
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(tryInit);
+    bootstrapRaf1 = window.requestAnimationFrame(() => {
+      bootstrapRaf1 = null;
+      bootstrapRaf2 = window.requestAnimationFrame(() => {
+        bootstrapRaf2 = null;
+        tryInit();
+      });
     });
 
     return teardown;
@@ -389,9 +442,10 @@ function ClockSitesMapInner({
 
 /** Employee GPS position plus assigned active sites and geofence circles (nearest site emphasized). */
 export function ClockSitesMap(props: ClockSitesMapProps) {
+  const { onMapFault, ...innerProps } = props;
   return (
-    <ClockSitesMapErrorBoundary>
-      <ClockSitesMapInner {...props} />
+    <ClockSitesMapErrorBoundary onMapFault={onMapFault}>
+      <ClockSitesMapInner {...innerProps} onMapFault={onMapFault} />
     </ClockSitesMapErrorBoundary>
   );
 }

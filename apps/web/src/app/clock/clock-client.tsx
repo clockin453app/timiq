@@ -3,7 +3,7 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { ClockSitesMap } from "../../components/maps";
+import { CLOCK_MAP_FALLBACK_MESSAGE, ClockSitesMap } from "../../components/maps";
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
 import {
   breakEnd,
@@ -103,6 +103,17 @@ export function ClockClient() {
     "idle" | "searching" | "improving" | "captured" | "too_low" | "denied" | "failed" | "unsupported"
   >("idle");
 
+  /** unknown = before first client measure — do not mount Leaflet yet. */
+  const [viewportClockMapMode, setViewportClockMapMode] = useState<"unknown" | "narrow" | "wide">(
+    "unknown",
+  );
+  const [mapMountDeferred, setMapMountDeferred] = useState(false);
+  const [clockMapSessionOff, setClockMapSessionOff] = useState(false);
+
+  const handleClockMapFault = useCallback(() => {
+    setClockMapSessionOff(true);
+  }, []);
+
   const siteCountForGps = clockStatus === null ? undefined : clockStatus.active_location_count;
 
   const flowStatus: FlowStatus = useMemo(() => {
@@ -150,6 +161,54 @@ export function ClockClient() {
   useEffect(() => {
     void refreshStatus();
   }, [refreshStatus]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const sync = () => setViewportClockMapMode(mq.matches ? "narrow" : "wide");
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const stableGeoMapKey = useMemo(() => {
+    if (!geoCapture) {
+      return "";
+    }
+    const { latitude, longitude } = geoCapture.payload;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      return "";
+    }
+    return `${latitude.toFixed(3)},${longitude.toFixed(3)}`;
+  }, [geoCapture]);
+
+  useEffect(() => {
+    const mapFlowOk = flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites";
+    if (
+      clockMapSessionOff ||
+      viewportClockMapMode !== "wide" ||
+      !mapFlowOk ||
+      !stableGeoMapKey
+    ) {
+      setMapMountDeferred(false);
+      return;
+    }
+    if (isRefreshing || isSubmitting) {
+      setMapMountDeferred(false);
+      return;
+    }
+    const id = window.setTimeout(() => setMapMountDeferred(true), 420);
+    return () => {
+      window.clearTimeout(id);
+      setMapMountDeferred(false);
+    };
+  }, [
+    clockMapSessionOff,
+    viewportClockMapMode,
+    flowStatus,
+    stableGeoMapKey,
+    isRefreshing,
+    isSubmitting,
+  ]);
 
   useEffect(() => {
     if (!selfieClockIn) {
@@ -858,12 +917,38 @@ export function ClockClient() {
               </p>
             )}
             <div className="mt-2 w-full min-w-0 max-w-full overflow-x-hidden">
-              <ClockSitesMap
-                accuracyMeters={geoCapture.payload.accuracy_meters}
-                employeeLatitude={geoCapture.payload.latitude}
-                employeeLongitude={geoCapture.payload.longitude}
-                sites={clockStatus?.assigned_sites ?? EMPTY_ASSIGNED_SITES}
-              />
+              {viewportClockMapMode === "narrow" ? (
+                <div className="flex min-h-[120px] w-full flex-col justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-4 text-center text-sm text-[var(--color-text-muted)]">
+                  <p>{CLOCK_MAP_FALLBACK_MESSAGE}</p>
+                  <p className="mt-2 text-xs">
+                    Live map is omitted on small screens for stability. Your GPS and nearest site
+                    details stay in the section above.
+                  </p>
+                </div>
+              ) : clockMapSessionOff ? (
+                <div className="flex min-h-[120px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-4 text-center text-sm text-[var(--color-text-muted)]">
+                  {CLOCK_MAP_FALLBACK_MESSAGE}
+                </div>
+              ) : !mapMountDeferred ? (
+                <div className="flex min-h-[80px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-3 text-center text-xs text-[var(--color-text-muted)]">
+                  {isSubmitting || isRefreshing
+                    ? "Map paused while the clock status updates…"
+                    : "Preparing map…"}
+                </div>
+              ) : Number.isFinite(geoCapture.payload.latitude) &&
+                Number.isFinite(geoCapture.payload.longitude) ? (
+                <ClockSitesMap
+                  accuracyMeters={geoCapture.payload.accuracy_meters}
+                  employeeLatitude={geoCapture.payload.latitude}
+                  employeeLongitude={geoCapture.payload.longitude}
+                  onMapFault={handleClockMapFault}
+                  sites={clockStatus?.assigned_sites ?? EMPTY_ASSIGNED_SITES}
+                />
+              ) : (
+                <div className="flex min-h-[80px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-3 text-center text-sm text-[var(--color-text-muted)]">
+                  {CLOCK_MAP_FALLBACK_MESSAGE}
+                </div>
+              )}
             </div>
           </div>
         ) : null}
