@@ -1,4 +1,5 @@
 import { API_URL } from "../../config/api";
+import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 
 /** Required slots (order matches server `REQUIRED_DOC_TYPES`). */
 export const ONBOARDING_REQUIRED_DOC_SLOTS: readonly { docType: string; label: string }[] = [
@@ -54,15 +55,13 @@ export type OnboardingReviewList = {
 };
 
 type ErrorBody = {
-  detail?: string;
+  detail?: unknown;
 };
 
 async function parseErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const parsed = (await response.json()) as ErrorBody;
-    if (parsed.detail) {
-      return typeof parsed.detail === "string" ? parsed.detail : fallback;
-    }
+    return fastApiDetailToMessage(parsed.detail, fallback);
   } catch {
     // ignore
   }

@@ -1,4 +1,5 @@
 import { API_URL } from "../../config/api";
+import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 
 export type LiveAttendanceSummary = {
   total_employees: number;
@@ -42,21 +43,23 @@ export type ManualClockActionResponse = {
 };
 
 async function readApiError(response: Response): Promise<string> {
+  const fallback = `Request failed (${response.status}).`;
   try {
     const data = (await response.json()) as { detail?: unknown };
     if (typeof data.detail === "string") {
-      return data.detail;
+      return fastApiDetailToMessage(data.detail, fallback);
     }
     if (Array.isArray(data.detail)) {
-      return data.detail
+      const joined = data.detail
         .map((item) => (typeof item === "object" && item && "msg" in item ? String((item as { msg: string }).msg) : ""))
         .filter(Boolean)
         .join(" ");
+      return fastApiDetailToMessage(joined, fallback);
     }
   } catch {
     // ignore
   }
-  return `Request failed (${response.status}).`;
+  return fallback;
 }
 
 export type FetchLiveAttendanceParams = {

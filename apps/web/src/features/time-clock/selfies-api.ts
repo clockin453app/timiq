@@ -1,4 +1,5 @@
 import { API_URL } from "../../config/api";
+import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 
 export type ClockSelfieReviewItem = {
   id: string;
@@ -27,7 +28,7 @@ export type ClockSelfieMetadata = {
 };
 
 type ErrorBody = {
-  detail?: string;
+  detail?: unknown;
 };
 
 function appendPaginationParams(searchParams: URLSearchParams, limit?: number, offset?: number) {
@@ -42,9 +43,7 @@ function appendPaginationParams(searchParams: URLSearchParams, limit?: number, o
 async function parseErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const parsed = (await response.json()) as ErrorBody;
-    if (parsed.detail) {
-      return parsed.detail;
-    }
+    return fastApiDetailToMessage(parsed.detail, fallback);
   } catch {
     // Ignore parsing failures and keep fallback message.
   }

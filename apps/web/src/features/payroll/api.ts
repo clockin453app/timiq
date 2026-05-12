@@ -1,4 +1,5 @@
 import { API_URL } from "../../config/api";
+import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 
 export type PayrollItemRow = {
   id: string;
@@ -154,7 +155,10 @@ export async function fetchPayrollReport(
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     throw new Error(
-      typeof detail.detail === "string" ? detail.detail : "Could not load payroll report.",
+      fastApiDetailToMessage(
+        (detail as { detail?: unknown }).detail,
+        "Could not load payroll report.",
+      ),
     );
   }
   return response.json() as Promise<PayrollReportResponse>;
@@ -176,7 +180,10 @@ export async function fetchPayrollMonthSummary(
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     throw new Error(
-      typeof detail.detail === "string" ? detail.detail : "Could not load month summary.",
+      fastApiDetailToMessage(
+        (detail as { detail?: unknown }).detail,
+        "Could not load month summary.",
+      ),
     );
   }
   return response.json() as Promise<PayrollMonthSummary>;
@@ -195,7 +202,10 @@ export async function recalculatePayroll(
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     throw new Error(
-      typeof detail.detail === "string" ? detail.detail : "Could not recalculate payroll.",
+      fastApiDetailToMessage(
+        (detail as { detail?: unknown }).detail,
+        "Could not recalculate payroll.",
+      ),
     );
   }
   return response.json() as Promise<PayrollReportResponse>;
@@ -214,7 +224,10 @@ export async function patchPayrollItem(
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     throw new Error(
-      typeof detail.detail === "string" ? detail.detail : "Could not save payroll row.",
+      fastApiDetailToMessage(
+        (detail as { detail?: unknown }).detail,
+        "Could not save payroll row.",
+      ),
     );
   }
   return response.json() as Promise<PayrollItemRow>;
@@ -266,7 +279,10 @@ export async function approveAllPending(
   if (!response.ok) {
     const detail = await response.json().catch(() => ({}));
     throw new Error(
-      typeof detail.detail === "string" ? detail.detail : "Could not approve all.",
+      fastApiDetailToMessage(
+        (detail as { detail?: unknown }).detail,
+        "Could not approve all.",
+      ),
     );
   }
   return response.json() as Promise<PayrollReportResponse>;

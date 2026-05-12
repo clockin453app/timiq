@@ -1,4 +1,5 @@
 import { API_URL } from "../../config/api";
+import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 
 export type ClockAssignedSite = {
   id: string;
@@ -97,10 +98,8 @@ async function postMultipartClock(
   if (!response.ok) {
     let detail = "Clock action failed.";
     try {
-      const parsed = (await response.json()) as { detail?: string };
-      if (parsed.detail) {
-        detail = parsed.detail;
-      }
+      const parsed = (await response.json()) as { detail?: unknown };
+      detail = fastApiDetailToMessage(parsed.detail, detail);
     } catch {
       // Ignore parsing failures and keep fallback message.
     }
@@ -133,10 +132,8 @@ export async function breakStart(): Promise<BreakActionResponse> {
   if (!response.ok) {
     let detail = "Could not start break.";
     try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) {
-        detail = body.detail;
-      }
+      const body = (await response.json()) as { detail?: unknown };
+      detail = fastApiDetailToMessage(body.detail, detail);
     } catch {
       // Ignore parsing failures and keep fallback message.
     }
@@ -155,10 +152,8 @@ export async function breakEnd(): Promise<BreakActionResponse> {
   if (!response.ok) {
     let detail = "Could not end break.";
     try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) {
-        detail = body.detail;
-      }
+      const body = (await response.json()) as { detail?: unknown };
+      detail = fastApiDetailToMessage(body.detail, detail);
     } catch {
       // Ignore parsing failures and keep fallback message.
     }

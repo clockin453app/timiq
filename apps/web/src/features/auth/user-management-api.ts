@@ -1,13 +1,12 @@
 import { API_URL } from "../../config/api";
+import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 import { type AuthUser } from "./api";
 import { type SystemRole } from "./roles";
 
 async function errorDetailFromResponse(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { detail?: unknown };
-    if (typeof body.detail === "string") {
-      return body.detail;
-    }
+    return fastApiDetailToMessage(body.detail, "Request failed.");
   } catch {
     // Ignore malformed bodies.
   }
