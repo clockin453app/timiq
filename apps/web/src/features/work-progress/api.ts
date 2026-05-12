@@ -1,4 +1,5 @@
 import { API_URL } from "../../config/api";
+import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 
 /** Defaults if `/me/options` omits limits (older server). Must match backend intent. */
 export const WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS = 20;
@@ -118,31 +119,11 @@ type ErrorBody = {
   detail?: unknown;
 };
 
-function formatApiDetail(detail: unknown, fallback: string): string {
-  if (typeof detail === "string" && detail.trim()) {
-    return detail;
-  }
-  if (Array.isArray(detail)) {
-    const parts = detail
-      .map((item) => {
-        if (item && typeof item === "object" && "msg" in item) {
-          return String((item as { msg: string }).msg);
-        }
-        return null;
-      })
-      .filter((s): s is string => Boolean(s));
-    if (parts.length) {
-      return parts.join(" ");
-    }
-  }
-  return fallback;
-}
-
 async function parseErrorMessage(response: Response, fallback: string): Promise<string> {
   try {
     const parsed = (await response.json()) as ErrorBody;
     if (parsed.detail != null) {
-      return formatApiDetail(parsed.detail, fallback);
+      return fastApiDetailToMessage(parsed.detail, fallback);
     }
   } catch {
     // ignore

@@ -46,16 +46,7 @@ async function readApiError(response: Response): Promise<string> {
   const fallback = `Request failed (${response.status}).`;
   try {
     const data = (await response.json()) as { detail?: unknown };
-    if (typeof data.detail === "string") {
-      return fastApiDetailToMessage(data.detail, fallback);
-    }
-    if (Array.isArray(data.detail)) {
-      const joined = data.detail
-        .map((item) => (typeof item === "object" && item && "msg" in item ? String((item as { msg: string }).msg) : ""))
-        .filter(Boolean)
-        .join(" ");
-      return fastApiDetailToMessage(joined, fallback);
-    }
+    return fastApiDetailToMessage(data.detail, fallback);
   } catch {
     // ignore
   }
