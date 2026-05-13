@@ -272,6 +272,9 @@ export function PayrollReportClient() {
         userId: appliedEmployeeId || null,
       });
       setReport(data);
+      if (!silent && data.payroll_auto_recalculated) {
+        setPayrollSaveMessage("Payroll refreshed from latest time records.");
+      }
       if (!silent) {
         setError("");
       }
@@ -421,11 +424,14 @@ export function PayrollReportClient() {
     if (!activeCompanyId) {
       return;
     }
-    const notCalculatedYet = report?.alerts.payroll_period_not_calculated === true;
-    const confirmText = notCalculatedYet
-      ? "Create payroll rows for this week from time records? Pending rows can be refreshed later; approved and paid rows are never overwritten without unlocking first."
-      : "Recalculate pending payroll rows from time records? Unlock any approved rows first if you need them rebuilt.";
-    if (!confirm(confirmText)) {
+    const paid = report?.period.paid_count ?? 0;
+    const approved = report?.period.approved_count ?? 0;
+    if (paid > 0) {
+      setError("Paid payroll rows are locked and cannot be rebuilt.");
+      return;
+    }
+    if (approved > 0) {
+      setError("Some payroll rows are approved. Unlock them before recalculating.");
       return;
     }
     setLoading(true);
@@ -433,6 +439,7 @@ export function PayrollReportClient() {
     try {
       const data = await recalculatePayroll(activeCompanyId, weekStart);
       setReport(data);
+      setPayrollSaveMessage("Payroll refreshed from latest time records.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Recalculate failed.");
     } finally {
@@ -533,6 +540,8 @@ export function PayrollReportClient() {
   const showMetricFigures = Boolean(report?.period && hasCompany);
   const payrollPeriodNotCalculated = Boolean(alerts?.payroll_period_not_calculated);
   const payrollNeedsRecalculation = Boolean(alerts?.payroll_needs_recalculation);
+  const paidRowCount = period?.paid_count ?? 0;
+  const approvedRowCount = period?.approved_count ?? 0;
 
   return (
     <Sheet>
@@ -671,8 +680,8 @@ export function PayrollReportClient() {
           >
             <p className="font-semibold text-[#111827]">Payroll not calculated for this week yet</p>
             <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
-              Rows are created on the server when you run calculate. Use the button below (same as{" "}
-              <span className="font-medium">Calculate payroll</span> in Actions).
+              Rows are built on the server from time records. Use <span className="font-medium">Calculate payroll</span>{" "}
+              or <span className="font-medium">Refresh</span> if this message persists.
             </p>
             <div className="mt-3">
               <Button disabled={loading} onClick={runRecalculate} type="button">
@@ -682,16 +691,47 @@ export function PayrollReportClient() {
           </div>
         ) : null}
 
-        {hasCompany && payrollNeedsRecalculation && !payrollPeriodNotCalculated ? (
+        {hasCompany && payrollNeedsRecalculation && !payrollPeriodNotCalculated && paidRowCount > 0 ? (
+          <div
+            className="rounded-[var(--radius-md)] border border-slate-600/25 bg-slate-100 px-4 py-3 text-sm text-slate-950"
+            role="status"
+          >
+            <p className="font-semibold">Payroll locked</p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-800/90">
+              Paid payroll rows are locked and cannot be rebuilt.
+            </p>
+          </div>
+        ) : null}
+
+        {hasCompany &&
+        payrollNeedsRecalculation &&
+        !payrollPeriodNotCalculated &&
+        paidRowCount === 0 &&
+        approvedRowCount > 0 ? (
+          <div
+            className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            role="status"
+          >
+            <p className="font-semibold">Recalculation blocked</p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
+              Some payroll rows are approved. Unlock them before recalculating.
+            </p>
+          </div>
+        ) : null}
+
+        {hasCompany &&
+        payrollNeedsRecalculation &&
+        !payrollPeriodNotCalculated &&
+        paidRowCount === 0 &&
+        approvedRowCount === 0 ? (
           <div
             className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-4 py-3 text-sm text-amber-950"
             role="status"
           >
             <p className="font-semibold">Needs recalculation</p>
             <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
-              At least one employee time record in this week was updated after the last payroll run. Use{" "}
-              <span className="font-medium">Recalculate</span> when you are ready to refresh pending rows (unlock
-              approved rows first if required).
+              Time records in this week changed after the last payroll run. Use <span className="font-medium">Refresh</span>{" "}
+              or <span className="font-medium">Recalculate</span> to update pending rows.
             </p>
           </div>
         ) : null}
@@ -1141,12 +1181,22 @@ export function PayrollReportClient() {
                     </li>
                   ) : null}
                   {alerts.payroll_period_not_calculated ? (
-                    <li>Payroll for this week has not been calculated yet. Use Calculate payroll in Actions.</li>
+                    <li>Payroll for this week has not been calculated yet. Use Calculate payroll or Refresh.</li>
                   ) : null}
-                  {alerts.payroll_needs_recalculation ? (
+                  {alerts.payroll_needs_recalculation && (period?.paid_count ?? 0) > 0 ? (
+                    <li>Paid payroll rows are locked and cannot be rebuilt.</li>
+                  ) : null}
+                  {alerts.payroll_needs_recalculation &&
+                  (period?.paid_count ?? 0) === 0 &&
+                  (period?.approved_count ?? 0) > 0 ? (
+                    <li>Some payroll rows are approved. Unlock them before recalculating.</li>
+                  ) : null}
+                  {alerts.payroll_needs_recalculation &&
+                  (period?.paid_count ?? 0) === 0 &&
+                  (period?.approved_count ?? 0) === 0 ? (
                     <li>
-                      Time records in this week changed after the last payroll calculation. Consider
-                      recalculating pending rows.
+                      Time records in this week changed after the last payroll calculation. Use Refresh or
+                      Recalculate to update pending rows.
                     </li>
                   ) : null}
                   {alerts.pending_approval_count === 0 &&

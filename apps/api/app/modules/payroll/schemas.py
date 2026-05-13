@@ -100,6 +100,10 @@ class PayrollReportAlerts(BaseModel):
     zero_rounded_hours_employees_count: int
     payroll_period_not_calculated: bool
     payroll_needs_recalculation: bool = False
+    can_auto_recalculate: bool = Field(
+        default=False,
+        description="True when GET /report may safely run server-side recalculation (no approved/paid rows).",
+    )
 
 
 class PayrollReportResponse(BaseModel):
@@ -107,6 +111,10 @@ class PayrollReportResponse(BaseModel):
     items: list[PayrollItemResponse]
     alerts: PayrollReportAlerts
     split: PayrollPaySplit
+    payroll_auto_recalculated: bool = Field(
+        default=False,
+        description="True when this payload was returned immediately after an automatic safe recalculation.",
+    )
 
 
 class PayrollMonthSummaryResponse(BaseModel):

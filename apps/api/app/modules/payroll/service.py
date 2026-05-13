@@ -472,6 +472,9 @@ def _build_report_alerts(
         )
         if max_shift_updated is not None and max_shift_updated > period.calculated_at:
             needs_recalc = True
+    approved_n = sum(1 for i in all_items if i.status == "approved")
+    paid_n = sum(1 for i in all_items if i.status == "paid")
+    can_auto = (not_calculated or needs_recalc) and approved_n == 0 and paid_n == 0
     return PayrollReportAlerts(
         pending_approval_count=pending,
         open_shifts_started_in_week_count=open_n,
@@ -479,6 +482,7 @@ def _build_report_alerts(
         zero_rounded_hours_employees_count=zero_hours,
         payroll_period_not_calculated=not_calculated,
         payroll_needs_recalculation=needs_recalc,
+        can_auto_recalculate=can_auto,
     )
 
 
@@ -569,12 +573,38 @@ def get_payroll_report(
     company_id: uuid.UUID,
     week_start: date,
     user_id: uuid.UUID | None = None,
+    auto_recalculate_if_safe: bool = True,
+    _auto_recalc_depth: int = 0,
 ) -> PayrollReportResponse:
     assert_payroll_admin_or_administrator(actor)
     assert_payroll_company_scope(actor, company_id)
     policy = ensure_company_time_policy(db_session, company_id)
     period = get_period_by_company_week(db_session, company_id, week_start)
     if period is None:
+        alerts = _build_report_alerts(
+            db_session,
+            company_id=company_id,
+            policy=policy,
+            week_start=week_start,
+            period=None,
+            all_items=[],
+        )
+        if (
+            auto_recalculate_if_safe
+            and _auto_recalc_depth == 0
+            and alerts.can_auto_recalculate
+        ):
+            recalculate_payroll(db_session, actor, company_id=company_id, week_start=week_start)
+            inner = get_payroll_report(
+                db_session,
+                actor,
+                company_id=company_id,
+                week_start=week_start,
+                user_id=user_id,
+                auto_recalculate_if_safe=auto_recalculate_if_safe,
+                _auto_recalc_depth=_auto_recalc_depth + 1,
+            )
+            return inner.model_copy(update={"payroll_auto_recalculated": True})
         empty = PayrollPeriodSummary(
             id=uuid.UUID("00000000-0000-0000-0000-000000000000"),
             company_id=company_id,
@@ -593,14 +623,6 @@ def get_payroll_report(
             total_tax=None,
             total_net=None,
             total_other_deductions=Decimal(0),
-        )
-        alerts = _build_report_alerts(
-            db_session,
-            company_id=company_id,
-            policy=policy,
-            week_start=week_start,
-            period=None,
-            all_items=[],
         )
         split = _build_pay_split([])
         return PayrollReportResponse(period=empty, items=[], alerts=alerts, split=split)
@@ -626,6 +648,22 @@ def get_payroll_report(
         period=period,
         all_items=all_items,
     )
+    if (
+        auto_recalculate_if_safe
+        and _auto_recalc_depth == 0
+        and alerts.can_auto_recalculate
+    ):
+        recalculate_payroll(db_session, actor, company_id=company_id, week_start=week_start)
+        inner = get_payroll_report(
+            db_session,
+            actor,
+            company_id=company_id,
+            week_start=week_start,
+            user_id=user_id,
+            auto_recalculate_if_safe=auto_recalculate_if_safe,
+            _auto_recalc_depth=_auto_recalc_depth + 1,
+        )
+        return inner.model_copy(update={"payroll_auto_recalculated": True})
     split = _build_pay_split(all_items)
     return PayrollReportResponse(
         period=_summarize_period(db_session, period, all_items),
@@ -1031,7 +1069,13 @@ def export_csv_report(
     company_id: uuid.UUID,
     week_start: date,
 ) -> str:
-    report = get_payroll_report(db_session, actor, company_id=company_id, week_start=week_start)
+    report = get_payroll_report(
+        db_session,
+        actor,
+        company_id=company_id,
+        week_start=week_start,
+        auto_recalculate_if_safe=False,
+    )
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(
@@ -1096,7 +1140,13 @@ def export_print_html(
 ) -> str:
     company = get_company_by_id(db_session, company_id)
     name = company.name if company else "Company"
-    report = get_payroll_report(db_session, actor, company_id=company_id, week_start=week_start)
+    report = get_payroll_report(
+        db_session,
+        actor,
+        company_id=company_id,
+        week_start=week_start,
+        auto_recalculate_if_safe=False,
+    )
     rows_html = []
     for row in report.items:
         rows_html.append(

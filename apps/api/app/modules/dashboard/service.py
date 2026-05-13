@@ -132,7 +132,13 @@ def _payroll_block_for_company(
 ) -> tuple[str, float | None, int, date | None, date | None, str | None]:
     week_start = dash_repo.current_week_monday_local(db_session, company_id, now_utc)
     try:
-        report = get_payroll_report(db_session, actor, company_id=company_id, week_start=week_start)
+        report = get_payroll_report(
+            db_session,
+            actor,
+            company_id=company_id,
+            week_start=week_start,
+            auto_recalculate_if_safe=False,
+        )
     except PayrollError as exc:
         return "not_calculated", None, 0, None, None, str(exc)
 
@@ -405,7 +411,15 @@ def _collect_payroll_reports_current_week(
     for cid in company_ids:
         week_start = dash_repo.current_week_monday_local(db_session, cid, now_utc)
         try:
-            out.append(get_payroll_report(db_session, actor, company_id=cid, week_start=week_start))
+            out.append(
+                get_payroll_report(
+                    db_session,
+                    actor,
+                    company_id=cid,
+                    week_start=week_start,
+                    auto_recalculate_if_safe=False,
+                )
+            )
         except PayrollError:
             continue
     return out

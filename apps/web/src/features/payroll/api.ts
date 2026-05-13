@@ -66,6 +66,7 @@ export type PayrollReportAlerts = {
   zero_rounded_hours_employees_count: number;
   payroll_period_not_calculated: boolean;
   payroll_needs_recalculation?: boolean;
+  can_auto_recalculate?: boolean;
 };
 
 export type PayrollReportResponse = {
@@ -73,6 +74,7 @@ export type PayrollReportResponse = {
   items: PayrollItemRow[];
   alerts: PayrollReportAlerts;
   split: PayrollPaySplit;
+  payroll_auto_recalculated?: boolean;
 };
 
 export type PayrollMonthSummary = {
