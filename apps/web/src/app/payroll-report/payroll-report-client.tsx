@@ -98,6 +98,39 @@ function formatShiftDateTime(iso: string, timeZone: string): string {
   }).format(d);
 }
 
+const UUID_LIKE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function payrollEmployeeDisplayLines(row: {
+  employee_name: string | null;
+  employee_email: string | null;
+}): { primary: string; secondary: string | null } {
+  const email = row.employee_email?.trim() || null;
+  const rawName = row.employee_name?.trim() || null;
+  const name =
+    rawName && !UUID_LIKE.test(rawName) ? rawName : null;
+  const primary = name || email || "Employee";
+  const secondary =
+    email && primary !== email ? email : null;
+  return { primary, secondary };
+}
+
+function PayrollEmployeeIdentity(props: {
+  employee_name: string | null;
+  employee_email: string | null;
+  className?: string;
+}) {
+  const { primary, secondary } = payrollEmployeeDisplayLines(props);
+  return (
+    <div className={props.className}>
+      <div className="font-medium leading-snug text-[#111827]">{primary}</div>
+      {secondary ? (
+        <div className="mt-0.5 text-[11px] leading-snug text-[var(--color-text-muted)]">{secondary}</div>
+      ) : null}
+    </div>
+  );
+}
+
 export function PayrollReportClient() {
   const user = useCurrentUser();
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -801,8 +834,11 @@ export function PayrollReportClient() {
                                 {expandedUserId === row.user_id ? "−" : "+"}
                               </Button>
                             </TableCell>
-                            <TableCell className="max-w-[12rem] align-top text-xs font-medium text-[#111827]">
-                              {row.employee_name ?? row.employee_email ?? "Employee"}
+                            <TableCell className="max-w-[14rem] min-w-0 align-top text-xs">
+                              <PayrollEmployeeIdentity
+                                employee_email={row.employee_email}
+                                employee_name={row.employee_name}
+                              />
                             </TableCell>
                             <TableCell className="max-w-[8rem] truncate align-top text-xs text-[var(--color-text-muted)]">
                               {row.employee_job_title ?? "—"}
@@ -886,9 +922,15 @@ export function PayrollReportClient() {
                                 <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[#374151]">
                                   Shift lines (this week)
                                 </p>
-                                <p className="mb-2 text-xs text-[var(--color-text-muted)]">
-                                  Read-only clock and policy-rounded durations for this employee.
-                                </p>
+                                <div className="mb-2">
+                                  <PayrollEmployeeIdentity
+                                    employee_email={row.employee_email}
+                                    employee_name={row.employee_name}
+                                  />
+                                  <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
+                                    Read-only clock and policy-rounded durations for this employee.
+                                  </p>
+                                </div>
                                 {shiftRowsByUser[row.user_id] === "loading" ? (
                                   <p className="text-xs text-[var(--color-text-muted)]">Loading shifts…</p>
                                 ) : (shiftRowsByUser[row.user_id] ?? []).length === 0 ? (
@@ -1145,10 +1187,16 @@ export function PayrollReportClient() {
                 </Button>
               </div>
               <form className="mt-4 space-y-2 text-sm" onSubmit={saveEdit}>
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  {editRow.employee_email} · Total rounded h:{" "}
-                  {formatHoursFromSeconds(editRow.rounded_total_seconds)}
-                </p>
+                <div className="text-xs text-[var(--color-text-muted)]">
+                  <PayrollEmployeeIdentity
+                    employee_email={editRow.employee_email}
+                    employee_name={editRow.employee_name}
+                    className="text-[var(--color-text)]"
+                  />
+                  <p className="mt-1.5">
+                    Total rounded h: {formatHoursFromSeconds(editRow.rounded_total_seconds)}
+                  </p>
+                </div>
                 <label className="block text-xs font-bold">
                   Notes
                   <textarea
