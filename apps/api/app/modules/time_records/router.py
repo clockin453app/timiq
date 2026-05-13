@@ -2,7 +2,10 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
+
+from app.core.storage.file_response import content_disposition_attachment
 
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
@@ -19,6 +22,9 @@ from app.modules.time_records.schemas import (
 )
 from app.modules.time_records.service import (
     TimeRecordsPermissionError,
+    export_admin_company_timesheet_week_csv,
+    export_admin_company_week_report_csv,
+    export_timesheet_week_shifts_csv,
     list_time_records_admin,
     list_time_records_me,
     timesheet_week_all_employees_for_company,
@@ -301,6 +307,137 @@ def read_admin_company_timesheet_week(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=detail,
         ) from exc
+
+
+@timesheets_router.get("/me/week/export.csv")
+def export_my_timesheet_week_csv(
+    week_start: str = Query(...),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        parsed = _opt_date(week_start)
+        if parsed is None:
+            raise ValueError("week_start is required.")
+        body, fname = export_timesheet_week_shifts_csv(
+            db_session,
+            current_user,
+            subject_user_id=current_user.id,
+            week_start=parsed,
+            export_scope="me_week",
+        )
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition_attachment(fname)},
+    )
+
+
+@timesheets_router.get("/admin/week/export.csv")
+def export_admin_timesheet_week_csv_route(
+    week_start: str = Query(...),
+    user_id: uuid.UUID = Query(...),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+):
+    try:
+        parsed = _opt_date(week_start)
+        if parsed is None:
+            raise ValueError("week_start is required.")
+        body, fname = export_timesheet_week_shifts_csv(
+            db_session,
+            current_user,
+            subject_user_id=user_id,
+            week_start=parsed,
+            export_scope="admin_employee_week",
+        )
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition_attachment(fname)},
+    )
+
+
+@timesheets_router.get("/admin/company/timesheet-week/export.csv")
+def export_admin_company_timesheet_week_csv_route(
+    week_start: str = Query(...),
+    company_id: uuid.UUID | None = Query(default=None),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+):
+    try:
+        parsed = _opt_date(week_start)
+        if parsed is None:
+            raise ValueError("week_start is required.")
+        body, fname = export_admin_company_timesheet_week_csv(
+            db_session,
+            current_user,
+            company_id=company_id,
+            week_start=parsed,
+        )
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        detail = str(exc)
+        if "not found" in detail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=detail,
+        ) from exc
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition_attachment(fname)},
+    )
+
+
+@timesheets_router.get("/admin/company/week-report/export.csv")
+def export_admin_company_week_report_csv_route(
+    week_start: str = Query(...),
+    company_id: uuid.UUID | None = Query(default=None),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+):
+    try:
+        parsed = _opt_date(week_start)
+        if parsed is None:
+            raise ValueError("week_start is required.")
+        body, fname = export_admin_company_week_report_csv(
+            db_session,
+            current_user,
+            company_id=company_id,
+            week_start=parsed,
+        )
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        detail = str(exc)
+        if "not found" in detail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=detail,
+        ) from exc
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition_attachment(fname)},
+    )
 
 
 @timesheets_router.get("/admin/company/week-report", response_model=AdminWeekReportAllEmployeesResponse)

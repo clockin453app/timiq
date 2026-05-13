@@ -168,6 +168,69 @@ export async function fetchAdminCompanyTimesheetWeek(
   return response.json() as Promise<AdminTimesheetWeekAllEmployeesResponse>;
 }
 
+async function downloadCsvFromUrl(url: string, downloadName: string): Promise<void> {
+  const response = await fetch(url, { method: "GET", credentials: "include" });
+  if (!response.ok) {
+    throw new Error("Could not export CSV.");
+  }
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = downloadName;
+  anchor.click();
+  URL.revokeObjectURL(href);
+}
+
+export async function downloadMyTimesheetWeekCsv(weekStartIsoYmd: string): Promise<void> {
+  const search = new URLSearchParams({ week_start: weekStartIsoYmd });
+  await downloadCsvFromUrl(
+    `${API_URL}/api/timesheets/me/week/export.csv?${search.toString()}`,
+    `timesheet-me-${weekStartIsoYmd}.csv`,
+  );
+}
+
+export async function downloadAdminTimesheetWeekCsv(
+  userId: string,
+  weekStartIsoYmd: string,
+): Promise<void> {
+  const search = new URLSearchParams({ week_start: weekStartIsoYmd, user_id: userId });
+  await downloadCsvFromUrl(
+    `${API_URL}/api/timesheets/admin/week/export.csv?${search.toString()}`,
+    `timesheet-${userId}-${weekStartIsoYmd}.csv`,
+  );
+}
+
+export async function downloadAdminCompanyTimesheetWeekCsv(
+  weekStartIsoYmd: string,
+  companyIdForAdministrator: string | null,
+): Promise<void> {
+  const search = new URLSearchParams({ week_start: weekStartIsoYmd });
+  if (companyIdForAdministrator) {
+    search.set("company_id", companyIdForAdministrator);
+  }
+  const suffix = companyIdForAdministrator ?? "company";
+  await downloadCsvFromUrl(
+    `${API_URL}/api/timesheets/admin/company/timesheet-week/export.csv?${search.toString()}`,
+    `timesheet-company-${suffix}-${weekStartIsoYmd}.csv`,
+  );
+}
+
+export async function downloadAdminCompanyWeekReportCsv(
+  weekStartIsoYmd: string,
+  companyIdForAdministrator: string | null,
+): Promise<void> {
+  const search = new URLSearchParams({ week_start: weekStartIsoYmd });
+  if (companyIdForAdministrator) {
+    search.set("company_id", companyIdForAdministrator);
+  }
+  const suffix = companyIdForAdministrator ?? "company";
+  await downloadCsvFromUrl(
+    `${API_URL}/api/timesheets/admin/company/week-report/export.csv?${search.toString()}`,
+    `week-report-${suffix}-${weekStartIsoYmd}.csv`,
+  );
+}
+
 export async function fetchAdminCompanyWeekReport(
   weekStartIsoYmd: string,
   companyIdForAdministrator: string | null,

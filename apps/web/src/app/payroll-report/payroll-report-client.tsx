@@ -24,6 +24,7 @@ import {
   fetchPayrollMonthSummary,
   fetchPayrollReport,
   markPayrollPaid,
+  openPayrollItemPayslip,
   openPayrollPrintView,
   patchPayrollItem,
   recalculatePayroll,
@@ -179,6 +180,13 @@ export function PayrollReportClient() {
   }, [weekStart]);
 
   const policyTimeZone = report?.period.timezone_name ?? browserDefaultTimeZone();
+
+  const singleReportPayslipItemId = useMemo(() => {
+    if (!report || report.items.length !== 1) {
+      return null;
+    }
+    return report.items[0].id;
+  }, [report]);
 
   const weekRangeLabel = useMemo(
     () => formatPayrollWeekRangeLabel(weekStart, policyTimeZone),
@@ -644,7 +652,24 @@ export function PayrollReportClient() {
                   type="button"
                   variant="secondary"
                 >
-                  Print / PDF
+                  Print report
+                </Button>
+                <Button
+                  disabled={loading || !activeCompanyId || !singleReportPayslipItemId}
+                  onClick={() => {
+                    if (singleReportPayslipItemId) {
+                      openPayrollItemPayslip(singleReportPayslipItemId);
+                    }
+                  }}
+                  title={
+                    singleReportPayslipItemId
+                      ? undefined
+                      : "Shown when the report lists exactly one employee for this week (filter to one employee if needed)."
+                  }
+                  type="button"
+                  variant="secondary"
+                >
+                  Open payslip
                 </Button>
               </div>
             </div>

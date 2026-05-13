@@ -166,6 +166,10 @@ export function payrollItemPayslipUrl(itemId: string): string {
   return `${API_URL}/api/payroll/items/${encodeURIComponent(itemId)}/payslip`;
 }
 
+export function openPayrollItemPayslip(itemId: string): void {
+  window.open(payrollItemPayslipUrl(itemId), "_blank", "noopener,noreferrer");
+}
+
 function qs(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {

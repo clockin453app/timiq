@@ -1,3 +1,5 @@
+import csv
+import io
 import uuid
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
@@ -5,6 +7,8 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from app.core.export_csv import format_dt_local, safe_export_filename, seconds_to_hours_csv
+from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.auth.service import can_manage_user
@@ -717,3 +721,277 @@ def week_report_all_employees_for_company(
         employees=employees_out,
         totals=totals,
     )
+
+
+def export_timesheet_week_shifts_csv(
+    db_session: Session,
+    actor: User,
+    *,
+    subject_user_id: uuid.UUID,
+    week_start: date,
+    export_scope: str,
+) -> tuple[str, str]:
+    """Per-shift rows for one employee week. ``export_scope`` is ``me_week`` or ``admin_employee_week`` (audit only)."""
+    subject = get_user_by_id(db_session, subject_user_id)
+    if subject is None:
+        raise TimeRecordsPermissionError("User not found.")
+    if not can_view_time_record_shift_owner(actor, subject):
+        raise TimeRecordsPermissionError("You cannot view this user's timesheet.")
+
+    policy = _fallback_policy()
+    if subject.company_id is not None:
+        policy = ensure_company_time_policy(db_session, subject.company_id)
+    week_start_utc, week_end_utc = _week_bounds_utc(policy, week_start)
+    rows = list_time_shifts_for_week(
+        db_session,
+        viewer=actor,
+        subject_user_id=subject_user_id,
+        week_start_utc=week_start_utc,
+        week_end_utc=week_end_utc,
+    )
+    try:
+        tz = ZoneInfo(policy.timezone_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "week_start",
+            "company_timezone",
+            "employee_name",
+            "employee_email",
+            "employee_job_title",
+            "work_date",
+            "location_name",
+            "shift_status",
+            "clock_in_local",
+            "clock_out_local",
+            "break_hours",
+            "clocked_hours",
+            "payable_hours",
+            "payroll_rounded_hours",
+            "open_shift",
+        ],
+    )
+    row_count = 0
+    for shift, location, owner, profile in rows:
+        if not can_view_time_record_shift_owner(actor, owner):
+            continue
+        pol = _load_policy(db_session, shift, location)
+        early_access = bool(profile.early_access_enabled) if profile is not None else False
+        metrics = compute_shift_metrics(
+            clock_in_at_utc=shift.clock_in_at,
+            clock_out_at_utc=shift.clock_out_at,
+            break_seconds_tracked=int(shift.break_seconds or 0),
+            early_access_enabled=early_access,
+            policy=pol,
+        )
+        is_open = shift.status == "open"
+        work_date = shift.clock_in_at.astimezone(tz).date()
+        clocked_sec = metrics.actual_seconds if not is_open else metrics.running_actual_seconds
+        writer.writerow(
+            [
+                str(week_start),
+                policy.timezone_name,
+                _employee_primary_label(profile, owner),
+                owner.email or "",
+                _employee_job_title(profile) or "",
+                str(work_date),
+                location.name,
+                shift.status,
+                format_dt_local(shift.clock_in_at, tz),
+                format_dt_local(shift.clock_out_at, tz) if shift.clock_out_at else "",
+                seconds_to_hours_csv(metrics.break_seconds),
+                seconds_to_hours_csv(clocked_sec),
+                seconds_to_hours_csv(metrics.counted_seconds),
+                seconds_to_hours_csv(metrics.rounded_seconds),
+                "yes" if is_open else "no",
+            ],
+        )
+        row_count += 1
+
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="timesheet.exported",
+        entity_type="timesheet_week",
+        entity_id=None,
+        company_id=subject.company_id,
+        details={
+            "export_type": "week_shifts_csv",
+            "scope": export_scope,
+            "week_start": str(week_start),
+            "subject_user_id": str(subject_user_id),
+            "row_count": row_count,
+        },
+    )
+    fname = safe_export_filename("timesheet-week", str(week_start), export_scope) + ".csv"
+    return buf.getvalue(), fname
+
+
+def export_admin_company_timesheet_week_csv(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    week_start: date,
+) -> tuple[str, str]:
+    data = timesheet_week_all_employees_for_company(db_session, actor, company_id=company_id, week_start=week_start)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "week_start",
+            "company_id",
+            "company_timezone",
+            "user_id",
+            "employee_name",
+            "employee_email",
+            "employee_job_title",
+            "date",
+            "locations",
+            "clocked_hours",
+            "payable_hours",
+            "payroll_rounded_hours",
+            "break_hours",
+            "completed_shifts_count",
+        ],
+    )
+    for r in data.day_rows:
+        writer.writerow(
+            [
+                str(data.week_start),
+                str(data.company_id),
+                data.company_timezone,
+                str(r.user_id),
+                r.employee_name or "",
+                r.employee_email,
+                r.employee_job_title or "",
+                str(r.date),
+                "; ".join(r.locations),
+                seconds_to_hours_csv(r.clocked_seconds),
+                seconds_to_hours_csv(r.payable_seconds),
+                seconds_to_hours_csv(r.payroll_seconds),
+                seconds_to_hours_csv(r.break_seconds),
+                r.completed_shifts_count,
+            ],
+        )
+    writer.writerow([])
+    writer.writerow(
+        [
+            "section",
+            "user_id",
+            "employee_name",
+            "employee_email",
+            "employee_job_title",
+            "shift_id",
+            "clock_in_local",
+            "location_name",
+            "break_hours",
+            "running_clocked_hours",
+            "open_shift",
+        ],
+    )
+    try:
+        tz = ZoneInfo(data.company_timezone)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    for o in data.open_shifts:
+        writer.writerow(
+            [
+                "open_shift",
+                str(o.user_id),
+                o.employee_name or "",
+                o.employee_email,
+                o.employee_job_title or "",
+                str(o.shift_id),
+                format_dt_local(o.clock_in_at, tz),
+                o.location_name,
+                seconds_to_hours_csv(o.break_seconds),
+                seconds_to_hours_csv(o.running_actual_seconds),
+                "yes",
+            ],
+        )
+
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="timesheet.exported",
+        entity_type="timesheet_week",
+        entity_id=None,
+        company_id=data.company_id,
+        details={
+            "export_type": "company_timesheet_week_csv",
+            "week_start": str(week_start),
+            "row_count": len(data.day_rows) + len(data.open_shifts),
+        },
+    )
+    fname = safe_export_filename("timesheet-company", str(data.company_id), str(week_start)) + ".csv"
+    return buf.getvalue(), fname
+
+
+def export_admin_company_week_report_csv(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    week_start: date,
+) -> tuple[str, str]:
+    data = week_report_all_employees_for_company(db_session, actor, company_id=company_id, week_start=week_start)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "week_start",
+            "company_id",
+            "company_timezone",
+            "user_id",
+            "employee_name",
+            "employee_email",
+            "employee_job_title",
+            "completed_shifts_count",
+            "total_clocked_hours",
+            "total_payable_hours",
+            "total_payroll_rounded_hours",
+            "total_break_hours",
+            "locations_worked",
+            "open_shift_in_week",
+        ],
+    )
+    for e in data.employees:
+        writer.writerow(
+            [
+                str(data.week_start),
+                str(data.company_id),
+                data.company_timezone,
+                str(e.user_id),
+                e.employee_name or "",
+                e.employee_email,
+                e.employee_job_title or "",
+                e.completed_shifts_count,
+                seconds_to_hours_csv(e.clocked_seconds),
+                seconds_to_hours_csv(e.payable_seconds),
+                seconds_to_hours_csv(e.payroll_seconds),
+                seconds_to_hours_csv(e.break_seconds),
+                "; ".join(e.locations_worked),
+                "yes" if e.open_shift_in_week else "no",
+            ],
+        )
+
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="timesheet.exported",
+        entity_type="week_report",
+        entity_id=None,
+        company_id=data.company_id,
+        details={
+            "export_type": "company_week_report_csv",
+            "week_start": str(week_start),
+            "row_count": len(data.employees),
+        },
+    )
+    fname = safe_export_filename("week-report", str(data.company_id), str(week_start)) + ".csv"
+    return buf.getvalue(), fname

@@ -325,3 +325,8 @@ export async function fetchOnboardingProfilePhotoBlob(userId: string): Promise<B
   }
   return response.blob();
 }
+
+export function openOnboardingSubmissionPrintWindow(submissionId: string): void {
+  const url = `${API_URL}/api/onboarding/submissions/${encodeURIComponent(submissionId)}/print`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}

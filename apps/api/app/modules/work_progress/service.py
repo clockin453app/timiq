@@ -1,4 +1,5 @@
 import io
+import csv
 import uuid
 import zipfile
 from datetime import date, datetime, timezone
@@ -6,6 +7,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
+from app.core.export_csv import safe_export_filename, truncate_plain_text
 from app.core.storage.factory import get_storage_backend
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
@@ -19,6 +21,7 @@ from app.modules.work_progress.image_processing import (
 )
 from app.modules.work_progress.repository import (
     count_attachments_for_entry,
+    count_attachments_for_entry_ids,
     count_review_attachments,
     delete_attachments_many,
     get_attachment_by_id,
@@ -35,6 +38,7 @@ from app.modules.work_progress.repository import (
     list_location_ids_for_user_site_access,
     list_review_attachments_page,
     list_review_entries,
+    list_review_entries_for_export,
     save_attachment,
     save_entry,
 )
@@ -850,3 +854,111 @@ def add_review_comment(
     )
 
     return _review_detail_response(db_session, entry, owner)
+
+
+def export_review_entries_csv(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    user_id: uuid.UUID | None,
+    location_id: uuid.UUID | None,
+    status_filter: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+) -> tuple[str, str]:
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise WorkProgressPermissionError("You do not have permission to export work progress reviews.")
+
+    company_filter, uid, loc_id, status_f, d_from, d_to = _resolve_review_list_filters(
+        db_session,
+        actor,
+        company_id=company_id,
+        user_id=user_id,
+        location_id=location_id,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    entries = list_review_entries_for_export(
+        db_session,
+        company_id_filter=company_filter,
+        user_id_filter=uid,
+        location_id_filter=loc_id,
+        status_filter=status_f,
+        date_from=d_from,
+        date_to=d_to,
+        title_search=title_search,
+    )
+    entry_ids = [e.id for e in entries]
+    att_counts = count_attachments_for_entry_ids(db_session, entry_ids)
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "work_date",
+            "employee_name",
+            "employee_email",
+            "company_name",
+            "location_name",
+            "title",
+            "progress_status",
+            "percent_complete",
+            "entry_status",
+            "notes_excerpt",
+            "attachment_count",
+            "reviewed_at",
+            "reviewer_email",
+            "review_note_excerpt",
+        ],
+    )
+    for entry in entries:
+        owner = get_user_by_id(db_session, entry.user_id)
+        profile = get_employee_profile_by_user_id(db_session, entry.user_id)
+        company = get_company_by_id(db_session, entry.company_id)
+        reviewer = get_user_by_id(db_session, entry.reviewed_by_user_id) if entry.reviewed_by_user_id else None
+        writer.writerow(
+            [
+                str(entry.work_date),
+                _display_name(profile),
+                owner.email if owner else "",
+                company.name if company else "",
+                _location_name(db_session, entry.location_id),
+                entry.title,
+                entry.progress_status,
+                entry.percent_complete if entry.percent_complete is not None else "",
+                entry.status,
+                truncate_plain_text(entry.notes, 240),
+                att_counts.get(entry.id, 0),
+                entry.reviewed_at.isoformat() if entry.reviewed_at else "",
+                reviewer.email if reviewer else "",
+                truncate_plain_text(entry.review_note, 240),
+            ],
+        )
+
+    audit_company = company_filter or (entries[0].company_id if entries else actor.company_id)
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="work_progress.report_exported",
+        entity_type="work_progress_review_export",
+        entity_id=None,
+        company_id=audit_company,
+        details={
+            "export_type": "review_csv",
+            "row_count": len(entries),
+            "filters": {
+                "has_company_filter": company_filter is not None,
+                "has_user_filter": uid is not None,
+                "has_location_filter": loc_id is not None,
+                "has_status_filter": status_f is not None,
+                "has_date_from": d_from is not None,
+                "has_date_to": d_to is not None,
+                "has_title_search": bool(title_search and title_search.strip()),
+            },
+        },
+    )
+    fname = safe_export_filename("work-progress-review", str(audit_company or "export")) + ".csv"
+    return buf.getvalue(), fname

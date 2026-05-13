@@ -1,3 +1,5 @@
+import html
+import json
 import uuid
 from datetime import date, datetime, timezone
 from typing import Any
@@ -852,6 +854,116 @@ def get_review_submission_detail(
         details={"subject_user_id": str(owner.id)},
     )
     return submission_to_detail(submission, docs, account_email=owner.email)
+
+
+def _assert_can_print_onboarding_submission(actor: User, submission: OnboardingSubmission, owner: User) -> None:
+    if is_submission_owner(actor, submission):
+        if submission.status == "draft":
+            raise OnboardingPermissionError("Submit your starter form before printing.")
+        return
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise OnboardingPermissionError("You do not have permission to print this submission.")
+    if owner.system_role != SystemRole.EMPLOYEE or not can_admin_review_user(actor, owner):
+        raise OnboardingPermissionError("You do not have permission to print this submission.")
+
+
+def render_submission_print_html(db_session: Session, actor: User, submission_id: uuid.UUID) -> str:
+    bundle = get_submission_with_user_and_profile(db_session, submission_id)
+    if bundle is None:
+        raise OnboardingNotFoundError("Submission not found.")
+    submission, owner, profile = bundle
+    _assert_can_print_onboarding_submission(actor, submission, owner)
+    docs = list_documents_for_submission(db_session, submission.id)
+    company = get_company_by_id(db_session, submission.company_id) if submission.company_id else None
+    company_esc = html.escape(company.name if company else "Company")
+
+    name_parts: list[str] = []
+    if profile is not None:
+        if profile.first_name:
+            name_parts.append(profile.first_name)
+        if profile.last_name:
+            name_parts.append(profile.last_name)
+    employee_name = html.escape(" ".join(name_parts).strip() or (owner.email or "Employee"))
+
+    form = dict(submission.form_payload or {})
+    form_rows: list[str] = []
+    for key in sorted(form.keys()):
+        raw = form[key]
+        if isinstance(raw, (dict, list)):
+            val = html.escape(json.dumps(raw, ensure_ascii=False))
+        else:
+            val = html.escape(str(raw))
+        form_rows.append(f"<tr><th>{html.escape(str(key))}</th><td>{val}</td></tr>")
+
+    doc_rows: list[str] = []
+    for d in docs:
+        doc_rows.append(
+            "<tr>"
+            f"<td>{html.escape(d.doc_type)}</td>"
+            f"<td>{html.escape(d.original_filename)}</td>"
+            f"<td>{html.escape(d.content_type)}</td>"
+            f"<td>{d.file_size_bytes}</td>"
+            "</tr>",
+        )
+
+    sig_drawn = "yes" if submission.signature_image_path else "no"
+    sig_mode = html.escape((submission.signature_mode or "").strip() or "—")
+    typed = html.escape((submission.signature_typed_text or "").strip() or "—")
+    contract = html.escape(str(submission.form_payload.get("contract_version") or ONBOARDING_CONTRACT_VERSION))
+    accepted = submission.form_payload.get("contract_accepted") or submission.form_payload.get("accept_contract")
+    accepted_label = "yes" if accepted in (True, "true", "yes", "1", 1) else "no"
+
+    html_out = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><title>Starter form — {employee_name}</title>
+<style>
+body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; }}
+h1 {{ font-size: 1.25rem; }}
+h2 {{ font-size: 1rem; margin-top: 1.5rem; }}
+table {{ border-collapse: collapse; width: 100%; margin-top: 8px; }}
+th, td {{ border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 0.875rem; vertical-align: top; }}
+th {{ background: #f4f4f5; width: 28%; }}
+@media print {{ body {{ margin: 12px; }} }}
+</style></head><body>
+<h1>Starter form (onboarding)</h1>
+<p><strong>Company:</strong> {company_esc}</p>
+<p><strong>Employee:</strong> {employee_name} ({html.escape(owner.email or "")})</p>
+<p><strong>Status:</strong> {html.escape(submission.status)}</p>
+<p><strong>Submitted:</strong> {html.escape(submission.submitted_at.isoformat() if submission.submitted_at else "—")}</p>
+
+<h2>Contract</h2>
+<p><strong>Contract version:</strong> {contract}</p>
+<p><strong>Contract accepted:</strong> {accepted_label}</p>
+
+<h2>Signature</h2>
+<p><strong>Mode:</strong> {sig_mode}</p>
+<p><strong>Typed signature:</strong> {typed}</p>
+<p><strong>Drawn signature on file:</strong> {sig_drawn}</p>
+
+<h2>Documents</h2>
+<table><thead><tr><th>Type</th><th>Filename</th><th>Content type</th><th>Size (bytes)</th></tr></thead><tbody>
+{"".join(doc_rows) if doc_rows else "<tr><td colspan=4>No documents</td></tr>"}
+</tbody></table>
+
+<h2>Form responses</h2>
+<table><tbody>
+{"".join(form_rows) if form_rows else "<tr><td colspan=2>No form data</td></tr>"}
+</tbody></table>
+<p style="margin-top:16px;font-size:12px;color:#666;">Use your browser&rsquo;s Print dialog to print or save as PDF.</p>
+</body></html>"""
+
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="onboarding.submission_printed",
+        entity_type="onboarding_submission",
+        entity_id=str(submission.id),
+        company_id=submission.company_id,
+        details={
+            "export_type": "print_html",
+            "subject_user_id": str(owner.id),
+        },
+    )
+    return html_out
 
 
 def resolve_document_download(

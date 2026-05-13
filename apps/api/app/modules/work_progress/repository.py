@@ -132,6 +132,51 @@ def list_review_entries(
     return rows, total
 
 
+MAX_REVIEW_EXPORT_ROWS = 20_000
+
+
+def list_review_entries_for_export(
+    db_session: Session,
+    *,
+    company_id_filter: uuid.UUID | None,
+    user_id_filter: uuid.UUID | None,
+    location_id_filter: uuid.UUID | None,
+    status_filter: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+) -> list[WorkProgressEntry]:
+    stmt = _apply_review_entry_filters(
+        select(WorkProgressEntry),
+        company_id_filter=company_id_filter,
+        user_id_filter=user_id_filter,
+        location_id_filter=location_id_filter,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+        title_search=title_search,
+    )
+    stmt = stmt.order_by(WorkProgressEntry.work_date.desc(), WorkProgressEntry.created_at.desc()).limit(
+        MAX_REVIEW_EXPORT_ROWS,
+    )
+    return list(db_session.scalars(stmt).all())
+
+
+def count_attachments_for_entry_ids(
+    db_session: Session,
+    entry_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, int]:
+    if not entry_ids:
+        return {}
+    stmt = (
+        select(WorkProgressAttachment.entry_id, func.count())
+        .where(WorkProgressAttachment.entry_id.in_(entry_ids))
+        .group_by(WorkProgressAttachment.entry_id)
+    )
+    rows = db_session.execute(stmt).all()
+    return {eid: int(n) for eid, n in rows}
+
+
 def count_review_entries(
     db_session: Session,
     *,

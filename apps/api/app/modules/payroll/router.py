@@ -4,6 +4,9 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.export_csv import safe_export_filename
+from app.core.storage.file_response import content_disposition_attachment
+
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
 from app.modules.auth.models import User
@@ -272,11 +275,11 @@ def payroll_export_csv(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
-    filename = f"payroll-{company_id}-{week_start}.csv"
+    filename = safe_export_filename("payroll", str(company_id), str(week_start)) + ".csv"
     return Response(
         content=body,
-        media_type="text/csv",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition_attachment(filename)},
     )
 
 

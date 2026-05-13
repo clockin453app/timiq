@@ -25,6 +25,7 @@ import {
   getOnboardingReviewDetail,
   listOnboardingReview,
   ONBOARDING_REQUIRED_DOC_SLOTS,
+  openOnboardingSubmissionPrintWindow,
   rejectOnboarding,
   type OnboardingDocumentMeta,
   type OnboardingReviewListItem,
@@ -343,6 +344,11 @@ function OnboardingReviewAdminBody() {
               <p className="text-[var(--color-text-muted)]">
                 Status: <span className="capitalize text-[var(--color-text)]">{detail.status}</span>
               </p>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => openOnboardingSubmissionPrintWindow(detail.id)}>
+                  Print / export
+                </Button>
+              </div>
               <p className="text-xs text-[var(--color-text-muted)]">
                 Account email: <span className="text-[var(--color-text)]">{detail.account_email}</span>
               </p>

@@ -4,7 +4,7 @@ from datetime import date
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 
-from app.core.storage.file_response import protected_file_response
+from app.core.storage.file_response import content_disposition_attachment, protected_file_response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -33,6 +33,7 @@ from app.modules.work_progress.service import (
     bulk_download_review_attachments_zip,
     create_my_entry,
     download_work_progress_file,
+    export_review_entries_csv,
     get_me_options,
     get_my_entry_detail,
     get_review_detail,
@@ -153,6 +154,41 @@ def get_work_progress_review_list(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressValidationError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("/review/export.csv")
+def get_work_progress_review_export_csv(
+    company_id: uuid.UUID | None = Query(default=None),
+    user_id: uuid.UUID | None = Query(default=None),
+    location_id: uuid.UUID | None = Query(default=None),
+    status: str | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    title_search: str | None = Query(default=None, max_length=300),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+):
+    try:
+        body, fname = export_review_entries_csv(
+            db_session,
+            current_user,
+            company_id=company_id,
+            user_id=user_id,
+            location_id=location_id,
+            status_filter=status,
+            date_from=date_from,
+            date_to=date_to,
+            title_search=title_search,
+        )
+    except WorkProgressPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except WorkProgressValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition_attachment(fname)},
+    )
 
 
 @router.get("/review/attachments/gallery", response_model=WorkProgressReviewAttachmentGalleryResponse)

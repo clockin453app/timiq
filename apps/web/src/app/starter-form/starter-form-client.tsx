@@ -19,6 +19,7 @@ import {
   fetchOnboardingSignatureBlob,
   getMyOnboarding,
   ONBOARDING_REQUIRED_DOC_SLOTS,
+  openOnboardingSubmissionPrintWindow,
   patchOnboardingDraft,
   postOnboardingProfilePhoto,
   reopenOnboarding,
@@ -373,6 +374,14 @@ export function StarterFormClient() {
                 </p>
               ) : null}
             </div>
+
+            {detail.status !== "draft" ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" variant="secondary" onClick={() => openOnboardingSubmissionPrintWindow(detail.id)}>
+                  Print my submitted form
+                </Button>
+              </div>
+            ) : null}
 
             {detail.status === "rejected" ? (
               <Button type="button" variant="secondary" disabled={saving} onClick={() => void handleReopen()}>

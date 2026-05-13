@@ -2,6 +2,7 @@ import mimetypes
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 
 from app.core.storage.file_response import protected_file_response
 from sqlalchemy.orm import Session
@@ -33,6 +34,7 @@ from app.modules.onboarding.service import (
     list_review_submissions,
     patch_my_draft,
     reject_submission,
+    render_submission_print_html,
     reopen_my_submission,
     set_my_drawn_signature,
     set_my_typed_signature,
@@ -287,6 +289,25 @@ def post_onboarding_reject(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except OnboardingStateError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get("/submissions/{submission_id}/print")
+def get_onboarding_submission_print(
+    submission_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        body = render_submission_print_html(db_session, current_user, submission_id)
+    except OnboardingNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+    except OnboardingPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from None
+    return Response(
+        content=body,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="onboarding-{submission_id}.html"'},
+    )
 
 
 @router.get("/documents/{document_id}/file")

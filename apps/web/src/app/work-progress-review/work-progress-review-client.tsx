@@ -22,6 +22,7 @@ import {
   bulkDeleteWorkProgressAttachments,
   bulkDownloadWorkProgressAttachments,
   commentWorkProgress,
+  downloadWorkProgressReviewCsv,
   fetchWorkProgressFileBlob,
   getWorkProgressReviewDetail,
   listWorkProgressReview,
@@ -120,6 +121,8 @@ function ReviewAdminBody() {
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [galleryBulkError, setGalleryBulkError] = useState("");
+  const [exportCsvBusy, setExportCsvBusy] = useState(false);
+  const [exportCsvError, setExportCsvError] = useState("");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<WorkProgressReviewDetail | null>(null);
@@ -326,6 +329,36 @@ function ReviewAdminBody() {
 
   const selectedCount = selectedFileIds.size;
 
+  const exportReviewCsv = useCallback(async () => {
+    setExportCsvError("");
+    setExportCsvBusy(true);
+    const params = {
+      company_id: adminAllCompanies && companyFilter ? companyFilter : undefined,
+      user_id: userIdFilter.trim() || undefined,
+      location_id: locationIdFilter.trim() || undefined,
+      status: statusFilter.trim() || undefined,
+      date_from: dateFrom.trim() || undefined,
+      date_to: dateTo.trim() || undefined,
+      title_search: titleSearch.trim() || undefined,
+    };
+    try {
+      await downloadWorkProgressReviewCsv(params);
+    } catch (err) {
+      setExportCsvError(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setExportCsvBusy(false);
+    }
+  }, [
+    adminAllCompanies,
+    companyFilter,
+    dateFrom,
+    dateTo,
+    locationIdFilter,
+    statusFilter,
+    titleSearch,
+    userIdFilter,
+  ]);
+
   return (
     <div className="space-y-4">
       <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
@@ -390,11 +423,22 @@ function ReviewAdminBody() {
             />
           </label>
         </div>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
           <Button onClick={() => void refreshListAndGallery()} type="button" variant="secondary">
             Apply filters
           </Button>
+          <Button
+            disabled={exportCsvBusy || total === 0}
+            onClick={() => void exportReviewCsv()}
+            type="button"
+            variant="secondary"
+          >
+            {exportCsvBusy ? "Exporting…" : "Export CSV"}
+          </Button>
         </div>
+        {exportCsvError ? (
+          <p className="mt-2 text-sm text-[var(--color-danger-700)]">{exportCsvError}</p>
+        ) : null}
       </div>
 
       {listError || galleryError ? (

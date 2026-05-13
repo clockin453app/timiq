@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { WeekPickerBar } from "../../components/week-picker-bar";
 import {
+  Button,
   PageHeader,
   Sheet,
   SheetBody,
@@ -24,6 +25,9 @@ import {
 import { listCompanies, type Company } from "../../features/companies/api";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import {
+  downloadAdminCompanyWeekReportCsv,
+  downloadAdminTimesheetWeekCsv,
+  downloadMyTimesheetWeekCsv,
   fetchAdminCompanyWeekReport,
   fetchAdminTimesheetWeek,
   fetchMyTimesheetWeek,
@@ -92,6 +96,8 @@ export function WeekReportClient() {
   const [subjectUserId, setSubjectUserId] = useState("");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyOverride, setCompanyOverride] = useState<string | null>(null);
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportError, setExportError] = useState("");
 
   const activeCompanyId = useMemo(() => {
     if (isAdministrator(user)) {
@@ -251,6 +257,50 @@ export function WeekReportClient() {
     viewingAllEmployees && companyReport && companyReport.totals.employees_with_open_shift > 0,
   );
 
+  const hasExportableData =
+    !loading &&
+    !error &&
+    (adminMode && management
+      ? viewingAllEmployees
+        ? Boolean(companyReport && companyReport.totals.completed_shifts_count > 0)
+        : Boolean(sheet && sheet.completed_shift_count > 0)
+      : Boolean(sheet && sheet.completed_shift_count > 0));
+
+  async function handleExportCsv() {
+    setExportError("");
+    setExportBusy(true);
+    try {
+      if (adminMode && management) {
+        if (!subjectUserId.trim()) {
+          setExportError('Select an employee or "All employees".');
+          return;
+        }
+        if (subjectUserId === ALL_EMPLOYEES_VALUE) {
+          if (isAdministrator(user) && !activeCompanyId) {
+            setExportError("Select a company.");
+            return;
+          }
+          if (!isAdministrator(user) && !user.company_id) {
+            setExportError("Your account is not linked to a company.");
+            return;
+          }
+          await downloadAdminCompanyWeekReportCsv(
+            weekStart,
+            isAdministrator(user) ? activeCompanyId : null,
+          );
+        } else {
+          await downloadAdminTimesheetWeekCsv(subjectUserId.trim(), weekStart);
+        }
+      } else {
+        await downloadMyTimesheetWeekCsv(weekStart);
+      }
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Export failed.");
+    } finally {
+      setExportBusy(false);
+    }
+  }
+
   return (
     <Sheet>
       <PageHeader
@@ -334,12 +384,31 @@ export function WeekReportClient() {
           </label>
         ) : null}
 
-        <WeekPickerBar
-          disabled={loading}
-          onWeekChange={setWeekStart}
-          timezoneLabel={timezoneLabel}
-          weekStartIso={weekStart}
-        />
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <WeekPickerBar
+              disabled={loading}
+              onWeekChange={setWeekStart}
+              timezoneLabel={timezoneLabel}
+              weekStartIso={weekStart}
+            />
+          </div>
+          <Button
+            className="h-10 w-full shrink-0 sm:w-auto"
+            disabled={exportBusy || !hasExportableData}
+            onClick={() => void handleExportCsv()}
+            type="button"
+            variant="secondary"
+          >
+            {exportBusy ? "Exporting…" : "Export CSV"}
+          </Button>
+        </div>
+
+        {exportError ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2.5 text-sm text-[var(--color-danger-700)]">
+            {exportError}
+          </div>
+        ) : null}
 
         {openBannerSingle ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-[var(--color-warning-700)] bg-[var(--color-header)] px-3 py-2.5 text-sm text-[var(--color-text)]">

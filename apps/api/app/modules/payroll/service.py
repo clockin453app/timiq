@@ -12,6 +12,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.export_csv import seconds_to_hours_csv
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
@@ -1195,57 +1196,81 @@ def export_csv_report(
         week_start=week_start,
         auto_recalculate_if_safe=False,
     )
+    company = get_company_by_id(db_session, company_id)
+    company_name = company.name if company is not None else "Company"
+    week_end = _week_end_display(week_start)
+    tz_name = report.period.timezone_name if report.period.total_items else ""
+
+    by_id: dict[uuid.UUID, PayrollItem] = {}
+    if report.items:
+        pid = report.items[0].period_id
+        by_id = {i.id: i for i in list_items_for_period(db_session, pid)}
+
     buffer = io.StringIO()
     writer = csv.writer(buffer)
     writer.writerow(
         [
-            "email",
-            "name",
+            "company_name",
+            "week_start",
+            "week_end",
+            "timezone",
+            "employee_email",
+            "employee_name",
+            "employee_job_title",
+            "payment_mode",
             "regular_hours",
             "overtime_hours",
             "total_rounded_hours",
             "hourly_rate_snapshot",
             "tax_rate_snapshot",
-            "gross",
+            "gross_amount",
             "cis_tax",
             "other_deductions",
-            "net",
-            "display_tax",
-            "display_net",
+            "net_amount",
             "status",
-            "payment_mode",
             "rate_missing",
         ],
     )
     for row in report.items:
+        item = by_id.get(row.id)
+        eff_cis = _effective_tax_amount_for_item(item) if item is not None else None
+        eff_net = _effective_net_amount_for_item(item) if item is not None else None
         writer.writerow(
             [
+                company_name,
+                str(week_start),
+                str(week_end),
+                tz_name,
                 row.employee_email or "",
                 row.employee_name or "",
-                row.regular_seconds / 3600,
-                row.overtime_seconds / 3600,
-                row.rounded_total_seconds / 3600,
+                row.employee_job_title or "",
+                _payment_mode_label(row.payment_mode),
+                seconds_to_hours_csv(row.regular_seconds),
+                seconds_to_hours_csv(row.overtime_seconds),
+                seconds_to_hours_csv(row.rounded_total_seconds),
                 row.hourly_rate_snapshot,
                 row.tax_rate_snapshot,
                 row.gross_amount,
-                row.tax_amount,
+                eff_cis,
                 row.other_deductions_amount,
-                row.net_amount,
-                row.display_tax_amount,
-                row.display_net_amount,
+                eff_net,
                 row.status,
-                row.payment_mode or "",
                 row.rate_missing,
             ],
         )
+    period_entity = str(report.period.id) if report.period.total_items else None
     create_internal_audit_event(
         db_session=db_session,
         actor=actor,
-        action="payroll_csv_exported",
+        action="payroll.report_exported",
         entity_type="payroll_period",
-        entity_id=str(report.period.id) if report.period.total_items else "",
+        entity_id=period_entity,
         company_id=company_id,
-        details={"week_start": str(week_start)},
+        details={
+            "export_type": "csv",
+            "week_start": str(week_start),
+            "row_count": len(report.items),
+        },
     )
     return buffer.getvalue()
 
@@ -1258,7 +1283,7 @@ def export_print_html(
     week_start: date,
 ) -> str:
     company = get_company_by_id(db_session, company_id)
-    name = company.name if company else "Company"
+    name = html.escape(company.name if company else "Company")
     report = get_payroll_report(
         db_session,
         actor,
@@ -1266,27 +1291,44 @@ def export_print_html(
         week_start=week_start,
         auto_recalculate_if_safe=False,
     )
-    rows_html = []
+    week_end = _week_end_display(week_start)
+    week_end_esc = html.escape(str(week_end))
+    wk_esc = html.escape(str(week_start))
+    tz_esc = html.escape(report.period.timezone_name if report.period.total_items else "")
+
+    by_id: dict[uuid.UUID, PayrollItem] = {}
+    if report.items:
+        pid = report.items[0].period_id
+        by_id = {i.id: i for i in list_items_for_period(db_session, pid)}
+
+    rows_html: list[str] = []
     for row in report.items:
-        cis_cell = row.display_tax_amount if row.display_tax_amount is not None else row.tax_amount
-        net_cell = row.display_net_amount if row.display_net_amount is not None else row.net_amount
-        cis_txt = "—" if cis_cell is None else f"{cis_cell:.2f}"
-        net_txt = "—" if net_cell is None else f"{net_cell:.2f}"
+        item = by_id.get(row.id)
+        eff_cis = _effective_tax_amount_for_item(item) if item is not None else None
+        eff_net = _effective_net_amount_for_item(item) if item is not None else None
+        cis_txt = "—" if eff_cis is None else f"{eff_cis:.2f}"
+        net_txt = "—" if eff_net is None else f"{eff_net:.2f}"
+        mode_lbl = html.escape(_payment_mode_label(row.payment_mode))
+        jt = html.escape((row.employee_job_title or "").strip())
+        jt_cell = jt if jt else "—"
         rows_html.append(
             "<tr>"
-            f"<td>{row.employee_email or ''}</td>"
-            f"<td>{row.employee_name or ''}</td>"
+            f"<td>{html.escape(row.employee_email or '')}</td>"
+            f"<td>{html.escape(row.employee_name or '')}</td>"
+            f"<td>{jt_cell}</td>"
+            f"<td>{mode_lbl}</td>"
             f"<td>{row.regular_seconds / 3600:.2f}</td>"
             f"<td>{row.overtime_seconds / 3600:.2f}</td>"
-            f"<td>{row.gross_amount or '—'}</td>"
+            f"<td>{row.rounded_total_seconds / 3600:.2f}</td>"
+            f"<td>{row.gross_amount if row.gross_amount is not None else '—'}</td>"
             f"<td>{cis_txt}</td>"
-            f"<td>{row.other_deductions_amount}</td>"
+            f"<td>{html.escape(str(row.other_deductions_amount))}</td>"
             f"<td>{net_txt}</td>"
-            f"<td>{row.status}</td>"
+            f"<td>{html.escape(row.status)}</td>"
             "</tr>",
         )
-    html = f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"/><title>Payroll {name} — {week_start}</title>
+    html_out = f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/><title>Payroll {name} — {wk_esc}</title>
 <style>
 body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; }}
 h1 {{ font-size: 1.25rem; }}
@@ -1296,21 +1338,27 @@ th {{ background: #f4f4f5; }}
 @media print {{ body {{ margin: 12px; }} }}
 </style></head><body>
 <h1>Payroll — {name}</h1>
-<p>Week starting {week_start} · {report.period.timezone_name if report.period.total_items else ""}</p>
+<p>Week {wk_esc} to {week_end_esc} · {tz_esc}</p>
 <table><thead><tr>
-<th>Email</th><th>Name</th><th>Regular h</th><th>OT h</th><th>Gross</th><th>CIS tax</th><th>Other ded.</th><th>Net</th><th>Status</th>
+<th>Email</th><th>Name</th><th>Job title</th><th>Payment mode</th>
+<th>Regular h</th><th>OT h</th><th>Rounded h</th><th>Gross</th><th>CIS tax</th><th>Other ded.</th><th>Net</th><th>Status</th>
 </tr></thead><tbody>
 {"".join(rows_html)}
 </tbody></table>
 <p style="margin-top:16px;font-size:12px;color:#666;">Use browser Print → Save as PDF for a PDF copy.</p>
 </body></html>"""
+    period_entity = str(report.period.id) if report.period.total_items else None
     create_internal_audit_event(
         db_session=db_session,
         actor=actor,
-        action="payroll_print_exported",
+        action="payroll.report_exported",
         entity_type="payroll_period",
-        entity_id=str(report.period.id) if report.period.total_items else "",
+        entity_id=period_entity,
         company_id=company_id,
-        details={"week_start": str(week_start)},
+        details={
+            "export_type": "print_html",
+            "week_start": str(week_start),
+            "row_count": len(report.items),
+        },
     )
-    return html
+    return html_out
