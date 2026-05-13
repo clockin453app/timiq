@@ -11,6 +11,7 @@ from app.modules.employee_profiles.router import router as employee_profiles_rou
 from app.modules.live_attendance.router import router as live_attendance_router
 from app.modules.locations.router import router as locations_router
 from app.modules.site_access.router import router as site_access_router
+from app.modules.system.router import router as system_api_router
 from app.modules.system_health.router import router as system_health_router
 from app.modules.time_clock.router import router as time_clock_router
 from app.modules.onboarding.router import router as onboarding_router
@@ -47,6 +48,7 @@ app.include_router(site_access_router)
 app.include_router(audit_router)
 app.include_router(workplaces_router)
 app.include_router(employee_profiles_router)
+app.include_router(system_api_router)
 app.include_router(system_health_router)
 app.include_router(time_clock_router)
 app.include_router(live_attendance_router)

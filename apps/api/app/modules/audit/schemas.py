@@ -18,6 +18,31 @@ class AuditEventResponse(BaseModel):
     created_at: datetime
 
 
+class AuditEventListItem(BaseModel):
+    id: uuid.UUID
+    created_at: datetime
+    action: str
+    entity_type: str
+    entity_id: str | None
+    actor_user_id: uuid.UUID | None
+    actor_email: str | None = None
+    actor_display: str | None = None
+    subject_user_id: uuid.UUID | None = None
+    subject_email: str | None = None
+    subject_display: str | None = None
+    company_id: uuid.UUID | None
+    company_name: str | None = None
+    details_summary: str
+    details: dict[str, Any]
+
+
+class AuditEventListResponse(BaseModel):
+    items: list[AuditEventListItem]
+    total: int
+    limit: int
+    offset: int
+
+
 class AuditEventCreateRequest(BaseModel):
     action: str = Field(min_length=2, max_length=120)
     entity_type: str = Field(min_length=2, max_length=120)

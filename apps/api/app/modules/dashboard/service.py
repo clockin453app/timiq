@@ -8,7 +8,7 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
-from app.modules.audit.repository import list_audit_events
+from app.modules.audit.repository import list_audit_events_filtered
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.companies.repository import get_company_by_id, list_companies
@@ -319,15 +319,27 @@ def _build_admin_activity(
 
 def _build_audit_activity(
     db_session: Session,
+    actor: User,
     *,
     company_id: uuid.UUID | None,
     limit: int,
 ) -> list[ActivityFeedItem]:
-    events = list_audit_events(db_session, limit=40)
+    events, _ = list_audit_events_filtered(
+        db_session,
+        viewer=actor,
+        date_from=None,
+        date_to=None,
+        actor_user_id=None,
+        subject_user_id=None,
+        company_id_filter=company_id,
+        action_contains=None,
+        entity_type_contains=None,
+        search=None,
+        limit=40,
+        offset=0,
+    )
     out: list[ActivityFeedItem] = []
     for ev in events:
-        if company_id is not None and ev.company_id is not None and ev.company_id != company_id:
-            continue
         actor_label = "System"
         if ev.actor_user_id is not None:
             actor_label = _display_name(db_session, ev.actor_user_id)
@@ -658,7 +670,7 @@ def build_overview(
         recent.extend(_build_admin_activity(db_session, primary, limit=12))
 
     if actor.system_role == SystemRole.ADMINISTRATOR:
-        recent.extend(_build_audit_activity(db_session, company_id=primary, limit=12))
+        recent.extend(_build_audit_activity(db_session, actor, company_id=primary, limit=12))
 
     recent.sort(key=lambda r: r.occurred_at, reverse=True)
     recent = recent[:20]

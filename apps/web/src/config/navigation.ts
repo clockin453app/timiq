@@ -135,13 +135,13 @@ const WORK_PROGRESS_REVIEW: NavigationItem = {
 
 const AUDIT_LOG: NavigationItem = {
   label: "Audit Log",
-  href: "/audit-log",
-  allowedRoles: ["administrator"],
+  href: "/system/audit-log",
+  allowedRoles: ["administrator", "admin"],
 };
 
 const SYSTEM_HEALTH: NavigationItem = {
   label: "System Health",
-  href: "/system-health",
+  href: "/system/health",
   allowedRoles: ["administrator"],
 };
 

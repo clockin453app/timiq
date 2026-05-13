@@ -1,13 +1,5 @@
-import { AppShell } from "../../components/layout";
-import { AuthGuard } from "../../features/auth";
-import { SystemHealthClient } from "./system-health-client";
+import { redirect } from "next/navigation";
 
-export default function SystemHealthPage() {
-  return (
-    <AuthGuard>
-      <AppShell activeHref="/system-health">
-        <SystemHealthClient />
-      </AppShell>
-    </AuthGuard>
-  );
+export default function LegacySystemHealthRedirect() {
+  redirect("/system/health");
 }

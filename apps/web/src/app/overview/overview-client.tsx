@@ -574,7 +574,7 @@ export function OverviewClient() {
                     Recent activity
                   </p>
                   {user.system_role === "administrator" ? (
-                    <Link className="text-xs font-medium text-[var(--color-link)] underline" href="/audit-log">
+                    <Link className="text-xs font-medium text-[var(--color-link)] underline" href="/system/audit-log">
                       View all activity
                     </Link>
                   ) : (
