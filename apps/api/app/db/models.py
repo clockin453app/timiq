@@ -1,5 +1,6 @@
 from app.modules.audit.models import AuditEvent
 from app.modules.auth.models import EmployeeJobRole, User
+from app.modules.budgets.models import BudgetExpense, BudgetProject
 from app.modules.companies.models import Company, CompanyTimePolicy
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
@@ -12,6 +13,8 @@ from app.modules.work_progress.models import WorkProgressAttachment, WorkProgres
 
 __all__ = [
     "AuditEvent",
+    "BudgetExpense",
+    "BudgetProject",
     "Company",
     "CompanyTimePolicy",
     "EmployeeProfile",
