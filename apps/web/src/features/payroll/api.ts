@@ -105,6 +105,7 @@ export type PayHistoryEntry = {
   id: string;
   company_id: string;
   week_start: string;
+  week_end: string;
   period_id: string;
   regular_seconds: number;
   overtime_seconds: number;
@@ -125,6 +126,38 @@ export type PayHistoryEntry = {
   effective_cis_tax_amount?: string | null;
   effective_net_amount?: string | null;
   timezone_name?: string;
+};
+
+export type PayrollItemCompanySnippet = {
+  id: string;
+  name: string;
+};
+
+export type PayrollItemSummaryResponse = {
+  item_id: string;
+  company: PayrollItemCompanySnippet;
+  employee_display_name: string;
+  employee_email?: string | null;
+  timezone_name: string;
+  week_start: string;
+  week_end: string;
+  status: string;
+  approved_at: string | null;
+  paid_at: string | null;
+  payment_mode: string | null;
+  payment_mode_label: string;
+  regular_seconds: number;
+  overtime_seconds: number;
+  rounded_total_seconds: number;
+  gross_amount: string | null;
+  cis_tax_amount: string | null;
+  net_amount: string | null;
+  other_deductions_amount: string;
+  hourly_rate_snapshot: string | null;
+  rate_missing: boolean;
+  ytd_taxable_pay: string;
+  ytd_cis_deducted: string;
+  can_open_payslip?: boolean;
 };
 
 export function payrollItemPayslipUrl(itemId: string): string {
@@ -298,6 +331,22 @@ export async function fetchMyPayHistory(): Promise<PayHistoryEntry[]> {
     throw new Error("Could not load pay history.");
   }
   return response.json() as Promise<PayHistoryEntry[]>;
+}
+
+export async function fetchPayrollItemSummary(itemId: string): Promise<PayrollItemSummaryResponse> {
+  const response = await fetch(`${API_URL}/api/payroll/items/${encodeURIComponent(itemId)}/summary`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(
+      fastApiDetailToMessage(
+        (detail as { detail?: unknown }).detail,
+        "Could not load pay week details.",
+      ),
+    );
+  }
+  return response.json() as Promise<PayrollItemSummaryResponse>;
 }
 
 export async function downloadPayrollCsv(companyId: string, weekStartIso: string): Promise<void> {

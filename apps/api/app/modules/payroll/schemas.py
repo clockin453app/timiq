@@ -137,6 +137,7 @@ class PayHistoryEntry(BaseModel):
     id: uuid.UUID
     company_id: uuid.UUID
     week_start: date
+    week_end: date
     period_id: uuid.UUID
     regular_seconds: int
     overtime_seconds: int
@@ -168,6 +169,7 @@ class PayrollItemSummaryResponse(BaseModel):
     item_id: uuid.UUID
     company: PayrollItemCompanySnippet
     employee_display_name: str
+    employee_email: str | None = None
     timezone_name: str
     week_start: date
     week_end: date
@@ -187,3 +189,4 @@ class PayrollItemSummaryResponse(BaseModel):
     rate_missing: bool
     ytd_taxable_pay: Decimal
     ytd_cis_deducted: Decimal
+    can_open_payslip: bool = True

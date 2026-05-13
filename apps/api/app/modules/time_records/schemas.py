@@ -141,3 +141,36 @@ class AdminWeekReportAllEmployeesResponse(BaseModel):
     company_timezone: str
     employees: list[AdminWeekReportEmployeeSummary]
     totals: AdminWeekReportCompanyTotals
+
+
+class AdminCreateCompletedShiftRequest(BaseModel):
+    user_id: uuid.UUID
+    location_id: uuid.UUID
+    clock_in_at: datetime
+    clock_out_at: datetime
+    break_seconds: int | None = Field(default=None, ge=0)
+    break_minutes: int | None = Field(default=None, ge=0)
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class AdminPatchCompletedShiftRequest(BaseModel):
+    clock_in_at: datetime | None = None
+    clock_out_at: datetime | None = None
+    location_id: uuid.UUID | None = None
+    break_seconds: int | None = Field(default=None, ge=0)
+    break_minutes: int | None = Field(default=None, ge=0)
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class AdminForceClockOutRequest(BaseModel):
+    clock_out_at: datetime
+    break_seconds: int | None = Field(default=None, ge=0)
+    break_minutes: int | None = Field(default=None, ge=0)
+    reason: str = Field(..., min_length=1, max_length=2000)
+
+
+class AdminManualShiftMutationResponse(BaseModel):
+    shift: TimeRecordShiftRow
+    payroll_recalculation_required: bool
+    affected_week_start: date | None = None
+    affected_company_id: uuid.UUID

@@ -8,6 +8,10 @@ from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
 from app.modules.auth.models import User
 from app.modules.time_records.schemas import (
+    AdminCreateCompletedShiftRequest,
+    AdminForceClockOutRequest,
+    AdminManualShiftMutationResponse,
+    AdminPatchCompletedShiftRequest,
     AdminTimesheetWeekAllEmployeesResponse,
     AdminWeekReportAllEmployeesResponse,
     TimeRecordShiftRow,
@@ -20,6 +24,12 @@ from app.modules.time_records.service import (
     timesheet_week_all_employees_for_company,
     timesheet_week_for_user,
     week_report_all_employees_for_company,
+)
+from app.modules.time_records.admin_manual_service import (
+    AdminTimeAdjustmentError,
+    admin_create_completed_shift,
+    admin_force_clock_out,
+    admin_patch_completed_shift,
 )
 
 time_records_router = APIRouter(prefix="/api/time-records", tags=["time-records"])
@@ -109,6 +119,93 @@ def read_admin_time_records(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+
+
+@time_records_router.post("/admin/shifts", response_model=AdminManualShiftMutationResponse)
+def admin_create_completed_shift_route(
+    body: AdminCreateCompletedShiftRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> AdminManualShiftMutationResponse:
+    try:
+        row, recalc, week_start, company_id = admin_create_completed_shift(
+            db_session,
+            current_user,
+            user_id=body.user_id,
+            location_id=body.location_id,
+            clock_in_at=body.clock_in_at,
+            clock_out_at=body.clock_out_at,
+            break_seconds=body.break_seconds,
+            break_minutes=body.break_minutes,
+            reason=body.reason,
+        )
+        return AdminManualShiftMutationResponse(
+            shift=row,
+            payroll_recalculation_required=recalc,
+            affected_week_start=week_start,
+            affected_company_id=company_id,
+        )
+    except AdminTimeAdjustmentError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+
+
+@time_records_router.patch("/admin/shifts/{shift_id}", response_model=AdminManualShiftMutationResponse)
+def admin_patch_completed_shift_route(
+    shift_id: uuid.UUID,
+    body: AdminPatchCompletedShiftRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> AdminManualShiftMutationResponse:
+    try:
+        row, recalc, week_start, company_id = admin_patch_completed_shift(
+            db_session,
+            current_user,
+            shift_id=shift_id,
+            clock_in_at=body.clock_in_at,
+            clock_out_at=body.clock_out_at,
+            location_id=body.location_id,
+            break_seconds=body.break_seconds,
+            break_minutes=body.break_minutes,
+            reason=body.reason,
+        )
+        return AdminManualShiftMutationResponse(
+            shift=row,
+            payroll_recalculation_required=recalc,
+            affected_week_start=week_start,
+            affected_company_id=company_id,
+        )
+    except AdminTimeAdjustmentError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+
+
+@time_records_router.post(
+    "/admin/shifts/{shift_id}/force-clock-out",
+    response_model=AdminManualShiftMutationResponse,
+)
+def admin_force_clock_out_route(
+    shift_id: uuid.UUID,
+    body: AdminForceClockOutRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> AdminManualShiftMutationResponse:
+    try:
+        row, recalc, week_start, company_id = admin_force_clock_out(
+            db_session,
+            current_user,
+            shift_id=shift_id,
+            clock_out_at=body.clock_out_at,
+            break_seconds=body.break_seconds,
+            break_minutes=body.break_minutes,
+            reason=body.reason,
+        )
+        return AdminManualShiftMutationResponse(
+            shift=row,
+            payroll_recalculation_required=recalc,
+            affected_week_start=week_start,
+            affected_company_id=company_id,
+        )
+    except AdminTimeAdjustmentError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
 
 
 @timesheets_router.get("/me/week", response_model=TimesheetWeekResponse)

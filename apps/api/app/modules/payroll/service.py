@@ -123,6 +123,13 @@ def _week_end_display(week_start: date) -> date:
     return week_start + timedelta(days=6)
 
 
+def _utc_dt_display_for_payslip(dt: datetime | None) -> str:
+    if dt is None:
+        return ""
+    aware = dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+    return html.escape(aware.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+
+
 def _employee_primary_name(db_session: Session, user_id: uuid.UUID) -> str:
     email, name, _jt = _employee_display(db_session, user_id)
     if name and str(name).strip():
@@ -177,6 +184,7 @@ def get_payroll_item_summary(db_session: Session, actor: User, item_id: uuid.UUI
     company = get_company_by_id(db_session, item.company_id)
     cis = _effective_tax_amount_for_item(item)
     net_eff = _effective_net_amount_for_item(item)
+    owner_email = owner.email
     return PayrollItemSummaryResponse(
         item_id=item.id,
         company=PayrollItemCompanySnippet(
@@ -184,6 +192,7 @@ def get_payroll_item_summary(db_session: Session, actor: User, item_id: uuid.UUI
             name=company.name if company is not None else "Company",
         ),
         employee_display_name=_employee_primary_name(db_session, item.user_id),
+        employee_email=owner_email,
         timezone_name=period.timezone_name,
         week_start=period.week_start,
         week_end=_week_end_display(period.week_start),
@@ -203,6 +212,7 @@ def get_payroll_item_summary(db_session: Session, actor: User, item_id: uuid.UUI
         rate_missing=item.rate_missing,
         ytd_taxable_pay=ytd_pay,
         ytd_cis_deducted=ytd_cis,
+        can_open_payslip=True,
     )
 
 
@@ -224,11 +234,14 @@ def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: 
     tot_h = item.rounded_total_seconds / 3600
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     mode_label = html.escape(_payment_mode_label(item.payment_mode))
-    paid_line = ""
+    paid_line_parts: list[str] = []
     if item.paid_at is not None:
-        paid_line = f"<p><strong>Paid at:</strong> {html.escape(item.paid_at.isoformat())}</p>"
+        paid_line_parts.append(f"<p><strong>Paid at:</strong> {_utc_dt_display_for_payslip(item.paid_at)}</p>")
     elif item.approved_at is not None:
-        paid_line = f"<p><strong>Approved at:</strong> {html.escape(item.approved_at.isoformat())}</p>"
+        paid_line_parts.append(
+            f"<p><strong>Approved at:</strong> {_utc_dt_display_for_payslip(item.approved_at)}</p>",
+        )
+    paid_line = "".join(paid_line_parts)
 
     other_block = ""
     if other_d != 0:
@@ -238,6 +251,15 @@ def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: 
     if ni_esc:
         ni_block = f"<p><strong>NI number:</strong> {ni_esc}</p>"
 
+    email_raw = (owner.email or "").strip()
+    email_block = ""
+    if email_raw:
+        email_block = f"<p><strong>Email:</strong> {html.escape(email_raw)}</p>"
+
+    wk_start_esc = html.escape(str(period.week_start))
+    wk_end_esc = html.escape(str(_week_end_display(period.week_start)))
+    tz_esc = html.escape(period.timezone_name or "UTC")
+    period_line = f"<p><strong>Period:</strong> week {wk_start_esc} to {wk_end_esc} ({tz_esc}, Mon–Sun)</p>"
     net_display = f"£{net_eff:.2f}" if net_eff is not None else "—"
     gross_display = f"£{gross:.2f}" if gross is not None else "—"
     cis_display = f"£{cis:.2f}" if cis is not None else "—"
@@ -263,14 +285,16 @@ body {{
 }}
 .payslip-wrap {{
   width: 100%;
-  max-width: 920px;
+  max-width: 100%;
   margin: 0 auto;
-  padding: 16px;
+  padding: 12px;
 }}
 @media (min-width: 768px) {{
-  .payslip-wrap {{ padding: 24px 28px 32px; }}
+  .payslip-wrap {{ padding: 20px 24px 28px; }}
 }}
 .payslip-card {{
+  max-width: 210mm;
+  margin: 0 auto;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -340,7 +364,7 @@ body {{
 @media print {{
   body {{ background: #fff; font-size: 11pt; }}
   .payslip-wrap {{ max-width: none; padding: 0; }}
-  .payslip-card {{ border: none; box-shadow: none; border-radius: 0; padding: 0; }}
+  .payslip-card {{ max-width: none; border: none; box-shadow: none; border-radius: 0; padding: 0; }}
   .pay-table td {{ padding: 0.45rem 0.5rem; }}
   @page {{ size: A4; margin: 12mm; }}
 }}
@@ -357,8 +381,9 @@ body {{
     </header>
     <div class="meta-block">
       <p><strong>Employee:</strong> {ename}</p>
+      {email_block}
       {ni_block}
-      <p><strong>Period:</strong> week starting {html.escape(str(period.week_start))} ({html.escape(period.timezone_name)}) (Mon–Sun)</p>
+      {period_line}
       <p><strong>Generated:</strong> {html.escape(generated)}</p>
       {paid_line}
       <p><strong>Payment type:</strong> {mode_label}</p>
@@ -385,7 +410,13 @@ body {{
         entity_type="payroll_item",
         entity_id=str(item.id),
         company_id=item.company_id,
-        details={"subject_user_id": str(item.user_id), "item_id": str(item.id)},
+        details={
+            "item_id": str(item.id),
+            "owner_user_id": str(item.user_id),
+            "company_id": str(item.company_id),
+            "actor_user_id": str(actor.id),
+            "as_admin": actor.id != item.user_id,
+        },
     )
     return html_out
 
@@ -1037,6 +1068,7 @@ def list_my_pay_history(db_session: Session, actor: User) -> list[PayHistoryEntr
                 id=i.id,
                 company_id=i.company_id,
                 week_start=period.week_start,
+                week_end=_week_end_display(period.week_start),
                 period_id=i.period_id,
                 regular_seconds=i.regular_seconds,
                 overtime_seconds=i.overtime_seconds,
