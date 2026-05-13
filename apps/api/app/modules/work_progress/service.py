@@ -128,9 +128,8 @@ def _validate_and_process_new_progress_photo(file_bytes: bytes) -> tuple[bytes, 
 
 def _remove_storage_file(att: WorkProgressAttachment) -> None:
     backend = get_storage_backend()
-    path = backend.build_path(att.storage_path)
     try:
-        path.unlink(missing_ok=True)
+        backend.delete_file(att.storage_path)
     except OSError as exc:
         raise WorkProgressValidationError(
             "The file could not be removed from storage. No database changes were made."
@@ -161,12 +160,8 @@ def work_progress_attachment_response_filename(att: WorkProgressAttachment) -> s
     return _download_filename(att)
 
 
-def _write_binary_file(relative_path: str, file_bytes: bytes) -> Path:
-    backend = get_storage_backend()
-    absolute_path = backend.build_path(relative_path)
-    absolute_path.parent.mkdir(parents=True, exist_ok=True)
-    absolute_path.write_bytes(file_bytes)
-    return absolute_path
+def _write_binary_file(relative_path: str, file_bytes: bytes) -> None:
+    get_storage_backend().write_bytes(relative_path, file_bytes)
 
 
 def _allowed_location_ids(db_session: Session, user: User) -> set[uuid.UUID]:
@@ -434,7 +429,7 @@ def resolve_file_download(
     db_session: Session,
     actor: User,
     file_id: uuid.UUID,
-) -> tuple[Path, WorkProgressAttachment, WorkProgressEntry, User]:
+) -> tuple[bytes, WorkProgressAttachment, WorkProgressEntry, User]:
     att = get_attachment_by_id(db_session, file_id)
     if att is None:
         raise WorkProgressNotFoundError()
@@ -449,19 +444,22 @@ def resolve_file_download(
         raise WorkProgressPermissionError()
 
     backend = get_storage_backend()
-    path = backend.build_path(att.storage_path)
-    if not path.is_file():
+    if not backend.exists(att.storage_path):
         raise WorkProgressNotFoundError()
-    return path, att, entry, owner
+    try:
+        data = backend.read_bytes(att.storage_path)
+    except FileNotFoundError:
+        raise WorkProgressNotFoundError() from None
+    return data, att, entry, owner
 
 
 def download_work_progress_file(
     db_session: Session,
     actor: User,
     file_id: uuid.UUID,
-) -> tuple[Path, WorkProgressAttachment]:
+) -> tuple[bytes, WorkProgressAttachment]:
     try:
-        path, att, entry, owner = resolve_file_download(db_session, actor, file_id)
+        data, att, entry, owner = resolve_file_download(db_session, actor, file_id)
     except WorkProgressPermissionError:
         raise WorkProgressNotFoundError() from None
 
@@ -479,7 +477,7 @@ def download_work_progress_file(
             "as_admin": is_admin_view,
         },
     )
-    return path, att
+    return data, att
 
 
 def _assert_review_access(db_session: Session, actor: User, entry_id: uuid.UUID) -> tuple[WorkProgressEntry, User]:
@@ -712,12 +710,15 @@ def bulk_download_review_attachments_zip(
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for att, entry, _ in triples:
-            path = backend.build_path(att.storage_path)
-            if not path.is_file():
+            if not backend.exists(att.storage_path):
                 raise WorkProgressNotFoundError()
+            try:
+                raw = backend.read_bytes(att.storage_path)
+            except FileNotFoundError:
+                raise WorkProgressNotFoundError() from None
             safe = Path(att.original_filename or "file").name.replace("/", "_").replace("\\", "_")
             arcname = f"{entry.work_date}_{att.id.hex[:8]}_{safe}"
-            zf.write(path, arcname=arcname)
+            zf.writestr(arcname, raw)
 
     company_id_for_audit = triples[0][1].company_id if triples else None
     create_internal_audit_event(

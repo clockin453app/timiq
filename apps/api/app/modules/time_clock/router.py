@@ -1,7 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from app.core.storage.file_response import protected_file_response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -28,7 +28,7 @@ from app.modules.time_clock.service import (
     list_clock_selfies_review_metadata,
     list_user_clock_selfies_metadata,
     parse_timestamp_utc,
-    resolve_clock_selfie_file_path,
+    resolve_clock_selfie_file_download,
 )
 
 router = APIRouter(prefix="/api/time-clock", tags=["time-clock"])
@@ -92,9 +92,9 @@ def download_clock_selfie_file(
     selfie_id: uuid.UUID,
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+):
     try:
-        path, selfie, shift, owner = resolve_clock_selfie_file_path(
+        data, selfie, shift, owner = resolve_clock_selfie_file_download(
             db_session,
             current_user,
             selfie_id,
@@ -122,10 +122,10 @@ def download_clock_selfie_file(
             },
         )
 
-    return FileResponse(
-        path,
+    return protected_file_response(
+        body=data,
         media_type=selfie.content_type,
-        filename=f"clock-selfie-{selfie.id}",
+        download_filename=f"clock-selfie-{selfie.id}",
     )
 
 

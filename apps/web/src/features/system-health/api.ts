@@ -7,6 +7,8 @@ export type BackupReadiness = {
   timiq_storage_root_documented_in_example: boolean;
   local_storage_requires_persistent_disk: boolean;
   object_storage_status: string;
+  restore_testing: string;
+  object_storage_planned: string;
 };
 
 export type SystemHealthCounts = {
@@ -80,6 +82,8 @@ export async function getSystemHealth(): Promise<SystemHealth> {
       timiq_storage_root_documented_in_example: false,
       local_storage_requires_persistent_disk: false,
       object_storage_status: "not_configured",
+      restore_testing: "manual_required",
+      object_storage_planned: "",
     },
     warnings: ["Using legacy /api/system-health response; upgrade API for full diagnostics."],
   };

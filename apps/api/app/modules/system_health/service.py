@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.storage.factory import get_storage_backend, storage_root_explicitly_configured
-from app.core.storage.local import LocalStorageBackend
 from app.db.health import check_database_connection
 from app.modules.auth.models import SystemRole, User
 from app.modules.companies.models import Company
@@ -107,10 +106,10 @@ def get_system_health(db_session: Session) -> SystemHealthResponse:
             storage_ok = False
 
     backend = get_storage_backend()
-    storage_kind = "local" if isinstance(backend, LocalStorageBackend) else "custom"
+    storage_kind = backend.get_backend_name()
     writable = bool(getattr(backend, "writable_probe", lambda: False)())
 
-    if not root_cfg:
+    if storage_kind == "local" and not root_cfg:
         warnings.append(
             "TIMIQ_STORAGE_ROOT is not set in the environment; the API uses its built-in default data directory.",
         )
@@ -118,14 +117,21 @@ def get_system_health(db_session: Session) -> SystemHealthResponse:
         warnings.append(
             "Local file storage is active: provision persistent disk, permissions, and backups outside TimIQ.",
         )
+    if storage_kind == "s3":
+        warnings.append(
+            "Private S3-compatible object storage is active: enable versioning, least-privilege IAM, and off-site backup or replication per your provider.",
+        )
     warnings.append(
-        "Object storage (S3-compatible) is not configured yet; treat uploads as durable only after disk backup.",
+        "Backups must include both the PostgreSQL database and private blob storage (disk tree or object bucket); application-level export does not replace full restores.",
+    )
+    warnings.append(
+        "Restore testing is manual: periodically restore to an isolated environment and verify logins, payroll samples, and file downloads through the app.",
     )
 
     storage_status = "reachable" if storage_ok else "unreachable"
     if storage_ok and not writable:
         storage_status = "degraded"
-        warnings.append("Storage directory exists but a write probe failed (check permissions).")
+        warnings.append("Storage write probe failed (check permissions, bucket policy, or credentials scope).")
 
     overall = "ok"
     if db_result.get("status") != "ok" or not storage_ok:
@@ -137,12 +143,16 @@ def get_system_health(db_session: Session) -> SystemHealthResponse:
     if not storage_ok:
         detail = "unreachable_or_missing"
 
+    object_storage_status = "configured" if storage_kind == "s3" else "not_configured"
+
     backup = BackupReadiness(
         database_backup="manual_or_unknown",
         storage_backup="manual_or_unknown",
         timiq_storage_root_documented_in_example=_env_example_mentions_storage_root(),
         local_storage_requires_persistent_disk=storage_kind == "local",
-        object_storage_status="not_configured",
+        object_storage_status=object_storage_status,
+        restore_testing="manual_required",
+        object_storage_planned="",
     )
 
     counts = _counts(db_session)

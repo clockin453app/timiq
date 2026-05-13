@@ -40,12 +40,7 @@ class ClearHistoryPermissionError(ValueError):
 
 
 def _unlink_clock_selfie_file(relative_path: str) -> None:
-    backend = get_storage_backend()
-    absolute_path = backend.build_path(relative_path)
-    try:
-        absolute_path.unlink(missing_ok=True)
-    except OSError:
-        pass
+    get_storage_backend().delete_file(relative_path)
 
 
 def _delete_shift_tree(db_session: Session, shift_id: uuid.UUID) -> None:

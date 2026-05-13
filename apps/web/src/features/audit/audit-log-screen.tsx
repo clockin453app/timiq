@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   Button,
@@ -38,41 +38,55 @@ export function AuditLogScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  const filterRef = useRef({
+    dateFrom,
+    dateTo,
+    action,
+    entityType,
+    search,
+    actorUserId,
+    subjectUserId,
+    companyId,
+    adminUser,
+  });
+  filterRef.current = {
+    dateFrom,
+    dateTo,
+    action,
+    entityType,
+    search,
+    actorUserId,
+    subjectUserId,
+    companyId,
+    adminUser,
+  };
+
+  const runQuery = useCallback(async (nextOffset: number) => {
+    const f = filterRef.current;
     setLoading(true);
     setError("");
     try {
       const res = await listAuditEvents({
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-        action: action || undefined,
-        entityType: entityType || undefined,
-        search: search || undefined,
-        actorUserId: actorUserId || undefined,
-        subjectUserId: subjectUserId || undefined,
-        companyId: adminUser ? companyId || undefined : undefined,
+        dateFrom: f.dateFrom || undefined,
+        dateTo: f.dateTo || undefined,
+        action: f.action || undefined,
+        entityType: f.entityType || undefined,
+        search: f.search || undefined,
+        actorUserId: f.actorUserId || undefined,
+        subjectUserId: f.subjectUserId || undefined,
+        companyId: f.adminUser ? f.companyId || undefined : undefined,
         limit: PAGE_SIZE,
-        offset,
+        offset: nextOffset,
       });
       setData(res);
+      setOffset(nextOffset);
     } catch (e) {
       setData(null);
       setError(e instanceof Error ? e.message : "Could not load audit logs.");
     } finally {
       setLoading(false);
     }
-  }, [
-    action,
-    actorUserId,
-    adminUser,
-    companyId,
-    dateFrom,
-    dateTo,
-    entityType,
-    offset,
-    search,
-    subjectUserId,
-  ]);
+  }, []);
 
   useEffect(() => {
     if (!adminUser) {
@@ -97,13 +111,12 @@ export function AuditLogScreen() {
   }, [adminUser]);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    void runQuery(0);
+  }, [runQuery]);
 
   function onSubmitFilters(e: FormEvent) {
     e.preventDefault();
-    setOffset(0);
-    void load();
+    void runQuery(0);
   }
 
   const rows: AuditEventListItem[] = data?.items ?? [];
@@ -120,7 +133,7 @@ export function AuditLogScreen() {
     <Sheet>
       <PageHeader
         title="Audit log"
-        description="Company-scoped for admins; full visibility for administrators. Details are redacted server-side."
+        description="Company-scoped for admins; full visibility for administrators. Sensitive detail fields are redacted server-side before this page loads."
       />
       <SheetBody className="space-y-4">
         {error ? (
@@ -223,7 +236,7 @@ export function AuditLogScreen() {
                 setActorUserId("");
                 setSubjectUserId("");
                 setCompanyId("");
-                setOffset(0);
+                void runQuery(0);
               }}
               type="button"
               variant="secondary"
@@ -238,7 +251,7 @@ export function AuditLogScreen() {
           <div className="flex gap-2">
             <Button
               disabled={!hasPrev || loading}
-              onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+              onClick={() => void runQuery(Math.max(0, offset - PAGE_SIZE))}
               type="button"
               variant="secondary"
             >
@@ -246,7 +259,7 @@ export function AuditLogScreen() {
             </Button>
             <Button
               disabled={!hasNext || loading}
-              onClick={() => setOffset((o) => o + PAGE_SIZE)}
+              onClick={() => void runQuery(offset + PAGE_SIZE)}
               type="button"
               variant="secondary"
             >

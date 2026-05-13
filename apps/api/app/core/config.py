@@ -1,4 +1,4 @@
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -38,11 +38,63 @@ class Settings(BaseSettings):
         "http://localhost:8000/api/integrations/google-drive/callback"
     )
 
+    # Private blob storage: DB stores relative keys only; never expose keys or signed URLs in public JSON.
+    timiq_storage_backend: str = Field(
+        default="local",
+        validation_alias=AliasChoices("TIMIQ_STORAGE_BACKEND", "timiq_storage_backend"),
+    )
+    timiq_storage_root: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_STORAGE_ROOT", "timiq_storage_root"),
+    )
+    timiq_s3_bucket: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_S3_BUCKET", "timiq_s3_bucket"),
+    )
+    timiq_s3_region: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_S3_REGION", "timiq_s3_region"),
+    )
+    timiq_s3_endpoint_url: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_S3_ENDPOINT_URL", "timiq_s3_endpoint_url"),
+    )
+    timiq_s3_access_key_id: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_S3_ACCESS_KEY_ID", "timiq_s3_access_key_id"),
+    )
+    timiq_s3_secret_access_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_S3_SECRET_ACCESS_KEY", "timiq_s3_secret_access_key"),
+    )
+    timiq_s3_prefix: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_S3_PREFIX", "timiq_s3_prefix"),
+    )
+    timiq_s3_force_path_style: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("TIMIQ_S3_FORCE_PATH_STYLE", "timiq_s3_force_path_style"),
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def _validate_storage_settings(self) -> Settings:
+        backend = self.timiq_storage_backend.strip().lower()
+        if backend not in ("local", "s3"):
+            raise ValueError("TIMIQ_STORAGE_BACKEND must be 'local' or 's3'.")
+        if backend == "s3":
+            if not self.timiq_s3_bucket.strip():
+                raise ValueError("TIMIQ_S3_BUCKET is required when TIMIQ_STORAGE_BACKEND=s3.")
+            if not self.timiq_s3_access_key_id.strip() or not self.timiq_s3_secret_access_key.strip():
+                raise ValueError(
+                    "TIMIQ_S3_ACCESS_KEY_ID and TIMIQ_S3_SECRET_ACCESS_KEY are required when TIMIQ_STORAGE_BACKEND=s3.",
+                )
+        return self
 
 
 settings = Settings()

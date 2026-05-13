@@ -1,6 +1,5 @@
 import uuid
 from datetime import date, datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -225,9 +224,7 @@ def _utc_now() -> datetime:
 def _unlink_storage_file(relative_path: str | None) -> None:
     if not relative_path:
         return
-    backend = get_storage_backend()
-    path = backend.build_path(relative_path)
-    path.unlink(missing_ok=True)
+    get_storage_backend().delete_file(relative_path)
 
 
 def _normalize_media_type(content_type: str) -> str:
@@ -294,12 +291,8 @@ def _normalize_signature_image(content_type: str, file_bytes: bytes) -> tuple[st
     return media, ext
 
 
-def _write_binary_file(relative_path: str, file_bytes: bytes) -> Path:
-    backend = get_storage_backend()
-    absolute_path = backend.build_path(relative_path)
-    absolute_path.parent.mkdir(parents=True, exist_ok=True)
-    absolute_path.write_bytes(file_bytes)
-    return absolute_path
+def _write_binary_file(relative_path: str, file_bytes: bytes) -> None:
+    get_storage_backend().write_bytes(relative_path, file_bytes)
 
 
 def _normalize_form_payload(patch: dict[str, Any]) -> dict[str, str]:
@@ -865,7 +858,7 @@ def resolve_document_download(
     db_session: Session,
     actor: User,
     document_id: uuid.UUID,
-) -> tuple[Path, OnboardingDocument, OnboardingSubmission, User]:
+) -> tuple[bytes, OnboardingDocument, OnboardingSubmission, User]:
     doc = get_document_by_id(db_session, document_id)
     if doc is None:
         raise OnboardingNotFoundError("Document not found.")
@@ -878,18 +871,18 @@ def resolve_document_download(
     if not can_access_document_file(actor, submission, doc, owner):
         raise OnboardingNotFoundError("Document not found.")
     backend = get_storage_backend()
-    path = backend.build_path(doc.storage_path)
-    if not path.is_file():
+    if not backend.exists(doc.storage_path):
         raise OnboardingNotFoundError("Document not found.")
-    return path, doc, submission, owner
+    data = backend.read_bytes(doc.storage_path)
+    return data, doc, submission, owner
 
 
 def download_document_file(
     db_session: Session,
     actor: User,
     document_id: uuid.UUID,
-) -> tuple[Path, OnboardingDocument, OnboardingSubmission, User]:
-    path, doc, submission, owner = resolve_document_download(db_session, actor, document_id)
+) -> tuple[bytes, OnboardingDocument, OnboardingSubmission, User]:
+    data, doc, submission, owner = resolve_document_download(db_session, actor, document_id)
     if actor.system_role in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR) and actor.id != owner.id:
         create_internal_audit_event(
             db_session=db_session,
@@ -904,14 +897,14 @@ def download_document_file(
                 "subject_user_id": str(owner.id),
             },
         )
-    return path, doc, submission, owner
+    return data, doc, submission, owner
 
 
 def resolve_signature_image_download(
     db_session: Session,
     actor: User,
     submission_id: uuid.UUID,
-) -> tuple[Path, OnboardingSubmission, User]:
+) -> tuple[bytes, OnboardingSubmission, User]:
     submission = get_submission_by_id(db_session, submission_id)
     if submission is None:
         raise OnboardingNotFoundError("Submission not found.")
@@ -923,18 +916,18 @@ def resolve_signature_image_download(
     if not submission.signature_image_path:
         raise OnboardingNotFoundError("No drawn signature on file.")
     backend = get_storage_backend()
-    path = backend.build_path(submission.signature_image_path)
-    if not path.is_file():
+    if not backend.exists(submission.signature_image_path):
         raise OnboardingNotFoundError("Signature file not found.")
-    return path, submission, owner
+    data = backend.read_bytes(submission.signature_image_path)
+    return data, submission, owner
 
 
 def download_signature_image(
     db_session: Session,
     actor: User,
     submission_id: uuid.UUID,
-) -> tuple[Path, OnboardingSubmission, User]:
-    path, submission, owner = resolve_signature_image_download(db_session, actor, submission_id)
+) -> tuple[bytes, OnboardingSubmission, User]:
+    data, submission, owner = resolve_signature_image_download(db_session, actor, submission_id)
     if actor.system_role in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR) and actor.id != owner.id:
         create_internal_audit_event(
             db_session=db_session,
@@ -945,14 +938,14 @@ def download_signature_image(
             company_id=submission.company_id,
             details={"subject_user_id": str(owner.id)},
         )
-    return path, submission, owner
+    return data, submission, owner
 
 
 def resolve_profile_photo_file_download(
     db_session: Session,
     actor: User,
     subject_user_id: uuid.UUID,
-) -> tuple[Path, OnboardingSubmission, User]:
+) -> tuple[bytes, OnboardingSubmission, User]:
     submission = get_submission_by_user_id(db_session, subject_user_id)
     if submission is None or not submission.profile_photo_storage_path:
         raise OnboardingNotFoundError("Profile photo not found.")
@@ -962,18 +955,18 @@ def resolve_profile_photo_file_download(
     if not can_access_profile_photo_file(actor, owner):
         raise OnboardingNotFoundError("Profile photo not found.")
     backend = get_storage_backend()
-    path = backend.build_path(submission.profile_photo_storage_path)
-    if not path.is_file():
+    if not backend.exists(submission.profile_photo_storage_path):
         raise OnboardingNotFoundError("Profile photo not found.")
-    return path, submission, owner
+    data = backend.read_bytes(submission.profile_photo_storage_path)
+    return data, submission, owner
 
 
 def download_profile_photo_file(
     db_session: Session,
     actor: User,
     subject_user_id: uuid.UUID,
-) -> tuple[Path, OnboardingSubmission, User]:
-    path, submission, owner = resolve_profile_photo_file_download(
+) -> tuple[bytes, OnboardingSubmission, User]:
+    data, submission, owner = resolve_profile_photo_file_download(
         db_session,
         actor,
         subject_user_id,
@@ -988,7 +981,7 @@ def download_profile_photo_file(
             company_id=submission.company_id,
             details={"subject_user_id": str(owner.id)},
         )
-    return path, submission, owner
+    return data, submission, owner
 
 
 def _apply_form_to_profile(profile: EmployeeProfile, form: dict[str, Any]) -> None:

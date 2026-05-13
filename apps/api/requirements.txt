@@ -7,3 +7,4 @@ pydantic-settings==2.7.1
 alembic==1.16.5
 python-multipart==0.0.28
 Pillow>=12.0.0,<13
+boto3>=1.35.0,<2  # optional TIMIQ_STORAGE_BACKEND=s3 (AWS S3, R2, Spaces, MinIO)

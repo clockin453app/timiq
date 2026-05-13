@@ -8,7 +8,7 @@ from app.db.session import get_db_session
 from app.modules.audit.sanitize import sanitize_audit_details
 from app.modules.audit.schemas import AuditEventCreateRequest, AuditEventListResponse, AuditEventResponse
 from app.modules.audit.service import AuditPermissionError, create_audit_event, list_audit_events_for_user
-from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
+from app.modules.auth.dependencies import require_admin_or_administrator
 from app.modules.auth.models import SystemRole, User
 
 router = APIRouter(prefix="/api/audit", tags=["audit"])
@@ -24,7 +24,7 @@ def _range_from_dates(date_from: date | None, date_to: date | None) -> tuple[dat
 
 def _list_audit_events_handler(
     db_session: Session,
-    current_user: User,
+    current_user: User,  # admin or administrator only (enforced by route dependencies)
     *,
     date_from: date | None,
     date_to: date | None,
@@ -68,7 +68,7 @@ def _list_audit_events_handler(
 @router.get("/events", response_model=AuditEventListResponse)
 def get_audit_events(
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin_or_administrator),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     actor_user_id: uuid.UUID | None = Query(default=None),
@@ -99,7 +99,7 @@ def get_audit_events(
 @router.get("", response_model=AuditEventListResponse, include_in_schema=False)
 def get_audit_events_legacy_root(
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin_or_administrator),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     actor_user_id: uuid.UUID | None = Query(default=None),

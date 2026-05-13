@@ -8,11 +8,19 @@ class BackupReadiness(BaseModel):
     )
     storage_backup: str = Field(
         default="manual_or_unknown",
-        description="Object storage backups not integrated yet (planned).",
+        description="TimIQ does not detect automated blob backups; use volume snapshots, bucket policies, or provider tooling.",
     )
     timiq_storage_root_documented_in_example: bool = False
     local_storage_requires_persistent_disk: bool = False
     object_storage_status: str = Field(default="not_configured")
+    restore_testing: str = Field(
+        default="manual_required",
+        description="Operators must prove restores on a non-production copy.",
+    )
+    object_storage_planned: str = Field(
+        default="",
+        description="Reserved for future notes (e.g. optional Google Drive export); primary blobs use local disk or private S3-compatible storage.",
+    )
 
 
 class SystemHealthCounts(BaseModel):

@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from sqlalchemy.orm import Session
 
@@ -329,11 +328,11 @@ def list_user_clock_selfies_metadata(
     return [_metadata_from_selfie_and_shift(selfie, shift) for selfie, shift in rows]
 
 
-def resolve_clock_selfie_file_path(
+def resolve_clock_selfie_file_download(
     db_session: Session,
     actor: User,
     selfie_id: uuid.UUID,
-) -> tuple[Path, ClockSelfie, TimeShift, User]:
+) -> tuple[bytes, ClockSelfie, TimeShift, User]:
     row = get_clock_selfie_and_shift_by_id(db_session, selfie_id)
     if row is None:
         raise ClockSelfieAccessDeniedError("Clock selfie was not found.")
@@ -347,12 +346,14 @@ def resolve_clock_selfie_file_path(
         raise ClockSelfieAccessDeniedError("Clock selfie was not found.")
 
     storage_backend = get_storage_backend()
-    absolute_path = storage_backend.build_path(selfie.storage_path)
-
-    if not absolute_path.is_file():
+    if not storage_backend.exists(selfie.storage_path):
         raise ClockSelfieAccessDeniedError("Clock selfie was not found.")
+    try:
+        data = storage_backend.read_bytes(selfie.storage_path)
+    except FileNotFoundError:
+        raise ClockSelfieAccessDeniedError("Clock selfie was not found.") from None
 
-    return absolute_path, selfie, shift, owner
+    return data, selfie, shift, owner
 
 
 def parse_timestamp_utc(value: str) -> datetime:
@@ -396,15 +397,13 @@ def _write_selfie_file(
     phase: str,
     extension: str,
     file_bytes: bytes,
-) -> tuple[str, Path]:
+) -> str:
     storage_backend = get_storage_backend()
     relative_path = (
         f"clock-selfies/{actor_id}/{shift_id}/{phase}-{uuid.uuid4().hex}{extension}"
     )
-    absolute_path = storage_backend.build_path(relative_path)
-    absolute_path.parent.mkdir(parents=True, exist_ok=True)
-    absolute_path.write_bytes(file_bytes)
-    return relative_path, absolute_path
+    storage_backend.write_bytes(relative_path, file_bytes)
+    return relative_path
 
 
 def clock_in(
@@ -448,10 +447,10 @@ def clock_in(
     )
 
     media_type, extension = _normalize_selfie_media(selfie_content_type, selfie_bytes)
-    selfie_absolute: Path | None = None
+    relative_storage_path: str | None = None
     try:
         save_shift(db_session, shift, commit=False)
-        relative_storage_path, selfie_absolute = _write_selfie_file(
+        relative_storage_path = _write_selfie_file(
             actor.id,
             shift.id,
             "clock_in",
@@ -470,8 +469,8 @@ def clock_in(
         db_session.commit()
     except Exception:
         db_session.rollback()
-        if selfie_absolute is not None:
-            selfie_absolute.unlink(missing_ok=True)
+        if relative_storage_path is not None:
+            get_storage_backend().delete_file(relative_storage_path)
         raise
 
     db_session.refresh(shift)
@@ -542,9 +541,9 @@ def clock_out(
     worked_seconds = int((clock_out_at - open_shift.clock_in_at).total_seconds()) - break_seconds
     open_shift.break_seconds = max(break_seconds, 0)
     open_shift.worked_seconds = max(worked_seconds, 0)
-    selfie_absolute: Path | None = None
+    relative_storage_path: str | None = None
     try:
-        relative_storage_path, selfie_absolute = _write_selfie_file(
+        relative_storage_path = _write_selfie_file(
             actor.id,
             open_shift.id,
             "clock_out",
@@ -563,8 +562,8 @@ def clock_out(
         db_session.commit()
     except Exception:
         db_session.rollback()
-        if selfie_absolute is not None:
-            selfie_absolute.unlink(missing_ok=True)
+        if relative_storage_path is not None:
+            get_storage_backend().delete_file(relative_storage_path)
         raise
 
     db_session.refresh(open_shift)

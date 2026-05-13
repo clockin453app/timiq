@@ -70,11 +70,16 @@ export function SystemHealthScreen() {
         {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading…</p> : null}
         {health ? (
           <div className="space-y-5">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               <StatusLine label="Overall" tone={health.status === "ok" ? "ok" : "warn"} value={health.status} />
               <StatusLine label="API" tone="ok" value="running" />
               <StatusLine label="Database" tone={dbTone} value={health.database} />
               <StatusLine label="Storage" tone={stTone} value={health.storage} />
+              <StatusLine
+                label="Backups"
+                tone="warn"
+                value={health.backup_readiness.database_backup === "manual_or_unknown" ? "manual / unknown" : "see runbook"}
+              />
             </div>
 
             <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-4 text-sm shadow-sm">
@@ -86,8 +91,18 @@ export function SystemHealthScreen() {
                 <li>Storage writable probe: {health.storage_writable ? "passed" : "failed"}</li>
                 <li>Storage detail: {health.storage_health_detail}</li>
                 <li>Server time (UTC): {new Date(health.server_time_utc).toLocaleString()}</li>
-                <li>Alembic revision: {health.alembic_revision ?? "unknown"}</li>
               </ul>
+            </div>
+
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-4 text-sm shadow-sm">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Migrations</p>
+              <p className="mt-2 text-xs text-[#1f2937]">
+                Alembic head (from DB):{" "}
+                <span className="font-mono text-[11px]">{health.alembic_revision ?? "unknown"}</span>
+              </p>
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                Compare this revision with the image you deploy after restores (see docs/backup-runbook.md).
+              </p>
             </div>
 
             <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-4 text-sm shadow-sm">
@@ -136,6 +151,10 @@ export function SystemHealthScreen() {
                   {health.backup_readiness.local_storage_requires_persistent_disk ? "yes" : "no"}
                 </li>
                 <li>Object storage: {health.backup_readiness.object_storage_status}</li>
+                <li>Restore testing: {health.backup_readiness.restore_testing}</li>
+                {health.backup_readiness.object_storage_planned ? (
+                  <li>Notes: {health.backup_readiness.object_storage_planned}</li>
+                ) : null}
               </ul>
               <p className="mt-3 text-xs text-[var(--color-text-muted)]">
                 See <span className="font-medium">docs/backup-runbook.md</span> for backup and restore practices.

@@ -2,7 +2,9 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import Response
+
+from app.core.storage.file_response import protected_file_response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -267,14 +269,14 @@ def get_work_progress_file(
     file_id: uuid.UUID,
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+):
     try:
-        path, att = download_work_progress_file(db_session, current_user, file_id)
+        data, att = download_work_progress_file(db_session, current_user, file_id)
     except WorkProgressNotFoundError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
 
-    return FileResponse(
-        path,
+    return protected_file_response(
+        body=data,
         media_type=work_progress_attachment_response_media_type(att),
-        filename=work_progress_attachment_response_filename(att),
+        download_filename=work_progress_attachment_response_filename(att),
     )

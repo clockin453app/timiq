@@ -2,7 +2,8 @@ import mimetypes
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
+
+from app.core.storage.file_response import protected_file_response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -293,9 +294,9 @@ def get_onboarding_document_file(
     document_id: uuid.UUID,
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+):
     try:
-        path, doc, _submission, _owner = download_document_file(
+        data, doc, _submission, _owner = download_document_file(
             db_session,
             current_user,
             document_id,
@@ -305,10 +306,10 @@ def get_onboarding_document_file(
     except OnboardingPermissionError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
 
-    return FileResponse(
-        path,
+    return protected_file_response(
+        body=data,
         media_type=doc.content_type,
-        filename=doc.original_filename,
+        download_filename=doc.original_filename,
     )
 
 
@@ -317,9 +318,9 @@ def get_onboarding_profile_photo_file(
     user_id: uuid.UUID,
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+):
     try:
-        path, submission, _owner = download_profile_photo_file(
+        data, submission, _owner = download_profile_photo_file(
             db_session,
             current_user,
             user_id,
@@ -329,11 +330,11 @@ def get_onboarding_profile_photo_file(
     except OnboardingPermissionError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
 
-    media_type = submission.profile_photo_content_type or mimetypes.guess_type(path.name)[0]
-    return FileResponse(
-        path,
+    media_type = submission.profile_photo_content_type or mimetypes.guess_type("profile.jpg")[0]
+    return protected_file_response(
+        body=data,
         media_type=media_type or "application/octet-stream",
-        filename=f"profile-photo-{user_id}",
+        download_filename=f"profile-photo-{user_id}",
     )
 
 
@@ -342,9 +343,9 @@ def get_onboarding_signature_image(
     submission_id: uuid.UUID,
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
-) -> FileResponse:
+):
     try:
-        path, submission, _owner = download_signature_image(
+        data, submission, _owner = download_signature_image(
             db_session,
             current_user,
             submission_id,
@@ -354,9 +355,9 @@ def get_onboarding_signature_image(
     except OnboardingPermissionError:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
 
-    guessed, _ = mimetypes.guess_type(path.name)
-    return FileResponse(
-        path,
+    guessed, _ = mimetypes.guess_type("signature.png")
+    return protected_file_response(
+        body=data,
         media_type=guessed or "application/octet-stream",
-        filename=path.name,
+        download_filename="signature.png",
     )
