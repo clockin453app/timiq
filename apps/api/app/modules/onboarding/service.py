@@ -17,6 +17,7 @@ from app.modules.employee_profiles.sanitize_tax_ids import (
     sanitize_national_insurance_value,
     sanitize_utr_value,
 )
+from app.modules.onboarding.constants import ONBOARDING_CONTRACT_VERSION
 from app.modules.onboarding.models import OnboardingDocument, OnboardingSubmission
 from app.modules.onboarding.permissions import (
     can_access_document_file,
@@ -55,12 +56,22 @@ REQUIRED_DOC_TYPES = (
     "share_code_document",
 )
 
-REQUIRED_FORM_KEYS = (
-    "first_name",
-    "last_name",
-    "phone",
-    "emergency_contact_name",
-    "emergency_contact_phone",
+POSITION_OPTIONS = frozenset(
+    {
+        "Bricklayer",
+        "Labourer",
+        "Fixer",
+        "Supervisor/Foreman",
+    },
+)
+
+EMPLOYMENT_TYPE_OPTIONS = frozenset(
+    {
+        "Self-employed",
+        "Ltd Company",
+        "Agency",
+        "PAYE",
+    },
 )
 
 OPTIONAL_FORM_KEYS = (
@@ -76,6 +87,30 @@ OPTIONAL_FORM_KEYS = (
     "bank_account_holder",
     "bank_sort_code",
     "bank_account_number",
+    "birth_date",
+    "street_address",
+    "medical_condition",
+    "medical_details",
+    "position",
+    "cscs_number",
+    "cscs_expiry",
+    "employment_type",
+    "right_to_work_uk",
+    "contract_effective_date",
+    "site_address",
+    "contract_accepted",
+    "contract_version",
+    "signature_name",
+    "company_trading_name",
+    "company_registration_number",
+)
+
+REQUIRED_FORM_KEYS = (
+    "first_name",
+    "last_name",
+    "phone",
+    "emergency_contact_name",
+    "emergency_contact_phone",
 )
 
 ALLOWED_FORM_KEYS = frozenset(REQUIRED_FORM_KEYS + OPTIONAL_FORM_KEYS)
@@ -98,6 +133,22 @@ FIELD_MAX_LENGTH: dict[str, int] = {
     "bank_sort_code": 32,
     "bank_account_number": 64,
     "start_date": 32,
+    "birth_date": 32,
+    "street_address": 200,
+    "medical_condition": 16,
+    "medical_details": 2000,
+    "position": 80,
+    "cscs_number": 64,
+    "cscs_expiry": 32,
+    "employment_type": 32,
+    "right_to_work_uk": 16,
+    "contract_effective_date": 32,
+    "site_address": 500,
+    "contract_accepted": 16,
+    "contract_version": 64,
+    "signature_name": 200,
+    "company_trading_name": 200,
+    "company_registration_number": 32,
 }
 
 MAX_ONBOARDING_DOCUMENT_BYTES = 10 * 1024 * 1024
@@ -283,14 +334,50 @@ def _parse_start_date(value: str) -> date | None:
     return date.fromisoformat(cleaned)
 
 
+def _parse_required_iso_date(raw: str, field_label: str) -> date:
+    cleaned = raw.strip()
+    if not cleaned:
+        raise OnboardingValidationError(f"Missing required field: {field_label}.")
+    try:
+        return date.fromisoformat(cleaned)
+    except ValueError as exc:
+        raise OnboardingValidationError(
+            f"{field_label} must be a valid ISO date (YYYY-MM-DD).",
+        ) from exc
+
+
+def _yn_flag(value: str) -> str | None:
+    v = value.strip().lower()
+    if v in ("yes", "y", "true", "1"):
+        return "yes"
+    if v in ("no", "n", "false", "0"):
+        return "no"
+    return None
+
+
+def _truthy_contract_accepted(value: str) -> bool:
+    v = value.strip().lower()
+    return v in ("yes", "true", "1", "on")
+
+
+def _street_line(form: dict[str, Any]) -> str:
+    s = str(form.get("street_address", "")).strip()
+    if s:
+        return s
+    return str(form.get("address_line1", "")).strip()
+
+
 def submission_to_detail(
     submission: OnboardingSubmission,
     documents: list[OnboardingDocument],
+    *,
+    account_email: str,
 ) -> OnboardingSubmissionDetailResponse:
     return OnboardingSubmissionDetailResponse(
         id=submission.id,
         user_id=submission.user_id,
         company_id=submission.company_id,
+        account_email=account_email,
         status=submission.status,
         form_payload=dict(submission.form_payload or {}),
         signature_mode=submission.signature_mode,
@@ -323,7 +410,7 @@ def get_or_create_my_submission(
     if not can_view_submission_as_owner(actor, row):
         raise OnboardingPermissionError("You cannot access this onboarding record.")
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def patch_my_draft(
@@ -347,7 +434,7 @@ def patch_my_draft(
         row.form_payload = _merge_form_payload(dict(row.form_payload or {}), form_payload)
         save_submission(db_session, row)
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def reopen_my_submission(db_session: Session, actor: User) -> OnboardingSubmissionDetailResponse:
@@ -361,7 +448,7 @@ def reopen_my_submission(db_session: Session, actor: User) -> OnboardingSubmissi
     row.status = "draft"
     save_submission(db_session, row)
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def upload_my_document(
@@ -418,7 +505,7 @@ def upload_my_document(
     row = get_submission_by_user_id(db_session, actor.id)
     assert row is not None
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def delete_my_document(
@@ -439,7 +526,7 @@ def delete_my_document(
     row = get_submission_by_user_id(db_session, actor.id)
     assert row is not None
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def set_my_typed_signature(db_session: Session, actor: User, text: str) -> OnboardingSubmissionDetailResponse:
@@ -466,7 +553,7 @@ def set_my_typed_signature(db_session: Session, actor: User, text: str) -> Onboa
     row.signature_typed_text = cleaned
     save_submission(db_session, row)
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def set_my_drawn_signature(
@@ -503,7 +590,7 @@ def set_my_drawn_signature(
         _unlink_storage_file(rel_path)
         raise
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def clear_my_signature(db_session: Session, actor: User) -> OnboardingSubmissionDetailResponse:
@@ -519,7 +606,7 @@ def clear_my_signature(db_session: Session, actor: User) -> OnboardingSubmission
     row.signature_typed_text = None
     save_submission(db_session, row)
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def upload_my_profile_photo(
@@ -557,7 +644,7 @@ def upload_my_profile_photo(
         _unlink_storage_file(rel_path)
         raise
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def delete_my_profile_photo(db_session: Session, actor: User) -> OnboardingSubmissionDetailResponse:
@@ -574,33 +661,85 @@ def delete_my_profile_photo(db_session: Session, actor: User) -> OnboardingSubmi
     row.profile_photo_updated_at = None
     save_submission(db_session, row)
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
-def _validate_ready_to_submit(submission: OnboardingSubmission, documents: list[OnboardingDocument]) -> None:
+def _validate_ready_to_submit(
+    submission: OnboardingSubmission,
+    documents: list[OnboardingDocument],
+    *,
+    account_email: str,
+) -> None:
     form = dict(submission.form_payload or {})
     for key in REQUIRED_FORM_KEYS:
         if not str(form.get(key, "")).strip():
             raise OnboardingValidationError(f"Missing required field: {key}.")
+    if not (account_email or "").strip():
+        raise OnboardingValidationError("Missing required field: account email.")
+
+    if not str(form.get("birth_date", "")).strip():
+        raise OnboardingValidationError("Missing required field: birth_date.")
+    _parse_required_iso_date(str(form.get("birth_date", "")), "birth_date")
+
+    if not _street_line(form):
+        raise OnboardingValidationError("Missing required field: street_address.")
+
+    if _yn_flag(str(form.get("medical_condition", ""))) is None:
+        raise OnboardingValidationError("Missing required field: medical_condition (yes or no).")
+
+    pos = str(form.get("position", "")).strip()
+    if not pos or pos not in POSITION_OPTIONS:
+        raise OnboardingValidationError("Missing or invalid field: position.")
+
+    if not str(form.get("cscs_number", "")).strip():
+        raise OnboardingValidationError("Missing required field: cscs_number.")
+    if not str(form.get("cscs_expiry", "")).strip():
+        raise OnboardingValidationError("Missing required field: cscs_expiry.")
+    _parse_required_iso_date(str(form.get("cscs_expiry", "")), "cscs_expiry")
+
+    et = str(form.get("employment_type", "")).strip()
+    if not et or et not in EMPLOYMENT_TYPE_OPTIONS:
+        raise OnboardingValidationError("Missing or invalid field: employment_type.")
+
+    if _yn_flag(str(form.get("right_to_work_uk", ""))) is None:
+        raise OnboardingValidationError("Missing required field: right_to_work_uk (yes or no).")
+
+    if not str(form.get("national_insurance_number", "")).strip():
+        raise OnboardingValidationError("Missing required field: national_insurance_number.")
+    if not str(form.get("utr", "")).strip():
+        raise OnboardingValidationError("Missing required field: utr.")
+
+    if not str(form.get("start_date", "")).strip():
+        raise OnboardingValidationError("Missing required field: start_date.")
+    _parse_required_iso_date(str(form.get("start_date", "")), "start_date")
+
+    if not str(form.get("contract_effective_date", "")).strip():
+        raise OnboardingValidationError("Missing required field: contract_effective_date.")
+    _parse_required_iso_date(
+        str(form.get("contract_effective_date", "")),
+        "contract_effective_date",
+    )
+
+    if not str(form.get("site_address", "")).strip():
+        raise OnboardingValidationError("Missing required field: site_address.")
+
+    for bk in ("bank_account_number", "bank_sort_code", "bank_account_holder"):
+        if not str(form.get(bk, "")).strip():
+            raise OnboardingValidationError(f"Missing required field: {bk}.")
+
+    if not _truthy_contract_accepted(str(form.get("contract_accepted", ""))):
+        raise OnboardingValidationError("You must accept the contract before submitting.")
+
+    if not str(form.get("signature_name", "")).strip():
+        raise OnboardingValidationError("Missing required field: signature_name.")
+
+    if submission.signature_mode != "drawn" or not submission.signature_image_path:
+        raise OnboardingValidationError("A drawn signature image is required before submitting.")
+
     slots = {d.doc_type for d in documents}
     for req in REQUIRED_DOC_TYPES:
         if req not in slots:
             raise OnboardingValidationError(f"Missing required document upload: {req}.")
-    if submission.signature_mode == "typed":
-        if not (submission.signature_typed_text or "").strip():
-            raise OnboardingValidationError("Typed signature is required.")
-    elif submission.signature_mode == "drawn":
-        if not submission.signature_image_path:
-            raise OnboardingValidationError("Drawn signature image is required.")
-    else:
-        raise OnboardingValidationError("Choose a typed or drawn signature before submitting.")
-
-    start_raw = str(form.get("start_date", "")).strip()
-    if start_raw:
-        try:
-            _parse_start_date(start_raw)
-        except ValueError as exc:
-            raise OnboardingValidationError("start_date must be a valid ISO date (YYYY-MM-DD).") from exc
 
 
 def submit_my_submission(db_session: Session, actor: User) -> OnboardingSubmissionDetailResponse:
@@ -611,8 +750,13 @@ def submit_my_submission(db_session: Session, actor: User) -> OnboardingSubmissi
         raise OnboardingPermissionError("You cannot submit this onboarding record.")
     if row.status != "draft":
         raise OnboardingStateError("Only a draft can be submitted.")
+    form = dict(row.form_payload or {})
+    if _truthy_contract_accepted(str(form.get("contract_accepted", ""))):
+        if not str(form.get("contract_version", "")).strip():
+            form["contract_version"] = ONBOARDING_CONTRACT_VERSION
+    row.form_payload = form
     docs = list_documents_for_submission(db_session, row.id)
-    _validate_ready_to_submit(row, docs)
+    _validate_ready_to_submit(row, docs, account_email=actor.email)
     row.status = "submitted"
     row.submitted_at = _utc_now()
     row.reviewed_at = None
@@ -629,7 +773,7 @@ def submit_my_submission(db_session: Session, actor: User) -> OnboardingSubmissi
         details={"user_id": str(actor.id)},
     )
     docs = list_documents_for_submission(db_session, row.id)
-    return submission_to_detail(row, docs)
+    return submission_to_detail(row, docs, account_email=actor.email)
 
 
 def list_review_submissions(
@@ -714,7 +858,7 @@ def get_review_submission_detail(
         company_id=submission.company_id,
         details={"subject_user_id": str(owner.id)},
     )
-    return submission_to_detail(submission, docs)
+    return submission_to_detail(submission, docs, account_email=owner.email)
 
 
 def resolve_document_download(
@@ -851,7 +995,9 @@ def _apply_form_to_profile(profile: EmployeeProfile, form: dict[str, Any]) -> No
     profile.first_name = str(form.get("first_name", "")).strip() or None
     profile.last_name = str(form.get("last_name", "")).strip() or None
     profile.phone = str(form.get("phone", "")).strip() or None
-    profile.job_title = str(form.get("job_title", "")).strip() or None
+    position = str(form.get("position", "")).strip()
+    job_free = str(form.get("job_title", "")).strip()
+    profile.job_title = position or job_free or None
     profile.national_insurance_number = sanitize_national_insurance_value(form.get("national_insurance_number"))
     profile.utr_number = sanitize_utr_value(form.get("utr"))
     profile.emergency_contact_name = str(form.get("emergency_contact_name", "")).strip() or None
@@ -917,7 +1063,7 @@ def approve_submission(
         },
     )
     docs = list_documents_for_submission(db_session, submission.id)
-    return submission_to_detail(submission, docs)
+    return submission_to_detail(submission, docs, account_email=owner.email)
 
 
 def reject_submission(
@@ -958,4 +1104,4 @@ def reject_submission(
         },
     )
     docs = list_documents_for_submission(db_session, submission.id)
-    return submission_to_detail(submission, docs)
+    return submission_to_detail(submission, docs, account_email=owner.email)

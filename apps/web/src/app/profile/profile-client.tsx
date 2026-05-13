@@ -459,6 +459,12 @@ export function ProfileClient() {
                       </div>
                       <div className="border-t border-[var(--color-border)] pt-3">
                         <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">Signature</p>
+                        {onboarding.form_payload.signature_name?.trim() ? (
+                          <p className="mt-1 text-sm text-[var(--color-text)]">
+                            <span className="text-[var(--color-text-muted)]">Signatory name: </span>
+                            {onboarding.form_payload.signature_name}
+                          </p>
+                        ) : null}
                         {onboarding.signature_mode === "typed" && onboarding.signature_typed_text ? (
                           <p className="mt-1 text-[var(--color-text)]">{onboarding.signature_typed_text}</p>
                         ) : null}

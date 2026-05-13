@@ -30,22 +30,16 @@ import {
   type OnboardingReviewListItem,
   type OnboardingSubmissionDetail,
 } from "../../features/onboarding/api";
+import {
+  formatOnboardingFieldValue,
+  ONBOARDING_REVIEW_SECTIONS,
+  onboardingReviewFieldLabel,
+} from "../../features/onboarding/review-form-sections";
 
 const REQUIRED_DOC_TYPE_SET = new Set(ONBOARDING_REQUIRED_DOC_SLOTS.map((s) => s.docType));
 
 function findDocForType(docs: OnboardingDocumentMeta[], docType: string) {
   return docs.find((d) => d.doc_type === docType);
-}
-
-function formatPayloadPreview(payload: Record<string, string>): string {
-  const keys = ["first_name", "last_name", "phone", "job_title", "start_date"];
-  return keys
-    .map((k) => {
-      const v = payload[k]?.trim();
-      return v ? `${k}: ${v}` : null;
-    })
-    .filter(Boolean)
-    .join(" · ");
 }
 
 function OnboardingReviewAdminBody() {
@@ -349,9 +343,31 @@ function OnboardingReviewAdminBody() {
               <p className="text-[var(--color-text-muted)]">
                 Status: <span className="capitalize text-[var(--color-text)]">{detail.status}</span>
               </p>
-              <p className="text-[var(--color-text-muted)]">{formatPayloadPreview(detail.form_payload)}</p>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Account email: <span className="text-[var(--color-text)]">{detail.account_email}</span>
+              </p>
+              <div className="space-y-4">
+                {ONBOARDING_REVIEW_SECTIONS.map((section) => (
+                  <div key={section.title} className="rounded border border-[var(--color-border)] p-3">
+                    <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">{section.title}</p>
+                    <dl className="mt-2 grid gap-2 text-sm">
+                      {section.keys.map((key) => (
+                        <div
+                          key={key}
+                          className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4"
+                        >
+                          <dt className="text-[var(--color-text-muted)]">{onboardingReviewFieldLabel(key)}</dt>
+                          <dd className="max-w-full break-words font-medium text-[var(--color-text)] sm:text-right">
+                            {formatOnboardingFieldValue(key, detail.form_payload[key])}
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                ))}
+              </div>
               <details className="text-xs text-[var(--color-text-muted)]">
-                <summary className="cursor-pointer text-[var(--color-text-soft)]">Full submitted fields</summary>
+                <summary className="cursor-pointer text-[var(--color-text-soft)]">Raw submitted fields (JSON)</summary>
                 <pre className="mt-2 max-h-64 overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-sheet)] p-2 text-[11px] text-[var(--color-text)]">
                   {JSON.stringify(detail.form_payload, null, 2)}
                 </pre>

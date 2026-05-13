@@ -20,6 +20,7 @@ class OnboardingSubmissionDetailResponse(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     company_id: uuid.UUID | None
+    account_email: str
     status: str
     form_payload: dict[str, Any]
     signature_mode: str | None

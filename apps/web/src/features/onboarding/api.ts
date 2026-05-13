@@ -6,7 +6,7 @@ export const ONBOARDING_REQUIRED_DOC_SLOTS: readonly { docType: string; label: s
   { docType: "identity_document", label: "Passport or Birth Certificate" },
   { docType: "cscs_card", label: "CSCS Front/Back" },
   { docType: "public_liability_insurance", label: "Public Liability Insurance" },
-  { docType: "share_code_document", label: "Share Code Document" },
+  { docType: "share_code_document", label: "Share code / confirmation" },
 ] as const;
 
 export type OnboardingDocumentMeta = {
@@ -22,6 +22,7 @@ export type OnboardingSubmissionDetail = {
   id: string;
   user_id: string;
   company_id: string | null;
+  account_email: string;
   status: string;
   form_payload: Record<string, string>;
   signature_mode: string | null;

@@ -9,7 +9,7 @@ import {
   Sheet,
   SheetBody,
 } from "../../components/ui";
-import { LogoutButton } from "../../features/auth";
+import { LogoutButton, useCurrentUser } from "../../features/auth";
 import {
   clearSignature,
   deleteOnboardingDocument,
@@ -28,53 +28,30 @@ import {
   uploadOnboardingDocument,
   type OnboardingSubmissionDetail,
 } from "../../features/onboarding/api";
+import { CONTRACT_TEXT } from "../../features/onboarding/contract-text";
+import {
+  STARTER_EMPLOYMENT_TYPES,
+  STARTER_FORM_DRAFT_KEYS,
+  STARTER_POSITION_OPTIONS,
+} from "../../features/onboarding/starter-form-constants";
 
-const FORM_KEYS = [
-  "first_name",
-  "last_name",
-  "phone",
-  "job_title",
-  "start_date",
-  "emergency_contact_name",
-  "emergency_contact_phone",
-  "address_line1",
-  "address_line2",
-  "city",
-  "postcode",
-  "country",
-  "national_insurance_number",
-  "utr",
-  "bank_account_holder",
-  "bank_sort_code",
-  "bank_account_number",
-] as const;
+const textareaClass =
+  "min-h-[100px] w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2 text-sm text-[var(--color-text)]";
 
-function labelsFor(key: string): string {
-  const map: Record<string, string> = {
-    first_name: "First name",
-    last_name: "Last name",
-    phone: "Phone",
-    job_title: "Job title",
-    start_date: "Start date (YYYY-MM-DD)",
-    emergency_contact_name: "Emergency contact name",
-    emergency_contact_phone: "Emergency contact phone",
-    address_line1: "Address line 1",
-    address_line2: "Address line 2",
-    city: "City",
-    postcode: "Postcode",
-    country: "Country",
-    national_insurance_number: "National Insurance number",
-    utr: "UTR (Unique Taxpayer Reference)",
-    bank_account_holder: "Bank account holder",
-    bank_sort_code: "Sort code",
-    bank_account_number: "Account number",
-  };
-  return map[key] ?? key;
+function initFormFromDetail(data: OnboardingSubmissionDetail): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const key of STARTER_FORM_DRAFT_KEYS) {
+    next[key] = data.form_payload[key] ?? "";
+  }
+  if (!next.street_address?.trim()) {
+    next.street_address = data.form_payload.address_line1 ?? "";
+  }
+  return next;
 }
 
 function statusMessage(status: string): string {
   if (status === "draft") {
-    return "Draft — save your answers, upload required documents, add your signature, then submit.";
+    return "Draft — save your answers, upload required documents, add your drawn signature, then submit.";
   }
   if (status === "submitted") {
     return "Submitted — your employer will review your starter form.";
@@ -89,6 +66,7 @@ function statusMessage(status: string): string {
 }
 
 export function StarterFormClient() {
+  const currentUser = useCurrentUser();
   const [detail, setDetail] = useState<OnboardingSubmissionDetail | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [typedSig, setTypedSig] = useState("");
@@ -104,11 +82,7 @@ export function StarterFormClient() {
     try {
       const data = await getMyOnboarding();
       setDetail(data);
-      const next: Record<string, string> = {};
-      for (const key of FORM_KEYS) {
-        next[key] = data.form_payload[key] ?? "";
-      }
-      setForm(next);
+      setForm(initFormFromDetail(data));
       setTypedSig(data.signature_typed_text ?? "");
     } catch {
       setError("Could not load starter form.");
@@ -175,6 +149,10 @@ export function StarterFormClient() {
     return detail?.documents.find((d) => d.doc_type === docType);
   }
 
+  function setField(key: string, value: string) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
   async function handleSaveDraft(e: FormEvent) {
     e.preventDefault();
     if (!editable) {
@@ -185,6 +163,7 @@ export function StarterFormClient() {
     try {
       const data = await patchOnboardingDraft(form);
       setDetail(data);
+      setForm(initFormFromDetail(data));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed.");
     } finally {
@@ -312,8 +291,10 @@ export function StarterFormClient() {
     setSaving(true);
     setError("");
     try {
+      await patchOnboardingDraft(form);
       const data = await submitOnboarding();
       setDetail(data);
+      setForm(initFormFromDetail(data));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed.");
     } finally {
@@ -354,11 +335,7 @@ export function StarterFormClient() {
     try {
       const data = await reopenOnboarding();
       setDetail(data);
-      const next: Record<string, string> = {};
-      for (const key of FORM_KEYS) {
-        next[key] = data.form_payload[key] ?? "";
-      }
-      setForm(next);
+      setForm(initFormFromDetail(data));
       setTypedSig(data.signature_typed_text ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Reopen failed.");
@@ -366,6 +343,8 @@ export function StarterFormClient() {
       setSaving(false);
     }
   }
+
+  const accountEmail = detail?.account_email ?? currentUser.email;
 
   return (
     <Sheet>
@@ -401,32 +380,354 @@ export function StarterFormClient() {
               </Button>
             ) : null}
 
-            <form className="space-y-4" onSubmit={(e) => void handleSaveDraft(e)}>
+            <form className="space-y-8" onSubmit={(e) => void handleSaveDraft(e)}>
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                Your details
+                1. Personal
               </p>
               <div className="grid gap-3 md:grid-cols-2">
-                {FORM_KEYS.map((key) => (
-                  <label key={key} className="flex flex-col gap-1 text-sm">
-                    <span className="text-[var(--color-text-muted)]">{labelsFor(key)}</span>
-                    <Input
-                      value={form[key] ?? ""}
-                      disabled={!editable}
-                      onChange={(e) => setForm((prev) => ({ ...prev, [key]: e.target.value }))}
-                    />
-                  </label>
-                ))}
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">First name *</span>
+                  <Input
+                    value={form.first_name ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("first_name", e.target.value)}
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Last name *</span>
+                  <Input
+                    value={form.last_name ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("last_name", e.target.value)}
+                    required
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Date of birth *</span>
+                  <Input
+                    type="date"
+                    value={form.birth_date ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("birth_date", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Phone *</span>
+                  <Input
+                    value={form.phone ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("phone", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="text-[var(--color-text-muted)]">Account email (read-only)</span>
+                  <Input value={accountEmail} disabled readOnly />
+                </label>
               </div>
-              {editable ? (
-                <Button type="submit" disabled={saving}>
-                  Save draft
-                </Button>
-              ) : null}
-            </form>
 
-            <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                Required documents (PDF, JPEG, PNG, or WebP — max 10 MB)
+                2. Address
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="text-[var(--color-text-muted)]">Street address *</span>
+                  <Input
+                    value={form.street_address ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("street_address", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="text-[var(--color-text-muted)]">Address line 2</span>
+                  <Input
+                    value={form.address_line2 ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("address_line2", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">City</span>
+                  <Input value={form.city ?? ""} disabled={!editable} onChange={(e) => setField("city", e.target.value)} />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Postcode</span>
+                  <Input
+                    value={form.postcode ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("postcode", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="text-[var(--color-text-muted)]">Country</span>
+                  <Input
+                    value={form.country ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("country", e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                3. Emergency contact
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Emergency contact name *</span>
+                  <Input
+                    value={form.emergency_contact_name ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("emergency_contact_name", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Emergency contact phone *</span>
+                  <Input
+                    value={form.emergency_contact_phone ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("emergency_contact_phone", e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">4. Medical</p>
+              <fieldset disabled={!editable} className="space-y-2">
+                <legend className="text-sm text-[var(--color-text-muted)]">
+                  Do you have a medical condition we should be aware of? *
+                </legend>
+                <div className="flex flex-wrap gap-4 text-sm text-[var(--color-text)]">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="medical_condition"
+                      checked={form.medical_condition === "yes"}
+                      onChange={() => setField("medical_condition", "yes")}
+                    />
+                    Yes
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="medical_condition"
+                      checked={form.medical_condition === "no"}
+                      onChange={() => setField("medical_condition", "no")}
+                    />
+                    No
+                  </label>
+                </div>
+              </fieldset>
+              <label className="flex flex-col gap-1 text-sm">
+                <span className="text-[var(--color-text-muted)]">Medical details (optional)</span>
+                <textarea
+                  className={textareaClass}
+                  value={form.medical_details ?? ""}
+                  disabled={!editable}
+                  onChange={(e) => setField("medical_details", e.target.value)}
+                />
+              </label>
+
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                5. Position & CSCS
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="text-[var(--color-text-muted)]">Site role / position *</span>
+                  <select
+                    className="h-9 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2 text-sm text-[var(--color-text)]"
+                    value={form.position ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("position", e.target.value)}
+                  >
+                    <option value="">Select…</option>
+                    {STARTER_POSITION_OPTIONS.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="text-[var(--color-text-muted)]">Additional job title (optional)</span>
+                  <Input
+                    value={form.job_title ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("job_title", e.target.value)}
+                    placeholder="Free text if needed"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">CSCS card number *</span>
+                  <Input
+                    value={form.cscs_number ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("cscs_number", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">CSCS expiry *</span>
+                  <Input
+                    type="date"
+                    value={form.cscs_expiry ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("cscs_expiry", e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                6. Employment & tax
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="text-[var(--color-text-muted)]">Employment / tax status *</span>
+                  <select
+                    className="h-9 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2 text-sm text-[var(--color-text)]"
+                    value={form.employment_type ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("employment_type", e.target.value)}
+                  >
+                    <option value="">Select…</option>
+                    {STARTER_EMPLOYMENT_TYPES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <fieldset disabled={!editable} className="md:col-span-2 space-y-2">
+                  <legend className="text-sm text-[var(--color-text-muted)]">Right to work in the UK? *</legend>
+                  <div className="flex flex-wrap gap-4 text-sm text-[var(--color-text)]">
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="right_to_work_uk"
+                        checked={form.right_to_work_uk === "yes"}
+                        onChange={() => setField("right_to_work_uk", "yes")}
+                      />
+                      Yes
+                    </label>
+                    <label className="inline-flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="right_to_work_uk"
+                        checked={form.right_to_work_uk === "no"}
+                        onChange={() => setField("right_to_work_uk", "no")}
+                      />
+                      No
+                    </label>
+                  </div>
+                </fieldset>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">National Insurance number *</span>
+                  <Input
+                    value={form.national_insurance_number ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("national_insurance_number", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">UTR *</span>
+                  <Input value={form.utr ?? ""} disabled={!editable} onChange={(e) => setField("utr", e.target.value)} />
+                </label>
+              </div>
+
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">7. Bank details</p>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Used for payroll only within TimIQ. Never shown on payslips.
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="text-[var(--color-text-muted)]">Account holder name *</span>
+                  <Input
+                    value={form.bank_account_holder ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("bank_account_holder", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Sort code *</span>
+                  <Input
+                    value={form.bank_sort_code ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("bank_sort_code", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Account number *</span>
+                  <Input
+                    value={form.bank_account_number ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("bank_account_number", e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                8. Company / contractor
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Company trading name</span>
+                  <Input
+                    value={form.company_trading_name ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("company_trading_name", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Company registration number</span>
+                  <Input
+                    value={form.company_registration_number ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("company_registration_number", e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                9. Contract & site
+              </p>
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Start date *</span>
+                  <Input
+                    type="date"
+                    value={form.start_date ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("start_date", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="text-[var(--color-text-muted)]">Contract effective date *</span>
+                  <Input
+                    type="date"
+                    value={form.contract_effective_date ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("contract_effective_date", e.target.value)}
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm md:col-span-2">
+                  <span className="text-[var(--color-text-muted)]">Site address *</span>
+                  <textarea
+                    className={textareaClass}
+                    value={form.site_address ?? ""}
+                    disabled={!editable}
+                    onChange={(e) => setField("site_address", e.target.value)}
+                  />
+                </label>
+              </div>
+
+              <div className="rounded border border-[var(--color-border)] bg-[var(--color-sheet)] p-3">
+                <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">Contract terms</p>
+                <div className="mt-2 max-h-72 overflow-y-auto whitespace-pre-wrap text-xs text-[var(--color-text)]">
+                  {CONTRACT_TEXT}
+                </div>
+              </div>
+
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">10. Uploads</p>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                PDF, JPEG, PNG, or WebP — max 10 MB per file. CSCS front and back can be on a single scan in the CSCS
+                slot.
               </p>
               <div className="grid gap-4 md:grid-cols-2">
                 {ONBOARDING_REQUIRED_DOC_SLOTS.map(({ docType, label }) => {
@@ -464,9 +765,7 @@ export function StarterFormClient() {
                           type="button"
                           size="sm"
                           variant="secondary"
-                          onClick={() =>
-                            void handleDownloadOwnDocument(slotDoc.id, slotDoc.original_filename)
-                          }
+                          onClick={() => void handleDownloadOwnDocument(slotDoc.id, slotDoc.original_filename)}
                         >
                           Download
                         </Button>
@@ -475,48 +774,33 @@ export function StarterFormClient() {
                   );
                 })}
               </div>
-            </div>
 
-            <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                Profile photo
+                11. Contract acceptance
               </p>
-              <p className="text-sm text-[var(--color-text-muted)]">
-                Optional — add a clear head-and-shoulders photo for your TimIQ profile (JPEG, PNG, or WebP, max 5 MB).
-                You can upload a file; use your device camera app to capture first if you prefer.
-              </p>
-              {profilePhotoPreviewUrl ? (
-                <div className="flex max-w-xs flex-col gap-2">
-                  <img
-                    src={profilePhotoPreviewUrl}
-                    alt="Profile photo preview"
-                    className="aspect-square w-full max-w-[220px] rounded-lg border border-[var(--color-border-dark)] object-cover"
-                  />
-                </div>
-              ) : detail?.has_profile_photo ? (
-                <p className="text-xs text-[var(--color-text-muted)]">Loading preview…</p>
-              ) : null}
-              {editable ? (
-                <Input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  disabled={saving}
-                  onChange={(e) => void handleProfilePhotoUpload(e.target.files?.[0] ?? null)}
+              <label className="flex items-start gap-2 text-sm text-[var(--color-text)]">
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 shrink-0"
+                  checked={form.contract_accepted === "true"}
+                  disabled={!editable}
+                  onChange={(e) => setField("contract_accepted", e.target.checked ? "true" : "")}
                 />
-              ) : null}
-              {editable && detail?.has_profile_photo ? (
-                <Button type="button" variant="secondary" disabled={saving} onClick={() => void handleRemoveProfilePhoto()}>
-                  Remove profile photo
-                </Button>
-              ) : null}
-            </div>
+                <span>I have read and accept the contract terms above. *</span>
+              </label>
 
-            <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
-              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                Signature
-              </p>
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">12. Signature</p>
+              <label className="flex flex-col gap-1 text-sm md:max-w-md">
+                <span className="text-[var(--color-text-muted)]">Signatory name (as on contract) *</span>
+                <Input
+                  value={form.signature_name ?? ""}
+                  disabled={!editable}
+                  onChange={(e) => setField("signature_name", e.target.value)}
+                />
+              </label>
               <p className="text-sm text-[var(--color-text-muted)]">
-                Choose a typed name or upload a drawn signature image (JPEG or PNG, max 2 MB).
+                Final submission requires a drawn signature image (JPEG or PNG, max 2 MB). Typed name above is
+                optional and does not replace the drawn image.
               </p>
               {detail.signature_mode ? (
                 <p className="text-sm text-[var(--color-text)]">
@@ -529,20 +813,20 @@ export function StarterFormClient() {
               ) : null}
               <div className="flex flex-col gap-3 md:flex-row md:items-end">
                 <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm">
-                  <span className="text-[var(--color-text-muted)]">Typed signature</span>
+                  <span className="text-[var(--color-text-muted)]">Typed name (optional)</span>
                   <Input
                     value={typedSig}
                     disabled={!editable}
                     onChange={(e) => setTypedSig(e.target.value)}
-                    placeholder="Type your full name"
+                    placeholder="Optional typed name"
                   />
                 </label>
                 <Button type="button" disabled={!editable || saving} onClick={() => void handleTypedSignatureSave()}>
-                  Save typed signature
+                  Save typed name
                 </Button>
               </div>
               <div className="flex flex-col gap-2">
-                <span className="text-sm text-[var(--color-text-muted)]">Drawn signature file</span>
+                <span className="text-sm text-[var(--color-text-muted)]">Drawn signature file *</span>
                 <Input
                   type="file"
                   accept="image/jpeg,image/png"
@@ -565,7 +849,53 @@ export function StarterFormClient() {
                   View drawn signature
                 </Button>
               ) : null}
-            </div>
+
+              <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
+                <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                  Profile photo
+                </p>
+                <p className="text-sm text-[var(--color-text-muted)]">
+                  Optional — add a clear head-and-shoulders photo for your TimIQ profile (JPEG, PNG, or WebP, max 5 MB).
+                </p>
+                {profilePhotoPreviewUrl ? (
+                  <div className="flex max-w-xs flex-col gap-2">
+                    <img
+                      src={profilePhotoPreviewUrl}
+                      alt="Profile photo preview"
+                      className="aspect-square w-full max-w-[220px] rounded-lg border border-[var(--color-border-dark)] object-cover"
+                    />
+                  </div>
+                ) : detail?.has_profile_photo ? (
+                  <p className="text-xs text-[var(--color-text-muted)]">Loading preview…</p>
+                ) : null}
+                {editable ? (
+                  <Input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={saving}
+                    onChange={(e) => void handleProfilePhotoUpload(e.target.files?.[0] ?? null)}
+                  />
+                ) : null}
+                {editable && detail?.has_profile_photo ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={saving}
+                    onClick={() => void handleRemoveProfilePhoto()}
+                  >
+                    Remove profile photo
+                  </Button>
+                ) : null}
+              </div>
+
+              {editable ? (
+                <div className="flex flex-wrap gap-3 border-t border-[var(--color-border)] pt-4">
+                  <Button type="submit" disabled={saving}>
+                    Save draft
+                  </Button>
+                </div>
+              ) : null}
+            </form>
 
             {editable ? (
               <div className="border-t border-[var(--color-border)] pt-4">
