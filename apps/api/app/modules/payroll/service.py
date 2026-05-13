@@ -22,6 +22,7 @@ from app.modules.employee_profiles.repository import get_employee_profile_by_use
 from app.modules.onboarding.repository import get_approved_onboarding_national_insurance_number
 from app.modules.payroll.calculation import (
     compute_money_bundle,
+    normalize_payroll_payment_mode,
     policy_snapshot_dict,
     resolve_effective_tax_rate_percent,
     split_regular_overtime,
@@ -94,7 +95,14 @@ def _decimal_or_none(value: object | None) -> Decimal | None:
 
 
 def _effective_tax_amount_for_item(item: PayrollItem) -> Decimal | None:
-    """Prefer display CIS when set; if display is exactly zero but calculated tax is non-zero, use calculated."""
+    """CIS tax for summaries and payslips: zero under gross payment; net uses display override semantics."""
+    mode = normalize_payroll_payment_mode(item.payment_mode)
+    if mode == "gross_payment":
+        if item.rate_missing:
+            return None
+        if _decimal_or_none(item.gross_amount) is None:
+            return None
+        return Decimal(0)
     display = _decimal_or_none(item.display_tax_amount)
     calculated = _decimal_or_none(item.tax_amount)
     if display is not None:
@@ -112,11 +120,64 @@ def _effective_net_amount_for_item(item: PayrollItem) -> Decimal | None:
 
 
 def _payment_mode_label(payment_mode: str | None) -> str:
-    if payment_mode == "net_payment":
-        return "Net payment"
-    if payment_mode == "gross_payment":
+    mode = normalize_payroll_payment_mode(payment_mode)
+    if mode == "gross_payment":
         return "Gross payment"
-    return "Not set"
+    return "Net payment"
+
+
+def _apply_payroll_item_money_after_patch(item: PayrollItem, request: PayrollItemPatchRequest) -> None:
+    """Reconcile tax/net/display amounts from stored hours, snapshots, payment mode, and other deductions."""
+    if item.rate_missing:
+        return
+    hourly = _decimal_or_none(item.hourly_rate_snapshot)
+    if hourly is None:
+        return
+    ot_mult = _decimal_or_none(item.overtime_multiplier_snapshot) or Decimal(1)
+    tax_pct = _decimal_or_none(item.tax_rate_snapshot)
+    other_d = Decimal(str(item.other_deductions_amount or 0))
+    mode = normalize_payroll_payment_mode(item.payment_mode)
+    item.payment_mode = mode
+
+    bundle = compute_money_bundle(
+        regular_seconds=item.regular_seconds,
+        overtime_seconds=item.overtime_seconds,
+        hourly_rate=hourly,
+        overtime_multiplier=ot_mult,
+        tax_rate_percent=tax_pct,
+        other_deductions=other_d,
+        payment_mode=mode,
+    )
+    if bool(bundle["rate_missing"]):
+        return
+
+    recompute_core = request.payment_mode is not None or request.other_deductions_amount is not None
+
+    if recompute_core or mode == "gross_payment":
+        item.tax_amount = float(bundle["tax_amount"]) if bundle["tax_amount"] is not None else None
+        item.net_amount = float(bundle["net_amount"]) if bundle["net_amount"] is not None else None
+        item.display_tax_amount = (
+            float(bundle["display_tax_amount"]) if bundle["display_tax_amount"] is not None else None
+        )
+        if request.display_net_amount is not None and not recompute_core:
+            item.display_net_amount = float(request.display_net_amount)
+            item.net_amount = float(request.display_net_amount)
+        else:
+            item.display_net_amount = (
+                float(bundle["display_net_amount"]) if bundle["display_net_amount"] is not None else None
+            )
+        return
+
+    gross = _decimal_or_none(item.gross_amount)
+    if gross is None:
+        return
+    tax_for_net = _effective_tax_amount_for_item(item)
+    if tax_for_net is None:
+        return
+    if request.display_net_amount is None:
+        net_calc = (gross - tax_for_net - other_d).quantize(Decimal("0.01"))
+        item.net_amount = float(net_calc)
+        item.display_net_amount = float(net_calc)
 
 
 def _week_end_display(week_start: date) -> date:
@@ -199,7 +260,7 @@ def get_payroll_item_summary(db_session: Session, actor: User, item_id: uuid.UUI
         status=item.status,
         approved_at=item.approved_at,
         paid_at=item.paid_at,
-        payment_mode=item.payment_mode,
+        payment_mode=normalize_payroll_payment_mode(item.payment_mode),
         payment_mode_label=_payment_mode_label(item.payment_mode),
         regular_seconds=item.regular_seconds,
         overtime_seconds=item.overtime_seconds,
@@ -539,7 +600,7 @@ def item_to_response(db_session: Session, item: PayrollItem) -> PayrollItemRespo
         other_deductions_amount=Decimal(str(item.other_deductions_amount or 0)),
         display_tax_amount=_decimal_or_none(item.display_tax_amount),
         display_net_amount=_decimal_or_none(item.display_net_amount),
-        payment_mode=item.payment_mode,
+        payment_mode=normalize_payroll_payment_mode(item.payment_mode),
         notes=item.notes,
         policy_snapshot=item.policy_snapshot or {},
         status=item.status,
@@ -796,6 +857,10 @@ def recalculate_payroll(
     else:
         period.timezone_name = policy.timezone_name
     period = save_period(db_session, period)
+    pending_modes: dict[uuid.UUID, str] = {}
+    for it in list_items_for_period(db_session, period.id):
+        if it.status == "pending":
+            pending_modes[it.user_id] = normalize_payroll_payment_mode(it.payment_mode)
     delete_pending_items_for_period(db_session, period.id)
 
     employees = list_employee_users_for_company(db_session, company_id)
@@ -817,6 +882,7 @@ def recalculate_payroll(
             hourly = Decimal(str(profile.hourly_rate))
         tax_pct = resolve_effective_tax_rate_percent(profile, default_tax, workplace_tax)
         other_d = Decimal(0)
+        pay_mode = pending_modes.get(emp.id, "net_payment")
         bundle = compute_money_bundle(
             regular_seconds=reg_s,
             overtime_seconds=ot_s,
@@ -824,6 +890,7 @@ def recalculate_payroll(
             overtime_multiplier=ot_mult,
             tax_rate_percent=tax_pct,
             other_deductions=other_d,
+            payment_mode=pay_mode,
         )
         snap = policy_snapshot_dict(policy)
         item = PayrollItem(
@@ -845,6 +912,7 @@ def recalculate_payroll(
             policy_snapshot=snap,
             status="pending",
             rate_missing=bool(bundle["rate_missing"]),
+            payment_mode=pay_mode,
         )
         save_item(db_session, item)
 
@@ -896,7 +964,9 @@ def patch_payroll_item(
     if request.notes is not None:
         item.notes = request.notes
     if request.payment_mode is not None:
-        item.payment_mode = request.payment_mode
+        item.payment_mode = normalize_payroll_payment_mode(request.payment_mode)
+    else:
+        item.payment_mode = normalize_payroll_payment_mode(item.payment_mode)
     if request.other_deductions_amount is not None:
         item.other_deductions_amount = float(request.other_deductions_amount)
     if request.display_tax_amount is not None:
@@ -904,13 +974,7 @@ def patch_payroll_item(
     if request.display_net_amount is not None:
         item.display_net_amount = float(request.display_net_amount)
 
-    gross = _decimal_or_none(item.gross_amount)
-    tax_for_net = _effective_tax_amount_for_item(item)
-    other_d = Decimal(str(item.other_deductions_amount or 0))
-    if gross is not None and tax_for_net is not None and request.display_net_amount is None:
-        net_calc = (gross - tax_for_net - other_d).quantize(Decimal("0.01"))
-        item.net_amount = float(net_calc)
-        item.display_net_amount = float(net_calc)
+    _apply_payroll_item_money_after_patch(item, request)
 
     item.updated_at = datetime.now(timezone.utc)
     update_item(db_session, item)
@@ -1084,7 +1148,7 @@ def list_my_pay_history(db_session: Session, actor: User) -> list[PayHistoryEntr
                 paid_at=i.paid_at,
                 rate_missing=i.rate_missing,
                 company_name=company_names[i.company_id],
-                payment_mode=i.payment_mode,
+                payment_mode=normalize_payroll_payment_mode(i.payment_mode),
                 can_open_payslip=True,
                 effective_cis_tax_amount=eff_cis,
                 effective_net_amount=eff_net,
@@ -1181,6 +1245,10 @@ def export_print_html(
     )
     rows_html = []
     for row in report.items:
+        cis_cell = row.display_tax_amount if row.display_tax_amount is not None else row.tax_amount
+        net_cell = row.display_net_amount if row.display_net_amount is not None else row.net_amount
+        cis_txt = "—" if cis_cell is None else f"{cis_cell:.2f}"
+        net_txt = "—" if net_cell is None else f"{net_cell:.2f}"
         rows_html.append(
             "<tr>"
             f"<td>{row.employee_email or ''}</td>"
@@ -1188,11 +1256,11 @@ def export_print_html(
             f"<td>{row.regular_seconds / 3600:.2f}</td>"
             f"<td>{row.overtime_seconds / 3600:.2f}</td>"
             f"<td>{row.gross_amount or '—'}</td>"
-            f"<td>{row.display_tax_amount or row.tax_amount or '—'}</td>"
+            f"<td>{cis_txt}</td>"
             f"<td>{row.other_deductions_amount}</td>"
-            f"<td>{row.display_net_amount or row.net_amount or '—'}</td>"
+            f"<td>{net_txt}</td>"
             f"<td>{row.status}</td>"
-            "</tr>"
+            "</tr>",
         )
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"/><title>Payroll {name} — {week_start}</title>

@@ -390,7 +390,9 @@ export function PayrollReportClient() {
     setEditRow(row);
     setEditNotes(row.notes ?? "");
     setEditOtherDed(row.other_deductions_amount ?? "0");
-    setEditDispTax(effectiveDisplayedTaxAmount(row.display_tax_amount, row.tax_amount) ?? "");
+    setEditDispTax(
+      effectiveDisplayedTaxAmount(row.display_tax_amount, row.tax_amount, row.payment_mode) ?? "",
+    );
     setEditDispNet(row.display_net_amount ?? row.net_amount ?? "");
     setEditPaymentMode(normalizePaymentMode(row.payment_mode));
   }
@@ -408,7 +410,7 @@ export function PayrollReportClient() {
         other_deductions_amount: editOtherDed || null,
         display_tax_amount: editDispTax || null,
         display_net_amount: editDispNet || null,
-        payment_mode: editPaymentMode || null,
+        payment_mode: editPaymentMode,
       });
       setEditRow(null);
       setPayrollSaveMessage("Payroll row saved.");
@@ -894,7 +896,11 @@ export function PayrollReportClient() {
                             </TableCell>
                             <TableCell className="align-top text-xs">
                               {formatMoneyGBP(
-                                effectiveDisplayedTaxAmount(row.display_tax_amount, row.tax_amount),
+                                effectiveDisplayedTaxAmount(
+                                  row.display_tax_amount,
+                                  row.tax_amount,
+                                  row.payment_mode,
+                                ),
                               )}
                             </TableCell>
                             <TableCell className="align-top text-xs">

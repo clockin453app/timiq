@@ -36,7 +36,7 @@ function cisForRow(row: PayHistoryEntry): string | null | undefined {
   ) {
     return row.effective_cis_tax_amount;
   }
-  return effectiveDisplayedTaxAmount(row.display_tax_amount, row.tax_amount);
+  return effectiveDisplayedTaxAmount(row.display_tax_amount, row.tax_amount, row.payment_mode);
 }
 
 function netForRow(row: PayHistoryEntry): string | null | undefined {

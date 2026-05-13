@@ -66,6 +66,18 @@ def split_regular_overtime(
     return regular, overtime
 
 
+def normalize_payroll_payment_mode(mode: str | None) -> str:
+    """Null, empty, legacy 'net', or unknown values default to net_payment (CIS deducted)."""
+    if mode is None:
+        return "net_payment"
+    m = str(mode).strip().lower()
+    if m in ("", "net", "net_payment"):
+        return "net_payment"
+    if m in ("gross", "gross_payment"):
+        return "gross_payment"
+    return "net_payment"
+
+
 def policy_snapshot_dict(policy: CompanyTimePolicy) -> dict:
     return {
         "standard_start_time": policy.standard_start_time,
@@ -88,8 +100,13 @@ def compute_money_bundle(
     overtime_multiplier: Decimal,
     tax_rate_percent: Decimal | None,
     other_deductions: Decimal,
+    payment_mode: str | None = None,
 ) -> dict[str, object]:
-    """Returns gross/tax/net/display fields and rate_missing."""
+    """Returns gross/tax/net/display fields and rate_missing.
+
+    ``payment_mode``: ``gross_payment`` means no CIS deduction (tax and display tax are zero);
+    ``net_payment`` (default) applies ``tax_rate_percent`` to gross for CIS.
+    """
     if hourly_rate is None:
         return {
             "rate_missing": True,
@@ -107,9 +124,14 @@ def compute_money_bundle(
     gross = regular_pay + overtime_pay
     gross_q = gross.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
 
-    tr = tax_rate_percent if tax_rate_percent is not None else Decimal(0)
-    tax = (gross_q * tr / Decimal(100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-    net = (gross_q - tax - other_deductions).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    mode = normalize_payroll_payment_mode(payment_mode)
+    if mode == "gross_payment":
+        tax = Decimal(0)
+        net = (gross_q - other_deductions).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    else:
+        tr = tax_rate_percent if tax_rate_percent is not None else Decimal(0)
+        tax = (gross_q * tr / Decimal(100)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        net = (gross_q - tax - other_deductions).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     return {
         "rate_missing": False,

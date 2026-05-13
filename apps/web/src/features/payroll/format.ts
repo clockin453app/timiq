@@ -23,11 +23,23 @@ export function formatMoneyGBP(value: string | null | undefined): string {
   return `£${inner}`;
 }
 
-/** Prefer stored display CIS when set; if display is 0 but calculated tax is non-zero, use calculated (stale display-zero rows). */
+/**
+ * CIS amount shown in UI: server fields only; optional `paymentMode` so gross payment never
+ * substitutes calculated tax when display CIS is zero.
+ */
 export function effectiveDisplayedTaxAmount(
   displayTax: string | null | undefined,
   calculatedTax: string | null | undefined,
+  paymentMode?: string | null,
 ): string | null | undefined {
+  const raw = (paymentMode ?? "").trim().toLowerCase();
+  const isGross = raw === "gross_payment" || raw === "gross";
+  if (isGross) {
+    if (displayTax !== null && displayTax !== undefined && displayTax !== "") {
+      return displayTax;
+    }
+    return "0";
+  }
   if (displayTax === null || displayTax === undefined || displayTax === "") {
     return calculatedTax;
   }
