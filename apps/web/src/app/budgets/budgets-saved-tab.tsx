@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import { Button, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui";
+import { Badge, Button, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui";
 import { isAdministrator, useCurrentUser, type AuthUser } from "../../features/auth";
 import {
   archiveBudget,
@@ -17,6 +17,7 @@ import {
   openBudgetReportPrint,
   patchBudget,
   patchBudgetExpense,
+  type BudgetCategoryTotals,
   type BudgetExpenseResponse,
   type BudgetProjectDetailResponse,
   type BudgetProjectSummary,
@@ -25,9 +26,32 @@ import { listCompanies, type Company } from "../../features/companies/api";
 import { formatHoursFromSeconds } from "../../features/payroll/format";
 import { listLocations, type Location } from "../../features/locations/api";
 import { listWorkplaces, type Workplace } from "../../features/workplaces/api";
-import { BudgetStatCard, expenseCategoryLabel, isoTodayYmd, moneyDisplay, percentDisplay } from "./budget-ui";
+import {
+  BudgetCompactStat,
+  BudgetHealthBar,
+  budgetStatusBadgeTone,
+  expenseCategoryLabel,
+  isoTodayYmd,
+  moneyDisplay,
+  percentDisplay,
+  segmentBtnClass,
+} from "./budget-ui";
 
 const BUDGET_STATUSES = ["draft", "active", "completed", "archived"] as const;
+
+const CATEGORY_KEYS = [
+  "materials",
+  "tools",
+  "equipment",
+  "subcontractor",
+  "plant_hire",
+  "transport",
+  "other",
+] as const;
+
+type BudgetDetailTab = "overview" | "purchases" | "labour" | "reports";
+
+type CategoryEntry = { key: (typeof CATEGORY_KEYS)[number]; amount: number };
 
 function resolveCompanyId(user: AuthUser, override: string | null): string | null {
   if (isAdministrator(user)) {
@@ -40,6 +64,10 @@ function overlayPanelClass() {
   return "w-full max-w-lg rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg";
 }
 
+function expenseModalClass() {
+  return "w-full max-w-md rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg";
+}
+
 function fieldLabelClass() {
   return "block text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]";
 }
@@ -49,7 +77,31 @@ function selectClass() {
 }
 
 function textareaClass() {
-  return "mt-1.5 min-h-[72px] w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 py-2 text-sm text-[var(--color-text)]";
+  return "mt-1.5 min-h-[64px] w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 py-2 text-sm text-[var(--color-text)]";
+}
+
+function formatHeaderDate(iso: string | null | undefined): string | null {
+  if (!iso) {
+    return null;
+  }
+  const d = new Date(`${iso}T12:00:00`);
+  if (Number.isNaN(d.getTime())) {
+    return iso;
+  }
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function categoryAmount(cats: BudgetCategoryTotals, key: (typeof CATEGORY_KEYS)[number]): number {
+  const v = cats[key];
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function purchaseDateDisplay(row: BudgetExpenseResponse): string {
+  if (typeof row.purchase_date === "string") {
+    return row.purchase_date;
+  }
+  return String(row.purchase_date).slice(0, 10);
 }
 
 export function BudgetsSavedTab() {
@@ -68,11 +120,14 @@ export function BudgetsSavedTab() {
   const [expenses, setExpenses] = useState<BudgetExpenseResponse[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const [detailTab, setDetailTab] = useState<BudgetDetailTab>("overview");
 
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [expenseSuccess, setExpenseSuccess] = useState("");
 
   const [locations, setLocations] = useState<Location[]>([]);
   const [workplaces, setWorkplaces] = useState<Workplace[]>([]);
@@ -80,6 +135,18 @@ export function BudgetsSavedTab() {
   const activeCompanyId = useMemo(() => resolveCompanyId(user, companyOverride), [user, companyOverride]);
 
   const budgetCompanyId = detail?.budget.company_id ?? activeCompanyId;
+
+  useEffect(() => {
+    if (!expenseSuccess) {
+      return;
+    }
+    const t = window.setTimeout(() => setExpenseSuccess(""), 4500);
+    return () => window.clearTimeout(t);
+  }, [expenseSuccess]);
+
+  useEffect(() => {
+    setDetailTab("overview");
+  }, [selectedId]);
 
   useEffect(() => {
     if (!isAdministrator(user)) {
@@ -310,6 +377,11 @@ export function BudgetsSavedTab() {
   const [exNotes, setExNotes] = useState("");
   const [expenseSaving, setExpenseSaving] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [showZeroCategories, setShowZeroCategories] = useState(false);
+
+  useEffect(() => {
+    setShowZeroCategories(false);
+  }, [selectedId, detail?.budget.id]);
 
   function resetExpenseForm() {
     setExCategory("materials");
@@ -321,6 +393,13 @@ export function BudgetsSavedTab() {
     setExInv("");
     setExNotes("");
     setEditingExpenseId(null);
+  }
+
+  function openAddExpenseModal() {
+    setActionError("");
+    resetExpenseForm();
+    setShowExpenseModal(true);
+    setDetailTab("purchases");
   }
 
   async function submitExpense(e: FormEvent) {
@@ -358,7 +437,9 @@ export function BudgetsSavedTab() {
           notes: exNotes.trim() || null,
         });
       }
+      setShowExpenseModal(false);
       resetExpenseForm();
+      setExpenseSuccess(editingExpenseId ? "Purchase updated." : "Purchase saved.");
       await reloadDetail(selectedId);
       await reloadList();
     } catch (err) {
@@ -369,15 +450,18 @@ export function BudgetsSavedTab() {
   }
 
   function startEditExpense(row: BudgetExpenseResponse) {
+    setActionError("");
     setEditingExpenseId(row.id);
     setExCategory(row.category);
     setExDesc(row.description);
     setExSupplier(row.supplier ?? "");
-    setExDate(typeof row.purchase_date === "string" ? row.purchase_date : String(row.purchase_date).slice(0, 10));
+    setExDate(purchaseDateDisplay(row));
     setExAmount(String(row.amount));
     setExVat(row.vat_amount != null ? String(row.vat_amount) : "");
     setExInv(row.invoice_ref ?? "");
     setExNotes(row.notes ?? "");
+    setShowExpenseModal(true);
+    setDetailTab("purchases");
   }
 
   async function handleDeleteExpense(id: string) {
@@ -388,6 +472,8 @@ export function BudgetsSavedTab() {
     try {
       await deleteBudgetExpense(selectedId, id);
       resetExpenseForm();
+      setShowExpenseModal(false);
+      setExpenseSuccess("Purchase deleted.");
       await reloadDetail(selectedId);
       await reloadList();
     } catch (err) {
@@ -403,6 +489,7 @@ export function BudgetsSavedTab() {
     try {
       await archiveBudget(selectedId);
       setShowEdit(false);
+      setShowExpenseModal(false);
       await reloadDetail(selectedId);
       await reloadList();
     } catch (err) {
@@ -431,6 +518,16 @@ export function BudgetsSavedTab() {
 
   const totals = detail?.totals;
   const cats = detail?.breakdown_by_category;
+
+  const categoryRows = useMemo(() => {
+    if (!cats) {
+      return { nonZero: [] as CategoryEntry[], zeros: [] as CategoryEntry[] };
+    }
+    const entries = CATEGORY_KEYS.map((key) => ({ key, amount: categoryAmount(cats, key) }));
+    const nonZero = entries.filter((e) => e.amount > 0);
+    const zeros = entries.filter((e) => e.amount === 0);
+    return { nonZero, zeros };
+  }, [cats]);
 
   const sharedFormFields = (
     <>
@@ -505,23 +602,105 @@ export function BudgetsSavedTab() {
     </>
   );
 
+  const expenseFormFields = (
+    <form className="grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={(ev) => void submitExpense(ev)}>
+      <label className={fieldLabelClass()}>
+        <span className="text-[var(--color-text)]">Category</span>
+        <select className={selectClass()} onChange={(e) => setExCategory(e.target.value)} value={exCategory}>
+          {BUDGET_EXPENSE_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {expenseCategoryLabel(c)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className={fieldLabelClass()}>
+        <span className="text-[var(--color-text)]">Purchase date</span>
+        <Input className="mt-1" onChange={(e) => setExDate(e.target.value)} type="date" value={exDate} />
+      </label>
+      <label className={`sm:col-span-2 ${fieldLabelClass()}`}>
+        <span className="text-[var(--color-text)]">Description</span>
+        <Input className="mt-1" onChange={(e) => setExDesc(e.target.value)} value={exDesc} />
+      </label>
+      <label className={fieldLabelClass()}>
+        <span className="text-[var(--color-text)]">Supplier</span>
+        <Input className="mt-1" onChange={(e) => setExSupplier(e.target.value)} value={exSupplier} />
+      </label>
+      <label className={fieldLabelClass()}>
+        <span className="text-[var(--color-text)]">Amount (£)</span>
+        <Input className="mt-1" inputMode="decimal" onChange={(e) => setExAmount(e.target.value)} value={exAmount} />
+      </label>
+      <label className={fieldLabelClass()}>
+        <span className="text-[var(--color-text)]">VAT (£)</span>
+        <Input className="mt-1" inputMode="decimal" onChange={(e) => setExVat(e.target.value)} value={exVat} />
+      </label>
+      <label className={fieldLabelClass()}>
+        <span className="text-[var(--color-text)]">Invoice ref</span>
+        <Input className="mt-1" onChange={(e) => setExInv(e.target.value)} value={exInv} />
+      </label>
+      <label className={`sm:col-span-2 ${fieldLabelClass()}`}>
+        <span className="text-[var(--color-text)]">Notes</span>
+        <textarea className={textareaClass()} onChange={(e) => setExNotes(e.target.value)} value={exNotes} />
+      </label>
+      {actionError && showExpenseModal ? (
+        <p className="sm:col-span-2 text-sm text-[var(--color-danger-700)]">{actionError}</p>
+      ) : null}
+      <div className="flex flex-wrap gap-2 sm:col-span-2">
+        <Button disabled={expenseSaving} type="submit">
+          {expenseSaving ? "Saving…" : editingExpenseId ? "Save changes" : "Save purchase"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          onClick={() => {
+            setShowExpenseModal(false);
+            resetExpenseForm();
+            setActionError("");
+          }}
+        >
+          Cancel
+        </Button>
+      </div>
+    </form>
+  );
+
   if (!activeCompanyId && isAdministrator(user)) {
     return <p className="text-sm text-[var(--color-text-muted)]">Select a company to manage saved budgets.</p>;
   }
 
   if (selectedId) {
+    const b = detail?.budget;
+    const isOver = totals ? Number(totals.over_budget_amount) > 0 : false;
+    const pctNum = totals ? Number(totals.budget_used_percent) : NaN;
+    const pctBar = Number.isFinite(pctNum) ? Math.max(0, pctNum) : 0;
+    const dateStart = formatHeaderDate(b?.start_date ?? null);
+    const dateEnd = formatHeaderDate(b?.end_date ?? null);
+    let dateRangeLabel = "No dates set";
+    if (dateStart && dateEnd) {
+      dateRangeLabel = `${dateStart} – ${dateEnd}`;
+    } else if (dateStart) {
+      dateRangeLabel = `${dateStart} – Ongoing`;
+    } else if (dateEnd) {
+      dateRangeLabel = `Until ${dateEnd}`;
+    }
+
+    const siteLine = [b?.location_name, b?.workplace_name].filter(Boolean).join(" · ") || "Company-wide (no site filter)";
+
     return (
-      <div className="min-w-0 space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="min-w-0 space-y-5">
+        <div className="flex flex-wrap gap-2 border-b border-[var(--color-border-dark)] pb-3">
           <Button
             type="button"
             variant="secondary"
             onClick={() => {
               setSelectedId(null);
               setDetailError("");
+              setActionError("");
+              setExpenseSuccess("");
+              setShowExpenseModal(false);
             }}
           >
-            ← Back to list
+            Back
           </Button>
           {detail && detail.budget.status !== "archived" ? (
             <>
@@ -547,240 +726,330 @@ export function BudgetsSavedTab() {
             {detailError}
           </div>
         ) : null}
-        {actionError ? (
+        {actionError && !showExpenseModal ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
             {actionError}
           </div>
         ) : null}
+        {expenseSuccess ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-success-700)] bg-[var(--color-success-50)] px-3 py-2 text-sm text-[var(--color-success-700)]">
+            {expenseSuccess}
+          </div>
+        ) : null}
 
-        {detail && totals ? (
+        {detail && totals && b ? (
           <>
-            <div>
-              <h2 className="text-lg font-semibold text-[var(--color-text)]">{detail.budget.name}</h2>
-              <p className="text-sm text-[var(--color-text-muted)]">
-                {detail.budget.client_name ? `${detail.budget.client_name} · ` : null}
-                {detail.budget.location_name ?? "All company sites"}
-                {detail.budget.workplace_name ? ` · ${detail.budget.workplace_name}` : null}
-              </p>
-            </div>
-
-            {totals.warnings.length > 0 ? (
-              <ul className="list-inside list-disc rounded-[var(--radius-md)] border border-amber-700/40 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                {totals.warnings.map((w) => (
-                  <li key={w}>{w}</li>
-                ))}
-              </ul>
-            ) : null}
-
-            <p className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
-              {totals.estimate_note}
-            </p>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <BudgetStatCard label="Planned budget" value={moneyDisplay(totals.planned_budget_amount)} />
-              <BudgetStatCard label="Finalized labour" value={moneyDisplay(totals.finalized_labour_cost)} />
-              <BudgetStatCard label="Estimated labour" value={moneyDisplay(totals.estimated_labour_cost)} />
-              <BudgetStatCard label="Total labour" value={moneyDisplay(totals.total_labour_cost)} />
-              <BudgetStatCard label="Purchases / expenses" value={moneyDisplay(totals.total_expenses)} />
-              <BudgetStatCard label="Total spent" value={moneyDisplay(totals.total_spent)} />
-              <BudgetStatCard label="Remaining" value={moneyDisplay(totals.remaining_budget)} />
-              <BudgetStatCard
-                label="Over budget"
-                value={moneyDisplay(totals.over_budget_amount)}
-                hint={Number(totals.over_budget_amount) > 0 ? "Spent exceeds planned" : undefined}
-              />
-              <BudgetStatCard label="Budget used" value={percentDisplay(totals.budget_used_percent)} />
-              <BudgetStatCard label="Labour % of budget" value={percentDisplay(totals.labour_percent_of_budget)} />
-              <BudgetStatCard label="Expenses % of budget" value={percentDisplay(totals.expenses_percent_of_budget)} />
-              <BudgetStatCard label="Open shifts (not costed)" value={String(totals.open_shift_count)} />
-              <BudgetStatCard label="Missing hourly rates" value={String(totals.missing_rate_count)} />
-            </div>
-
-            {cats ? (
-              <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-                <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                    Expense totals by category
-                  </p>
-                </div>
-                <div className="overflow-x-auto p-2">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Category</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {(
-                        [
-                          ["materials", cats.materials],
-                          ["tools", cats.tools],
-                          ["equipment", cats.equipment],
-                          ["subcontractor", cats.subcontractor],
-                          ["plant_hire", cats.plant_hire],
-                          ["transport", cats.transport],
-                          ["other", cats.other],
-                        ] as const
-                      ).map(([k, v]) => (
-                        <TableRow key={k}>
-                          <TableCell>{expenseCategoryLabel(k)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{moneyDisplay(v)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+            <header className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-xl font-semibold tracking-tight text-[var(--color-text)]">{b.name}</h2>
+                    <Badge tone={budgetStatusBadgeTone(b.status)}>{b.status}</Badge>
+                  </div>
+                  {b.client_name ? <p className="text-sm text-[var(--color-text)]">{b.client_name}</p> : null}
+                  <p className="text-sm text-[var(--color-text-muted)]">{siteLine}</p>
+                  <p className="text-xs text-[var(--color-text-soft)]">{dateRangeLabel}</p>
+                  {b.reference_code ? (
+                    <p className="text-xs text-[var(--color-text-muted)]">
+                      Reference: <span className="font-mono text-[var(--color-text)]">{b.reference_code}</span>
+                    </p>
+                  ) : null}
                 </div>
               </div>
-            ) : null}
+            </header>
 
-            <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-              <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                  Labour by employee
+            <div className="flex flex-wrap gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-1">
+              {(
+                [
+                  ["overview", "Overview"],
+                  ["purchases", "Purchases"],
+                  ["labour", "Labour"],
+                  ["reports", "Reports"],
+                ] as const
+              ).map(([id, label]) => (
+                <button
+                  key={id}
+                  className={segmentBtnClass(detailTab === id)}
+                  type="button"
+                  onClick={() => setDetailTab(id)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {detailTab === "overview" ? (
+              <div className="space-y-5">
+                <BudgetHealthBar
+                  isOverBudget={isOver}
+                  percentUsedDisplay={percentDisplay(totals.budget_used_percent)}
+                  percentUsedNumeric={pctBar}
+                  plannedDisplay={moneyDisplay(totals.planned_budget_amount)}
+                  remainingOrOverDisplay={
+                    isOver ? moneyDisplay(totals.over_budget_amount) : moneyDisplay(totals.remaining_budget)
+                  }
+                  spentDisplay={moneyDisplay(totals.total_spent)}
+                />
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <BudgetCompactStat label="Planned budget" value={moneyDisplay(totals.planned_budget_amount)} />
+                  <BudgetCompactStat label="Total spent" value={moneyDisplay(totals.total_spent)} />
+                  <BudgetCompactStat
+                    emphasis={isOver ? "danger" : "default"}
+                    label={isOver ? "Over budget" : "Remaining"}
+                    value={isOver ? moneyDisplay(totals.over_budget_amount) : moneyDisplay(totals.remaining_budget)}
+                  />
+                  <BudgetCompactStat label="Budget used" value={percentDisplay(totals.budget_used_percent)} />
+                </div>
+
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  <BudgetCompactStat label="Finalized labour" value={moneyDisplay(totals.finalized_labour_cost)} />
+                  <BudgetCompactStat label="Estimated labour" value={moneyDisplay(totals.estimated_labour_cost)} />
+                  <BudgetCompactStat label="Purchases / expenses" value={moneyDisplay(totals.total_expenses)} />
+                  <BudgetCompactStat
+                    hint={
+                      totals.missing_rate_count > 0
+                        ? `${totals.missing_rate_count} employee(s) missing hourly rate`
+                        : undefined
+                    }
+                    label="Open shifts / rates"
+                    value={`${totals.open_shift_count} open · ${totals.missing_rate_count} missing rate`}
+                  />
+                </div>
+
+                {cats ? (
+                  <section>
+                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold text-[var(--color-text)]">Expense categories</h3>
+                      {categoryRows.zeros.length > 0 ? (
+                        <button
+                          className="text-xs font-semibold text-[var(--color-text-muted)] underline decoration-dotted hover:text-[var(--color-text)]"
+                          type="button"
+                          onClick={() => setShowZeroCategories((v) => !v)}
+                        >
+                          {showZeroCategories ? "Hide zero categories" : "Show zero categories"}
+                        </button>
+                      ) : null}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+                      {(showZeroCategories ? [...categoryRows.nonZero, ...categoryRows.zeros] : categoryRows.nonZero.length > 0
+                        ? categoryRows.nonZero
+                        : categoryRows.zeros
+                      ).map(({ key, amount }) => (
+                        <div
+                          key={key}
+                          className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2.5 py-2"
+                        >
+                          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                            {expenseCategoryLabel(key)}
+                          </p>
+                          <p className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                            {moneyDisplay(amount)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+
+                {totals.warnings.length > 0 ? (
+                  <ul className="list-inside list-disc rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-2 text-sm text-[var(--color-warning-700)]">
+                    {totals.warnings.map((w) => (
+                      <li key={w}>{w}</li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                <p className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
+                  {totals.estimate_note}
                 </p>
               </div>
-              <div className="overflow-x-auto p-2">
-                {detail.breakdown_by_employee.length === 0 ? (
-                  <p className="p-2 text-sm text-[var(--color-text-muted)]">No labour in this budget window.</p>
-                ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Employee</TableHead>
-                        <TableHead className="text-right">Hours</TableHead>
-                        <TableHead className="text-right">Finalized</TableHead>
-                        <TableHead className="text-right">Estimated</TableHead>
-                        <TableHead className="text-right">Total</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {detail.breakdown_by_employee.map((row) => (
-                        <TableRow key={row.user_id}>
-                          <TableCell>
-                            <div className="flex flex-col">
-                              <span className="font-medium">{row.employee_name ?? row.employee_email}</span>
-                              <span className="text-xs text-[var(--color-text-muted)]">{row.employee_email}</span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatHoursFromSeconds(row.total_payroll_seconds)}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">{moneyDisplay(row.finalized_labour_cost)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{moneyDisplay(row.estimated_labour_cost)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{moneyDisplay(row.total_labour_cost)}</TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                )}
-              </div>
-            </div>
+            ) : null}
 
-            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
-              <p className="text-sm font-semibold text-[var(--color-text)]">
-                {editingExpenseId ? "Edit purchase" : "Add purchase"}
-              </p>
-              <form className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2" onSubmit={(ev) => void submitExpense(ev)}>
-                <label className={fieldLabelClass()}>
-                  <span className="text-[var(--color-text)]">Category</span>
-                  <select className={selectClass()} onChange={(e) => setExCategory(e.target.value)} value={exCategory}>
-                    {BUDGET_EXPENSE_CATEGORIES.map((c) => (
-                      <option key={c} value={c}>
-                        {expenseCategoryLabel(c)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className={fieldLabelClass()}>
-                  <span className="text-[var(--color-text)]">Purchase date</span>
-                  <Input className="mt-1" onChange={(e) => setExDate(e.target.value)} type="date" value={exDate} />
-                </label>
-                <label className={`sm:col-span-2 ${fieldLabelClass()}`}>
-                  <span className="text-[var(--color-text)]">Description</span>
-                  <Input className="mt-1" onChange={(e) => setExDesc(e.target.value)} value={exDesc} />
-                </label>
-                <label className={fieldLabelClass()}>
-                  <span className="text-[var(--color-text)]">Supplier</span>
-                  <Input className="mt-1" onChange={(e) => setExSupplier(e.target.value)} value={exSupplier} />
-                </label>
-                <label className={fieldLabelClass()}>
-                  <span className="text-[var(--color-text)]">Amount (£)</span>
-                  <Input className="mt-1" inputMode="decimal" onChange={(e) => setExAmount(e.target.value)} value={exAmount} />
-                </label>
-                <label className={fieldLabelClass()}>
-                  <span className="text-[var(--color-text)]">VAT (£)</span>
-                  <Input className="mt-1" inputMode="decimal" onChange={(e) => setExVat(e.target.value)} value={exVat} />
-                </label>
-                <label className={fieldLabelClass()}>
-                  <span className="text-[var(--color-text)]">Invoice ref</span>
-                  <Input className="mt-1" onChange={(e) => setExInv(e.target.value)} value={exInv} />
-                </label>
-                <label className={`sm:col-span-2 ${fieldLabelClass()}`}>
-                  <span className="text-[var(--color-text)]">Notes</span>
-                  <textarea className={textareaClass()} onChange={(e) => setExNotes(e.target.value)} value={exNotes} />
-                </label>
-                <div className="flex flex-wrap gap-2 sm:col-span-2">
-                  <Button disabled={expenseSaving} type="submit">
-                    {expenseSaving ? "Saving…" : editingExpenseId ? "Update purchase" : "Add purchase"}
-                  </Button>
-                  {editingExpenseId ? (
-                    <Button type="button" variant="ghost" onClick={resetExpenseForm}>
-                      Cancel edit
+            {detailTab === "purchases" ? (
+              <div className="space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold text-[var(--color-text)]">Purchases</h3>
+                  {b.status !== "archived" ? (
+                    <Button type="button" onClick={openAddExpenseModal}>
+                      + Add purchase
                     </Button>
                   ) : null}
                 </div>
-              </form>
-            </div>
 
-            <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-              <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">Purchases</p>
-              </div>
-              <div className="overflow-x-auto p-2">
                 {expenses.length === 0 ? (
-                  <p className="p-2 text-sm text-[var(--color-text-muted)]">No purchases yet.</p>
+                  <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-8 text-center">
+                    <p className="text-sm text-[var(--color-text-muted)]">No purchases added yet.</p>
+                    {b.status !== "archived" ? (
+                      <Button className="mt-3" type="button" onClick={openAddExpenseModal}>
+                        Add first purchase
+                      </Button>
+                    ) : null}
+                  </div>
                 ) : (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Category</TableHead>
-                        <TableHead>Supplier</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead className="text-right">Amount</TableHead>
-                        <TableHead className="text-right">VAT</TableHead>
-                        <TableHead>Invoice</TableHead>
-                        <TableHead />
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
+                  <>
+                    <div className="hidden md:block overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Supplier</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead className="text-right">Amount</TableHead>
+                            <TableHead className="text-right">VAT</TableHead>
+                            <TableHead>Invoice</TableHead>
+                            <TableHead />
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {expenses.map((row) => (
+                            <TableRow key={row.id}>
+                              <TableCell className="whitespace-nowrap tabular-nums text-sm">
+                                {purchaseDateDisplay(row)}
+                              </TableCell>
+                              <TableCell className="text-sm">{expenseCategoryLabel(row.category)}</TableCell>
+                              <TableCell className="text-sm">{row.supplier ?? "—"}</TableCell>
+                              <TableCell className="max-w-[200px] truncate text-sm">{row.description}</TableCell>
+                              <TableCell className="text-right text-sm tabular-nums">{moneyDisplay(row.amount)}</TableCell>
+                              <TableCell className="text-right text-sm tabular-nums">
+                                {row.vat_amount != null ? moneyDisplay(row.vat_amount) : "—"}
+                              </TableCell>
+                              <TableCell className="text-sm">{row.invoice_ref ?? "—"}</TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                {b.status !== "archived" ? (
+                                  <>
+                                    <Button size="sm" type="button" variant="ghost" onClick={() => startEditExpense(row)}>
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      type="button"
+                                      variant="danger"
+                                      onClick={() => void handleDeleteExpense(row.id)}
+                                    >
+                                      Delete
+                                    </Button>
+                                  </>
+                                ) : null}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+
+                    <div className="space-y-2 md:hidden">
                       {expenses.map((row) => (
-                        <TableRow key={row.id}>
-                          <TableCell className="whitespace-nowrap tabular-nums">
-                            {typeof row.purchase_date === "string" ? row.purchase_date : String(row.purchase_date)}
-                          </TableCell>
-                          <TableCell>{expenseCategoryLabel(row.category)}</TableCell>
-                          <TableCell>{row.supplier ?? "—"}</TableCell>
-                          <TableCell>{row.description}</TableCell>
-                          <TableCell className="text-right tabular-nums">{moneyDisplay(row.amount)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{row.vat_amount != null ? moneyDisplay(row.vat_amount) : "—"}</TableCell>
-                          <TableCell>{row.invoice_ref ?? "—"}</TableCell>
-                          <TableCell className="whitespace-nowrap">
-                            <Button size="sm" type="button" variant="ghost" onClick={() => startEditExpense(row)}>
-                              Edit
-                            </Button>
-                            <Button size="sm" type="button" variant="danger" onClick={() => void handleDeleteExpense(row.id)}>
-                              Delete
-                            </Button>
-                          </TableCell>
-                        </TableRow>
+                        <div
+                          key={row.id}
+                          className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-xs font-semibold text-[var(--color-text-soft)]">
+                              {purchaseDateDisplay(row)} · {expenseCategoryLabel(row.category)}
+                            </p>
+                            <p className="text-sm font-semibold tabular-nums text-[var(--color-text)]">{moneyDisplay(row.amount)}</p>
+                          </div>
+                          <p className="mt-1 text-sm font-medium text-[var(--color-text)]">{row.description}</p>
+                          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                            {row.supplier ?? "—"} · VAT: {row.vat_amount != null ? moneyDisplay(row.vat_amount) : "—"} · Inv:{" "}
+                            {row.invoice_ref ?? "—"}
+                          </p>
+                          {b.status !== "archived" ? (
+                            <div className="mt-2 flex gap-2">
+                              <Button size="sm" type="button" variant="secondary" onClick={() => startEditExpense(row)}>
+                                Edit
+                              </Button>
+                              <Button size="sm" type="button" variant="danger" onClick={() => void handleDeleteExpense(row.id)}>
+                                Delete
+                              </Button>
+                            </div>
+                          ) : null}
+                        </div>
                       ))}
-                    </TableBody>
-                  </Table>
+                    </div>
+                  </>
                 )}
               </div>
-            </div>
+            ) : null}
+
+            {detailTab === "labour" ? (
+              <div className="space-y-4">
+                <p className="text-sm text-[var(--color-text-muted)]">
+                  <strong className="text-[var(--color-text)]">Finalized labour</strong> uses approved or paid payroll
+                  gross where available. <strong className="text-[var(--color-text)]">Estimated labour</strong> covers
+                  periods not yet finalized, using payroll-rounded time and profile rates. Official totals always come from
+                  the server.
+                </p>
+                {(totals.open_shift_count > 0 || totals.missing_rate_count > 0) && (
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-2 text-sm text-[var(--color-warning-700)]">
+                    {totals.open_shift_count > 0 ? (
+                      <p>{totals.open_shift_count} open shift(s) in range are not included in labour cost.</p>
+                    ) : null}
+                    {totals.missing_rate_count > 0 ? (
+                      <p>{totals.missing_rate_count} employee(s) are missing an hourly rate; those hours may show as zero cost.</p>
+                    ) : null}
+                  </div>
+                )}
+                <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+                  {detail.breakdown_by_employee.length === 0 ? (
+                    <p className="p-4 text-sm text-[var(--color-text-muted)]">
+                      No completed shifts found in this budget date range.
+                    </p>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Employee</TableHead>
+                          <TableHead className="text-right">Hours</TableHead>
+                          <TableHead className="text-right">Finalized</TableHead>
+                          <TableHead className="text-right">Estimated</TableHead>
+                          <TableHead className="text-right">Total</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {detail.breakdown_by_employee.map((row) => (
+                          <TableRow key={row.user_id}>
+                            <TableCell>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{row.employee_name ?? row.employee_email}</span>
+                                <span className="text-xs text-[var(--color-text-muted)]">{row.employee_email}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatHoursFromSeconds(row.total_payroll_seconds)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">{moneyDisplay(row.finalized_labour_cost)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{moneyDisplay(row.estimated_labour_cost)}</TableCell>
+                            <TableCell className="text-right tabular-nums">{moneyDisplay(row.total_labour_cost)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
+            {detailTab === "reports" ? (
+              <div className="max-w-xl space-y-4 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-4">
+                <h3 className="text-sm font-semibold text-[var(--color-text)]">Exports</h3>
+                <p className="text-sm text-[var(--color-text-muted)]">
+                  Download a CSV for spreadsheets, or open a print-ready HTML summary (use your browser Print → Save as
+                  PDF). Both include budget summary, category totals, purchase lines, and labour breakdown using the same
+                  server-side figures as this page. They do not include sensitive payroll identifiers.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="secondary" onClick={() => void handleExportCsv()}>
+                    Export CSV
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={handlePrint}>
+                    Print report
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </>
         ) : null}
 
@@ -809,6 +1078,30 @@ export function BudgetsSavedTab() {
                   </Button>
                 </div>
               </form>
+            </div>
+          </div>
+        ) : null}
+
+        {showExpenseModal && detail && detail.budget.status !== "archived" ? (
+          <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+            <div className={expenseModalClass()}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <h3 className="text-base font-semibold text-[var(--color-text)]">
+                  {editingExpenseId ? "Edit purchase" : "Add purchase"}
+                </h3>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setShowExpenseModal(false);
+                    resetExpenseForm();
+                    setActionError("");
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+              {expenseFormFields}
             </div>
           </div>
         ) : null}
