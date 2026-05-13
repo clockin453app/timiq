@@ -3,14 +3,18 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
-from app.modules.auth.service import can_manage_user
 from app.modules.auth.repository import get_user_by_id
+from app.modules.auth.service import can_manage_user
 from app.modules.companies.repository import get_company_by_id
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.employee_profiles.repository import (
     get_employee_profile_by_user_id,
     save_employee_profile,
     update_employee_profile,
+)
+from app.modules.employee_profiles.sanitize_tax_ids import (
+    sanitize_national_insurance_value,
+    sanitize_utr_value,
 )
 from app.modules.employee_profiles.schemas import (
     EmployeeProfileResponse,
@@ -35,7 +39,14 @@ def employee_profile_to_response(
         update={"company_name": company_name},
     )
     if mask_rates:
-        return base.model_copy(update={"hourly_rate": None, "tax_rate": None})
+        return base.model_copy(
+            update={
+                "hourly_rate": None,
+                "tax_rate": None,
+                "national_insurance_number": None,
+                "utr_number": None,
+            },
+        )
     return base
 
 
@@ -110,11 +121,12 @@ def update_profile_for_actor_or_user_id(
 
     profile = get_or_create_profile_for_user(db_session, target_user)
 
+    set_data = request.model_dump(exclude_unset=True)
+
     for field_name in (
         "first_name",
         "last_name",
         "phone",
-        "job_title",
         "start_date",
         "emergency_contact_name",
         "emergency_contact_phone",
@@ -122,6 +134,25 @@ def update_profile_for_actor_or_user_id(
         value = getattr(request, field_name)
         if value is not None:
             setattr(profile, field_name, value)
+
+    if "job_title" in set_data:
+        profile.job_title = (request.job_title or "").strip() or None
+
+    if "national_insurance_number" in set_data or "utr_number" in set_data:
+        if actor.id == target_user.id:
+            raise EmployeeProfilePermissionError("You cannot update tax identifiers on your own profile.")
+        if not can_manage_user(actor, target_user):
+            raise EmployeeProfilePermissionError(
+                "You cannot update tax identifiers for this user.",
+            )
+        if "national_insurance_number" in set_data:
+            raw_ni = (request.national_insurance_number or "").strip()
+            profile.national_insurance_number = (
+                sanitize_national_insurance_value(raw_ni) if raw_ni else None
+            )
+        if "utr_number" in set_data:
+            raw_utr = (request.utr_number or "").strip()
+            profile.utr_number = sanitize_utr_value(raw_utr) if raw_utr else None
 
     if request.is_onboarded is not None:
         profile.is_onboarded = request.is_onboarded

@@ -158,6 +158,8 @@ export type PayrollItemSummaryResponse = {
   ytd_taxable_pay: string;
   ytd_cis_deducted: string;
   can_open_payslip?: boolean;
+  national_insurance_number?: string | null;
+  utr_number?: string | null;
 };
 
 export function payrollItemPayslipUrl(itemId: string): string {

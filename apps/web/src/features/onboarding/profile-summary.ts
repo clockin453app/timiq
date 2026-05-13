@@ -13,6 +13,7 @@ export const ONBOARDING_SUMMARY_FIELD_ORDER = [
   "postcode",
   "country",
   "national_insurance_number",
+  "utr",
   "bank_account_holder",
   "bank_sort_code",
   "bank_account_number",
@@ -32,10 +33,10 @@ const LABELS: Record<string, string> = {
   postcode: "Postcode",
   country: "Country",
   national_insurance_number: "National Insurance number",
+  utr: "UTR",
   bank_account_holder: "Bank account holder",
   bank_sort_code: "Sort code",
   bank_account_number: "Account number",
-  utr: "UTR",
 };
 
 /** Shown masked on Profile until user chooses to reveal. */

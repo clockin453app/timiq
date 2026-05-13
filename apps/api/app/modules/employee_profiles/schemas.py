@@ -10,6 +10,8 @@ class EmployeeProfileUpdateRequest(BaseModel):
     last_name: str | None = Field(default=None, max_length=120)
     phone: str | None = Field(default=None, max_length=30)
     job_title: str | None = Field(default=None, max_length=120)
+    national_insurance_number: str | None = Field(default=None, max_length=32)
+    utr_number: str | None = Field(default=None, max_length=32)
     start_date: date | None = None
     emergency_contact_name: str | None = Field(default=None, max_length=120)
     emergency_contact_phone: str | None = Field(default=None, max_length=30)
@@ -30,6 +32,8 @@ class EmployeeProfileResponse(BaseModel):
     last_name: str | None
     phone: str | None
     job_title: str | None
+    national_insurance_number: str | None = None
+    utr_number: str | None = None
     start_date: date | None
     emergency_contact_name: str | None
     emergency_contact_phone: str | None

@@ -10,6 +10,7 @@ export type AuthUser = {
   updated_at: string;
   profile_first_name?: string | null;
   profile_last_name?: string | null;
+  profile_job_title?: string | null;
 };
 
 export type LoginResponse = {

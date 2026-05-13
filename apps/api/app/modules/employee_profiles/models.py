@@ -33,6 +33,8 @@ class EmployeeProfile(Base):
     last_name: Mapped[str] = mapped_column(String(120), nullable=True)
     phone: Mapped[str] = mapped_column(String(30), nullable=True)
     job_title: Mapped[str] = mapped_column(String(120), nullable=True)
+    national_insurance_number: Mapped[str] = mapped_column(String(32), nullable=True)
+    utr_number: Mapped[str] = mapped_column(String(32), nullable=True)
     start_date: Mapped[date] = mapped_column(Date, nullable=True)
     emergency_contact_name: Mapped[str] = mapped_column(String(120), nullable=True)
     emergency_contact_phone: Mapped[str] = mapped_column(String(30), nullable=True)

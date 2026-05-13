@@ -190,3 +190,5 @@ class PayrollItemSummaryResponse(BaseModel):
     ytd_taxable_pay: Decimal
     ytd_cis_deducted: Decimal
     can_open_payslip: bool = True
+    national_insurance_number: str | None = None
+    utr_number: str | None = None

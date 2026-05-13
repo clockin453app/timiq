@@ -13,6 +13,10 @@ from app.modules.auth.service import can_manage_user
 from app.modules.companies.repository import get_company_by_id
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
+from app.modules.employee_profiles.sanitize_tax_ids import (
+    sanitize_national_insurance_value,
+    sanitize_utr_value,
+)
 from app.modules.onboarding.models import OnboardingDocument, OnboardingSubmission
 from app.modules.onboarding.permissions import (
     can_access_document_file,
@@ -68,6 +72,7 @@ OPTIONAL_FORM_KEYS = (
     "postcode",
     "country",
     "national_insurance_number",
+    "utr",
     "bank_account_holder",
     "bank_sort_code",
     "bank_account_number",
@@ -88,6 +93,7 @@ FIELD_MAX_LENGTH: dict[str, int] = {
     "postcode": 32,
     "country": 120,
     "national_insurance_number": 32,
+    "utr": 32,
     "bank_account_holder": 200,
     "bank_sort_code": 32,
     "bank_account_number": 64,
@@ -846,6 +852,8 @@ def _apply_form_to_profile(profile: EmployeeProfile, form: dict[str, Any]) -> No
     profile.last_name = str(form.get("last_name", "")).strip() or None
     profile.phone = str(form.get("phone", "")).strip() or None
     profile.job_title = str(form.get("job_title", "")).strip() or None
+    profile.national_insurance_number = sanitize_national_insurance_value(form.get("national_insurance_number"))
+    profile.utr_number = sanitize_utr_value(form.get("utr"))
     profile.emergency_contact_name = str(form.get("emergency_contact_name", "")).strip() or None
     profile.emergency_contact_phone = str(form.get("emergency_contact_phone", "")).strip() or None
     start_raw = str(form.get("start_date", "")).strip()

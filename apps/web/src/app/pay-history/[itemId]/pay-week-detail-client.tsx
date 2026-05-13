@@ -130,6 +130,20 @@ export function PayWeekDetailClient(props: { itemId: string }) {
                   <dd className="font-medium text-[var(--color-text)]">{detail.payment_mode_label}</dd>
                 </div>
                 <div>
+                  <dt className="text-xs text-[var(--color-text-muted)]">National Insurance</dt>
+                  <dd className="font-medium text-[var(--color-text)]">
+                    {detail.national_insurance_number?.trim()
+                      ? detail.national_insurance_number
+                      : "Not provided"}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-[var(--color-text-muted)]">UTR</dt>
+                  <dd className="font-medium text-[var(--color-text)]">
+                    {detail.utr_number?.trim() ? detail.utr_number : "Not provided"}
+                  </dd>
+                </div>
+                <div>
                   <dt className="text-xs text-[var(--color-text-muted)]">Approved</dt>
                   <dd className="font-medium text-[var(--color-text)]">{formatWhen(detail.approved_at)}</dd>
                 </div>

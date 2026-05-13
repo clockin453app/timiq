@@ -56,6 +56,8 @@ def reset_employee_profile_after_history_clear(
     profile.last_name = None
     profile.phone = None
     profile.job_title = None
+    profile.national_insurance_number = None
+    profile.utr_number = None
     profile.start_date = None
     profile.emergency_contact_name = None
     profile.emergency_contact_phone = None

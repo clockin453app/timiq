@@ -17,6 +17,12 @@ def get_submission_by_user_id(
     return db_session.scalar(stmt)
 
 
+from app.modules.employee_profiles.sanitize_tax_ids import (
+    sanitize_national_insurance_value,
+    sanitize_utr_value,
+)
+
+
 def get_approved_onboarding_national_insurance_number(
     db_session: Session,
     user_id: uuid.UUID,
@@ -28,16 +34,21 @@ def get_approved_onboarding_national_insurance_number(
     if row is None or row.status != "approved":
         return None
     payload = row.form_payload if isinstance(row.form_payload, dict) else {}
-    raw = payload.get("national_insurance_number")
-    if raw is None:
+    return sanitize_national_insurance_value(payload.get("national_insurance_number"), max_len=max_len)
+
+
+def get_approved_onboarding_utr(
+    db_session: Session,
+    user_id: uuid.UUID,
+    *,
+    max_len: int = 32,
+) -> str | None:
+    """Return sanitized UTR from approved submission only (form key ``utr``)."""
+    row = get_submission_by_user_id(db_session, user_id)
+    if row is None or row.status != "approved":
         return None
-    if not isinstance(raw, str):
-        return None
-    cleaned = "".join(ch for ch in raw.strip().upper() if ch.isalnum() or ch in " ")
-    cleaned = " ".join(cleaned.split())
-    if not cleaned:
-        return None
-    return cleaned[:max_len]
+    payload = row.form_payload if isinstance(row.form_payload, dict) else {}
+    return sanitize_utr_value(payload.get("utr"), max_len=max_len)
 
 
 def get_submission_by_id(

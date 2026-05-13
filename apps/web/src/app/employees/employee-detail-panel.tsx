@@ -70,6 +70,10 @@ export function EmployeeDetailPanel({
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
   const [isUpdatingEarlyAccess, setIsUpdatingEarlyAccess] = useState(false);
   const [isSavingPayrollRates, setIsSavingPayrollRates] = useState(false);
+  const [jobTitleStr, setJobTitleStr] = useState("");
+  const [niStr, setNiStr] = useState("");
+  const [utrStr, setUtrStr] = useState("");
+  const [isSavingEmployment, setIsSavingEmployment] = useState(false);
 
   const showEmployeeExtendedFields =
     canManageUser(currentUser, user) && user.system_role === "employee";
@@ -95,6 +99,9 @@ export function EmployeeDetailPanel({
       setEarlyAccessEnabled(profile.early_access_enabled);
       setHourlyRateStr(profile.hourly_rate ?? "");
       setTaxRateStr(profile.tax_rate ?? "");
+      setJobTitleStr(profile.job_title ?? "");
+      setNiStr(profile.national_insurance_number ?? "");
+      setUtrStr(profile.utr_number ?? "");
       setEmployeeProfileLoaded(true);
     } catch {
       if (generation !== profileFetchGeneration.current) {
@@ -149,6 +156,26 @@ export function EmployeeDetailPanel({
     isAdministrator(currentUser) &&
     !targetIsAdministrator &&
     user.id !== currentUser.id;
+
+  async function handleSaveEmployment() {
+    setLocalError("");
+    setLocalSuccess("");
+    setIsSavingEmployment(true);
+    try {
+      await patchManagedEmployeeProfile(user.id, {
+        job_title: jobTitleStr.trim() === "" ? null : jobTitleStr.trim(),
+        national_insurance_number: niStr.trim() === "" ? null : niStr.trim(),
+        utr_number: utrStr.trim() === "" ? null : utrStr.trim(),
+      });
+      setLocalSuccess("Employment details saved.");
+      await onRefresh();
+      await reloadEmployeeProfile();
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "Could not save employment details.");
+    } finally {
+      setIsSavingEmployment(false);
+    }
+  }
 
   async function handleSavePayrollRates() {
     setLocalError("");
@@ -395,8 +422,63 @@ export function EmployeeDetailPanel({
         {showEmployeeExtendedFields ? (
           <div className="mt-4 space-y-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-              Clock rules
+              Employment / contract information
             </p>
+            {profileLoadError ? (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Load profile above to edit employment fields.
+              </p>
+            ) : profileLoading ? (
+              <p className="text-xs text-[var(--color-text-muted)]">Loading profile…</p>
+            ) : employeeProfileLoaded ? (
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-[var(--color-text)]">
+                  Job title
+                  <input
+                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    disabled={isSavingEmployment}
+                    onChange={(event) => setJobTitleStr(event.target.value)}
+                    placeholder="e.g. Site supervisor"
+                    type="text"
+                    value={jobTitleStr}
+                  />
+                </label>
+                <label className="block text-xs font-bold text-[var(--color-text)]">
+                  National Insurance number
+                  <input
+                    autoComplete="off"
+                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    disabled={isSavingEmployment}
+                    onChange={(event) => setNiStr(event.target.value)}
+                    placeholder="From starter form after approval, or set here"
+                    type="text"
+                    value={niStr}
+                  />
+                </label>
+                <label className="block text-xs font-bold text-[var(--color-text)]">
+                  UTR (Unique Taxpayer Reference)
+                  <input
+                    autoComplete="off"
+                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    disabled={isSavingEmployment}
+                    onChange={(event) => setUtrStr(event.target.value)}
+                    placeholder="Digits only"
+                    type="text"
+                    value={utrStr}
+                  />
+                </label>
+                <Button disabled={isSavingEmployment} onClick={() => void handleSaveEmployment()} type="button">
+                  {isSavingEmployment ? "Saving…" : "Save employment details"}
+                </Button>
+              </div>
+            ) : (
+              <p className="text-xs text-[var(--color-text-muted)]">Loading profile…</p>
+            )}
+
+            <div className="border-t border-[var(--color-border)] pt-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                Clock rules
+              </p>
             {profileLoadError ? (
               <div className="space-y-2">
                 <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
@@ -435,6 +517,7 @@ export function EmployeeDetailPanel({
             ) : (
               <p className="text-xs text-[var(--color-text-muted)]">Loading profile…</p>
             )}
+            </div>
 
             <div className="border-t border-[var(--color-border)] pt-3">
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">

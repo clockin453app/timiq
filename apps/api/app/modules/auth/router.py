@@ -98,9 +98,10 @@ def get_users(
             update={
                 "profile_first_name": first_name,
                 "profile_last_name": last_name,
+                "profile_job_title": (job_title or "").strip() or None,
             },
         )
-        for user, first_name, last_name in rows
+        for user, first_name, last_name, job_title in rows
     ]
 
 

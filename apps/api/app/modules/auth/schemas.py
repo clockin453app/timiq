@@ -105,6 +105,7 @@ class UserResponse(BaseModel):
     updated_at: datetime
     profile_first_name: Optional[str] = None
     profile_last_name: Optional[str] = None
+    profile_job_title: Optional[str] = None
 
 
 class LoginResponse(BaseModel):

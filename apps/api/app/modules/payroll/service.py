@@ -17,9 +17,11 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
-from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
-from app.modules.onboarding.repository import get_approved_onboarding_national_insurance_number
+from app.modules.onboarding.repository import (
+    get_approved_onboarding_national_insurance_number,
+    get_approved_onboarding_utr,
+)
 from app.modules.payroll.calculation import (
     compute_money_bundle,
     normalize_payroll_payment_mode,
@@ -180,6 +182,21 @@ def _apply_payroll_item_money_after_patch(item: PayrollItem, request: PayrollIte
         item.display_net_amount = float(net_calc)
 
 
+def _employee_tax_identifiers_for_payroll(
+    db_session: Session,
+    user_id: uuid.UUID,
+) -> tuple[str | None, str | None]:
+    """NI and UTR for payslip / pay-week: profile first, then approved onboarding fallback."""
+    profile = get_employee_profile_by_user_id(db_session, user_id)
+    ni = (profile.national_insurance_number or "").strip() if profile is not None else None
+    utr = (profile.utr_number or "").strip() if profile is not None else None
+    if not ni:
+        ni = get_approved_onboarding_national_insurance_number(db_session, user_id)
+    if not utr:
+        utr = get_approved_onboarding_utr(db_session, user_id)
+    return ni or None, utr or None
+
+
 def _week_end_display(week_start: date) -> date:
     return week_start + timedelta(days=6)
 
@@ -246,6 +263,7 @@ def get_payroll_item_summary(db_session: Session, actor: User, item_id: uuid.UUI
     cis = _effective_tax_amount_for_item(item)
     net_eff = _effective_net_amount_for_item(item)
     owner_email = owner.email
+    ni_val, utr_val = _employee_tax_identifiers_for_payroll(db_session, item.user_id)
     return PayrollItemSummaryResponse(
         item_id=item.id,
         company=PayrollItemCompanySnippet(
@@ -274,6 +292,8 @@ def get_payroll_item_summary(db_session: Session, actor: User, item_id: uuid.UUI
         ytd_taxable_pay=ytd_pay,
         ytd_cis_deducted=ytd_cis,
         can_open_payslip=True,
+        national_insurance_number=ni_val,
+        utr_number=utr_val,
     )
 
 
@@ -284,8 +304,13 @@ def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: 
     company = get_company_by_id(db_session, item.company_id)
     cname = html.escape(company.name if company is not None else "Company")
     ename = html.escape(_employee_primary_name(db_session, item.user_id))
-    ni = get_approved_onboarding_national_insurance_number(db_session, item.user_id)
-    ni_esc = html.escape(ni) if ni else ""
+    ni, utr = _employee_tax_identifiers_for_payroll(db_session, item.user_id)
+    ni_display = html.escape(ni) if ni else "Not provided"
+    utr_display = html.escape(utr) if utr else "Not provided"
+    tax_id_block = (
+        f"<p><strong>National Insurance:</strong> {ni_display}</p>"
+        f"<p><strong>UTR:</strong> {utr_display}</p>"
+    )
     cis = _effective_tax_amount_for_item(item)
     net_eff = _effective_net_amount_for_item(item)
     gross = _decimal_or_none(item.gross_amount)
@@ -308,9 +333,7 @@ def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: 
     if other_d != 0:
         other_block = f'<tr><td>Other deductions</td><td class="num">£{other_d:.2f}</td></tr>'
 
-    ni_block = ""
-    if ni_esc:
-        ni_block = f"<p><strong>NI number:</strong> {ni_esc}</p>"
+    ni_block = tax_id_block
 
     email_raw = (owner.email or "").strip()
     email_block = ""

@@ -92,7 +92,8 @@ export function EmployeesClient() {
     return users.filter((userItem) => {
       const name = formatEmployeeDisplayName(userItem).toLowerCase();
       const mail = userItem.email.toLowerCase();
-      return name.includes(query) || mail.includes(query);
+      const title = (userItem.profile_job_title ?? "").trim().toLowerCase();
+      return name.includes(query) || mail.includes(query) || title.includes(query);
     });
   }, [employeeSearch, users]);
 
@@ -294,11 +295,13 @@ export function EmployeesClient() {
             </div>
           ) : null}
 
+          <div className="min-w-0 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Email</TableHead>
+                <TableHead className="w-[min(11rem,28vw)] max-w-[11rem]">Email</TableHead>
+                <TableHead className="w-[min(9rem,24vw)]">Job title</TableHead>
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Company</TableHead>
@@ -310,19 +313,19 @@ export function EmployeesClient() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7}>Loading users...</TableCell>
+                  <TableCell colSpan={8}>Loading users...</TableCell>
                 </TableRow>
               ) : null}
 
               {!isLoading && users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7}>No users found.</TableCell>
+                  <TableCell colSpan={8}>No users found.</TableCell>
                 </TableRow>
               ) : null}
 
               {!isLoading && users.length > 0 && filteredUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7}>No users match this filter.</TableCell>
+                  <TableCell colSpan={8}>No users match this filter.</TableCell>
                 </TableRow>
               ) : null}
 
@@ -333,7 +336,12 @@ export function EmployeesClient() {
                     return (
                       <TableRow key={userItem.id}>
                         <TableCell>{formatEmployeeDisplayName(userItem)}</TableCell>
-                        <TableCell>{userItem.email}</TableCell>
+                        <TableCell className="max-w-[11rem] break-all text-[13px] leading-snug">
+                          {userItem.email}
+                        </TableCell>
+                        <TableCell className="max-w-[10rem] truncate text-sm text-[var(--color-text)]">
+                          {(userItem.profile_job_title ?? "").trim() || "—"}
+                        </TableCell>
                         <TableCell>{formatRole(userItem.system_role)}</TableCell>
                         <TableCell>{userItem.is_active ? "Active" : "Inactive"}</TableCell>
                         <TableCell>
@@ -362,6 +370,7 @@ export function EmployeesClient() {
                 : null}
             </TableBody>
           </Table>
+          </div>
 
           {panelUser ? (
             <EmployeeDetailPanel

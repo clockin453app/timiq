@@ -9,6 +9,8 @@ export type EmployeeProfile = {
   last_name: string | null;
   phone: string | null;
   job_title: string | null;
+  national_insurance_number?: string | null;
+  utr_number?: string | null;
   start_date: string | null;
   emergency_contact_name: string | null;
   emergency_contact_phone: string | null;
@@ -32,6 +34,9 @@ export type UpdateMyEmployeeProfileRequest = {
 };
 
 export type PatchManagedEmployeeProfileRequest = {
+  job_title?: string | null;
+  national_insurance_number?: string | null;
+  utr_number?: string | null;
   early_access_enabled?: boolean;
   hourly_rate?: string | number | null;
   tax_rate?: string | number | null;

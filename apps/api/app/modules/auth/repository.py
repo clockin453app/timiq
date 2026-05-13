@@ -39,11 +39,11 @@ def list_users_visible_to_user(db_session: Session, actor: User) -> list[User]:
 def list_users_visible_to_user_with_profile_names(
     db_session: Session,
     actor: User,
-) -> list[tuple[User, str | None, str | None]]:
+) -> list[tuple[User, str | None, str | None, str | None]]:
     ep = EmployeeProfile
     if actor.system_role == SystemRole.ADMINISTRATOR:
         statement = (
-            select(User, ep.first_name, ep.last_name)
+            select(User, ep.first_name, ep.last_name, ep.job_title)
             .outerjoin(ep, ep.user_id == User.id)
             .order_by(User.created_at.desc())
         )
@@ -51,14 +51,14 @@ def list_users_visible_to_user_with_profile_names(
         return []
     else:
         statement = (
-            select(User, ep.first_name, ep.last_name)
+            select(User, ep.first_name, ep.last_name, ep.job_title)
             .outerjoin(ep, ep.user_id == User.id)
             .where(User.company_id == actor.company_id)
             .order_by(User.created_at.desc())
         )
 
     rows = db_session.execute(statement).all()
-    return [(row[0], row[1], row[2]) for row in rows]
+    return [(row[0], row[1], row[2], row[3]) for row in rows]
 
 
 def delete_user_record(db_session: Session, user: User) -> None:
