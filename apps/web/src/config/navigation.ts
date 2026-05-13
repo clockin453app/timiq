@@ -127,6 +127,12 @@ const PAYROLL_REPORT: NavigationItem = {
   allowedRoles: ["administrator", "admin"],
 };
 
+const BUDGET_CALCULATOR: NavigationItem = {
+  label: "Budget calculator",
+  href: "/budgets",
+  allowedRoles: ["administrator", "admin"],
+};
+
 const WORK_PROGRESS_REVIEW: NavigationItem = {
   label: "Work Progress Review",
   href: "/work-progress-review",
@@ -174,7 +180,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     label: "Attendance",
     items: [LIVE_ATTENDANCE, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
   },
-  { id: "mgmt-payroll", label: "Payroll", items: [PAYROLL_REPORT] },
+  { id: "mgmt-payroll", label: "Payroll", items: [PAYROLL_REPORT, BUDGET_CALCULATOR] },
   { id: "mgmt-work", label: "Work", items: [WORK_PROGRESS_REVIEW] },
   { id: "mgmt-system", label: "System", items: [AUDIT_LOG, SYSTEM_HEALTH] },
 ];

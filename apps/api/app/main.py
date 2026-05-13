@@ -19,6 +19,7 @@ from app.modules.work_progress.router import router as work_progress_router
 from app.modules.payroll.router import router as payroll_router
 from app.modules.time_records.router import time_records_router, timesheets_router
 from app.modules.workplaces.router import router as workplaces_router
+from app.modules.budgets.router import router as budgets_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -57,3 +58,4 @@ app.include_router(timesheets_router)
 app.include_router(payroll_router)
 app.include_router(onboarding_router)
 app.include_router(work_progress_router)
+app.include_router(budgets_router)
