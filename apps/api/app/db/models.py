@@ -24,6 +24,7 @@ from app.modules.payroll_policies.models import LocationPayrollPolicy
 from app.modules.privacy.models import PrivacyPolicyAcknowledgement, PrivacyRequest
 from app.modules.settings.models import CompanyAppSettings, UserPreference
 from app.modules.smart_forms.models import SmartFormSubmission, SmartFormTemplate
+from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsHazard
 from app.modules.toolbox_talks.models import ToolboxTalk, ToolboxTalkAttendee
 from app.modules.workplaces.models import Workplace
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
@@ -63,6 +64,9 @@ __all__ = [
     "UserPreference",
     "SmartFormSubmission",
     "SmartFormTemplate",
+    "RamsAcknowledgement",
+    "RamsAssessment",
+    "RamsHazard",
     "ToolboxTalk",
     "ToolboxTalkAttendee",
     "WorkProgressEntry",

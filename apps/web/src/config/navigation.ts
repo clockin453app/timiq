@@ -72,6 +72,34 @@ const SITE_PROGRESS: NavigationItem = {
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
+const TOOLBOX_TALKS: NavigationItem = {
+  label: "Toolbox Talks",
+  labelKey: "nav.toolbox_talks",
+  href: "/toolbox-talks",
+  allowedRoles: ["administrator", "admin", "employee"],
+};
+
+const TOOLBOX_TALKS_MANAGE: NavigationItem = {
+  label: "Manage toolbox talks",
+  labelKey: "nav.toolbox_talks_manage",
+  href: "/toolbox-talks/manage",
+  allowedRoles: ["administrator", "admin"],
+};
+
+const RAMS: NavigationItem = {
+  label: "RAMS / Risk assessments",
+  labelKey: "nav.rams",
+  href: "/rams",
+  allowedRoles: ["administrator", "admin", "employee"],
+};
+
+const RAMS_MANAGE: NavigationItem = {
+  label: "Manage RAMS",
+  labelKey: "nav.rams_manage",
+  href: "/rams/manage",
+  allowedRoles: ["administrator", "admin"],
+};
+
 const FORMS: NavigationItem = {
   label: "Forms",
   labelKey: "nav.forms",
@@ -249,7 +277,7 @@ const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     items: [CLOCK, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
   },
   { id: "emp-pay", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
-  { id: "emp-work", label: "Work", groupLabelKey: "nav.group.emp_work", items: [SITE_PROGRESS, FORMS] },
+  { id: "emp-work", label: "Work", groupLabelKey: "nav.group.emp_work", items: [SITE_PROGRESS, FORMS, TOOLBOX_TALKS, RAMS] },
   {
     id: "emp-profile",
     label: "Profile",
@@ -288,7 +316,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mgmt-work",
     label: "Work",
     groupLabelKey: "nav.group.mgmt_work",
-    items: [WORK_PROGRESS_REVIEW, FORMS_MANAGE, FORMS_REVIEW],
+    items: [WORK_PROGRESS_REVIEW, FORMS_MANAGE, FORMS_REVIEW, TOOLBOX_TALKS_MANAGE, RAMS_MANAGE],
   },
   {
     id: "mgmt-system",

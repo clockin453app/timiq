@@ -10,8 +10,7 @@ import { NavItemIcon } from "./nav-item-icon";
 
 /**
  * v3: open state is route-driven on each navigation — we do not merge legacy localStorage blobs
- * that left Profile / Sites / Attendance expanded for everyone. User toggles apply until the next
- * activeHref change (desktop drawer matches: no persisted drawer state).
+ * that left Profile / Sites / Attendance expanded for everyone.
  */
 const LEGACY_STORAGE_PREFIXES = ["timiq-nav-groups:v1:", "timiq-nav-groups:v2:"] as const;
 
@@ -20,27 +19,51 @@ type GroupedNavVariant = "sidebar" | "drawer";
 type GroupedNavBlockProps = {
   groups: NavigationGroupDefinition[];
   activeHref: string;
-  /** Reserved for future optional persistence; unused in v3. */
+  /** Reserved for legacy cleanup only. */
   storageScope: string;
   variant: GroupedNavVariant;
   role: SystemRole;
   /** Show Lucide icons beside labels (desktop polish). */
   showIcons?: boolean;
+  /**
+   * Accordion (single open group across primary + management blocks).
+   * When both are set, this block is controlled by the parent.
+   */
+  accordionOpenGroupId?: string | null;
+  onAccordionOpenGroupChange?: (groupId: string | null) => void;
 };
 
-function groupContainsHref(group: NavigationGroupDefinition, href: string): boolean {
-  return group.items.some((item) => item.href === href);
-}
-
-function defaultOpenMap(groups: NavigationGroupDefinition[], activeHref: string): Record<string, boolean> {
-  const map: Record<string, boolean> = {};
-  for (const g of groups) {
-    map[g.id] = groupContainsHref(g, activeHref);
+/** Match nav item active state (nested routes under the item href). */
+export function navItemMatchesActive(itemHref: string, activeHref: string): boolean {
+  if (itemHref === "/dashboard") {
+    return activeHref === "/dashboard";
   }
-  return map;
+  return activeHref === itemHref || activeHref.startsWith(`${itemHref}/`);
 }
 
-/** One-time cleanup of old keys so they never get re-introduced by tooling or merges. */
+export function groupContainsActiveRoute(group: NavigationGroupDefinition, activeHref: string): boolean {
+  return group.items.some((item) => navItemMatchesActive(item.href, activeHref));
+}
+
+/** First multi-item group in primary, then secondary, that contains the active route. */
+export function findDefaultAccordionGroupId(
+  primaryGroups: NavigationGroupDefinition[],
+  secondaryGroups: NavigationGroupDefinition[],
+  activeHref: string,
+): string | null {
+  for (const g of primaryGroups) {
+    if (g.items.length > 1 && groupContainsActiveRoute(g, activeHref)) {
+      return g.id;
+    }
+  }
+  for (const g of secondaryGroups) {
+    if (g.items.length > 1 && groupContainsActiveRoute(g, activeHref)) {
+      return g.id;
+    }
+  }
+  return null;
+}
+
 function clearLegacyNavStorage(scope: string, role: SystemRole) {
   if (typeof window === "undefined") {
     return;
@@ -77,29 +100,67 @@ export function GroupedNavBlock({
   variant,
   role,
   showIcons = true,
+  accordionOpenGroupId: controlledOpenId,
+  onAccordionOpenGroupChange,
 }: GroupedNavBlockProps) {
   const t = useT();
-  const [open, setOpen] = useState<Record<string, boolean>>(() => defaultOpenMap(groups, activeHref));
+  const isControlled = typeof onAccordionOpenGroupChange === "function";
+
+  const [internalOpenId, setInternalOpenId] = useState<string | null>(() => {
+    for (const g of groups) {
+      if (g.items.length > 1 && groupContainsActiveRoute(g, activeHref)) {
+        return g.id;
+      }
+    }
+    return null;
+  });
 
   useEffect(() => {
     clearLegacyNavStorage(_storageScope, role);
   }, [_storageScope, role]);
 
   useEffect(() => {
-    setOpen(defaultOpenMap(groups, activeHref));
-  }, [groups, activeHref]);
+    if (isControlled) {
+      return;
+    }
+    for (const g of groups) {
+      if (g.items.length > 1 && groupContainsActiveRoute(g, activeHref)) {
+        setInternalOpenId(g.id);
+        return;
+      }
+    }
+    setInternalOpenId(null);
+  }, [groups, activeHref, isControlled]);
 
-  const toggle = useCallback(
-    (groupId: string) => {
-      setOpen((prev) => {
-        const group = groups.find((g) => g.id === groupId);
-        if (group && groupContainsHref(group, activeHref) && prev[groupId]) {
-          return prev;
-        }
-        return { ...prev, [groupId]: !prev[groupId] };
-      });
+  const openAccordionId = isControlled ? (controlledOpenId ?? null) : internalOpenId;
+
+  const setOpenAccordionId = useCallback(
+    (next: string | null) => {
+      if (isControlled && onAccordionOpenGroupChange) {
+        onAccordionOpenGroupChange(next);
+      } else if (!isControlled) {
+        setInternalOpenId(next);
+      }
     },
-    [groups, activeHref],
+    [isControlled, onAccordionOpenGroupChange],
+  );
+
+  const onGroupHeaderClick = useCallback(
+    (groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      if (!group || group.items.length <= 1) {
+        return;
+      }
+      if (openAccordionId === groupId) {
+        if (groupContainsActiveRoute(group, activeHref)) {
+          return;
+        }
+        setOpenAccordionId(null);
+        return;
+      }
+      setOpenAccordionId(groupId);
+    },
+    [groups, activeHref, openAccordionId, setOpenAccordionId],
   );
 
   if (groups.length === 0) {
@@ -118,9 +179,10 @@ export function GroupedNavBlock({
 
         if (visible.length === 1) {
           const only = visible[0];
+          const active = navItemMatchesActive(only.href, activeHref);
           return (
             <div key={group.id}>
-              <Link className={linkClass(only.href === activeHref, variant, showIcons)} href={only.href}>
+              <Link className={linkClass(active, variant, showIcons)} href={only.href}>
                 {showIcons ? <NavItemIcon labelKey={only.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" /> : null}
                 <span className="min-w-0 flex-1 break-words">{t(only.labelKey, only.label)}</span>
               </Link>
@@ -128,7 +190,7 @@ export function GroupedNavBlock({
           );
         }
 
-        const isOpen = open[group.id] ?? false;
+        const isOpen = openAccordionId === group.id;
         return (
           <div key={group.id}>
             <button
@@ -140,7 +202,7 @@ export function GroupedNavBlock({
                   : "border-transparent text-[#1f2937] hover:border-[var(--color-border)] hover:bg-[#e5e7eb]/80",
               ].join(" ")}
               type="button"
-              onClick={() => toggle(group.id)}
+              onClick={() => onGroupHeaderClick(group.id)}
             >
               <span className="min-w-0 truncate">{t(group.groupLabelKey, group.label)}</span>
               <ChevronDown
@@ -153,18 +215,17 @@ export function GroupedNavBlock({
             </button>
             {isOpen ? (
               <div className="mt-1 space-y-0.5 border-l border-[var(--color-border-dark)] pl-2.5">
-                {visible.map((item) => (
-                  <Link
-                    className={linkClass(item.href === activeHref, variant, showIcons)}
-                    href={item.href}
-                    key={item.href}
-                  >
-                    {showIcons ? (
-                      <NavItemIcon labelKey={item.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" />
-                    ) : null}
-                    <span className="min-w-0 flex-1 break-words">{t(item.labelKey, item.label)}</span>
-                  </Link>
-                ))}
+                {visible.map((item) => {
+                  const active = navItemMatchesActive(item.href, activeHref);
+                  return (
+                    <Link className={linkClass(active, variant, showIcons)} href={item.href} key={item.href}>
+                      {showIcons ? (
+                        <NavItemIcon labelKey={item.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" />
+                      ) : null}
+                      <span className="min-w-0 flex-1 break-words">{t(item.labelKey, item.label)}</span>
+                    </Link>
+                  );
+                })}
               </div>
             ) : null}
           </div>

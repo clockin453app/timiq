@@ -288,3 +288,33 @@ export const EXAMPLE_SMART_FORM_SCHEMA: SmartFormSchemaJson = {
     },
   ],
 };
+
+/** Example: equipment pre-start (for “Use example” in advanced section). */
+export const EXAMPLE_EQUIPMENT_PRESTART_SCHEMA: SmartFormSchemaJson = {
+  sections: [
+    {
+      id: "prestart",
+      title: "Pre-start checks",
+      fields: [
+        { id: "guards_in_place", label: "Guards in place", type: "yes_no", required: true },
+        { id: "fluids_ok", label: "Fluid levels OK", type: "yes_no", required: true },
+        { id: "defects_noted", label: "Defects noted", type: "textarea", required: false },
+      ],
+    },
+  ],
+};
+
+/** Example: H&S walkthrough. */
+export const EXAMPLE_HS_INSPECTION_SCHEMA: SmartFormSchemaJson = {
+  sections: [
+    {
+      id: "walkthrough",
+      title: "Inspection",
+      fields: [
+        { id: "ppe_compliant", label: "PPE compliance", type: "yes_no", required: true },
+        { id: "hazards_observed", label: "Hazards observed", type: "textarea", required: false },
+        { id: "severity", label: "Overall risk", type: "select", required: true, options: ["Low", "Medium", "High"] },
+      ],
+    },
+  ],
+};

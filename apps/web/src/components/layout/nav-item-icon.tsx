@@ -8,6 +8,7 @@ import {
   CalendarRange,
   Camera,
   ClipboardCheck,
+  ClipboardList,
   Clock,
   Download,
   Factory,
@@ -59,6 +60,8 @@ const NAV_ICON_BY_LABEL_KEY: Record<string, LucideIcon> = {
   "nav.budget_calculator": Calculator,
   "nav.accounting_exports": Download,
   "nav.work_progress_review": HardHat,
+  "nav.toolbox_talks": ClipboardList,
+  "nav.toolbox_talks_manage": ClipboardList,
   "nav.audit_log": ScrollText,
   "nav.system_health": HeartPulse,
 };

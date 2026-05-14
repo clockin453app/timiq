@@ -12,7 +12,7 @@ import {
 import { useCurrentUser, UserAccountSummary } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
-import { GroupedNavBlock } from "./grouped-nav";
+import { findDefaultAccordionGroupId, GroupedNavBlock } from "./grouped-nav";
 import { NavItemIcon } from "./nav-item-icon";
 
 const SIDEBAR_COLLAPSED_KEY = "timiq-sidebar-collapsed";
@@ -58,14 +58,20 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
 
   const flatNav = useMemo(() => getAllNavLinksForRole(user.system_role), [user.system_role]);
 
+  const [accordionOpenGroupId, setAccordionOpenGroupId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAccordionOpenGroupId(findDefaultAccordionGroupId(employeeGroups, managementGroups, activeHref));
+  }, [activeHref, employeeGroups, managementGroups]);
+
   const sidebarWidth = collapsed ? "var(--layout-sidebar-collapsed)" : "var(--layout-sidebar-width)";
 
   return (
     <aside
-      className="hidden min-h-dvh min-w-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm transition-[width] duration-200 ease-out xl:flex"
+      className="hidden min-w-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm transition-[width] duration-200 ease-out xl:flex xl:h-full xl:max-h-full xl:min-h-0 xl:shrink-0 xl:overflow-hidden"
       style={{ width: hydrated ? sidebarWidth : "var(--layout-sidebar-width)" }}
     >
-      <div className="flex items-start justify-between gap-1 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-3">
+      <div className="flex shrink-0 items-start justify-between gap-1 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-3">
         {collapsed ? (
           <Link
             aria-label={t("nav.dashboard", "Dashboard")}
@@ -102,7 +108,10 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
       </div>
 
       {collapsed ? (
-        <nav className="flex flex-1 flex-col items-center gap-1 overflow-y-auto px-1 py-3" aria-label={t("shell.sidebar_section", "Navigation")}>
+        <nav
+          className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden px-1 py-3"
+          aria-label={t("shell.sidebar_section", "Navigation")}
+        >
           {flatNav.map((item) => {
             const label = t(item.labelKey, item.label);
             const active =
@@ -128,10 +137,12 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
           })}
         </nav>
       ) : (
-        <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-4">
+        <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-2.5 py-4">
           <GroupedNavBlock
+            accordionOpenGroupId={accordionOpenGroupId}
             activeHref={activeHref}
             groups={employeeGroups}
+            onAccordionOpenGroupChange={setAccordionOpenGroupId}
             role={user.system_role}
             showIcons
             storageScope="sidebar-desktop-primary"
@@ -144,8 +155,10 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
                 {t("nav.management", "Management")}
               </p>
               <GroupedNavBlock
+                accordionOpenGroupId={accordionOpenGroupId}
                 activeHref={activeHref}
                 groups={managementGroups}
+                onAccordionOpenGroupChange={setAccordionOpenGroupId}
                 role={user.system_role}
                 showIcons
                 storageScope="sidebar-desktop-management"
@@ -157,7 +170,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
       )}
 
       {collapsed ? (
-        <div className="mt-auto border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2">
+        <div className="mt-auto shrink-0 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2">
           <Link
             aria-label={t("nav.profile", "Profile")}
             className="mx-auto flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]"
@@ -168,7 +181,9 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
           </Link>
         </div>
       ) : (
-        <UserAccountSummary />
+        <div className="shrink-0">
+          <UserAccountSummary />
+        </div>
       )}
     </aside>
   );

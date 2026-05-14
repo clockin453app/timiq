@@ -7,6 +7,7 @@ import { Button, PageHeader, Table, TableBody, TableCell, TableHead, TableHeader
 import { isAdministrator, isAdmin, useCurrentUser } from "../../features/auth";
 import { isNavigatorOffline } from "../../features/offline";
 import { listMySmartFormSubmissions, listSmartFormTemplates, type SmartFormSubmissionWithTemplate, type SmartFormTemplate } from "../../features/smart-forms/api";
+import { smartFormCategoryLabel } from "../../features/smart-forms/form-categories";
 import { useI18n } from "../../lib/i18n";
 
 function formatWhen(iso: string | null) {
@@ -18,6 +19,21 @@ function formatWhen(iso: string | null) {
     return iso;
   }
   return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+}
+
+function submissionStatusClass(status: string): string {
+  switch (status) {
+    case "draft":
+      return "bg-amber-50 text-amber-900 border-amber-200";
+    case "submitted":
+      return "bg-sky-50 text-sky-900 border-sky-200";
+    case "reviewed":
+      return "bg-emerald-50 text-emerald-900 border-emerald-200";
+    case "rejected":
+      return "bg-red-50 text-red-900 border-red-200";
+    default:
+      return "bg-[var(--color-header)] text-[var(--color-text)] border-[var(--color-border)]";
+  }
 }
 
 export function FormsClient() {
@@ -51,10 +67,7 @@ export function FormsClient() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6">
-      <PageHeader
-        description={t("forms.page_intro")}
-        title={t("forms.page_title")}
-      />
+      <PageHeader description={t("forms.page_intro")} title={t("forms.page_title")} />
       {showManage ? (
         <div className="flex flex-wrap gap-2">
           <Link
@@ -80,8 +93,8 @@ export function FormsClient() {
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">{error}</p>
       ) : null}
 
-      <section className="space-y-2">
-        <div className="flex items-center justify-between gap-2">
+      <section className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-[var(--color-text)]">{t("forms.start_form")}</h2>
           <Button disabled={loading} onClick={() => void load()} type="button" variant="ghost">
             {t("common.refresh")}
@@ -90,31 +103,46 @@ export function FormsClient() {
         {loading ? (
           <p className="text-sm text-[var(--color-text-soft)]">{t("common.loading")}</p>
         ) : activeTemplates.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-soft)]">{t("forms.no_templates")}</p>
+          <div className="rounded border border-dashed border-[var(--color-border)] bg-[var(--color-cell)] px-4 py-10 text-center">
+            <p className="text-sm font-medium text-[var(--color-text)]">{t("forms.templates_empty_employee_title", "No forms available")}</p>
+            <p className="mt-2 text-sm text-[var(--color-text-soft)]">{t("forms.no_templates")}</p>
+          </div>
         ) : (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {activeTemplates.map((tpl) => (
               <li
-                className="flex flex-col gap-2 rounded border border-[var(--color-border)] bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between"
+                className="flex flex-col gap-3 rounded border border-[var(--color-border)] bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between"
                 key={tpl.id}
               >
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded bg-[var(--color-header)] px-2 py-0.5 text-xs font-medium uppercase text-[var(--color-text-soft)]">
-                      {tpl.category.replace(/_/g, " ")}
+                    <span className="inline-flex rounded-full border border-[var(--color-border)] bg-[var(--color-header)] px-2 py-0.5 text-xs font-semibold text-[var(--color-text)]">
+                      {smartFormCategoryLabel(tpl.category, t)}
                     </span>
-                    <span className="font-medium text-[var(--color-text)]">{tpl.name}</span>
+                    <span className="font-semibold text-[var(--color-text)]">{tpl.name}</span>
                   </div>
                   {tpl.description ? <p className="mt-1 text-sm text-[var(--color-text-soft)]">{tpl.description}</p> : null}
-                  <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                    {tpl.requires_location ? `· ${t("forms.requires_location")} ` : ""}
-                    {tpl.requires_signature ? `· ${t("forms.requires_signature")} ` : ""}
-                    {tpl.allow_photos ? `· ${t("forms.allow_photos")}` : ""}
-                  </p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {tpl.requires_location ? (
+                      <span className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                        {t("forms.requires_location")}
+                      </span>
+                    ) : null}
+                    {tpl.requires_signature ? (
+                      <span className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                        {t("forms.requires_signature")}
+                      </span>
+                    ) : null}
+                    {tpl.allow_photos ? (
+                      <span className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                        {t("forms.allow_photos")}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="shrink-0">
                   <Link
-                    className={`inline-flex h-9 items-center justify-center rounded border px-4 text-sm ${
+                    className={`inline-flex h-9 items-center justify-center rounded border px-4 text-sm font-medium ${
                       !user?.company_id || isNavigatorOffline()
                         ? "pointer-events-none border-[var(--color-border)] bg-[var(--color-header)] text-[var(--color-text-muted)]"
                         : "border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]"
@@ -124,9 +152,7 @@ export function FormsClient() {
                     {t("forms.start_form")}
                   </Link>
                   {isNavigatorOffline() ? (
-                    <p className="mt-1 max-w-xs text-xs text-[var(--color-text-muted)]">
-                      {t("offline.banner")}
-                    </p>
+                    <p className="mt-1 max-w-xs text-xs text-[var(--color-text-muted)]">{t("offline.banner")}</p>
                   ) : null}
                 </div>
               </li>
@@ -135,43 +161,52 @@ export function FormsClient() {
         )}
       </section>
 
-      <section className="space-y-2">
-        <h2 className="text-lg font-semibold text-[var(--color-text)]">{t("forms.my_submissions")}</h2>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>{t("forms.template_name")}</TableHead>
-              <TableHead>{t("forms.status")}</TableHead>
-              <TableHead>{t("forms.submitted_at")}</TableHead>
-              <TableHead className="text-right">{t("common.details")}</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {submissions.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={4}>
-                  <span className="text-sm text-[var(--color-text-soft)]">—</span>
-                </TableCell>
-              </TableRow>
-            ) : (
-              submissions.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell>{s.template_name}</TableCell>
-                  <TableCell className="capitalize">{s.status}</TableCell>
-                  <TableCell>{formatWhen(s.submitted_at)}</TableCell>
-                  <TableCell className="text-right">
-                    <Link
-                      className="inline-flex h-8 items-center justify-center rounded border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] px-3 text-sm text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]"
-                      href={`/forms/submissions/${s.id}`}
-                    >
-                      {s.status === "draft" ? t("forms.continue") : t("forms.view")}
-                    </Link>
-                  </TableCell>
+      <section className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+        <h2 className="mb-3 text-lg font-semibold text-[var(--color-text)]">{t("forms.my_submissions")}</h2>
+        {loading ? (
+          <p className="text-sm text-[var(--color-text-soft)]">{t("common.loading")}</p>
+        ) : submissions.length === 0 ? (
+          <div className="rounded border border-dashed border-[var(--color-border)] bg-[var(--color-cell)] px-4 py-10 text-center">
+            <p className="text-sm font-medium text-[var(--color-text)]">{t("forms.submissions_empty_title", "No submissions yet")}</p>
+            <p className="mt-2 text-sm text-[var(--color-text-soft)]">{t("forms.submissions_empty_body", "When you start a form, your drafts and sent forms will appear here.")}</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>{t("forms.template_name")}</TableHead>
+                  <TableHead>{t("forms.status")}</TableHead>
+                  <TableHead>{t("forms.submitted_at")}</TableHead>
+                  <TableHead className="text-right">{t("common.details")}</TableHead>
                 </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
+              </TableHeader>
+              <TableBody>
+                {submissions.map((s) => (
+                  <TableRow key={s.id}>
+                    <TableCell className="font-medium text-[var(--color-text)]">{s.template_name}</TableCell>
+                    <TableCell>
+                      <span
+                        className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium capitalize ${submissionStatusClass(s.status)}`}
+                      >
+                        {s.status}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-sm text-[var(--color-text-soft)]">{formatWhen(s.submitted_at)}</TableCell>
+                    <TableCell className="text-right">
+                      <Link
+                        className="inline-flex h-8 items-center justify-center rounded border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] px-3 text-sm text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]"
+                        href={`/forms/submissions/${s.id}`}
+                      >
+                        {s.status === "draft" ? t("forms.continue") : t("forms.view")}
+                      </Link>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </section>
     </div>
   );

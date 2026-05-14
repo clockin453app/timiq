@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   filterNavGroupsForMobileQuickNav,
@@ -11,7 +11,7 @@ import {
 import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
-import { GroupedNavBlock } from "./grouped-nav";
+import { findDefaultAccordionGroupId, GroupedNavBlock } from "./grouped-nav";
 
 type MobileHeaderProps = {
   activeHref?: string;
@@ -30,6 +30,12 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     () => filterNavGroupsForMobileQuickNav(getManagementNavigationGroups(user.system_role)),
     [user.system_role],
   );
+
+  const [accordionOpenGroupId, setAccordionOpenGroupId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setAccordionOpenGroupId(findDefaultAccordionGroupId(employeeGroups, managementGroups, activeHref));
+  }, [activeHref, employeeGroups, managementGroups]);
 
   return (
     <header className="w-full min-w-0 overflow-x-clip border-b border-[var(--color-border-dark)] bg-[var(--color-header)] pt-[env(safe-area-inset-top,0px)] xl:hidden">
@@ -51,8 +57,10 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             >
               {employeeGroups.length > 0 ? (
                 <GroupedNavBlock
+                  accordionOpenGroupId={accordionOpenGroupId}
                   activeHref={activeHref}
                   groups={employeeGroups}
+                  onAccordionOpenGroupChange={setAccordionOpenGroupId}
                   role={user.system_role}
                   showIcons
                   storageScope="drawer-mobile-primary"
@@ -70,8 +78,10 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                     {t("nav.management", "Management")}
                   </p>
                   <GroupedNavBlock
+                    accordionOpenGroupId={accordionOpenGroupId}
                     activeHref={activeHref}
                     groups={managementGroups}
+                    onAccordionOpenGroupChange={setAccordionOpenGroupId}
                     role={user.system_role}
                     showIcons
                     storageScope="drawer-mobile-management"

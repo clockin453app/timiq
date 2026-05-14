@@ -12,10 +12,10 @@ type AppShellProps = {
 
 export function AppShell({ activeHref = "/dashboard", children }: AppShellProps) {
   return (
-    <div className="flex min-h-dvh w-full max-w-[100vw] min-w-0 flex-col overflow-x-clip bg-[var(--color-page)] xl:flex xl:flex-row">
+    <div className="flex min-h-dvh w-full max-w-[100vw] min-w-0 flex-col overflow-x-clip bg-[var(--color-page)] xl:h-dvh xl:max-h-dvh xl:min-h-0 xl:flex-row xl:overflow-hidden">
       <DesktopSidebar activeHref={activeHref} />
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col pb-[var(--layout-mobile-bottom-nav-height)] xl:min-h-dvh xl:pb-0">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-clip pb-[var(--layout-mobile-bottom-nav-height)] xl:min-h-0 xl:overflow-y-auto xl:pb-0">
         <DesktopTopBar activeHref={activeHref} />
         <MobileHeader activeHref={activeHref} />
 
