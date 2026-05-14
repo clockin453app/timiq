@@ -8,34 +8,45 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class SmartFormTemplateCreateRequest(BaseModel):
-    model_config = ConfigDict(protected_namespaces=())
+    model_config = ConfigDict(protected_namespaces=(), populate_by_name=True)
 
     company_id: uuid.UUID | None = None
     name: str = Field(min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     category: str = Field(min_length=1, max_length=64)
     status: str = Field(default="draft", max_length=32)
-    schema_json: dict[str, Any]
+    form_schema: dict[str, Any] = Field(
+        validation_alias="schema_json",
+        serialization_alias="schema_json",
+    )
     requires_location: bool = False
     requires_signature: bool = False
     allow_photos: bool = False
 
 
 class SmartFormTemplatePatchRequest(BaseModel):
-    model_config = ConfigDict(protected_namespaces=())
+    model_config = ConfigDict(protected_namespaces=(), populate_by_name=True)
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = Field(default=None, max_length=2000)
     category: str | None = Field(default=None, min_length=1, max_length=64)
     status: str | None = Field(default=None, max_length=32)
-    schema_json: dict[str, Any] | None = None
+    form_schema: dict[str, Any] | None = Field(
+        default=None,
+        validation_alias="schema_json",
+        serialization_alias="schema_json",
+    )
     requires_location: bool | None = None
     requires_signature: bool | None = None
     allow_photos: bool | None = None
 
 
 class SmartFormTemplateResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True, protected_namespaces=())
+    model_config = ConfigDict(
+        from_attributes=True,
+        protected_namespaces=(),
+        populate_by_name=True,
+    )
 
     id: uuid.UUID
     company_id: uuid.UUID | None
@@ -44,7 +55,10 @@ class SmartFormTemplateResponse(BaseModel):
     category: str
     status: str
     version: int
-    schema_json: dict[str, Any]
+    form_schema: dict[str, Any] = Field(
+        validation_alias="schema_json",
+        serialization_alias="schema_json",
+    )
     requires_location: bool
     requires_signature: bool
     allow_photos: bool

@@ -26,6 +26,7 @@ from app.modules.privacy.router import router as privacy_router
 from app.modules.payroll_policies.router import router as payroll_policies_router
 from app.modules.settings.router import router as settings_router
 from app.modules.smart_forms.router import router as smart_forms_router
+from app.modules.toolbox_talks.router import router as toolbox_talks_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -71,3 +72,4 @@ app.include_router(privacy_router)
 app.include_router(payroll_policies_router)
 app.include_router(settings_router)
 app.include_router(smart_forms_router)
+app.include_router(toolbox_talks_router)

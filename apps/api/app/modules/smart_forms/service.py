@@ -212,7 +212,7 @@ def create_template(
     try:
         assert_known_category(body.category)
         assert_known_template_status(body.status)
-        validate_template_schema(body.schema_json)
+        validate_template_schema(body.form_schema)
     except SchemaValidationError as exc:
         raise SmartFormValidationError(str(exc)) from exc
 
@@ -224,7 +224,7 @@ def create_template(
         category=body.category.strip(),
         status=body.status.strip(),
         version=1,
-        schema_json=body.schema_json,
+        schema_json=body.form_schema,
         requires_location=body.requires_location,
         requires_signature=body.requires_signature,
         allow_photos=body.allow_photos,
@@ -264,7 +264,7 @@ def _collect_changed_template_fields(
         changed.append("category")
     if body.status is not None and body.status.strip() != row.status:
         changed.append("status")
-    if body.schema_json is not None and body.schema_json != row.schema_json:
+    if body.form_schema is not None and body.form_schema != row.schema_json:
         changed.append("schema_json")
     if body.requires_location is not None and body.requires_location != row.requires_location:
         changed.append("requires_location")
@@ -307,9 +307,9 @@ def patch_template(
             assert_known_template_status(body.status.strip())
         except SchemaValidationError as exc:
             raise SmartFormValidationError(str(exc)) from exc
-    if body.schema_json is not None:
+    if body.form_schema is not None:
         try:
-            validate_template_schema(body.schema_json)
+            validate_template_schema(body.form_schema)
         except SchemaValidationError as exc:
             raise SmartFormValidationError(str(exc)) from exc
 
@@ -325,8 +325,8 @@ def patch_template(
             row.archived_at = row.archived_at or _utc_now()
         else:
             row.archived_at = None
-    if body.schema_json is not None:
-        row.schema_json = body.schema_json
+    if body.form_schema is not None:
+        row.schema_json = body.form_schema
         row.version = row.version + 1
     if body.requires_location is not None:
         row.requires_location = body.requires_location
