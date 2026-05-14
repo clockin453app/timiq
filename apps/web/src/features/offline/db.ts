@@ -1,10 +1,11 @@
-import type { OfflineQueueItem, StarterFormLocalDraft } from "./types";
+import type { OfflineQueueItem, SmartFormLocalDraft, StarterFormLocalDraft } from "./types";
 
 const DB_NAME = "timiq-offline-v1";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORE_QUEUE = "queue";
 export const STORE_STARTER_DRAFTS = "starter_drafts";
+export const STORE_SMART_FORM_DRAFTS = "smart_form_drafts";
 
 function reqToPromise<T>(req: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -40,6 +41,10 @@ export function openTimiqOfflineDb(): Promise<IDBDatabase> {
         if (!db.objectStoreNames.contains(STORE_STARTER_DRAFTS)) {
           db.createObjectStore(STORE_STARTER_DRAFTS, { keyPath: "user_id" });
         }
+        if (!db.objectStoreNames.contains(STORE_SMART_FORM_DRAFTS)) {
+          const s = db.createObjectStore(STORE_SMART_FORM_DRAFTS, { keyPath: "draft_key" });
+          s.createIndex("by_user", "user_id", { unique: false });
+        }
       };
       openReq.onsuccess = () => resolve(openReq.result);
       openReq.onerror = () => reject(openReq.error ?? new Error("Could not open IndexedDB."));
@@ -55,9 +60,12 @@ export async function clearAllTimiqOfflineData(): Promise<void> {
   try {
     const db = await openTimiqOfflineDb();
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction([STORE_QUEUE, STORE_STARTER_DRAFTS], "readwrite");
+      const tx = db.transaction([STORE_QUEUE, STORE_STARTER_DRAFTS, STORE_SMART_FORM_DRAFTS], "readwrite");
       tx.objectStore(STORE_QUEUE).clear();
       tx.objectStore(STORE_STARTER_DRAFTS).clear();
+      if (db.objectStoreNames.contains(STORE_SMART_FORM_DRAFTS)) {
+        tx.objectStore(STORE_SMART_FORM_DRAFTS).clear();
+      }
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
@@ -112,5 +120,46 @@ export async function idbDeleteStarterDraft(userId: string): Promise<void> {
   const db = await openTimiqOfflineDb();
   const tx = db.transaction(STORE_STARTER_DRAFTS, "readwrite");
   await reqToPromise(tx.objectStore(STORE_STARTER_DRAFTS).delete(userId));
+  await txComplete(tx);
+}
+
+function smartFormDraftKey(userId: string, templateId: string): string {
+  return `${userId}::${templateId}`;
+}
+
+export async function idbGetSmartFormDraft(
+  userId: string,
+  templateId: string,
+): Promise<SmartFormLocalDraft | null> {
+  const db = await openTimiqOfflineDb();
+  if (!db.objectStoreNames.contains(STORE_SMART_FORM_DRAFTS)) {
+    return null;
+  }
+  const key = smartFormDraftKey(userId, templateId);
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_SMART_FORM_DRAFTS, "readonly");
+    const req = tx.objectStore(STORE_SMART_FORM_DRAFTS).get(key);
+    req.onsuccess = () => resolve((req.result as SmartFormLocalDraft | undefined) ?? null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function idbPutSmartFormDraft(draft: SmartFormLocalDraft): Promise<void> {
+  const db = await openTimiqOfflineDb();
+  if (!db.objectStoreNames.contains(STORE_SMART_FORM_DRAFTS)) {
+    return;
+  }
+  const tx = db.transaction(STORE_SMART_FORM_DRAFTS, "readwrite");
+  await reqToPromise(tx.objectStore(STORE_SMART_FORM_DRAFTS).put(draft));
+  await txComplete(tx);
+}
+
+export async function idbDeleteSmartFormDraft(userId: string, templateId: string): Promise<void> {
+  const db = await openTimiqOfflineDb();
+  if (!db.objectStoreNames.contains(STORE_SMART_FORM_DRAFTS)) {
+    return;
+  }
+  const tx = db.transaction(STORE_SMART_FORM_DRAFTS, "readwrite");
+  await reqToPromise(tx.objectStore(STORE_SMART_FORM_DRAFTS).delete(smartFormDraftKey(userId, templateId)));
   await txComplete(tx);
 }

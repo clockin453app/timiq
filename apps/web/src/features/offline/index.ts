@@ -7,11 +7,17 @@ export {
   photosFromPreparedUploads,
 } from "./queue";
 export { clearStarterFormLocalDraft, loadStarterFormLocalDraft, saveStarterFormLocalDraft } from "./starter-draft";
+export {
+  clearSmartFormLocalDraft,
+  loadSmartFormLocalDraft,
+  saveSmartFormLocalDraft,
+} from "./smart-form-local-draft";
 export { countOfflineQueueForUser, processOfflineQueue } from "./sync";
 export type {
   OfflineQueueItem,
   OfflineQueueKind,
   OfflineQueueStatus,
+  SmartFormLocalDraft,
   StarterFormLocalDraft,
   WorkProgressOfflinePhotoBlob,
 } from "./types";

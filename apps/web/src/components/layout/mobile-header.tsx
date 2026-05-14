@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo } from "react";
 
 import {
@@ -7,7 +8,7 @@ import {
   getEmployeeNavigationGroups,
   getManagementNavigationGroups,
 } from "../../config/navigation";
-import { useCurrentUser } from "../../features/auth";
+import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
 import { GroupedNavBlock } from "./grouped-nav";
@@ -43,13 +44,17 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             {t("nav.menu", "Menu")}
           </summary>
 
-          <div className="absolute right-0 z-20 mt-2 w-[min(100vw-1.5rem,19rem)] max-w-[calc(100vw-1rem)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_4px_rgba(15,23,42,0.08)]">
-            <nav className="max-h-[min(85dvh,calc(100dvh-3.5rem))] overflow-y-auto overscroll-y-contain p-2 text-sm [-webkit-overflow-scrolling:touch]">
+          <div className="absolute right-0 z-20 mt-2 flex w-[min(100vw-1.5rem,19rem)] max-w-[calc(100vw-1rem)] max-h-[min(85dvh,calc(100dvh-4rem))] flex-col overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_4px_rgba(15,23,42,0.08)]">
+            <nav
+              aria-label={t("shell.drawer_nav", "More navigation")}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-2 text-sm [-webkit-overflow-scrolling:touch]"
+            >
               {employeeGroups.length > 0 ? (
                 <GroupedNavBlock
                   activeHref={activeHref}
                   groups={employeeGroups}
                   role={user.system_role}
+                  showIcons
                   storageScope="drawer-mobile-primary"
                   variant="drawer"
                 />
@@ -68,12 +73,31 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                     activeHref={activeHref}
                     groups={managementGroups}
                     role={user.system_role}
+                    showIcons
                     storageScope="drawer-mobile-management"
                     variant="drawer"
                   />
                 </div>
               ) : null}
             </nav>
+
+            <div className="shrink-0 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2">
+              <Link
+                className="block min-h-[44px] rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+                href="/profile"
+              >
+                {t("nav.profile", "Profile")}
+              </Link>
+              <Link
+                className="block min-h-[44px] rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+                href="/settings"
+              >
+                {t("nav.settings", "Settings")}
+              </Link>
+              <div className="mt-1 px-1">
+                <LogoutButton className="w-full" />
+              </div>
+            </div>
           </div>
         </details>
       </div>

@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { ChevronDown } from "lucide-react";
 
 import type { NavigationGroupDefinition, SystemRole } from "../../config/navigation";
 import { useT } from "../../lib/i18n";
+import { NavItemIcon } from "./nav-item-icon";
 
 /**
  * v3: open state is route-driven on each navigation — we do not merge legacy localStorage blobs
@@ -22,6 +24,8 @@ type GroupedNavBlockProps = {
   storageScope: string;
   variant: GroupedNavVariant;
   role: SystemRole;
+  /** Show Lucide icons beside labels (desktop polish). */
+  showIcons?: boolean;
 };
 
 function groupContainsHref(group: NavigationGroupDefinition, href: string): boolean {
@@ -51,11 +55,15 @@ function clearLegacyNavStorage(scope: string, role: SystemRole) {
   }
 }
 
-function linkClass(active: boolean, variant: GroupedNavVariant): string {
+function linkClass(active: boolean, variant: GroupedNavVariant, withIcon: boolean): string {
   const base =
     variant === "sidebar"
-      ? "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937] transition-colors"
-      : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]";
+      ? withIcon
+        ? "flex min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937] transition-colors"
+        : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937] transition-colors"
+      : withIcon
+        ? "flex min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]"
+        : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]";
   if (active) {
     return `${base} border-[var(--color-border-dark)] bg-[#e5e7eb] font-semibold text-[#111827]`;
   }
@@ -68,6 +76,7 @@ export function GroupedNavBlock({
   storageScope: _storageScope,
   variant,
   role,
+  showIcons = true,
 }: GroupedNavBlockProps) {
   const t = useT();
   const [open, setOpen] = useState<Record<string, boolean>>(() => defaultOpenMap(groups, activeHref));
@@ -111,8 +120,9 @@ export function GroupedNavBlock({
           const only = visible[0];
           return (
             <div key={group.id}>
-              <Link className={linkClass(only.href === activeHref, variant)} href={only.href}>
-                {t(only.labelKey, only.label)}
+              <Link className={linkClass(only.href === activeHref, variant, showIcons)} href={only.href}>
+                {showIcons ? <NavItemIcon labelKey={only.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" /> : null}
+                <span className="min-w-0 flex-1 break-words">{t(only.labelKey, only.label)}</span>
               </Link>
             </div>
           );
@@ -133,25 +143,26 @@ export function GroupedNavBlock({
               onClick={() => toggle(group.id)}
             >
               <span className="min-w-0 truncate">{t(group.groupLabelKey, group.label)}</span>
-              <span
+              <ChevronDown
                 aria-hidden
                 className={[
-                  "inline-flex w-4 shrink-0 select-none justify-end text-[11px] font-medium leading-none text-[#6b7280] transition-transform duration-150",
-                  isOpen ? "rotate-90" : "",
+                  "h-4 w-4 shrink-0 text-[#6b7280] transition-transform duration-150",
+                  isOpen ? "rotate-180" : "",
                 ].join(" ")}
-              >
-                &gt;
-              </span>
+              />
             </button>
             {isOpen ? (
               <div className="mt-1 space-y-0.5 border-l border-[var(--color-border-dark)] pl-2.5">
                 {visible.map((item) => (
                   <Link
-                    className={linkClass(item.href === activeHref, variant)}
+                    className={linkClass(item.href === activeHref, variant, showIcons)}
                     href={item.href}
                     key={item.href}
                   >
-                    {t(item.labelKey, item.label)}
+                    {showIcons ? (
+                      <NavItemIcon labelKey={item.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" />
+                    ) : null}
+                    <span className="min-w-0 flex-1 break-words">{t(item.labelKey, item.label)}</span>
                   </Link>
                 ))}
               </div>

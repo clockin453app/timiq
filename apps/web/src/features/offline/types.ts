@@ -49,3 +49,12 @@ export type StarterFormLocalDraft = {
   updated_at: string;
   fields: Record<string, string>;
 };
+
+/** Local-only smart form answers while offline (per user + template). Not synced automatically. */
+export type SmartFormLocalDraft = {
+  draft_key: string;
+  user_id: string;
+  template_id: string;
+  updated_at: string;
+  answers_json: Record<string, unknown>;
+};

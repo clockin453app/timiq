@@ -8,7 +8,11 @@ import { clearAllTimiqOfflineData } from "../../features/offline/db";
 import { useI18n } from "../../lib/i18n";
 import { logout } from "./api";
 
-export function LogoutButton() {
+type LogoutButtonProps = {
+  className?: string;
+};
+
+export function LogoutButton({ className }: LogoutButtonProps = {}) {
   const router = useRouter();
   const { setLocale, t } = useI18n();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -28,7 +32,7 @@ export function LogoutButton() {
   }
 
   return (
-    <Button disabled={isLoggingOut} onClick={handleLogout} type="button" variant="secondary">
+    <Button className={className} disabled={isLoggingOut} onClick={handleLogout} type="button" variant="secondary">
       {isLoggingOut ? t("common.logging_out", "Logging out...") : t("common.logout", "Logout")}
     </Button>
   );

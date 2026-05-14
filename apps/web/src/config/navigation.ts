@@ -72,6 +72,27 @@ const SITE_PROGRESS: NavigationItem = {
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
+const FORMS: NavigationItem = {
+  label: "Forms",
+  labelKey: "nav.forms",
+  href: "/forms",
+  allowedRoles: ["administrator", "admin", "employee"],
+};
+
+const FORMS_MANAGE: NavigationItem = {
+  label: "Form templates",
+  labelKey: "nav.forms_manage",
+  href: "/forms/manage",
+  allowedRoles: ["administrator", "admin"],
+};
+
+const FORMS_REVIEW: NavigationItem = {
+  label: "Form review",
+  labelKey: "nav.forms_review",
+  href: "/forms/review",
+  allowedRoles: ["administrator", "admin"],
+};
+
 const STARTER_FORM: NavigationItem = {
   label: "Starter Form",
   labelKey: "nav.starter_form",
@@ -228,7 +249,7 @@ const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     items: [CLOCK, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
   },
   { id: "emp-pay", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
-  { id: "emp-work", label: "Work", groupLabelKey: "nav.group.emp_work", items: [SITE_PROGRESS] },
+  { id: "emp-work", label: "Work", groupLabelKey: "nav.group.emp_work", items: [SITE_PROGRESS, FORMS] },
   {
     id: "emp-profile",
     label: "Profile",
@@ -267,7 +288,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mgmt-work",
     label: "Work",
     groupLabelKey: "nav.group.mgmt_work",
-    items: [WORK_PROGRESS_REVIEW],
+    items: [WORK_PROGRESS_REVIEW, FORMS_MANAGE, FORMS_REVIEW],
   },
   {
     id: "mgmt-system",

@@ -23,6 +23,7 @@ from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.payroll_policies.models import LocationPayrollPolicy
 from app.modules.privacy.models import PrivacyPolicyAcknowledgement, PrivacyRequest
 from app.modules.settings.models import CompanyAppSettings, UserPreference
+from app.modules.smart_forms.models import SmartFormSubmission, SmartFormTemplate
 from app.modules.workplaces.models import Workplace
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
 
@@ -59,6 +60,8 @@ __all__ = [
     "OnboardingSubmission",
     "OnboardingDocument",
     "UserPreference",
+    "SmartFormSubmission",
+    "SmartFormTemplate",
     "WorkProgressEntry",
     "WorkProgressAttachment",
 ]
