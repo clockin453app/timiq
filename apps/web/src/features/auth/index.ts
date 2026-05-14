@@ -1,5 +1,10 @@
 export { AuthGuard } from "./auth-guard";
-export { AuthUserProvider, useCurrentUser } from "./auth-context";
+export {
+  AuthUserProvider,
+  TIMIQ_AUTH_REFRESH_EVENT,
+  useCurrentUser,
+  useRefreshAuthUser,
+} from "./auth-context";
 export { LogoutButton } from "./logout-button";
 export { RoleGuard } from "./role-guard";
 export { UserAccountSummary } from "./user-account-summary";

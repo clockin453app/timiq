@@ -14,6 +14,7 @@ import {
   isEmployee,
   sendVerificationEmail,
   useCurrentUser,
+  useRefreshAuthUser,
 } from "../../features/auth";
 import {
   fetchOnboardingDocumentBlob,
@@ -32,6 +33,7 @@ import {
 
 export function ProfileClient() {
   const user = useCurrentUser();
+  const refreshAuthUser = useRefreshAuthUser();
 
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
   const [firstName, setFirstName] = useState("");
@@ -50,6 +52,7 @@ export function ProfileClient() {
   const [verifyMessage, setVerifyMessage] = useState("");
   const [verifyError, setVerifyError] = useState("");
   const [verifyDevLink, setVerifyDevLink] = useState<string | null>(null);
+  const [authRefreshBusy, setAuthRefreshBusy] = useState(false);
 
   const [onboarding, setOnboarding] = useState<OnboardingSubmissionDetail | null>(null);
   const [onboardingLoading, setOnboardingLoading] = useState(false);
@@ -206,12 +209,24 @@ export function ProfileClient() {
     setVerifySending(true);
     try {
       const res = await sendVerificationEmail();
-      setVerifyMessage(res.message);
+      setVerifyMessage(
+        "Verification email sent. Open the link, then return here. This page updates when you return to this tab or when you click Refresh status below.",
+      );
       setVerifyDevLink(res.dev_verification_link ?? null);
     } catch (err) {
       setVerifyError(err instanceof Error ? err.message : "Could not send verification email.");
     } finally {
       setVerifySending(false);
+    }
+  }
+
+  async function handleRefreshAccountStatus() {
+    setVerifyError("");
+    setAuthRefreshBusy(true);
+    try {
+      await refreshAuthUser();
+    } finally {
+      setAuthRefreshBusy(false);
     }
   }
 
@@ -371,11 +386,20 @@ export function ProfileClient() {
                   Verify your email
                 </p>
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  After you complete verification, reload this page so your status updates here.
+                  When you have opened the verification link, return to this tab or click Refresh status so your
+                  account shows as verified.
                 </p>
-                <div className="mt-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   <Button disabled={verifySending} onClick={() => void handleSendVerificationEmail()} type="button">
                     {verifySending ? "Sending…" : "Send verification email"}
+                  </Button>
+                  <Button
+                    disabled={authRefreshBusy}
+                    onClick={() => void handleRefreshAccountStatus()}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {authRefreshBusy ? "Refreshing…" : "Refresh status"}
                   </Button>
                 </div>
                 {verifyError ? (
@@ -384,7 +408,7 @@ export function ProfileClient() {
                 {verifyMessage ? (
                   <p className="mt-2 text-sm text-[var(--color-text)]">{verifyMessage}</p>
                 ) : null}
-                {verifyDevLink ? (
+                {process.env.NODE_ENV === "development" && verifyDevLink ? (
                   <div className="mt-2 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2 text-xs">
                     <p className="font-bold text-[var(--color-text)]">Development verification link</p>
                     <p className="mt-1 break-all text-[var(--color-text-muted)]">{verifyDevLink}</p>
