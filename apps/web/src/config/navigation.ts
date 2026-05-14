@@ -247,3 +247,23 @@ export function getAllNavLinksForRole(role: SystemRole): NavigationItem[] {
   }
   return out;
 }
+
+/** Matches mobile bottom navigation — hide from drawer to avoid duplicate links. */
+const MOBILE_QUICK_NAV_HREFS = new Set<string>([
+  "/dashboard",
+  "/clock",
+  "/timesheets",
+  "/week-report",
+  "/profile",
+]);
+
+export function filterNavGroupsForMobileQuickNav(
+  groups: NavigationGroupDefinition[],
+): NavigationGroupDefinition[] {
+  return groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !MOBILE_QUICK_NAV_HREFS.has(item.href)),
+    }))
+    .filter((group) => group.items.length > 0);
+}

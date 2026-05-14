@@ -28,7 +28,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
   );
 
   return (
-    <aside className="hidden min-h-dvh w-[var(--layout-sidebar-width)] min-w-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm lg:flex">
+    <aside className="hidden min-h-dvh w-[var(--layout-sidebar-width)] min-w-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm xl:flex">
       <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-4">
         <p className="text-base font-bold tracking-tight text-[var(--color-text)]">TimIQ</p>
         <p className="mt-1 text-xs leading-snug text-[#4b5563]">

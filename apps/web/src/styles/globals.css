@@ -190,3 +190,24 @@ select.timiq-select:focus-visible {
   border-color: #0f766e;
   background: #e0f2f1;
 }
+
+/* Mobile: avoid iOS input zoom (16px+) on narrow viewports */
+@media (max-width: 639px) {
+  input.timiq-input,
+  select.timiq-select,
+  textarea {
+    font-size: 1rem;
+  }
+}
+
+/* Tables and wide widgets: scroll inside container, not the whole page */
+.timiq-scroll-x {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.timiq-touch-target {
+  min-height: 44px;
+  touch-action: manipulation;
+}

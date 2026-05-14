@@ -843,7 +843,7 @@ export function PayrollReportClient() {
               <p className="mb-3 text-xs text-[var(--color-text-muted)]">
                 Summary by employee for this payroll week. Use + to open employee payroll details (shift lines).
               </p>
-              <div className="w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[#111827]">
+              <div className="timiq-scroll-x w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[#111827]">
                 <Table className="min-w-full">
                 <TableHeader>
                   <TableRow>

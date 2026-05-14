@@ -60,7 +60,8 @@
 
   --layout-sidebar-width: 15.5rem;
   --layout-topbar-height: 3.25rem;
-  --layout-mobile-bottom-nav-height: 4rem;
+  /* Bottom bar + iOS home indicator / safe area (used by app shell padding) */
+  --layout-mobile-bottom-nav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
 
   --focus-ring: 0 0 0 2px rgba(47, 111, 174, 0.35);
 }

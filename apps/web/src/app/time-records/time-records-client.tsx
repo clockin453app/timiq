@@ -520,6 +520,7 @@ export function TimeRecordsClient() {
           </p>
         ) : null}
 
+        <div className="timiq-scroll-x w-full min-w-0">
         <Table>
           <TableHeader>
             <TableRow>
@@ -614,6 +615,7 @@ export function TimeRecordsClient() {
               : null}
           </TableBody>
         </Table>
+        </div>
 
         {addOpen ? (
           <div

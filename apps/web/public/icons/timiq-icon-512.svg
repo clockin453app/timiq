@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="TimIQ">
+  <!-- Extra padding for maskable safe zone -->
+  <rect x="32" y="32" width="448" height="448" fill="#2f6fae" rx="72" />
+  <text
+    x="256"
+    y="310"
+    text-anchor="middle"
+    font-family="Calibri, Arial, ui-sans-serif, system-ui, sans-serif"
+    font-size="140"
+    font-weight="700"
+    fill="#ffffff"
+  >
+    TI
+  </text>
+</svg>
