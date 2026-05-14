@@ -13,6 +13,7 @@ pip install -r requirements-dev.txt
 python -m compileall app
 python -c "from app.main import app; print('app import ok')"
 python -m pytest tests -q
+# Optional: GET /api/healthz on a running API (expect {"status":"ok",...})
 python -m alembic heads
 python -m alembic upgrade head
 ```

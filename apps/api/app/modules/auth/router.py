@@ -38,9 +38,18 @@ from app.modules.auth.user_lifecycle import (
     clear_user_operational_history,
     delete_user_hard_by_administrator,
 )
+from app.core.config import settings
 from app.modules.auth.session_tokens import SESSION_COOKIE_NAME, create_session_token
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+def _session_cookie_params() -> dict[str, bool | str]:
+    """Local dev: lax + not secure. Production (split origins): Secure + None so API cookies work cross-site."""
+    is_local = settings.app_env.strip().lower() == "local"
+    if is_local:
+        return {"secure": False, "samesite": "lax"}
+    return {"secure": True, "samesite": "none"}
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -59,14 +68,14 @@ def login(
 
     session_token = create_session_token(user.id)
 
+    cookie_kw = _session_cookie_params()
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_token,
         httponly=True,
-        secure=False,
-        samesite="lax",
         max_age=60 * 60 * 10,
         path="/",
+        **cookie_kw,
     )
 
     return LoginResponse(user=UserResponse.model_validate(user))
@@ -79,9 +88,12 @@ def me(current_user: User = Depends(get_current_user)) -> UserResponse:
 
 @router.post("/logout")
 def logout(response: Response) -> dict[str, str]:
+    cookie_kw = _session_cookie_params()
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,
         path="/",
+        secure=bool(cookie_kw.get("secure")),
+        samesite=str(cookie_kw.get("samesite", "lax")),
     )
 
     return {"status": "ok"}

@@ -19,8 +19,15 @@ The previous app ZIP is used only as a product reference for features and workfl
 
 - `infra/docker` — Docker files
 - `infra/nginx` — reverse proxy configuration
-- `infra/deployment` — Render deployment configuration
-- `infra/github-actions` — CI workflow files
+- `infra/deployment` — pointer to Render docs in `docs/`
+- `infra/github-actions` — CI notes; workflow: `.github/workflows/ci.yml`
+
+## Deployment docs
+
+- [docs/render-deployment.md](docs/render-deployment.md) — Render (Postgres + API + Next.js)
+- [docs/deployment-runbook.md](docs/deployment-runbook.md) — ordered steps, smoke, rollback
+- [docs/env-production-checklist.md](docs/env-production-checklist.md) — environment variables
+- [docs/qa-smoke-checklist.md](docs/qa-smoke-checklist.md) — pre-release manual checks
 
 ## First tracked build step
 

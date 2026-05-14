@@ -1,10 +1,8 @@
 # GitHub Actions CI Plan
 
-Planned checks:
+**Status:** A minimal workflow is in **`.github/workflows/ci.yml`** (backend: pytest, compileall, app import; frontend: `npm ci`, typecheck, build). No secrets, no deploy, no database service.
 
-- Backend lint and tests
-- Frontend lint and typecheck
-- Database migration validation
-- Security dependency review
+Optional next steps:
 
-CI files are added after the runnable local development environment is complete.
+- Add PostgreSQL service container only if you want `alembic upgrade head` or integration tests in CI (requires wiring `DATABASE_URL` and migrations in the job).
+- Add `npm run lint` after a non-interactive ESLint config exists.
