@@ -48,6 +48,7 @@ type ProfessionalFormPreset = {
   schema: SmartFormSchemaJson;
   requires_location?: boolean;
   requires_signature?: boolean;
+  allow_photos?: boolean;
 };
 
 function newId(prefix: string): string {
@@ -228,6 +229,52 @@ function professionalPresets(t: (k: string, f: string) => string): ProfessionalF
       },
       requires_location: true,
       requires_signature: true,
+    },
+    {
+      id: "near_miss",
+      title: t("forms.preset_near_miss", "Near miss report"),
+      category: "near_miss",
+      schema: {
+        sections: [
+          {
+            id: newId("section"),
+            title: t("forms.preset_near_miss_section", "What happened"),
+            fields: [
+              ta("what_happened", t("forms.preset_nm_what", "Describe what nearly happened"), true),
+              ta("where_when", t("forms.preset_nm_where", "Where and when"), true),
+              yesNo("made_safe", t("forms.preset_nm_safe", "Made safe immediately?"), true),
+            ],
+          },
+        ],
+      },
+      requires_location: true,
+      requires_signature: true,
+      allow_photos: true,
+    },
+    {
+      id: "defect_snag",
+      title: t("forms.preset_defect_snag", "Defect / snag report"),
+      category: "defect_snag",
+      schema: {
+        sections: [
+          {
+            id: newId("section"),
+            title: t("forms.preset_defect_section", "Defect"),
+            fields: [
+              {
+                id: newId("field"),
+                label: t("forms.preset_defect_title", "Short title"),
+                type: "text",
+                required: true,
+              },
+              ta("defect_detail", t("forms.preset_defect_detail", "Description and location"), true),
+              yesNo("safety_impact", t("forms.preset_defect_safety", "Could affect safety if not corrected?"), true),
+            ],
+          },
+        ],
+      },
+      requires_location: true,
+      allow_photos: true,
     },
   ];
 }
@@ -560,7 +607,7 @@ export function FormsManageClient() {
     setSchemaJson(cloneSchema(p.schema));
     setRequiresLocation(p.requires_location ?? false);
     setRequiresSignature(p.requires_signature ?? false);
-    setAllowPhotos(false);
+    setAllowPhotos(p.allow_photos ?? false);
     setAdvancedOpen(false);
     setAdvancedText("");
     setAdvancedError("");

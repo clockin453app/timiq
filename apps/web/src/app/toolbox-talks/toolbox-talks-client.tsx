@@ -333,7 +333,7 @@ export function ToolboxTalksClient() {
                     </label>
                     <div>
                       <label className="mb-1 block text-xs font-medium text-[var(--color-text-soft)]" htmlFor="tt-sign-name">
-                        {t("toolbox_talks.printed_full_name", "Printed full name")}
+                        {t("signature.printed_name_label", "Printed name")}
                       </label>
                       <Input
                         autoComplete="name"

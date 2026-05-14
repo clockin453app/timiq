@@ -395,7 +395,7 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
             <p className="text-sm text-[var(--color-text-soft)]">
               {submission?.signature_name ? (
                 <>
-                  {t("forms.printed_name_label", "Printed name")}:{" "}
+                  {t("signature.printed_name_label", "Printed name")}:{" "}
                   <span className="font-medium text-[var(--color-text)]">{submission.signature_name}</span>
                 </>
               ) : null}
@@ -410,7 +410,7 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
           ) : (
             <>
               <label className="flex flex-col gap-1 text-sm">
-                <span>{t("forms.printed_full_name", "Printed full name")}</span>
+                <span>{t("signature.printed_name_label", "Printed name")}</span>
                 <Input onChange={(e) => setSignatureName(e.target.value)} value={signatureName} />
               </label>
               {submission?.has_signature ? (

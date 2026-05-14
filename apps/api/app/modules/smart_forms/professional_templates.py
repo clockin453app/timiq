@@ -24,6 +24,10 @@ def _yn(fid: str, label: str) -> dict[str, Any]:
     return {"id": fid, "type": "yes_no", "label": label, "required": True}
 
 
+def _ta(fid: str, label: str, *, required: bool = False) -> dict[str, Any]:
+    return {"id": fid, "type": "textarea", "label": label, "required": required}
+
+
 PROFESSIONAL_FORM_TEMPLATES: list[ProfessionalFormTemplateDict] = [
     {
         "id": "daily_site_checklist",
@@ -227,6 +231,66 @@ PROFESSIONAL_FORM_TEMPLATES: list[ProfessionalFormTemplateDict] = [
                         _yn("power_isolated", "Non-essential power isolated where required?"),
                         _yn("gates_locked", "Gates locked and keys managed per site rules?"),
                         _yn("hazards_reported", "Outstanding hazards reported to site management?"),
+                    ],
+                ),
+            ],
+        },
+    },
+    {
+        "id": "near_miss_report",
+        "name": "Near miss report",
+        "category": "near_miss",
+        "description": "Capture a near miss so controls can be reviewed before someone is hurt.",
+        "requires_location": True,
+        "requires_signature": True,
+        "allow_photos": True,
+        "form_schema": {
+            "sections": [
+                _sec(
+                    "event",
+                    "What happened",
+                    [
+                        _ta("what_happened", "Describe what nearly happened", required=True),
+                        _ta("where_when", "Where and when (approximate)", required=True),
+                        _yn("immediate_control", "Was the situation made safe immediately?"),
+                    ],
+                ),
+                _sec(
+                    "follow_up",
+                    "Follow-up",
+                    [
+                        _ta("suggested_controls", "Suggested controls or communication", required=False),
+                        _yn("reported_to_supervisor", "Reported verbally to site supervisor?"),
+                    ],
+                ),
+            ],
+        },
+    },
+    {
+        "id": "defect_snag_report",
+        "name": "Defect / snag report",
+        "category": "defect_snag",
+        "description": "Record a defect or snag for rectification tracking.",
+        "requires_location": True,
+        "requires_signature": False,
+        "allow_photos": True,
+        "form_schema": {
+            "sections": [
+                _sec(
+                    "defect",
+                    "Defect details",
+                    [
+                        _ta("defect_title", "Short title", required=True),
+                        _ta("defect_description", "Description and location detail", required=True),
+                        _yn("safety_related", "Could this affect safety if not corrected?"),
+                    ],
+                ),
+                _sec(
+                    "rectification",
+                    "Rectification",
+                    [
+                        _ta("recommended_action", "Recommended action / trade", required=False),
+                        _yn("access_impact", "Does defect affect access or egress?"),
                     ],
                 ),
             ],

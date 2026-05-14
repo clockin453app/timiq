@@ -1330,7 +1330,8 @@ export function RamsManageClient() {
                         <TableRow>
                           <TableHead>{t("rams.employee", "Employee")}</TableHead>
                           <TableHead>{t("rams.col_status", "Status")}</TableHead>
-                          <TableHead>{t("rams.acknowledgement_name", "Name")}</TableHead>
+                          <TableHead>{t("signature.printed_name_label", "Printed name")}</TableHead>
+                          <TableHead>{t("rams.signature_captured_short", "Sig.")}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1339,6 +1340,7 @@ export function RamsManageClient() {
                             <TableCell>{a.display_name || a.user_email || a.user_id}</TableCell>
                             <TableCell>{a.status}</TableCell>
                             <TableCell>{a.acknowledgement_name ?? "—"}</TableCell>
+                            <TableCell>{a.has_signature ? "Yes" : "No"}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>

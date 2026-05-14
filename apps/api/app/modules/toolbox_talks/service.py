@@ -789,6 +789,10 @@ def delete_talk_hard(db: Session, actor: User, talk_id: uuid.UUID) -> None:
         raise ToolboxTalkNotFoundError()
     if not _can_admin_manage_company(actor, talk.company_id):
         raise ToolboxTalkNotFoundError()
+    if talk.status != "draft":
+        raise ToolboxTalkValidationError(
+            "Only draft toolbox talks can be deleted. Archive published or completed records instead.",
+        )
     if tt_repo.count_signed_attendees_for_talk(db, talk_id) > 0:
         raise ToolboxTalkValidationError("This record has compliance sign-offs. Archive it instead of deleting.")
     for a in tt_repo.list_attendees_for_talk(db, talk_id):
@@ -811,6 +815,8 @@ def delete_talk_hard(db: Session, actor: User, talk_id: uuid.UUID) -> None:
 
 
 def export_talk_pdf_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple[bytes, str]:
+    from app.modules.toolbox_talks.topic_templates import get_topic_template_dict
+
     detail = get_talk_for_viewer(db, actor, talk_id)
     company = get_company_by_id(db, detail.company_id)
     company_name = company.name if company else "Company"
@@ -818,6 +824,17 @@ def export_talk_pdf_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple
     if detail.location_id:
         loc = get_location_by_id(db, detail.location_id)
         loc_name = loc.name if loc else None
+    presenter_display: str | None = None
+    if detail.presenter_user_id:
+        presenter_display = _display_name(db, detail.presenter_user_id)
+        if not presenter_display:
+            pu = get_user_by_id(db, detail.presenter_user_id)
+            presenter_display = pu.email if pu else None
+    tpl = get_topic_template_dict(detail.topic) or {}
+    key_points = list(tpl.get("key_points") or [])
+    do_list = list(tpl.get("do_list") or [])
+    dont_list = list(tpl.get("dont_list") or [])
+    ppe_reminders = list(tpl.get("ppe_reminders") or tpl.get("required_ppe") or [])
     rows: list[list[str]] = []
     for a in detail.attendees:
         u = get_user_by_id(db, a.user_id)
@@ -828,7 +845,8 @@ def export_talk_pdf_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple
                 name_cell[:120],
                 a.status,
                 a.signed_at.isoformat() if a.signed_at else "—",
-                (a.signature_name or ("Yes" if a.has_signature else "—"))[:120],
+                (a.signature_name or "—")[:120],
+                "Yes" if a.has_signature else "No",
                 (a.declined_reason or "—")[:200],
             ],
         )
@@ -841,7 +859,12 @@ def export_talk_pdf_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple
         location_name=loc_name,
         scheduled=detail.scheduled_date.isoformat() if detail.scheduled_date else None,
         talk_status=detail.status,
+        presenter_display=presenter_display,
         talk_body=detail.talk_body,
+        key_points=key_points,
+        do_list=do_list,
+        dont_list=dont_list,
+        ppe_reminders=ppe_reminders,
         attendees_rows=rows,
     )
     create_internal_audit_event(

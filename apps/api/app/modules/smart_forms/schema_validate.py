@@ -20,6 +20,8 @@ ALLOWED_CATEGORIES = frozenset(
         "fire_point_inspection",
         "delivery_visitor",
         "site_close_checklist",
+        "near_miss",
+        "defect_snag",
     },
 )
 ALLOWED_TEMPLATE_STATUSES = frozenset({"draft", "active", "archived"})

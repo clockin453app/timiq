@@ -683,7 +683,8 @@ export function ToolboxTalksManageClient() {
                           <TableHead>{t("toolbox_talks.col_employee", "Employee")}</TableHead>
                           <TableHead>{t("toolbox_talks.col_status", "Status")}</TableHead>
                           <TableHead>{t("toolbox_talks.signed_at", "Signed at")}</TableHead>
-                          <TableHead>{t("toolbox_talks.signature_name", "Signature name")}</TableHead>
+                          <TableHead>{t("signature.printed_name_label", "Printed name")}</TableHead>
+                          <TableHead>{t("toolbox_talks.signature_captured_col", "Drawn sig.")}</TableHead>
                           <TableHead className="w-[80px]" />
                         </TableRow>
                       </TableHeader>
@@ -693,7 +694,8 @@ export function ToolboxTalksManageClient() {
                             <TableCell className="text-sm">{a.display_name || a.user_email || a.user_id}</TableCell>
                             <TableCell className="text-sm capitalize">{a.status}</TableCell>
                             <TableCell className="text-sm">{formatDate(a.signed_at)}</TableCell>
-                            <TableCell className="text-sm">{a.signature_name ?? (a.has_signature ? "—" : "—")}</TableCell>
+                            <TableCell className="text-sm">{a.signature_name ?? "—"}</TableCell>
+                            <TableCell className="text-sm">{a.has_signature ? "Yes" : "No"}</TableCell>
                             <TableCell>
                               {a.status === "pending" ? (
                                 <Button

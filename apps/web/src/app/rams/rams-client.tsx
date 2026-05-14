@@ -481,7 +481,7 @@ export function RamsClient() {
                           <span>{t("rams.read_ack", "I have read and understood this RAMS / risk assessment.")}</span>
                         </label>
                         <Input
-                          label={t("rams.acknowledgement_printed_name", "Printed full name")}
+                          label={t("signature.printed_name_label", "Printed name")}
                           value={ackName}
                           onChange={(e) => setAckName(e.target.value)}
                         />

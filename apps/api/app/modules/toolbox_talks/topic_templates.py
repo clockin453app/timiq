@@ -12,6 +12,9 @@ class ToolboxTopicTemplateDict(TypedDict):
     default_body: str
     key_points: list[str]
     required_ppe: list[str]
+    do_list: list[str]
+    dont_list: list[str]
+    ppe_reminders: list[str]
 
 
 def _tpl(
@@ -21,6 +24,10 @@ def _tpl(
     body: str,
     key_points: list[str],
     ppe: list[str],
+    *,
+    do_list: list[str] | None = None,
+    dont_list: list[str] | None = None,
+    ppe_reminders: list[str] | None = None,
 ) -> ToolboxTopicTemplateDict:
     return {
         "topic": topic,
@@ -29,6 +36,9 @@ def _tpl(
         "default_body": body,
         "key_points": key_points,
         "required_ppe": ppe,
+        "do_list": list(do_list or []),
+        "dont_list": list(dont_list or []),
+        "ppe_reminders": list(ppe) if ppe_reminders is None else list(ppe_reminders),
     }
 
 
@@ -46,6 +56,8 @@ TOOLBOX_TOPIC_TEMPLATES: list[ToolboxTopicTemplateDict] = [
             "Team lifts need one person to call the lift and synchronise the move.",
         ],
         ["Gloves suitable for grip", "Safety footwear", "Hi-vis where vehicles operate"],
+        do_list=["Use mechanical aids first", "Tag and report damaged lifting accessories"],
+        dont_list=["Do not twist under load", "Do not exceed team lift capability"],
     ),
     _tpl(
         "ppe",
@@ -208,3 +220,10 @@ TOOLBOX_TOPIC_TEMPLATES: list[ToolboxTopicTemplateDict] = [
 
 def list_topic_template_dicts() -> list[dict[str, Any]]:
     return [dict(t) for t in TOOLBOX_TOPIC_TEMPLATES]
+
+
+def get_topic_template_dict(topic: str) -> dict[str, Any] | None:
+    for t in TOOLBOX_TOPIC_TEMPLATES:
+        if t["topic"] == topic:
+            return dict(t)
+    return None

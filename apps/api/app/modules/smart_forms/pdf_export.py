@@ -11,9 +11,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-
-from app.modules.smart_forms.schema_validate import iter_field_defs
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 
 
 def _p(text: str, style: ParagraphStyle) -> Paragraph:
@@ -66,44 +64,36 @@ def build_smart_form_submission_pdf(
         story.append(_p(f"<b>Reviewed:</b> {html.escape(reviewed_at.isoformat())}", body))
     story.append(Spacer(1, 0.4 * cm))
 
-    story.append(_p("Answers", h2))
-    field_index: dict[str, dict[str, Any]] = {}
-    for f in iter_field_defs(schema_json):
-        field_index[str(f["id"])] = f
+    story.append(_p("Responses", h2))
+    any_section = False
+    for sec in schema_json.get("sections", []):
+        if not isinstance(sec, dict):
+            continue
+        any_section = True
+        st = str(sec.get("title") or sec.get("id") or "Section")
+        story.append(_p(f"<b>{html.escape(st)}</b>", body))
+        for field in sec.get("fields", []):
+            if not isinstance(field, dict):
+                continue
+            fid = str(field.get("id", ""))
+            label = str(field.get("label", fid))
+            val = answers_json.get(fid)
+            if isinstance(val, (list, dict)):
+                disp = str(val)
+            else:
+                disp = str(val) if val is not None else "—"
+            story.append(_p(f"{html.escape(label)}: {html.escape(disp[:8000])}", body))
+        story.append(Spacer(1, 0.15 * cm))
+    if not any_section:
+        story.append(_p("—", body))
 
-    rows: list[list[str]] = [["Field", "Answer"]]
-    for key, val in (answers_json or {}).items():
-        fd = field_index.get(str(key), {})
-        label = str(fd.get("label", key))
-        if isinstance(val, (list, dict)):
-            ans = str(val)
-        else:
-            ans = str(val) if val is not None else ""
-        rows.append([label[:500], ans[:4000]])
-
-    if len(rows) == 1:
-        rows.append(["—", "No answers recorded."])
-
-    t = Table(rows, colWidths=[6 * cm, 10 * cm])
-    t.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
-                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ],
-        ),
-    )
-    story.append(t)
-    story.append(Spacer(1, 0.5 * cm))
+    story.append(Spacer(1, 0.35 * cm))
 
     story.append(_p("Signature", h2))
     sig_line = "Signature captured (drawn)" if has_signature else "No drawn signature on file"
     story.append(_p(f"<b>{sig_line}</b>", body))
     if signature_name:
-        story.append(_p(f"<b>Name on record:</b> {html.escape(signature_name)}", body))
+        story.append(_p(f"<b>Printed name:</b> {html.escape(signature_name)}", body))
     if review_notes:
         story.append(Spacer(1, 0.3 * cm))
         story.append(_p("Review notes", h2))

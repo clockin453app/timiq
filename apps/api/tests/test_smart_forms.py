@@ -64,7 +64,7 @@ def test_professional_templates_load() -> None:
     from app.modules.smart_forms.service import list_professional_templates
 
     rows = list_professional_templates()
-    assert len(rows) == 9
+    assert len(rows) == 11
     assert rows[0].id
     assert rows[0].form_schema.get("sections")
 

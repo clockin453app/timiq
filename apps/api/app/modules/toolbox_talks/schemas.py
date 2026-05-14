@@ -18,6 +18,9 @@ class ToolboxTopicTemplateResponse(BaseModel):
     default_body: str
     key_points: list[str]
     required_ppe: list[str] = Field(default_factory=list)
+    do_list: list[str] = Field(default_factory=list)
+    dont_list: list[str] = Field(default_factory=list)
+    ppe_reminders: list[str] = Field(default_factory=list)
 
 
 class ToolboxTalkCreateRequest(BaseModel):

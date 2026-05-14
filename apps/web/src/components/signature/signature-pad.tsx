@@ -132,7 +132,7 @@ export function SignaturePad({ value, onChange, disabled }: SignaturePadProps) {
   return (
     <div className="space-y-2">
       <p className="text-xs font-medium text-[var(--color-text-soft)]">
-        {t("signature.draw_label", "Draw your signature")}
+        {t("signature.draw_label", "Draw signature")}
       </p>
       <canvas
         ref={canvasRef}
