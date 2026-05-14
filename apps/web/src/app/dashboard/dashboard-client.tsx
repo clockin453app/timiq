@@ -7,7 +7,9 @@ import { PageHeader, Sheet, SheetBody } from "../../components/ui";
 import { isEmployee, LogoutButton, useCurrentUser } from "../../features/auth";
 import { fetchManagementSummary, type ManagementSummary } from "../../features/dashboard/api";
 import { getClockStatus, type ClockStatus } from "../../features/time-clock/api";
-import { useLiveShiftDuration } from "../../features/time-clock/shift-duration";
+import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
+import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
+import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 
 function describeShift(clock: ClockStatus): string {
   if (!clock.has_open_shift) {
@@ -109,7 +111,7 @@ function EmployeeDashboard() {
   const [clockError, setClockError] = useState("");
   const [clockLoading, setClockLoading] = useState(true);
 
-  const onShiftDuration = useLiveShiftDuration(
+  const onShiftDurationParts = useLiveShiftDurationParts(
     clockStatus?.open_shift_clock_in_at,
     Boolean(clockStatus?.has_open_shift && clockStatus?.open_shift_clock_in_at),
   );
@@ -193,10 +195,21 @@ function EmployeeDashboard() {
                 <dt className="text-xs text-[var(--color-text-muted)]">Today hours</dt>
                 <dd className="font-semibold text-[var(--color-text)]">Calculated after clock-out</dd>
               </div>
-              {clockStatus.has_open_shift && onShiftDuration ? (
+              {clockStatus.has_open_shift && clockStatus.open_shift_clock_in_at ? (
                 <div className="flex flex-col gap-1 sm:col-span-2">
                   <dt className="text-xs text-[var(--color-text-muted)]">Live shift time</dt>
-                  <dd className="font-semibold text-[var(--color-text)]">On shift for {onShiftDuration}</dd>
+                  <dd className="font-semibold text-[var(--color-text)]" suppressHydrationWarning>
+                    On shift for{" "}
+                    <span className="font-mono">
+                      {onShiftDurationParts.hms || onShiftDurationParts.compact || "—"}
+                    </span>
+                    {onShiftDurationParts.compact && onShiftDurationParts.hms ? (
+                      <span className="font-normal text-[var(--color-text-muted)]">
+                        {" "}
+                        ({onShiftDurationParts.compact})
+                      </span>
+                    ) : null}
+                  </dd>
                 </div>
               ) : null}
               <div className="flex flex-col gap-1 sm:col-span-2">
@@ -328,7 +341,7 @@ function ManagementDashboard() {
                 summary.payroll_status === "not_calculated"
                   ? summary.payroll_message ?? "Payroll has not been calculated for this week."
                   : summary.payroll_week_start
-                    ? `Week starting ${summary.payroll_week_start}`
+                    ? formatPayrollWeekUkLabel(summary.payroll_week_start, browserDefaultTimeZone(), false)
                     : undefined
               }
               value={

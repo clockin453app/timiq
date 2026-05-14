@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import re
 import uuid
 from datetime import datetime, timezone
@@ -14,6 +16,8 @@ from app.modules.messaging.models import Announcement, Conversation, Conversatio
 from app.modules.messaging.repository import (
     add_participant,
     count_announcement_reads,
+    count_conversations_with_unread_incoming,
+    count_unread_incoming_in_conversation,
     find_direct_conversation_between_users,
     get_announcement,
     get_announcement_read_for_user,
@@ -22,6 +26,7 @@ from app.modules.messaging.repository import (
     get_participant,
     list_announcement_reads,
     list_announcements_visible,
+    list_conversation_ids_with_unread_ordered,
     list_messages_for_conversation,
     list_participants_for_conversation,
     list_conversations_for_user,
@@ -691,3 +696,58 @@ def mark_conversation_read(
     db_session.add(part)
     db_session.flush()
     db_session.commit()
+
+
+@dataclass(frozen=True)
+class MessageBellItem:
+    """One row for the notification bell (messages tab)."""
+
+    conversation_id: uuid.UUID | None
+    count: int
+    title: str
+    description: str
+    href: str
+    target_key: str
+
+
+def message_bell_items(db_session: Session, *, user_id: uuid.UUID) -> list[MessageBellItem]:
+    """Up to five per-conversation rows with deep links; if more than five conversations have unread, one grouped row."""
+    total = count_conversations_with_unread_incoming(db_session, user_id=user_id)
+    if total == 0:
+        return []
+    if total > 5:
+        return [
+            MessageBellItem(
+                conversation_id=None,
+                count=total,
+                title="Messages",
+                description="Conversations with new messages for you.",
+                href="/messages?tab=messages",
+                target_key="message:grouped",
+            ),
+        ]
+    out: list[MessageBellItem] = []
+    for cid in list_conversation_ids_with_unread_ordered(db_session, user_id=user_id, limit=5):
+        conv = get_conversation(db_session, cid)
+        if conv is None:
+            continue
+        unread = count_unread_incoming_in_conversation(db_session, conversation_id=cid, user_id=user_id)
+        if unread <= 0:
+            continue
+        item = _conversation_to_list_item(db_session, conv, user_id)
+        if item.conversation_type == "group":
+            title = (item.title or "Group chat").strip() or "Group chat"
+        else:
+            title = (item.other_user_display_name or "Direct message").strip() or "Direct message"
+        href = f"/messages?conversation={cid}&tab=messages"
+        out.append(
+            MessageBellItem(
+                conversation_id=cid,
+                count=unread,
+                title=title,
+                description="New messages in this conversation.",
+                href=href,
+                target_key=f"message:{cid}",
+            ),
+        )
+    return out

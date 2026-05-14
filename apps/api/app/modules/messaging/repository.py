@@ -307,6 +307,64 @@ def count_conversations_with_unread_incoming(
     return int(db_session.scalar(stmt) or 0)
 
 
+def count_unread_incoming_in_conversation(
+    db_session: Session,
+    *,
+    conversation_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> int:
+    cp = get_participant(db_session, conversation_id=conversation_id, user_id=user_id)
+    if cp is None:
+        return 0
+    clauses = [
+        Message.conversation_id == conversation_id,
+        Message.deleted_at.is_(None),
+        Message.sender_user_id != user_id,
+    ]
+    if cp.last_read_at is None:
+        where = and_(*clauses)
+    else:
+        where = and_(*clauses, Message.created_at > cp.last_read_at)
+    stmt = select(func.count()).select_from(Message).where(where)
+    return int(db_session.scalar(stmt) or 0)
+
+
+def list_conversation_ids_with_unread_ordered(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    limit: int,
+) -> list[uuid.UUID]:
+    sub_exists = (
+        select(1)
+        .select_from(Message)
+        .where(
+            Message.conversation_id == ConversationParticipant.conversation_id,
+            Message.deleted_at.is_(None),
+            Message.sender_user_id != user_id,
+            or_(
+                ConversationParticipant.last_read_at.is_(None),
+                Message.created_at > ConversationParticipant.last_read_at,
+            ),
+        )
+        .exists()
+    )
+    stmt = (
+        select(Conversation.id)
+        .join(
+            ConversationParticipant,
+            and_(
+                ConversationParticipant.conversation_id == Conversation.id,
+                ConversationParticipant.user_id == user_id,
+            ),
+        )
+        .where(sub_exists)
+        .order_by(Conversation.updated_at.desc())
+        .limit(limit)
+    )
+    return list(db_session.scalars(stmt).all())
+
+
 def find_direct_conversation_between_users(
     db_session: Session,
     *,

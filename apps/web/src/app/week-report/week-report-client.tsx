@@ -46,17 +46,19 @@ const ALL_EMPLOYEES_VALUE = "__all__";
 function StatCard(props: { label: string; value: string; hint?: string }) {
   return (
     <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-1.5 sm:px-3 sm:py-2">
+        <p className="text-[9px] font-bold uppercase leading-tight tracking-wider text-[var(--color-text-soft)] sm:text-[10px]">
           {props.label}
         </p>
       </div>
-      <div className="px-3 py-3">
-        <p className="text-xl font-semibold tabular-nums tracking-tight text-[var(--color-text)]">
+      <div className="px-2 py-2 sm:px-3 sm:py-3">
+        <p className="text-base font-semibold tabular-nums tracking-tight text-[var(--color-text)] sm:text-xl">
           {props.value}
         </p>
         {props.hint ? (
-          <p className="mt-2 text-xs leading-snug text-[var(--color-text-muted)]">{props.hint}</p>
+          <p className="mt-1.5 text-[11px] leading-snug text-[var(--color-text-muted)] sm:mt-2 sm:text-xs">
+            {props.hint}
+          </p>
         ) : null}
       </div>
     </div>
@@ -405,19 +407,22 @@ export function WeekReportClient() {
             <WeekPickerBar
               disabled={loading}
               onWeekChange={setWeekStart}
+              payrollTimeZone={sheet?.company_timezone ?? companyReport?.company_timezone}
               timezoneLabel={timezoneLabel}
               weekStartIso={weekStart}
             />
           </div>
-          <Button
-            className="h-10 w-full shrink-0 sm:w-auto"
-            disabled={exportBusy || !hasExportableData}
-            onClick={() => void handleExportCsv()}
-            type="button"
-            variant="secondary"
-          >
-            {exportBusy ? "Exporting…" : "Export CSV"}
-          </Button>
+          {adminMode && management ? (
+            <Button
+              className="h-10 w-full shrink-0 sm:w-auto"
+              disabled={exportBusy || !hasExportableData}
+              onClick={() => void handleExportCsv()}
+              type="button"
+              variant="secondary"
+            >
+              {exportBusy ? "Exporting…" : "Export CSV"}
+            </Button>
+          ) : null}
         </div>
 
         {exportError ? (
@@ -450,7 +455,7 @@ export function WeekReportClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 lg:grid-cols-4">
             <StatCard
               hint="Clocked time = raw clock-in to clock-out."
               label="Clocked time"
@@ -475,7 +480,7 @@ export function WeekReportClient() {
         ) : null}
 
         {!loading && companyReport && viewingAllEmployees ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 lg:grid-cols-4">
             <StatCard
               hint="Clocked time = raw clock-in to clock-out (completed shifts, all employees)."
               label="Clocked time (company)"

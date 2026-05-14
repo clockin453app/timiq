@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Button, Input, PageHeader, Sheet, SheetBody } from "../../components/ui";
 import {
@@ -91,6 +92,9 @@ function convLabel(c: ConversationListItem): string {
 
 export function MessagesClient() {
   const user = useCurrentUser();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [tab, setTab] = useState<TabId>("news");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyOverride, setCompanyOverride] = useState<string | null>(null);
@@ -126,6 +130,22 @@ export function MessagesClient() {
     [conversations, selectedConvId],
   );
   const mgmt = canAccessManagement(user);
+
+  const replaceMessagesQuery = useCallback(
+    (nextTab: TabId, conversationId: string | null) => {
+      const p = new URLSearchParams();
+      if (nextTab === "messages") {
+        p.set("tab", "messages");
+        if (conversationId) {
+          p.set("conversation", conversationId);
+        }
+      } else {
+        p.set("tab", "news");
+      }
+      router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+    },
+    [router, pathname],
+  );
 
   useEffect(() => {
     if (!isAdministrator(user)) {
@@ -188,8 +208,32 @@ export function MessagesClient() {
     }
   }, [tab, loadConversations]);
 
-  const loadMessages = useCallback(async (conversationId: string) => {
-    setMsgLoading(true);
+  useEffect(() => {
+    const c = searchParams.get("conversation");
+    const t = searchParams.get("tab");
+    if (c) {
+      setTab("messages");
+    } else if (t === "messages") {
+      setTab("messages");
+    } else if (t === "news" || t === "announcements") {
+      setTab("news");
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    const c = searchParams.get("conversation");
+    if (!c || convLoading) {
+      return;
+    }
+    if (conversations.some((row) => row.id === c)) {
+      setSelectedConvId((prev) => (prev === c ? prev : c));
+    }
+  }, [searchParams, conversations, convLoading]);
+
+  const loadMessages = useCallback(async (conversationId: string, opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setMsgLoading(true);
+    }
     try {
       const rows = await fetchConversationMessages(conversationId);
       setMessages(rows);
@@ -197,7 +241,9 @@ export function MessagesClient() {
     } catch (e) {
       setConvError(e instanceof Error ? e.message : "Failed to load messages.");
     } finally {
-      setMsgLoading(false);
+      if (!opts?.silent) {
+        setMsgLoading(false);
+      }
     }
   }, []);
 
@@ -206,6 +252,48 @@ export function MessagesClient() {
       void loadMessages(selectedConvId);
     }
   }, [tab, selectedConvId, loadMessages]);
+
+  useEffect(() => {
+    if (tab !== "messages") {
+      return undefined;
+    }
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void loadConversations();
+    }, 22_000);
+    return () => window.clearInterval(id);
+  }, [tab, loadConversations]);
+
+  useEffect(() => {
+    if (tab !== "messages" || !selectedConvId) {
+      return undefined;
+    }
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void loadMessages(selectedConvId, { silent: true });
+    }, 8000);
+    return () => window.clearInterval(id);
+  }, [tab, selectedConvId, loadMessages]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      if (tab === "messages") {
+        void loadConversations();
+        if (selectedConvId) {
+          void loadMessages(selectedConvId, { silent: true });
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [tab, selectedConvId, loadConversations, loadMessages]);
 
   async function openNewConversation() {
     setNewConvOpen(true);
@@ -241,6 +329,7 @@ export function MessagesClient() {
         setNewConvOpen(false);
         await loadConversations();
         setSelectedConvId(conv.id);
+        replaceMessagesQuery("messages", conv.id);
         return;
       }
       const title = groupTitle.trim();
@@ -258,6 +347,7 @@ export function MessagesClient() {
       setNewConvOpen(false);
       await loadConversations();
       setSelectedConvId(conv.id);
+      replaceMessagesQuery("messages", conv.id);
     } catch (err) {
       setConvError(err instanceof Error ? err.message : "Could not start chat.");
     }
@@ -269,9 +359,9 @@ export function MessagesClient() {
       return;
     }
     try {
-      const m = await postConversationMessage(selectedConvId, msgInput.trim());
-      setMessages((prev) => [...prev, m]);
+      await postConversationMessage(selectedConvId, msgInput.trim());
       setMsgInput("");
+      await loadMessages(selectedConvId, { silent: true });
       await loadConversations();
     } catch (err) {
       setConvError(err instanceof Error ? err.message : "Send failed.");
@@ -346,15 +436,30 @@ export function MessagesClient() {
     <Sheet>
       <PageHeader
         action={<LogoutButton />}
-        description="Company news and internal messages. Refresh manually; there is no live push yet."
+        description="Company news and internal messages. Conversations refresh automatically while this page is open."
         title="Messages"
       />
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         <div className="flex flex-wrap gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-1">
-          <button className={segmentBtnClass(tab === "news")} type="button" onClick={() => setTab("news")}>
+          <button
+            className={segmentBtnClass(tab === "news")}
+            type="button"
+            onClick={() => {
+              setTab("news");
+              setSelectedConvId(null);
+              replaceMessagesQuery("news", null);
+            }}
+          >
             Newsfeed
           </button>
-          <button className={segmentBtnClass(tab === "messages")} type="button" onClick={() => setTab("messages")}>
+          <button
+            className={segmentBtnClass(tab === "messages")}
+            type="button"
+            onClick={() => {
+              setTab("messages");
+              replaceMessagesQuery("messages", selectedConvId);
+            }}
+          >
             Messages
           </button>
         </div>
@@ -477,7 +582,10 @@ export function MessagesClient() {
                           : "hover:bg-[var(--color-header)]"
                       }`}
                       type="button"
-                      onClick={() => setSelectedConvId(c.id)}
+                      onClick={() => {
+                        setSelectedConvId(c.id);
+                        replaceMessagesQuery("messages", c.id);
+                      }}
                     >
                       <div className="truncate font-medium text-[var(--color-text)]">{convLabel(c)}</div>
                       <div className="truncate text-xs text-[var(--color-text-soft)]">

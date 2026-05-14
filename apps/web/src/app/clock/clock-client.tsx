@@ -21,7 +21,7 @@ import {
   isGpsClientSubmittable,
   stabilizeGpsFix,
 } from "../../features/time-clock/gps";
-import { useLiveShiftDuration } from "../../features/time-clock/shift-duration";
+import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { haversineDistanceMeters } from "../../lib/geo";
 import { useT } from "../../lib/i18n";
 
@@ -595,7 +595,7 @@ export function ClockClient() {
   const canClockInServer = Boolean(clockStatus?.can_clock_in);
   const canClockOutServer = Boolean(clockStatus?.can_clock_out);
 
-  const currentShiftDuration = useLiveShiftDuration(
+  const currentShiftDurationParts = useLiveShiftDurationParts(
     clockStatus?.open_shift_clock_in_at,
     Boolean(clockStatus?.has_open_shift && clockStatus?.open_shift_clock_in_at),
   );
@@ -793,13 +793,23 @@ export function ClockClient() {
                       </span>
                     </p>
                   ) : null}
-                  {clockStatus.open_shift_clock_in_at && currentShiftDuration ? (
-                    <p>
-                      Time on shift:{" "}
-                      <span className="font-mono font-medium text-[var(--color-text)]">
-                        {currentShiftDuration}
-                      </span>
-                    </p>
+                  {clockStatus.open_shift_clock_in_at ? (
+                    <>
+                      {flowStatus === "open_break" ? (
+                        <p className="text-[var(--color-text)]">On break · time on shift continues</p>
+                      ) : null}
+                      <p>
+                        <span className="text-[var(--color-text-muted)]">Time on shift: </span>
+                        <span className="font-mono font-medium text-[var(--color-text)]" suppressHydrationWarning>
+                          {currentShiftDurationParts.hms || currentShiftDurationParts.compact || "—"}
+                        </span>
+                        {currentShiftDurationParts.compact && currentShiftDurationParts.hms ? (
+                          <span className="ml-1 text-[var(--color-text-muted)]">
+                            ({currentShiftDurationParts.compact})
+                          </span>
+                        ) : null}
+                      </p>
+                    </>
                   ) : null}
                 </div>
               ) : null}

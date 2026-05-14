@@ -23,6 +23,7 @@ import {
   type AuthUser,
 } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import {
   downloadAdminCompanyTimesheetWeekCsv,
@@ -91,15 +92,30 @@ function employeeCell(name: string | null | undefined, email: string) {
 function TimesheetSummaryCard(props: { label: string; value: string }) {
   return (
     <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-1.5 sm:px-3 sm:py-2">
+        <p className="text-[9px] font-bold uppercase leading-tight tracking-wider text-[var(--color-text-soft)] sm:text-[10px]">
           {props.label}
         </p>
       </div>
-      <div className="px-3 py-2.5">
-        <p className="text-lg font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
+      <div className="px-2 py-2 sm:px-3 sm:py-2.5">
+        <p className="text-base font-semibold tabular-nums text-[var(--color-text)] sm:text-lg">{props.value}</p>
       </div>
     </div>
+  );
+}
+
+function OpenShiftLiveElapsed({ clockInAt }: { clockInAt: string }) {
+  const parts = useLiveShiftDurationParts(clockInAt, true);
+  return (
+    <p className="mt-0.5 tabular-nums text-[var(--color-text)]">
+      Elapsed (running):{" "}
+      <span className="font-mono text-[var(--color-text)]" suppressHydrationWarning>
+        {parts.hms || parts.compact || "—"}
+      </span>
+      {parts.hms && parts.compact ? (
+        <span className="ml-1 text-[var(--color-text-muted)]">({parts.compact})</span>
+      ) : null}
+    </p>
   );
 }
 
@@ -422,19 +438,22 @@ export function TimesheetsClient() {
             <WeekPickerBar
               disabled={loading}
               onWeekChange={setWeekStart}
+              payrollTimeZone={sheet?.company_timezone ?? companySheet?.company_timezone}
               timezoneLabel={timezoneLabel}
               weekStartIso={weekStart}
             />
           </div>
-          <Button
-            className="h-10 w-full shrink-0 sm:w-auto"
-            disabled={exportBusy || !hasExportableData}
-            onClick={() => void handleExportCsv()}
-            type="button"
-            variant="secondary"
-          >
-            {exportBusy ? "Exporting…" : "Export CSV"}
-          </Button>
+          {adminMode && management ? (
+            <Button
+              className="h-10 w-full shrink-0 sm:w-auto"
+              disabled={exportBusy || !hasExportableData}
+              onClick={() => void handleExportCsv()}
+              type="button"
+              variant="secondary"
+            >
+              {exportBusy ? "Exporting…" : "Export CSV"}
+            </Button>
+          ) : null}
         </div>
 
         {exportError ? (
@@ -463,11 +482,7 @@ export function TimesheetsClient() {
                       {formatDateTime(s.clock_in_at, sheet.company_timezone)}
                     </span>
                   </p>
-                  {s.running_actual_seconds != null ? (
-                    <p className="mt-0.5 tabular-nums text-[var(--color-text)]">
-                      Elapsed (running): {formatDurationSeconds(s.running_actual_seconds)}
-                    </p>
-                  ) : null}
+                  {s.clock_in_at ? <OpenShiftLiveElapsed clockInAt={s.clock_in_at} /> : null}
                 </li>
               ))}
             </ul>
@@ -497,11 +512,7 @@ export function TimesheetsClient() {
                       {formatDateTime(s.clock_in_at, companySheet.company_timezone)}
                     </span>
                   </p>
-                  {s.running_actual_seconds != null ? (
-                    <p className="mt-0.5 tabular-nums text-[var(--color-text)]">
-                      Elapsed (running): {formatDurationSeconds(s.running_actual_seconds)}
-                    </p>
-                  ) : null}
+                  {s.clock_in_at ? <OpenShiftLiveElapsed clockInAt={s.clock_in_at} /> : null}
                 </li>
               ))}
             </ul>
@@ -515,7 +526,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 lg:grid-cols-4">
             <TimesheetSummaryCard
               label="Clocked time total (completed)"
               value={formatDurationSeconds(sheet.week_actual_seconds)}
@@ -536,7 +547,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && companySheet && viewingAllEmployees ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 lg:grid-cols-4">
             <TimesheetSummaryCard
               label="Clocked time total (completed)"
               value={formatDurationSeconds(companySheet.week_clocked_seconds)}

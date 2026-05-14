@@ -24,13 +24,28 @@ NotificationKind = Literal[
 
 class NotificationSummaryItem(BaseModel):
     kind: str
+    target_key: str = ""
     title: str
     description: str
     href: str
-    count: int = Field(ge=0)
+    count: int = Field(ge=0, description="Unseen / actionable count for the bell badge.")
     priority: Literal["normal", "high"] = "normal"
+    group: str | None = Field(
+        default=None,
+        description="Optional UI bucket: messages, safety, payroll, time, admin.",
+    )
 
 
 class NotificationSummaryResponse(BaseModel):
     total_count: int = Field(ge=0)
     items: list[NotificationSummaryItem]
+
+
+class NotificationMarkSeenRequest(BaseModel):
+    kind: str = Field(min_length=1, max_length=64)
+    target_key: str = Field(default="", max_length=512)
+    mark_all_for_kind: bool = False
+
+
+class NotificationMarkSeenResponse(BaseModel):
+    ok: bool = True

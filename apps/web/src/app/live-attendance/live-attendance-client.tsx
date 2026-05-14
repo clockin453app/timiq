@@ -444,6 +444,7 @@ export function LiveAttendanceClient() {
                 ) : null}
                 {snapshot
                   ? snapshot.employees.map((row) => {
+                      void tick;
                       const durationLabel = durationLabelForRow(row);
 
                       return (

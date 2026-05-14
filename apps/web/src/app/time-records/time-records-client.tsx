@@ -23,6 +23,9 @@ import {
 } from "../../features/auth";
 import { listLocations, type Location } from "../../features/locations/api";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
+import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
+import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
+import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import {
   adminCreateCompletedShift,
   adminForceClockOut,
@@ -44,14 +47,28 @@ function formatDateTime(iso: string) {
   });
 }
 
-function shiftDurationDisplay(row: TimeRecordShiftRow): string {
+function ShiftDurationCell({ row }: { row: TimeRecordShiftRow }) {
+  const isOpen = !row.clock_out_at;
+  const parts = useLiveShiftDurationParts(row.clock_in_at, isOpen);
   if (row.actual_seconds !== null) {
-    return formatDurationSeconds(row.actual_seconds);
+    return <span className="tabular-nums">{formatDurationSeconds(row.actual_seconds)}</span>;
+  }
+  if (isOpen) {
+    return (
+      <span className="tabular-nums" suppressHydrationWarning>
+        {parts.hms || parts.compact || "—"}{" "}
+        <span className="text-[var(--color-text-muted)]">(running)</span>
+      </span>
+    );
   }
   if (row.running_actual_seconds !== null) {
-    return `${formatDurationSeconds(row.running_actual_seconds)} (running)`;
+    return (
+      <span className="tabular-nums">
+        {formatDurationSeconds(row.running_actual_seconds)} <span className="text-[var(--color-text-muted)]">(running)</span>
+      </span>
+    );
   }
-  return "—";
+  return <span>—</span>;
 }
 
 function toDatetimeLocalValue(iso: string): string {
@@ -75,7 +92,8 @@ function payrollRecalcMessage(weekStart: string | null): string {
   if (!weekStart) {
     return "Time adjusted. Recalculate payroll for the affected week when ready.";
   }
-  return `Time adjusted. Recalculate payroll for week starting ${weekStart}.`;
+  const label = formatPayrollWeekUkLabel(weekStart, browserDefaultTimeZone(), false);
+  return `Time adjusted. Recalculate payroll for ${label}.`;
 }
 
 export function TimeRecordsClient() {
@@ -570,7 +588,9 @@ export function TimeRecordsClient() {
                     <TableCell className="whitespace-nowrap text-xs">
                       {row.clock_out_at ? formatDateTime(row.clock_out_at) : "—"}
                     </TableCell>
-                    <TableCell className="text-xs">{shiftDurationDisplay(row)}</TableCell>
+                    <TableCell className="text-xs">
+                      <ShiftDurationCell row={row} />
+                    </TableCell>
                     <TableCell className="text-xs">
                       {row.counted_seconds !== null
                         ? formatDurationSeconds(row.counted_seconds)

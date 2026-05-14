@@ -661,6 +661,7 @@ export function PayrollReportClient() {
                 <WeekPickerBar
                   disabled={loading}
                   onWeekChange={setWeekStart}
+                  payrollTimeZone={policyTimeZone}
                   timezoneLabel={period?.timezone_name}
                   weekStartIso={weekStart}
                 />

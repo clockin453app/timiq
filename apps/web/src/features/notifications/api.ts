@@ -8,11 +8,13 @@ async function parseError(response: Response, fallback: string): Promise<never> 
 
 export type NotificationSummaryItem = {
   kind: string;
+  target_key?: string;
   title: string;
   description: string;
   href: string;
   count: number;
   priority: "normal" | "high";
+  group?: string | null;
 };
 
 export type NotificationSummary = {
@@ -38,4 +40,27 @@ export async function fetchNotificationSummary(companyId: string | null): Promis
     await parseError(response, "Could not load notifications.");
   }
   return response.json() as Promise<NotificationSummary>;
+}
+
+export type NotificationMarkSeenBody = {
+  kind: string;
+  target_key?: string;
+  mark_all_for_kind?: boolean;
+};
+
+export async function postNotificationMarkSeen(body: NotificationMarkSeenBody): Promise<{ ok: boolean }> {
+  const response = await fetch(`${API_URL}/api/notifications/mark-seen`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      kind: body.kind,
+      target_key: body.target_key ?? "",
+      mark_all_for_kind: body.mark_all_for_kind ?? false,
+    }),
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not update notifications.");
+  }
+  return response.json() as Promise<{ ok: boolean }>;
 }

@@ -9,11 +9,14 @@ from sqlalchemy.orm import Session
 from app.modules.auth.models import SystemRole, User
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.leave import repository as leave_repo
-from app.modules.messaging.repository import (
-    count_conversations_with_unread_incoming,
-    count_unread_visible_announcements,
+from app.modules.messaging.repository import count_unread_visible_announcements
+from app.modules.messaging.service import message_bell_items
+from app.modules.notifications import repository as notif_seen_repo
+from app.modules.notifications.schemas import (
+    NotificationMarkSeenRequest,
+    NotificationSummaryItem,
+    NotificationSummaryResponse,
 )
-from app.modules.notifications.schemas import NotificationSummaryItem, NotificationSummaryResponse
 from app.modules.payroll.calculation import week_bounds_utc
 from app.modules.payroll import repository as payroll_repo
 from app.modules.rams import repository as rams_repo
@@ -21,6 +24,8 @@ from app.modules.smart_forms import repository as sf_repo
 from app.modules.time_clock import repository as time_clock_repo
 from app.modules.time_records import repository as time_records_repo
 from app.modules.toolbox_talks import repository as tt_repo
+
+_SEEN_ALLOWED_KINDS = frozenset({"week_report_ready", "payslip_ready", "leave_approved", "leave_rejected"})
 
 
 def _now_for_announcements(db: Session) -> datetime:
@@ -43,6 +48,35 @@ def _monday_week_start_in_tz(policy_timezone: str, instant_utc: datetime) -> dat
     return d - timedelta(days=d.weekday())
 
 
+def _group_for_kind(kind: str) -> str | None:
+    if kind in ("message", "announcement"):
+        return "messages"
+    if kind in ("rams_ack", "toolbox_sign", "rams_review", "toolbox_review", "form_review"):
+        return "safety"
+    if kind in ("payroll_pending", "payslip_ready"):
+        return "payroll"
+    if kind in ("week_report_ready", "time_review"):
+        return "time"
+    if kind == "leave_request_pending":
+        return "admin"
+    if kind in ("leave_approved", "leave_rejected"):
+        return "time"
+    return None
+
+
+def mark_notification_seen(db: Session, actor: User, body: NotificationMarkSeenRequest) -> None:
+    if body.mark_all_for_kind:
+        raise ValueError("mark_all_for_kind is not supported in this version.")
+    kind = body.kind.strip()
+    if kind not in _SEEN_ALLOWED_KINDS:
+        return
+    key = (body.target_key or "").strip()[:512]
+    if not key:
+        raise ValueError("target_key is required for this notification kind.")
+    notif_seen_repo.upsert_seen(db, user_id=actor.id, kind=kind, target_key=key)
+    db.flush()
+
+
 def get_notification_summary(
     db: Session,
     actor: User,
@@ -52,7 +86,6 @@ def get_notification_summary(
     now = _now_for_announcements(db)
     ann_cf = _announcement_company_filter(actor, company_id)
     unread_ann = count_unread_visible_announcements(db, actor=actor, company_filter=ann_cf, now=now)
-    unread_msg = count_conversations_with_unread_incoming(db, user_id=actor.id)
 
     items: list[NotificationSummaryItem] = []
 
@@ -60,22 +93,27 @@ def get_notification_summary(
         items.append(
             NotificationSummaryItem(
                 kind="announcement",
+                target_key="announcement:feed",
                 title="Announcements",
                 description="Unread company or platform announcements.",
-                href="/messages?tab=announcements",
+                href="/messages?tab=news",
                 count=unread_ann,
                 priority="normal",
+                group=_group_for_kind("announcement"),
             ),
         )
-    if unread_msg > 0:
+
+    for mb in message_bell_items(db, user_id=actor.id):
         items.append(
             NotificationSummaryItem(
                 kind="message",
-                title="Messages",
-                description="Conversations with new messages for you.",
-                href="/messages",
-                count=unread_msg,
+                target_key=mb.target_key,
+                title=mb.title,
+                description=mb.description,
+                href=mb.href,
+                count=mb.count,
                 priority="normal",
+                group=_group_for_kind("message"),
             ),
         )
 
@@ -85,11 +123,13 @@ def get_notification_summary(
             items.append(
                 NotificationSummaryItem(
                     kind="rams_ack",
+                    target_key="rams_ack:pending",
                     title="RAMS acknowledgement",
                     description="Risk assessments waiting for your acknowledgement.",
                     href="/rams",
                     count=rams_n,
                     priority="high",
+                    group=_group_for_kind("rams_ack"),
                 ),
             )
         tb_n = tt_repo.count_pending_sign_for_user(db, actor.id)
@@ -97,33 +137,37 @@ def get_notification_summary(
             items.append(
                 NotificationSummaryItem(
                     kind="toolbox_sign",
+                    target_key="toolbox_sign:pending",
                     title="Toolbox talks",
                     description="Toolbox talks waiting for your sign-off.",
                     href="/toolbox-talks",
                     count=tb_n,
                     priority="high",
+                    group=_group_for_kind("toolbox_sign"),
                 ),
             )
 
         policy = ensure_company_time_policy(db, actor.company_id)
         now_utc = datetime.now(timezone.utc)
         monday = _monday_week_start_in_tz(policy.timezone_name, now_utc)
-        # v1 payslip bell: no read/unseen state — count approved/paid rows in trailing ~13 payroll weeks.
         min_week_start = monday - timedelta(days=91)
         payslip_n = payroll_repo.count_approved_paid_items_for_user_since_week_start(
             db,
             actor.id,
             min_period_week_start=min_week_start,
         )
-        if payslip_n > 0:
+        payslip_key = f"payslip:{payslip_n}"
+        if payslip_n > 0 and not notif_seen_repo.has_seen(db, user_id=actor.id, kind="payslip_ready", target_key=payslip_key):
             items.append(
                 NotificationSummaryItem(
                     kind="payslip_ready",
+                    target_key=payslip_key,
                     title="Payslip ready",
                     description="You have payslips available to view.",
                     href="/pay-history",
                     count=payslip_n,
                     priority="normal",
+                    group=_group_for_kind("payslip_ready"),
                 ),
             )
 
@@ -145,15 +189,18 @@ def get_notification_summary(
             week_end_utc=we_p,
         )
         week_report_n = n_current if n_current > 0 else n_prev
-        if week_report_n > 0:
+        week_key = f"week:{monday.isoformat()}"
+        if week_report_n > 0 and not notif_seen_repo.has_seen(db, user_id=actor.id, kind="week_report_ready", target_key=week_key):
             items.append(
                 NotificationSummaryItem(
                     kind="week_report_ready",
+                    target_key=week_key,
                     title="Week report ready",
                     description="Your weekly time report is available.",
                     href="/week-report",
                     count=week_report_n,
                     priority="normal",
+                    group=_group_for_kind("week_report_ready"),
                 ),
             )
         since_leave = now - timedelta(days=14)
@@ -163,26 +210,32 @@ def get_notification_summary(
         leave_rej = leave_repo.count_user_leave_status_since(
             db, user_id=actor.id, status="rejected", since=since_leave
         )
-        if leave_appr > 0:
+        la_key = f"leave_approved:{leave_appr}"
+        if leave_appr > 0 and not notif_seen_repo.has_seen(db, user_id=actor.id, kind="leave_approved", target_key=la_key):
             items.append(
                 NotificationSummaryItem(
                     kind="leave_approved",
+                    target_key=la_key,
                     title="Leave approved",
                     description="A recent leave request was approved.",
                     href="/leave",
                     count=leave_appr,
                     priority="normal",
+                    group=_group_for_kind("leave_approved"),
                 ),
             )
-        if leave_rej > 0:
+        lr_key = f"leave_rejected:{leave_rej}"
+        if leave_rej > 0 and not notif_seen_repo.has_seen(db, user_id=actor.id, kind="leave_rejected", target_key=lr_key):
             items.append(
                 NotificationSummaryItem(
                     kind="leave_rejected",
+                    target_key=lr_key,
                     title="Leave update",
                     description="Leave request requires review.",
                     href="/leave",
                     count=leave_rej,
                     priority="normal",
+                    group=_group_for_kind("leave_rejected"),
                 ),
             )
 
@@ -201,11 +254,13 @@ def get_notification_summary(
                 items.append(
                     NotificationSummaryItem(
                         kind="form_review",
+                        target_key=f"form_review:{scope}",
                         title="Smart forms review",
                         description="Submitted forms awaiting review.",
                         href="/forms/review",
                         count=forms_n,
                         priority="normal",
+                        group=_group_for_kind("form_review"),
                     ),
                 )
             rams_d = rams_repo.count_assessments_for_company_by_status(db, scope, "draft")
@@ -213,11 +268,13 @@ def get_notification_summary(
                 items.append(
                     NotificationSummaryItem(
                         kind="rams_review",
+                        target_key=f"rams_review:{scope}",
                         title="RAMS drafts",
                         description="RAMS assessments still in draft.",
                         href="/rams/manage",
                         count=rams_d,
                         priority="normal",
+                        group=_group_for_kind("rams_review"),
                     ),
                 )
             tb_d = tt_repo.count_talks_for_company_by_status(db, scope, "draft")
@@ -225,11 +282,13 @@ def get_notification_summary(
                 items.append(
                     NotificationSummaryItem(
                         kind="toolbox_review",
+                        target_key=f"toolbox_review:{scope}",
                         title="Toolbox talk drafts",
                         description="Toolbox talks still in draft.",
                         href="/toolbox-talks/manage",
                         count=tb_d,
                         priority="normal",
+                        group=_group_for_kind("toolbox_review"),
                     ),
                 )
             pending_pay = payroll_repo.count_pending_payroll_items_for_company(db, scope)
@@ -237,11 +296,13 @@ def get_notification_summary(
                 items.append(
                     NotificationSummaryItem(
                         kind="payroll_pending",
+                        target_key=f"payroll_pending:{scope}",
                         title="Payroll pending approval",
                         description="Payroll rows are waiting for approval.",
                         href="/payroll-report",
                         count=pending_pay,
                         priority="high",
+                        group=_group_for_kind("payroll_pending"),
                     ),
                 )
             pending_leave = leave_repo.count_pending_leave_for_company(db, scope)
@@ -249,11 +310,13 @@ def get_notification_summary(
                 items.append(
                     NotificationSummaryItem(
                         kind="leave_request_pending",
+                        target_key=f"leave_request_pending:{scope}",
                         title="Leave requests",
                         description="Leave requests are pending approval.",
                         href="/leave/manage",
                         count=pending_leave,
                         priority="normal",
+                        group=_group_for_kind("leave_request_pending"),
                     ),
                 )
             open_shifts = time_clock_repo.count_open_shifts_for_company_employees(db, scope)
@@ -263,11 +326,13 @@ def get_notification_summary(
                 items.append(
                     NotificationSummaryItem(
                         kind="time_review",
+                        target_key=f"time_review:{scope}",
                         title="Time records to review",
                         description="Open shifts or payroll rows may need attention.",
                         href="/time-records",
                         count=time_review_n,
                         priority="normal",
+                        group=_group_for_kind("time_review"),
                     ),
                 )
         elif actor.system_role == SystemRole.ADMINISTRATOR:
@@ -276,11 +341,13 @@ def get_notification_summary(
                 items.append(
                     NotificationSummaryItem(
                         kind="form_review",
+                        target_key="form_review:global",
                         title="Smart forms review (all companies)",
                         description="Submitted forms awaiting review across companies.",
                         href="/forms/review",
                         count=forms_n,
                         priority="normal",
+                        group=_group_for_kind("form_review"),
                     ),
                 )
             rams_d = rams_repo.count_assessments_by_status_global(db, "draft")
@@ -288,11 +355,13 @@ def get_notification_summary(
                 items.append(
                     NotificationSummaryItem(
                         kind="rams_review",
+                        target_key="rams_review:global",
                         title="RAMS drafts (all companies)",
                         description="RAMS assessments still in draft.",
                         href="/rams/manage",
                         count=rams_d,
                         priority="normal",
+                        group=_group_for_kind("rams_review"),
                     ),
                 )
             tb_d = tt_repo.count_talks_by_status_global(db, "draft")
@@ -300,11 +369,13 @@ def get_notification_summary(
                 items.append(
                     NotificationSummaryItem(
                         kind="toolbox_review",
+                        target_key="toolbox_review:global",
                         title="Toolbox talk drafts (all companies)",
                         description="Toolbox talks still in draft.",
                         href="/toolbox-talks/manage",
                         count=tb_d,
                         priority="normal",
+                        group=_group_for_kind("toolbox_review"),
                     ),
                 )
 
