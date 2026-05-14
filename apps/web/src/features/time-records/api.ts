@@ -21,6 +21,7 @@ export type TimeRecordShiftRow = {
   counted_clock_out_at: string | null;
   counted_seconds: number | null;
   rounded_seconds: number | null;
+  time_policy_source?: string;
 };
 
 export type ListTimeRecordsParams = {

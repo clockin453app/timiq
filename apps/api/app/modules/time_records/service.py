@@ -16,6 +16,11 @@ from app.modules.companies.models import CompanyTimePolicy
 from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.employee_profiles.models import EmployeeProfile
+from app.modules.payroll_policies.service import (
+    effective_early_access_for_shift,
+    effective_time_policy_for_shift,
+    time_policy_source_for_shift,
+)
 from app.modules.locations.models import Location
 from app.modules.time_clock.models import TimeShift
 from app.modules.time_records.calculation import compute_shift_metrics
@@ -86,7 +91,7 @@ def _load_policy(db_session: Session, shift: TimeShift, location: Location) -> C
     cid = _policy_company_id(shift, location)
     if cid is None:
         return _fallback_policy()
-    return ensure_company_time_policy(db_session, cid)
+    return effective_time_policy_for_shift(db_session, shift, location)
 
 
 def _employee_display_name(profile: EmployeeProfile | None) -> str | None:
@@ -132,7 +137,10 @@ def _shift_to_row(
     include_employee_fields: bool,
 ) -> TimeRecordShiftRow:
     policy = _load_policy(db_session, shift, location)
-    early_access = bool(profile.early_access_enabled) if profile is not None else False
+    profile_early = bool(profile.early_access_enabled) if profile is not None else False
+    early_access = effective_early_access_for_shift(
+        db_session, location, profile_early_access=profile_early
+    )
 
     metrics = compute_shift_metrics(
         clock_in_at_utc=shift.clock_in_at,
@@ -164,6 +172,7 @@ def _shift_to_row(
         counted_clock_out_at=metrics.counted_clock_out_at,
         counted_seconds=metrics.counted_seconds,
         rounded_seconds=metrics.rounded_seconds,
+        time_policy_source=time_policy_source_for_shift(db_session, location),
     )
 
 
@@ -378,7 +387,10 @@ def timesheet_week_for_user(
         shift_count += 1
 
         pol = _load_policy(db_session, shift, location)
-        early_access = bool(profile.early_access_enabled) if profile is not None else False
+        profile_early = bool(profile.early_access_enabled) if profile is not None else False
+        early_access = effective_early_access_for_shift(
+            db_session, location, profile_early_access=profile_early
+        )
         metrics = compute_shift_metrics(
             clock_in_at_utc=shift.clock_in_at,
             clock_out_at_utc=shift.clock_out_at,
@@ -517,7 +529,10 @@ def timesheet_week_all_employees_for_company(
             continue
 
         pol = _load_policy(db_session, shift, location)
-        early_access = bool(profile.early_access_enabled) if profile is not None else False
+        profile_early = bool(profile.early_access_enabled) if profile is not None else False
+        early_access = effective_early_access_for_shift(
+            db_session, location, profile_early_access=profile_early
+        )
         metrics = compute_shift_metrics(
             clock_in_at_utc=shift.clock_in_at,
             clock_out_at_utc=shift.clock_out_at,
@@ -661,7 +676,10 @@ def week_report_all_employees_for_company(
 
         for shift, location, _o, prof in user_shifts:
             pol = _load_policy(db_session, shift, location)
-            early_access = bool(prof.early_access_enabled) if prof is not None else False
+            profile_early = bool(prof.early_access_enabled) if prof is not None else False
+            early_access = effective_early_access_for_shift(
+                db_session, location, profile_early_access=profile_early
+            )
             metrics = compute_shift_metrics(
                 clock_in_at_utc=shift.clock_in_at,
                 clock_out_at_utc=shift.clock_out_at,
@@ -780,7 +798,10 @@ def export_timesheet_week_shifts_csv(
         if not can_view_time_record_shift_owner(actor, owner):
             continue
         pol = _load_policy(db_session, shift, location)
-        early_access = bool(profile.early_access_enabled) if profile is not None else False
+        profile_early = bool(profile.early_access_enabled) if profile is not None else False
+        early_access = effective_early_access_for_shift(
+            db_session, location, profile_early_access=profile_early
+        )
         metrics = compute_shift_metrics(
             clock_in_at_utc=shift.clock_in_at,
             clock_out_at_utc=shift.clock_out_at,

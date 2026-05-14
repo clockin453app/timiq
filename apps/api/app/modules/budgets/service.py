@@ -14,6 +14,7 @@ from app.modules.companies.models import CompanyTimePolicy
 from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.employee_profiles.models import EmployeeProfile
+from app.modules.payroll_policies.service import effective_early_access_for_shift, effective_time_policy_for_shift
 from app.modules.locations.models import Location
 from app.modules.time_clock.models import TimeShift
 from app.modules.time_records.calculation import compute_shift_metrics
@@ -59,7 +60,7 @@ def _load_policy(db_session: Session, shift: TimeShift, location: Location) -> C
     cid = _policy_company_id(shift, location)
     if cid is None:
         return _fallback_policy()
-    return ensure_company_time_policy(db_session, cid)
+    return effective_time_policy_for_shift(db_session, shift, location)
 
 
 def _parse_bounds_from_dates(
@@ -243,7 +244,10 @@ def labour_cost_budget(
             continue
 
         pol = _load_policy(db_session, shift, location)
-        early_access = bool(profile.early_access_enabled) if profile is not None else False
+        profile_early = bool(profile.early_access_enabled) if profile is not None else False
+        early_access = effective_early_access_for_shift(
+            db_session, location, profile_early_access=profile_early
+        )
         metrics = compute_shift_metrics(
             clock_in_at_utc=shift.clock_in_at,
             clock_out_at_utc=shift.clock_out_at,

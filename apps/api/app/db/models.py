@@ -20,6 +20,7 @@ from app.modules.site_access.models import EmployeeLocationAccess
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
 from app.modules.onboarding.models import OnboardingDocument, OnboardingSubmission
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
+from app.modules.payroll_policies.models import LocationPayrollPolicy
 from app.modules.privacy.models import PrivacyPolicyAcknowledgement, PrivacyRequest
 from app.modules.workplaces.models import Workplace
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
@@ -49,6 +50,7 @@ __all__ = [
     "Workplace",
     "PayrollPeriod",
     "PayrollItem",
+    "LocationPayrollPolicy",
     "PrivacyPolicyAcknowledgement",
     "PrivacyRequest",
     "OnboardingSubmission",

@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.orm import Session
 
 from app.modules.companies.models import CompanyTimePolicy
-from app.modules.companies.service import ensure_company_time_policy
 from app.modules.employee_profiles.models import EmployeeProfile
+from app.modules.payroll_policies.service import effective_early_access_for_shift, effective_time_policy_for_shift
 from app.modules.time_records.calculation import compute_shift_metrics
 from app.modules.time_records.repository import list_time_shifts_for_payroll_week
 
@@ -40,10 +40,13 @@ def sum_rounded_seconds_payroll_week(
         week_start_utc=week_start_utc,
         week_end_utc=week_end_utc,
     )
-    pol = ensure_company_time_policy(db_session, company_id)
     total = 0
     for shift, location, _owner, profile in rows:
-        early_access = bool(profile.early_access_enabled) if profile is not None else False
+        pol = effective_time_policy_for_shift(db_session, shift, location)
+        profile_early = bool(profile.early_access_enabled) if profile is not None else False
+        early_access = effective_early_access_for_shift(
+            db_session, location, profile_early_access=profile_early
+        )
         metrics = compute_shift_metrics(
             clock_in_at_utc=shift.clock_in_at,
             clock_out_at_utc=shift.clock_out_at,

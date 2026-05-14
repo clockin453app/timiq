@@ -25,6 +25,7 @@ class TimeRecordShiftRow(BaseModel):
     counted_clock_out_at: datetime | None = None
     counted_seconds: int | None = None
     rounded_seconds: int | None = None
+    time_policy_source: str = "company"
 
 
 class TimeRecordQueryParams(BaseModel):

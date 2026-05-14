@@ -10,6 +10,7 @@ from app.modules.auth.repository import get_user_by_id
 from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.locations.repository import get_location_by_id
+from app.modules.payroll_policies.service import effective_time_policy_for_shift
 from app.modules.time_clock.models import TimeShift
 from app.modules.time_clock.repository import (
     get_open_break_for_shift,
@@ -109,7 +110,6 @@ def get_live_attendance_snapshot(
     open_shifts = 0
     absent_count = 0
     late_arrivals_count = 0
-    late_supported_global = True
 
     for user, profile in rows:
         if user.company_id is None:
@@ -146,11 +146,6 @@ def get_live_attendance_snapshot(
             range_end_utc=day_end,
         )
 
-        policy = ensure_company_time_policy(db_session, user.company_id)
-        std = _parse_standard_time(policy.standard_start_time)
-        if std is None:
-            late_supported_global = False
-
         status = "absent"
         clock_in_at = None
         clock_out_at = None
@@ -172,14 +167,17 @@ def get_live_attendance_snapshot(
             loc = get_location_by_id(db_session, open_shift.location_id)
             loc_name = loc.name if loc is not None else None
             loc_id = open_shift.location_id
-            if late_supported_global and std is not None:
+            if clock_in_at is not None and loc is not None:
+                merged = effective_time_policy_for_shift(db_session, open_shift, loc)
+                std = _parse_standard_time(merged.standard_start_time or "")
                 try:
-                    tz = ZoneInfo(policy.timezone_name)
+                    tz = ZoneInfo(merged.timezone_name)
                 except Exception:
                     tz = ZoneInfo("UTC")
-                local_in = open_shift.clock_in_at.astimezone(tz)
-                if _is_late_clock_in(local_in, std):
-                    late_arrivals_count += 1
+                if std is not None:
+                    local_in = clock_in_at.astimezone(tz)
+                    if _is_late_clock_in(local_in, std):
+                        late_arrivals_count += 1
         elif completed_today:
             status = "completed_today"
             present_today += 1
@@ -191,14 +189,17 @@ def get_live_attendance_snapshot(
             loc = get_location_by_id(db_session, c.location_id)
             loc_name = loc.name if loc is not None else None
             loc_id = c.location_id
-            if late_supported_global and std is not None and clock_in_at is not None:
+            if clock_in_at is not None and loc is not None:
+                merged = effective_time_policy_for_shift(db_session, c, loc)
+                std = _parse_standard_time(merged.standard_start_time or "")
                 try:
-                    tz = ZoneInfo(policy.timezone_name)
+                    tz = ZoneInfo(merged.timezone_name)
                 except Exception:
                     tz = ZoneInfo("UTC")
-                local_in = clock_in_at.astimezone(tz)
-                if _is_late_clock_in(local_in, std):
-                    late_arrivals_count += 1
+                if std is not None:
+                    local_in = clock_in_at.astimezone(tz)
+                    if _is_late_clock_in(local_in, std):
+                        late_arrivals_count += 1
         else:
             absent_count += 1
 
@@ -227,8 +228,6 @@ def get_live_attendance_snapshot(
     if total > 0:
         rate = round(present_today / total, 4)
 
-    late_out: int | None = late_arrivals_count if late_supported_global else None
-
     return {
         "generated_at": now,
         "summary": {
@@ -237,7 +236,7 @@ def get_live_attendance_snapshot(
             "open_shifts": open_shifts,
             "absent_count": absent_count,
             "attendance_rate": rate,
-            "late_arrivals": late_out,
+            "late_arrivals": late_arrivals_count,
         },
         "employees": employees_out,
     }
