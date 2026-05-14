@@ -105,6 +105,49 @@ Variable names: see checklist (`TIMIQ_S3_*`).
 
 ---
 
+## 6b. First administrator or company admin (fresh database)
+
+After migrations, tables exist but **no user** is created automatically. Use the API service **Shell** on Render (or any environment with `DATABASE_URL` set). **Do not** paste real passwords into tickets or chat logs; type or paste them only in the secure shell.
+
+Script: `apps/api/scripts/create_first_admin.py`
+
+Required:
+
+- `CONFIRM_CREATE_FIRST_ADMIN=yes` (intentional acknowledgement)
+- `ADMIN_EMAIL`
+- `ADMIN_PASSWORD` (strong secret; never printed by the script)
+
+Optional:
+
+- `ADMIN_ROLE`: `administrator` (default) or `admin`
+- `ADMIN_COMPANY_NAME`: used when `ADMIN_ROLE=admin`; defaults to `TimIQ Demo Company` if unset
+
+**Global administrator** (platform role, no company):
+
+```bash
+cd apps/api && \
+CONFIRM_CREATE_FIRST_ADMIN=yes \
+ADMIN_EMAIL='you@yourdomain.com' \
+ADMIN_PASSWORD='REPLACE_WITH_STRONG_PASSWORD' \
+python scripts/create_first_admin.py
+```
+
+**Company admin** (creates company if missing, links user as company admin):
+
+```bash
+cd apps/api && \
+CONFIRM_CREATE_FIRST_ADMIN=yes \
+ADMIN_ROLE=admin \
+ADMIN_EMAIL='admin@yourdomain.com' \
+ADMIN_PASSWORD='REPLACE_WITH_STRONG_PASSWORD' \
+ADMIN_COMPANY_NAME='Your Company Ltd' \
+python scripts/create_first_admin.py
+```
+
+The script does **not** print passwords or hashes. It is safe to run more than once for the same email (idempotent upsert).
+
+---
+
 ## 7. PWA / service worker
 
 `PwaRegister` runs only in **production** (`apps/web/src/components/pwa/pwa-register.tsx`). `public/sw.js` does **not** cache `/api/*`. Cross-origin API calls are not intercepted by the SW (different origin from the page).
