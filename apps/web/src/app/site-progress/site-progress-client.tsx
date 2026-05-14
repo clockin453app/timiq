@@ -15,6 +15,14 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui";
+import { useCurrentUser } from "../../features/auth";
+import {
+  enqueueWorkProgressPhotos,
+  enqueueWorkProgressSubmit,
+  isLikelyNetworkFailure,
+  isNavigatorOffline,
+  photosFromPreparedUploads,
+} from "../../features/offline";
 import {
   WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS,
   WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES,
@@ -87,6 +95,7 @@ function AttachmentThumb({ att }: { att: WorkProgressAttachmentMeta }) {
 }
 
 export function SiteProgressClient() {
+  const currentUser = useCurrentUser();
   const [options, setOptions] = useState<WorkProgressLocationOption[]>([]);
   const [optionsError, setOptionsError] = useState("");
   const [items, setItems] = useState<WorkProgressListItem[]>([]);
@@ -101,6 +110,7 @@ export function SiteProgressClient() {
   const [notes, setNotes] = useState("");
   const [percent, setPercent] = useState("");
   const [formError, setFormError] = useState("");
+  const [offlineNotice, setOfflineNotice] = useState("");
   const [formBusy, setFormBusy] = useState(false);
 
   const [activeEntryId, setActiveEntryId] = useState<string | null>(null);
@@ -206,32 +216,43 @@ export function SiteProgressClient() {
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
     setFormError("");
-    setFormBusy(true);
-    try {
-      let pct: number | null = null;
-      if (percent.trim() !== "") {
-        const n = Number.parseInt(percent, 10);
-        if (Number.isNaN(n) || n < 0 || n > 100) {
-          setFormError("Percent complete must be between 0 and 100.");
-          setFormBusy(false);
-          return;
-        }
-        pct = n;
-      }
-      if (!locationId) {
-        setFormError("Select a site/location.");
-        setFormBusy(false);
+    setOfflineNotice("");
+
+    let pct: number | null = null;
+    if (percent.trim() !== "") {
+      const n = Number.parseInt(percent, 10);
+      if (Number.isNaN(n) || n < 0 || n > 100) {
+        setFormError("Percent complete must be between 0 and 100.");
         return;
       }
-      const body = {
-        work_date: workDate,
-        location_id: locationId,
-        workplace_id: null,
-        title: title.trim(),
-        progress_status: progressStatus,
-        notes: notes.trim() || null,
-        percent_complete: pct,
-      };
+      pct = n;
+    }
+    if (!locationId) {
+      setFormError("Select a site/location.");
+      return;
+    }
+    const body = {
+      work_date: workDate,
+      location_id: locationId,
+      workplace_id: null,
+      title: title.trim(),
+      progress_status: progressStatus,
+      notes: notes.trim() || null,
+      percent_complete: pct,
+    };
+
+    setFormBusy(true);
+    try {
+      if (isNavigatorOffline()) {
+        await enqueueWorkProgressSubmit(currentUser.id, currentUser.company_id, body, []);
+        setOfflineNotice(
+          "Queued offline — this update will sync when you are online. Use Sync now in the bar above or wait for an automatic sync.",
+        );
+        setTitle("");
+        setNotes("");
+        setPercent("");
+        return;
+      }
       const created = await createMyWorkProgress(body);
       setActiveEntryId(created.id);
       setTitle("");
@@ -239,7 +260,21 @@ export function SiteProgressClient() {
       setPercent("");
       await loadList();
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : "Save failed.");
+      if (isLikelyNetworkFailure(err)) {
+        try {
+          await enqueueWorkProgressSubmit(currentUser.id, currentUser.company_id, body, []);
+          setOfflineNotice(
+            "Network unavailable — update saved on this device and queued. It will sync when the connection returns.",
+          );
+          setTitle("");
+          setNotes("");
+          setPercent("");
+        } catch {
+          setFormError(err instanceof Error ? err.message : "Save failed.");
+        }
+      } else {
+        setFormError(err instanceof Error ? err.message : "Save failed.");
+      }
     } finally {
       setFormBusy(false);
     }
@@ -321,6 +356,34 @@ export function SiteProgressClient() {
       setUploadBarPercent(0);
       setUploadError(prepareFailures.map((f) => `"${f.file.name}": ${f.message}`).join("\n"));
       setStagedPhotoFiles(prepareFailures.map((f) => f.file));
+      setUploadBusy(false);
+      return;
+    }
+
+    if (isNavigatorOffline()) {
+      setUploadError("");
+      setOfflineNotice("");
+      try {
+        await enqueueWorkProgressPhotos(
+          currentUser.id,
+          currentUser.company_id,
+          progressId,
+          photosFromPreparedUploads(prepared),
+        );
+        setOfflineNotice(
+          "Photos queued offline — they will upload when you are online. Use Sync now when reconnected.",
+        );
+      } catch (e) {
+        setUploadError(e instanceof Error ? e.message : "Could not queue photos for offline sync.");
+        setUploadPhaseLabel("");
+        setUploadBarPercent(0);
+        setUploadBusy(false);
+        return;
+      }
+      setUploadPhaseLabel("");
+      setUploadBarPercent(100);
+      setUploadCounts({ ok: prepared.length, fail: prepareFailures.length, total: prepared.length });
+      setStagedPhotoFiles(prepareFailures.length > 0 ? prepareFailures.map((f) => f.file) : []);
       setUploadBusy(false);
       return;
     }
@@ -440,6 +503,12 @@ export function SiteProgressClient() {
         {optionsError ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
             {optionsError}
+          </div>
+        ) : null}
+
+        {offlineNotice ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm text-[var(--color-text)]">
+            {offlineNotice}
           </div>
         ) : null}
 

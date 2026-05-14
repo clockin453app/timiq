@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "../../components/ui";
+import { clearAllTimiqOfflineData } from "../../features/offline/db";
 import { logout } from "./api";
 
 export function LogoutButton() {
@@ -15,6 +16,7 @@ export function LogoutButton() {
 
     try {
       await logout();
+      await clearAllTimiqOfflineData();
       router.replace("/login");
       router.refresh();
     } finally {

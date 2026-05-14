@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { getCurrentUser, type AuthUser } from "./api";
 import { AuthUserProvider, TIMIQ_AUTH_REFRESH_EVENT } from "./auth-context";
+import { OfflineQueueSyncHost } from "../offline/offline-queue-sync-host";
 
 type AuthGuardProps = {
   children: ReactNode;
@@ -115,6 +116,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   return (
     <AuthUserProvider refreshAuthUser={refreshAuthUser} user={user}>
+      <OfflineQueueSyncHost />
       {children}
     </AuthUserProvider>
   );

@@ -109,6 +109,9 @@ export function ClockClient() {
   );
   const [mapMountDeferred, setMapMountDeferred] = useState(false);
   const [clockMapSessionOff, setClockMapSessionOff] = useState(false);
+  const [networkOnline, setNetworkOnline] = useState(
+    () => typeof navigator === "undefined" || navigator.onLine,
+  );
 
   const handleClockMapFault = useCallback(() => {
     setClockMapSessionOff(true);
@@ -168,6 +171,17 @@ export function ClockClient() {
     sync();
     mq.addEventListener("change", sync);
     return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    const onUp = () => setNetworkOnline(true);
+    const onDown = () => setNetworkOnline(false);
+    window.addEventListener("online", onUp);
+    window.addEventListener("offline", onDown);
+    return () => {
+      window.removeEventListener("online", onUp);
+      window.removeEventListener("offline", onDown);
+    };
   }, []);
 
   const stableGeoMapKey = useMemo(() => {
@@ -746,6 +760,15 @@ export function ClockClient() {
         description="GPS and a live camera selfie are required for each clock-in and clock-out."
       />
       <SheetBody className="min-w-0 space-y-4 pb-6 sm:pb-8">
+        {!networkOnline ? (
+          <div className="rounded border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] p-3 text-sm text-[var(--color-warning-700)]">
+            <p className="font-semibold">Clock-in requires server confirmation</p>
+            <p className="mt-1">
+              TimIQ cannot accept clock-in, clock-out, or break actions while you are offline. The status below is from
+              the last successful refresh. Connect to update. Offline clock drafts are not enabled in this release.
+            </p>
+          </div>
+        ) : null}
         <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-4 text-sm">
           <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
             Current status

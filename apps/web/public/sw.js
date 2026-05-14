@@ -5,7 +5,9 @@
  * Never cached: /api/*, HTML documents (except offline fallback), auth pages,
  * payroll, budgets, uploads, downloads, or any JSON from the API.
  *
- * Full offline sync / background sync is intentionally not implemented (later batch).
+ * Offline shell: precached assets + navigate fallback to offline.html only.
+ * Never cache /api/*, HTML app routes, payroll, documents, downloads, or private JSON.
+ * Queued work lives in IndexedDB from the app — not in the service worker cache.
  */
 const SHELL_CACHE = "timiq-pwa-shell-v1";
 const PRECACHE_URLS = [

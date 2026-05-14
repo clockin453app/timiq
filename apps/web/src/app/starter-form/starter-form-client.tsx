@@ -11,6 +11,13 @@ import {
 } from "../../components/ui";
 import { LogoutButton, useCurrentUser } from "../../features/auth";
 import {
+  clearStarterFormLocalDraft,
+  isLikelyNetworkFailure,
+  isNavigatorOffline,
+  loadStarterFormLocalDraft,
+  saveStarterFormLocalDraft,
+} from "../../features/offline";
+import {
   clearSignature,
   deleteOnboardingDocument,
   deleteOnboardingProfilePhoto,
@@ -76,6 +83,8 @@ export function StarterFormClient() {
   const [saving, setSaving] = useState(false);
   const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
   const profilePhotoPreviewRevokeRef = useRef<string | null>(null);
+  const [hasLocalDraft, setHasLocalDraft] = useState(false);
+  const [localDeviceMessage, setLocalDeviceMessage] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -146,6 +155,76 @@ export function StarterFormClient() {
 
   const editable = detail?.status === "draft";
 
+  useEffect(() => {
+    let cancelled = false;
+    async function checkLocal() {
+      if (!detail || detail.status !== "draft") {
+        if (!cancelled) {
+          setHasLocalDraft(false);
+        }
+        return;
+      }
+      try {
+        const d = await loadStarterFormLocalDraft(currentUser.id);
+        if (cancelled) {
+          return;
+        }
+        if (!d?.fields) {
+          setHasLocalDraft(false);
+          return;
+        }
+        const has = Object.values(d.fields).some((v) => typeof v === "string" && v.trim().length > 0);
+        setHasLocalDraft(has);
+      } catch {
+        if (!cancelled) {
+          setHasLocalDraft(false);
+        }
+      }
+    }
+    void checkLocal();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser.id, detail?.id, detail?.status]);
+
+  async function handleRestoreLocalDraft() {
+    setError("");
+    setLocalDeviceMessage("");
+    const d = await loadStarterFormLocalDraft(currentUser.id);
+    if (!d?.fields) {
+      setLocalDeviceMessage("No local draft found.");
+      return;
+    }
+    setForm((prev) => ({ ...prev, ...d.fields }));
+    setLocalDeviceMessage("Restored text fields from this device’s saved draft.");
+  }
+
+  async function handleClearLocalDraft() {
+    setError("");
+    setLocalDeviceMessage("");
+    await clearStarterFormLocalDraft(currentUser.id);
+    setHasLocalDraft(false);
+    setLocalDeviceMessage("Cleared text saved only on this device.");
+  }
+
+  async function handleSaveLocalDeviceOnly() {
+    if (!editable) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setLocalDeviceMessage("");
+    try {
+      await saveStarterFormLocalDraft(currentUser.id, form);
+      setHasLocalDraft(true);
+      setLocalDeviceMessage("Saved on this device only. Connect and use Save draft to sync with TimIQ.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save local draft.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function docForSlot(docType: string) {
     return detail?.documents.find((d) => d.doc_type === docType);
   }
@@ -161,12 +240,28 @@ export function StarterFormClient() {
     }
     setSaving(true);
     setError("");
+    setLocalDeviceMessage("");
     try {
       const data = await patchOnboardingDraft(form);
       setDetail(data);
       setForm(initFormFromDetail(data));
+      await clearStarterFormLocalDraft(currentUser.id);
+      setHasLocalDraft(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Save failed.");
+      if (isNavigatorOffline() || isLikelyNetworkFailure(err)) {
+        try {
+          await saveStarterFormLocalDraft(currentUser.id, form);
+          setHasLocalDraft(true);
+          setError("");
+          setLocalDeviceMessage(
+            "Could not reach TimIQ — text fields saved on this device only. Reconnect and tap Save draft to sync to the server.",
+          );
+        } catch {
+          setError(err instanceof Error ? err.message : "Save failed.");
+        }
+      } else {
+        setError(err instanceof Error ? err.message : "Save failed.");
+      }
     } finally {
       setSaving(false);
     }
@@ -174,6 +269,10 @@ export function StarterFormClient() {
 
   async function handleDocUpload(docType: string, file: File | null) {
     if (!file || !editable) {
+      return;
+    }
+    if (isNavigatorOffline()) {
+      setError("Document uploads require an internet connection.");
       return;
     }
     setSaving(true);
@@ -208,6 +307,10 @@ export function StarterFormClient() {
     if (!editable) {
       return;
     }
+    if (isNavigatorOffline()) {
+      setError("Saving a signature requires an internet connection.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -224,6 +327,10 @@ export function StarterFormClient() {
     if (!file || !editable) {
       return;
     }
+    if (isNavigatorOffline()) {
+      setError("Saving a drawn signature requires an internet connection.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -238,6 +345,10 @@ export function StarterFormClient() {
 
   async function handleProfilePhotoUpload(file: File | null) {
     if (!file || !editable) {
+      return;
+    }
+    if (isNavigatorOffline()) {
+      setError("Profile photo upload requires an internet connection.");
       return;
     }
     setSaving(true);
@@ -289,6 +400,12 @@ export function StarterFormClient() {
     if (!editable) {
       return;
     }
+    if (isNavigatorOffline()) {
+      setError(
+        "Final submission requires an internet connection. While offline, save text on this device or wait until you are online to save the draft to TimIQ and submit.",
+      );
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -296,6 +413,8 @@ export function StarterFormClient() {
       const data = await submitOnboarding();
       setDetail(data);
       setForm(initFormFromDetail(data));
+      await clearStarterFormLocalDraft(currentUser.id);
+      setHasLocalDraft(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed.");
     } finally {
@@ -360,6 +479,34 @@ export function StarterFormClient() {
           <p className="rounded border border-[var(--color-danger-700)] bg-[var(--color-cell)] p-2 text-sm text-[var(--color-danger-700)]">
             {error}
           </p>
+        ) : null}
+
+        {localDeviceMessage ? (
+          <p className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2 text-sm text-[var(--color-text)]">
+            {localDeviceMessage}
+          </p>
+        ) : null}
+
+        {editable ? (
+          <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 text-sm text-[var(--color-text-muted)]">
+            <p className="font-medium text-[var(--color-text)]">Local device text drafts</p>
+            <p className="mt-1">
+              When you are offline, text answers can be saved only on this browser. Payroll, tax, bank, National
+              Insurance, and similar fields may be included — use only on a device you trust. Required documents,
+              profile photo, signatures, and final submit still need a connection.
+            </p>
+          </div>
+        ) : null}
+
+        {editable && hasLocalDraft ? (
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="secondary" disabled={saving} onClick={() => void handleRestoreLocalDraft()}>
+              Restore local text
+            </Button>
+            <Button type="button" variant="secondary" disabled={saving} onClick={() => void handleClearLocalDraft()}>
+              Clear local text only
+            </Button>
+          </div>
         ) : null}
 
         {detail ? (
@@ -901,6 +1048,9 @@ export function StarterFormClient() {
                 <div className="flex flex-wrap gap-3 border-t border-[var(--color-border)] pt-4">
                   <Button type="submit" disabled={saving}>
                     Save draft
+                  </Button>
+                  <Button type="button" variant="secondary" disabled={saving} onClick={() => void handleSaveLocalDeviceOnly()}>
+                    Save to this device
                   </Button>
                 </div>
               ) : null}
