@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.health import router as health_router
+from app.modules.accounting.router import router as accounting_router
 from app.modules.audit.router import router as audit_router
 from app.modules.auth.router import router as auth_router
 from app.modules.companies.router import router as companies_router
@@ -20,6 +21,8 @@ from app.modules.payroll.router import router as payroll_router
 from app.modules.time_records.router import time_records_router, timesheets_router
 from app.modules.workplaces.router import router as workplaces_router
 from app.modules.budgets.router import router as budgets_router
+from app.modules.messaging.router import router as messaging_router
+from app.modules.privacy.router import router as privacy_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -46,6 +49,7 @@ app.include_router(companies_router)
 app.include_router(dashboard_router)
 app.include_router(locations_router)
 app.include_router(site_access_router)
+app.include_router(accounting_router)
 app.include_router(audit_router)
 app.include_router(workplaces_router)
 app.include_router(employee_profiles_router)
@@ -59,3 +63,5 @@ app.include_router(payroll_router)
 app.include_router(onboarding_router)
 app.include_router(work_progress_router)
 app.include_router(budgets_router)
+app.include_router(messaging_router)
+app.include_router(privacy_router)

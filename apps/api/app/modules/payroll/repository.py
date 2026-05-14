@@ -132,6 +132,24 @@ def first_workplace_tax(db_session: Session, company_id: uuid.UUID) -> float | N
     return float(wp.tax_rate)
 
 
+def list_periods_week_start_between(
+    db_session: Session,
+    company_id: uuid.UUID,
+    *,
+    week_start_from: date,
+    week_start_to: date,
+) -> list[PayrollPeriod]:
+    """Payroll periods whose week_start falls in [week_start_from, week_start_to] (inclusive)."""
+    statement = (
+        select(PayrollPeriod)
+        .where(PayrollPeriod.company_id == company_id)
+        .where(PayrollPeriod.week_start >= week_start_from)
+        .where(PayrollPeriod.week_start <= week_start_to)
+        .order_by(PayrollPeriod.week_start.asc())
+    )
+    return list(db_session.scalars(statement).all())
+
+
 def list_periods_for_company_month(
     db_session: Session,
     company_id: uuid.UUID,

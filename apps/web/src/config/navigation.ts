@@ -19,6 +19,12 @@ const DASHBOARD: NavigationItem = {
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
+const MESSAGES: NavigationItem = {
+  label: "Messages",
+  href: "/messages",
+  allowedRoles: ["administrator", "admin", "employee"],
+};
+
 const CLOCK: NavigationItem = {
   label: "Clock In / Out",
   href: "/clock",
@@ -67,6 +73,12 @@ const PROFILE: NavigationItem = {
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
+const PRIVACY_PORTAL: NavigationItem = {
+  label: "Data & privacy",
+  href: "/privacy",
+  allowedRoles: ["administrator", "admin", "employee"],
+};
+
 const OVERVIEW: NavigationItem = {
   label: "Overview",
   href: "/overview",
@@ -76,6 +88,12 @@ const OVERVIEW: NavigationItem = {
 const EMPLOYEES: NavigationItem = {
   label: "Employees",
   href: "/employees",
+  allowedRoles: ["administrator", "admin"],
+};
+
+const PRIVACY_REQUESTS: NavigationItem = {
+  label: "Privacy requests",
+  href: "/privacy/requests",
   allowedRoles: ["administrator", "admin"],
 };
 
@@ -133,6 +151,12 @@ const BUDGET_CALCULATOR: NavigationItem = {
   allowedRoles: ["administrator", "admin"],
 };
 
+const ACCOUNTING_LINK: NavigationItem = {
+  label: "Accounting exports",
+  href: "/accounting",
+  allowedRoles: ["administrator", "admin"],
+};
+
 const WORK_PROGRESS_REVIEW: NavigationItem = {
   label: "Work Progress Review",
   href: "/work-progress-review",
@@ -152,7 +176,7 @@ const SYSTEM_HEALTH: NavigationItem = {
 };
 
 const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
-  { id: "emp-home", label: "Home", items: [DASHBOARD] },
+  { id: "emp-home", label: "Home", items: [DASHBOARD, MESSAGES] },
   {
     id: "emp-time",
     label: "Time",
@@ -160,7 +184,7 @@ const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
   },
   { id: "emp-pay", label: "Pay", items: [PAY_HISTORY] },
   { id: "emp-work", label: "Work", items: [SITE_PROGRESS] },
-  { id: "emp-profile", label: "Profile", items: [STARTER_FORM, PROFILE] },
+  { id: "emp-profile", label: "Profile", items: [STARTER_FORM, PROFILE, PRIVACY_PORTAL] },
 ];
 
 const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
@@ -168,7 +192,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
   {
     id: "mgmt-people",
     label: "People",
-    items: [EMPLOYEES, ONBOARDING_REVIEW, CLOCK_SELFIES],
+    items: [EMPLOYEES, ONBOARDING_REVIEW, CLOCK_SELFIES, PRIVACY_REQUESTS],
   },
   {
     id: "mgmt-sites",
@@ -180,7 +204,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     label: "Attendance",
     items: [LIVE_ATTENDANCE, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
   },
-  { id: "mgmt-payroll", label: "Payroll", items: [PAYROLL_REPORT, BUDGET_CALCULATOR] },
+  { id: "mgmt-payroll", label: "Payroll", items: [PAYROLL_REPORT, BUDGET_CALCULATOR, ACCOUNTING_LINK] },
   { id: "mgmt-work", label: "Work", items: [WORK_PROGRESS_REVIEW] },
   { id: "mgmt-system", label: "System", items: [AUDIT_LOG, SYSTEM_HEALTH] },
 ];
