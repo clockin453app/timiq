@@ -24,6 +24,7 @@ from app.modules.budgets.router import router as budgets_router
 from app.modules.messaging.router import router as messaging_router
 from app.modules.privacy.router import router as privacy_router
 from app.modules.payroll_policies.router import router as payroll_policies_router
+from app.modules.settings.router import router as settings_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -67,3 +68,4 @@ app.include_router(budgets_router)
 app.include_router(messaging_router)
 app.include_router(privacy_router)
 app.include_router(payroll_policies_router)
+app.include_router(settings_router)

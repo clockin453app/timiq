@@ -22,6 +22,7 @@ from app.modules.onboarding.models import OnboardingDocument, OnboardingSubmissi
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.payroll_policies.models import LocationPayrollPolicy
 from app.modules.privacy.models import PrivacyPolicyAcknowledgement, PrivacyRequest
+from app.modules.settings.models import CompanyAppSettings, UserPreference
 from app.modules.workplaces.models import Workplace
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
 
@@ -43,6 +44,7 @@ __all__ = [
     "EmployeeJobRole",
     "EmployeeLocationAccess",
     "Location",
+    "CompanyAppSettings",
     "ClockSelfie",
     "TimeShift",
     "TimeShiftBreak",
@@ -55,6 +57,7 @@ __all__ = [
     "PrivacyRequest",
     "OnboardingSubmission",
     "OnboardingDocument",
+    "UserPreference",
     "WorkProgressEntry",
     "WorkProgressAttachment",
 ]

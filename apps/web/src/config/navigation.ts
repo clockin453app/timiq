@@ -73,6 +73,12 @@ const PROFILE: NavigationItem = {
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
+const SETTINGS: NavigationItem = {
+  label: "Settings",
+  href: "/settings",
+  allowedRoles: ["administrator", "admin", "employee"],
+};
+
 const PRIVACY_PORTAL: NavigationItem = {
   label: "Data & privacy",
   href: "/privacy",
@@ -190,7 +196,7 @@ const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
   },
   { id: "emp-pay", label: "Pay", items: [PAY_HISTORY] },
   { id: "emp-work", label: "Work", items: [SITE_PROGRESS] },
-  { id: "emp-profile", label: "Profile", items: [STARTER_FORM, PROFILE, PRIVACY_PORTAL] },
+  { id: "emp-profile", label: "Profile", items: [STARTER_FORM, PROFILE, SETTINGS, PRIVACY_PORTAL] },
 ];
 
 const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
@@ -212,7 +218,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
   },
   { id: "mgmt-payroll", label: "Payroll", items: [PAYROLL_REPORT, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK] },
   { id: "mgmt-work", label: "Work", items: [WORK_PROGRESS_REVIEW] },
-  { id: "mgmt-system", label: "System", items: [AUDIT_LOG, SYSTEM_HEALTH] },
+  { id: "mgmt-system", label: "System", items: [AUDIT_LOG, SYSTEM_HEALTH, SETTINGS] },
 ];
 
 function itemVisibleForRole(item: NavigationItem, role: SystemRole): boolean {
