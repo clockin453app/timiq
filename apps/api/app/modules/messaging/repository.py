@@ -278,6 +278,34 @@ def count_unread_visible_announcements(
     return int(db_session.scalar(stmt) or 0)
 
 
+def list_unread_visible_announcement_ids(
+    db_session: Session,
+    *,
+    actor: User,
+    company_filter: uuid.UUID | None,
+    now: datetime,
+) -> list[uuid.UUID]:
+    """Published announcements visible to the actor with no AnnouncementRead row."""
+    vis = _announcement_visibility_clause(actor, company_filter)
+    active = Announcement.is_active.is_(True)
+    not_expired = or_(Announcement.expires_at.is_(None), Announcement.expires_at > now)
+    published_live = and_(Announcement.published_at.isnot(None), Announcement.published_at <= now)
+    where = and_(active, not_expired, vis, published_live)
+    stmt = (
+        select(Announcement.id)
+        .outerjoin(
+            AnnouncementRead,
+            and_(
+                AnnouncementRead.announcement_id == Announcement.id,
+                AnnouncementRead.user_id == actor.id,
+            ),
+        )
+        .where(where)
+        .where(AnnouncementRead.id.is_(None))
+    )
+    return list(db_session.scalars(stmt).unique().all())
+
+
 def count_conversations_with_unread_incoming(
     db_session: Session,
     *,

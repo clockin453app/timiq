@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import { Button, Input, PageHeader, Sheet, SheetBody } from "../../components/ui";
@@ -29,6 +29,7 @@ import {
 } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
 import { segmentBtnClass } from "../budgets/budget-ui";
+import { useT } from "../../lib/i18n";
 
 type TabId = "news" | "messages";
 
@@ -90,8 +91,13 @@ function convLabel(c: ConversationListItem): string {
   return c.other_user_display_name || c.last_message_preview || "Conversation";
 }
 
+function isNearBottom(el: HTMLElement, thresholdPx = 100): boolean {
+  return el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
+}
+
 export function MessagesClient() {
   const user = useCurrentUser();
+  const t = useT();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -123,6 +129,9 @@ export function MessagesClient() {
   const [colleagues, setColleagues] = useState<Colleague[]>([]);
   const [pickUserId, setPickUserId] = useState("");
   const [newConvMessage, setNewConvMessage] = useState("");
+  const threadScrollRef = useRef<HTMLDivElement | null>(null);
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const prevMsgCountRef = useRef(0);
 
   const effectiveCompanyId = useMemo(() => resolveCompanyId(user, companyOverride), [user, companyOverride]);
   const activeConv = useMemo(
@@ -231,13 +240,34 @@ export function MessagesClient() {
   }, [searchParams, conversations, convLoading]);
 
   const loadMessages = useCallback(async (conversationId: string, opts?: { silent?: boolean }) => {
+    const boxBefore = threadScrollRef.current;
+    const wasNearBottom = boxBefore ? isNearBottom(boxBefore) : true;
     if (!opts?.silent) {
       setMsgLoading(true);
     }
     try {
       const rows = await fetchConversationMessages(conversationId);
+      const prevCount = prevMsgCountRef.current;
+      prevMsgCountRef.current = rows.length;
       setMessages(rows);
       await markConversationRead(conversationId);
+      queueMicrotask(() => {
+        const box = threadScrollRef.current;
+        if (!box) {
+          return;
+        }
+        if (!opts?.silent) {
+          box.scrollTop = box.scrollHeight;
+          setShowJumpToLatest(false);
+          return;
+        }
+        if (wasNearBottom) {
+          box.scrollTop = box.scrollHeight;
+          setShowJumpToLatest(false);
+        } else if (prevCount > 0 && rows.length > prevCount) {
+          setShowJumpToLatest(true);
+        }
+      });
     } catch (e) {
       setConvError(e instanceof Error ? e.message : "Failed to load messages.");
     } finally {
@@ -249,6 +279,8 @@ export function MessagesClient() {
 
   useEffect(() => {
     if (tab === "messages" && selectedConvId) {
+      prevMsgCountRef.current = 0;
+      setShowJumpToLatest(false);
       void loadMessages(selectedConvId);
     }
   }, [tab, selectedConvId, loadMessages]);
@@ -262,7 +294,7 @@ export function MessagesClient() {
         return;
       }
       void loadConversations();
-    }, 22_000);
+    }, 26_000);
     return () => window.clearInterval(id);
   }, [tab, loadConversations]);
 
@@ -275,7 +307,7 @@ export function MessagesClient() {
         return;
       }
       void loadMessages(selectedConvId, { silent: true });
-    }, 8000);
+    }, 7_000);
     return () => window.clearInterval(id);
   }, [tab, selectedConvId, loadMessages]);
 
@@ -293,6 +325,19 @@ export function MessagesClient() {
     };
     document.addEventListener("visibilitychange", onVis);
     return () => document.removeEventListener("visibilitychange", onVis);
+  }, [tab, selectedConvId, loadConversations, loadMessages]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (tab === "messages") {
+        void loadConversations();
+        if (selectedConvId) {
+          void loadMessages(selectedConvId, { silent: true });
+        }
+      }
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [tab, selectedConvId, loadConversations, loadMessages]);
 
   async function openNewConversation() {
@@ -610,12 +655,30 @@ export function MessagesClient() {
                       ) : null}
                     </div>
                   ) : null}
-                  <div className="mb-2 flex justify-end">
+                  <div className="mb-2 flex flex-wrap items-center justify-end gap-2">
+                    {showJumpToLatest ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onClick={() => {
+                          const box = threadScrollRef.current;
+                          if (box) {
+                            box.scrollTop = box.scrollHeight;
+                          }
+                          setShowJumpToLatest(false);
+                        }}
+                      >
+                        {t("messaging.new_messages_button", "New messages")}
+                      </Button>
+                    ) : null}
                     <Button type="button" variant="secondary" onClick={() => void loadMessages(selectedConvId)}>
                       Reload thread
                     </Button>
                   </div>
-                  <div className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2 md:max-h-[55vh]">
+                  <div
+                    ref={threadScrollRef}
+                    className="relative min-h-0 flex-1 space-y-2 overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2 md:max-h-[55vh]"
+                  >
                     {msgLoading ? <p className="text-xs text-[var(--color-text-soft)]">Loading…</p> : null}
                     {messages.map((m) => (
                       <div
@@ -729,7 +792,7 @@ export function MessagesClient() {
         {newConvOpen ? (
           <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
             <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg">
-              <h3 className="text-sm font-semibold">Start conversation</h3>
+              <h3 className="text-sm font-semibold">{t("messaging.new_group", "Start conversation")}</h3>
               <form className="mt-3 space-y-3" onSubmit={submitNewConversation}>
                 <div className="flex flex-wrap gap-2 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-1">
                   <button
@@ -737,14 +800,14 @@ export function MessagesClient() {
                     type="button"
                     onClick={() => setNewConvMode("direct")}
                   >
-                    Direct message
+                    {t("messaging.direct_message", "Direct message")}
                   </button>
                   <button
                     className={segmentBtnClass(newConvMode === "group")}
                     type="button"
                     onClick={() => setNewConvMode("group")}
                   >
-                    Group chat
+                    {t("messaging.group_chat", "Group chat")}
                   </button>
                 </div>
                 {newConvMode === "direct" ? (
@@ -770,7 +833,7 @@ export function MessagesClient() {
                   <>
                     <div>
                       <label className={fieldLabel()} htmlFor="conv-group-title">
-                        Group title
+                        {t("messaging.group_title", "Group title")}
                       </label>
                       <Input
                         className="mt-1.5"
@@ -781,7 +844,7 @@ export function MessagesClient() {
                       />
                     </div>
                     <div>
-                      <p className={fieldLabel()}>Colleagues (select at least two)</p>
+                      <p className={fieldLabel()}>{t("messaging.participants", "Participants")}</p>
                       <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] p-2">
                         {colleagues.map((c) => {
                           const on = groupPick.includes(c.user_id);

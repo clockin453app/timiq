@@ -19,6 +19,7 @@ from app.modules.messaging.repository import (
     count_conversations_with_unread_incoming,
     count_unread_incoming_in_conversation,
     find_direct_conversation_between_users,
+    list_unread_visible_announcement_ids,
     get_announcement,
     get_announcement_read_for_user,
     get_conversation,
@@ -364,6 +365,27 @@ def archive_announcement(
         details={"announcement_id": str(row.id), "recipient_count": 0},
     )
     return get_announcement_detail(db_session, actor, announcement_id, company_id=company_id)
+
+
+def mark_all_unread_announcements_read(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+) -> int:
+    """Mark every visible unread announcement as read for the actor (notification hub dismiss)."""
+    now = _now()
+    cf = _resolve_company_filter(actor, company_id)
+    ids = list_unread_visible_announcement_ids(db_session, actor=actor, company_filter=cf, now=now)
+    for aid in ids:
+        row = get_announcement(db_session, aid)
+        if row is None:
+            continue
+        if not _announcement_visible_to_actor(actor, row, company_filter=cf):
+            continue
+        upsert_announcement_read(db_session, announcement_id=aid, user_id=actor.id, read_at=now)
+    db_session.flush()
+    return len(ids)
 
 
 def mark_announcement_read(
@@ -739,7 +761,7 @@ def message_bell_items(db_session: Session, *, user_id: uuid.UUID) -> list[Messa
             title = (item.title or "Group chat").strip() or "Group chat"
         else:
             title = (item.other_user_display_name or "Direct message").strip() or "Direct message"
-        href = f"/messages?conversation={cid}&tab=messages"
+        href = f"/messages?tab=messages&conversation={cid}"
         out.append(
             MessageBellItem(
                 conversation_id=cid,

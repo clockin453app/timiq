@@ -25,6 +25,8 @@ type GroupedNavBlockProps = {
   role: SystemRole;
   /** Show Lucide icons beside labels (desktop polish). */
   showIcons?: boolean;
+  /** Optional small counts for primary links (e.g. from notification summary). */
+  badgeByHref?: Record<string, number>;
   /**
    * Accordion (single open group across primary + management blocks).
    * When both are set, this block is controlled by the parent.
@@ -100,6 +102,7 @@ export function GroupedNavBlock({
   variant,
   role,
   showIcons = true,
+  badgeByHref = {},
   accordionOpenGroupId: controlledOpenId,
   onAccordionOpenGroupChange,
 }: GroupedNavBlockProps) {
@@ -180,11 +183,17 @@ export function GroupedNavBlock({
         if (visible.length === 1) {
           const only = visible[0];
           const active = navItemMatchesActive(only.href, activeHref);
+          const n = badgeByHref[only.href] ?? 0;
           return (
             <div key={group.id}>
               <Link className={linkClass(active, variant, showIcons)} href={only.href}>
                 {showIcons ? <NavItemIcon labelKey={only.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" /> : null}
                 <span className="min-w-0 flex-1 break-words">{t(only.labelKey, only.label)}</span>
+                {n > 0 ? (
+                  <span className="ml-1 shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-tight text-white">
+                    {n > 99 ? "99+" : n}
+                  </span>
+                ) : null}
               </Link>
             </div>
           );
@@ -217,12 +226,18 @@ export function GroupedNavBlock({
               <div className="mt-1 space-y-0.5 border-l border-[var(--color-border-dark)] pl-2.5">
                 {visible.map((item) => {
                   const active = navItemMatchesActive(item.href, activeHref);
+                  const n = badgeByHref[item.href] ?? 0;
                   return (
                     <Link className={linkClass(active, variant, showIcons)} href={item.href} key={item.href}>
                       {showIcons ? (
                         <NavItemIcon labelKey={item.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" />
                       ) : null}
                       <span className="min-w-0 flex-1 break-words">{t(item.labelKey, item.label)}</span>
+                      {n > 0 ? (
+                        <span className="ml-1 shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-tight text-white">
+                          {n > 99 ? "99+" : n}
+                        </span>
+                      ) : null}
                     </Link>
                   );
                 })}

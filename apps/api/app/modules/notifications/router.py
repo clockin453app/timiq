@@ -7,11 +7,17 @@ from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
 from app.modules.notifications.schemas import (
+    NotificationMarkAllSeenRequest,
+    NotificationMarkAllSeenResponse,
     NotificationMarkSeenRequest,
     NotificationMarkSeenResponse,
     NotificationSummaryResponse,
 )
-from app.modules.notifications.service import get_notification_summary, mark_notification_seen
+from app.modules.notifications.service import (
+    get_notification_summary,
+    mark_all_informational_seen,
+    mark_notification_seen,
+)
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -41,3 +47,18 @@ def post_notification_mark_seen(
         db_session.rollback()
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return NotificationMarkSeenResponse(ok=True)
+
+
+@router.post("/mark-all-seen", response_model=NotificationMarkAllSeenResponse)
+def post_notification_mark_all_seen(
+    body: NotificationMarkAllSeenRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> NotificationMarkAllSeenResponse:
+    try:
+        mark_all_informational_seen(db_session, current_user, body)
+        db_session.commit()
+    except ValueError as exc:
+        db_session.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return NotificationMarkAllSeenResponse(ok=True)

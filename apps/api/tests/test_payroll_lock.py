@@ -2,6 +2,7 @@
 
 import uuid
 from types import SimpleNamespace
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -71,6 +72,51 @@ def test_patch_paid_blocks_money_fields(mock_get: MagicMock) -> None:
     req = PayrollItemPatchRequest(payment_mode="net_payment")
     with pytest.raises(PayrollError, match="locked"):
         patch_payroll_item(MagicMock(), actor, iid, req)
+
+
+@patch("app.modules.payroll.service.ensure_company_time_policy")
+@patch("app.modules.payroll.service._late_shift_rounded_entries_after_paid_cutoff")
+@patch("app.modules.payroll.service.list_items_for_period")
+@patch("app.modules.payroll.service.get_item_by_id")
+def test_create_adjustment_rejects_zero_rounded_hours(
+    mock_get: MagicMock,
+    mock_list: MagicMock,
+    mock_late_entries: MagicMock,
+    mock_policy: MagicMock,
+) -> None:
+    paid_id = uuid.uuid4()
+    period_id = uuid.uuid4()
+    company_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+    shift_id = uuid.uuid4()
+    item = MagicMock()
+    item.id = paid_id
+    item.status = "paid"
+    item.company_id = company_id
+    item.user_id = user_id
+    item.period_id = period_id
+    item.paid_at = datetime.now(timezone.utc)
+    mock_get.return_value = item
+    mock_list.return_value = []
+    mock_late_entries.return_value = [(shift_id, 0)]
+    mock_policy.return_value = SimpleNamespace(
+        overtime_multiplier=1.5,
+        overtime_after_hours=40,
+        timezone_name="Europe/London",
+    )
+    period = MagicMock()
+    period.id = period_id
+    period.week_start = date.today()
+    db = MagicMock()
+    db.get.return_value = period
+    actor = SimpleNamespace(system_role=SystemRole.ADMINISTRATOR, company_id=None, id=uuid.uuid4())
+    with pytest.raises(PayrollError, match="No payable late hours"):
+        create_late_shift_adjustment_from_paid_item(
+            db,
+            actor,
+            paid_id,
+            PayrollLateAdjustmentRequest(confirm=True),
+        )
 
 
 @patch("app.modules.payroll.service.get_item_by_id")

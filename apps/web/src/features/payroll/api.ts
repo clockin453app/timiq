@@ -107,7 +107,11 @@ export type PayrollReportResponse = {
   payroll_auto_recalculated?: boolean;
   has_late_unpaid_shifts?: boolean;
   late_shift_count?: number;
+  /** Same as late_shift_count when present; explicit detected count from API. */
+  late_shift_count_detected?: number;
+  late_shift_count_payable?: number;
   late_unpaid_total_rounded_seconds?: number;
+  has_payable_late_unpaid_shifts?: boolean;
   late_unpaid_employees?: PayrollLateUnpaidEmployee[];
   accounting_payroll_export_overlaps?: boolean;
   approved_leave_in_week?: PayrollApprovedLeaveRow[];

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   fetchNotificationSummary,
+  postNotificationMarkAllSeen,
   postNotificationMarkSeen,
   type NotificationSummary,
   type NotificationSummaryItem,
@@ -18,10 +19,19 @@ type NotificationBellProps = {
   companyId?: string | null;
 };
 
-/** Kinds that support dismiss-from-bell via mark-seen (matches backend `_SEEN_ALLOWED_KINDS`). */
-const SEEN_MARK_KINDS = new Set(["week_report_ready", "payslip_ready", "leave_approved", "leave_rejected"]);
+const SEEN_MARK_KINDS = new Set([
+  "week_report_ready",
+  "payslip_ready",
+  "leave_approved",
+  "leave_rejected",
+  "announcement",
+]);
 
-const GROUP_ORDER = ["messages", "safety", "payroll", "time", "admin"];
+const GROUP_ORDER = ["messages", "safety", "payroll", "time", "leave", "admin"];
+
+function itemCategory(it: NotificationSummaryItem): string {
+  return (it.category ?? it.group ?? "").trim();
+}
 
 function groupRank(g: string | null | undefined): number {
   const key = (g ?? "").trim();
@@ -31,29 +41,12 @@ function groupRank(g: string | null | undefined): number {
 
 function sortNotificationItems(items: NotificationSummaryItem[]): NotificationSummaryItem[] {
   return [...items].sort((a, b) => {
-    const gr = groupRank(a.group) - groupRank(b.group);
+    const gr = groupRank(itemCategory(a)) - groupRank(itemCategory(b));
     if (gr !== 0) {
       return gr;
     }
     return a.title.localeCompare(b.title);
   });
-}
-
-function groupHeading(group: string | null | undefined): string | null {
-  switch ((group ?? "").trim()) {
-    case "messages":
-      return "Messages";
-    case "safety":
-      return "Safety";
-    case "payroll":
-      return "Payroll";
-    case "time":
-      return "Time";
-    case "admin":
-      return "Admin";
-    default:
-      return null;
-  }
 }
 
 export function NotificationBell({ companyId = null }: NotificationBellProps) {
@@ -62,6 +55,7 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<NotificationSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [mobileHub, setMobileHub] = useState(false);
 
   const scopeCompany = isAdministrator(user) ? companyId : null;
 
@@ -70,6 +64,9 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
     try {
       const row = await fetchNotificationSummary(scopeCompany);
       setData(row);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("timiq:notification-summary", { detail: row }));
+      }
     } catch (e) {
       setData(null);
       setErr(e instanceof Error ? e.message : "Failed to load.");
@@ -88,20 +85,67 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
     return () => window.removeEventListener("focus", onFocus);
   }, [load]);
 
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const fn = () => setMobileHub(mq.matches);
+    fn();
+    mq.addEventListener("change", fn);
+    return () => mq.removeEventListener("change", fn);
+  }, []);
+
   const total = data?.total_count ?? 0;
   const badge = total > 99 ? "99+" : total > 0 ? String(total) : "";
   const sortedItems = data ? sortNotificationItems(data.items) : [];
 
-  function onItemNavigate(it: NotificationSummaryItem) {
-    setOpen(false);
-    const key = (it.target_key ?? "").trim();
-    if (SEEN_MARK_KINDS.has(it.kind) && key) {
-      void postNotificationMarkSeen({ kind: it.kind, target_key: key }).then(
-        () => load(),
-        () => undefined,
-      );
+  function categoryHeading(cat: string): string {
+    switch (cat) {
+      case "messages":
+        return t("notifications.category_messages", "Messages");
+      case "safety":
+        return t("notifications.category_safety", "Safety");
+      case "payroll":
+        return t("notifications.category_payroll", "Payroll");
+      case "time":
+        return t("notifications.category_time", "Time");
+      case "leave":
+        return t("notifications.category_leave", "Leave");
+      case "admin":
+        return t("notifications.category_admin", "Admin");
+      default:
+        return cat || t("notifications.category_admin", "Admin");
     }
   }
+
+  async function onItemNavigate(it: NotificationSummaryItem) {
+    setOpen(false);
+    if (it.kind === "announcement") {
+      await postNotificationMarkSeen({
+        kind: "announcement",
+        mark_all_for_kind: true,
+        company_id: scopeCompany,
+      }).catch(() => undefined);
+      void load();
+      return;
+    }
+    const key = (it.target_key ?? "").trim();
+    if (SEEN_MARK_KINDS.has(it.kind) && key) {
+      await postNotificationMarkSeen({
+        kind: it.kind,
+        target_key: key,
+        company_id: scopeCompany,
+      }).catch(() => undefined);
+      void load();
+    }
+  }
+
+  async function onMarkAllSeen() {
+    await postNotificationMarkAllSeen({ company_id: scopeCompany }).catch(() => undefined);
+    void load();
+  }
+
+  const panelClasses = mobileHub
+    ? "fixed left-2 right-2 top-14 z-[100] max-h-[min(78dvh,calc(100dvh-5rem))] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_4px_16px_rgba(15,23,42,0.12)]"
+    : "absolute right-0 z-[100] mt-1 w-[min(100vw-1rem,22rem)] max-w-[min(22rem,calc(100vw-1rem))] max-h-[min(85dvh,calc(100dvh-4rem))] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_4px_16px_rgba(15,23,42,0.12)]";
 
   return (
     <div className="relative shrink-0">
@@ -125,36 +169,44 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
         <>
           <button
             aria-label={t("notifications.close_overlay", "Close")}
-            className="fixed inset-0 z-[29] cursor-default bg-transparent"
+            className="fixed inset-0 z-[29] cursor-default bg-black/10"
             type="button"
             onClick={() => setOpen(false)}
           />
-          <div className="absolute right-0 z-[100] mt-1 w-[min(100vw-1rem,22rem)] max-w-[min(22rem,calc(100vw-1rem))] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_4px_16px_rgba(15,23,42,0.12)]">
-            <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
-              <p className="text-sm font-semibold text-[var(--color-text)]">
-                {t("notifications.title", "Notifications")}
-              </p>
-              <button
-                className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                type="button"
-                onClick={() => void load()}
-              >
-                {t("notifications.refresh", "Refresh")}
-              </button>
+          <div className={`${panelClasses} flex flex-col overflow-hidden`}>
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-[var(--color-border)] px-3 py-2">
+              <p className="text-sm font-semibold text-[var(--color-text)]">{t("notifications.title", "Notifications")}</p>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                  type="button"
+                  onClick={() => void load()}
+                >
+                  {t("notifications.refresh", "Refresh")}
+                </button>
+                {total > 0 ? (
+                  <button
+                    className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                    type="button"
+                    onClick={() => void onMarkAllSeen()}
+                  >
+                    {t("notifications.mark_all_seen", "Mark all seen")}
+                  </button>
+                ) : null}
+              </div>
             </div>
-            <div className="max-h-[min(70dvh,24rem)] overflow-y-auto py-1">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain py-1">
               {err ? (
                 <p className="px-3 py-2 text-xs text-red-700">{err}</p>
               ) : !data || data.items.length === 0 ? (
-                <p className="px-3 py-3 text-sm text-[var(--color-text-muted)]">
-                  {t("notifications.empty", "No notifications")}
-                </p>
+                <p className="px-3 py-3 text-sm text-[var(--color-text-muted)]">{t("notifications.empty", "No notifications")}</p>
               ) : (
                 <ul className="min-w-0">
                   {sortedItems.map((it, idx) => {
                     const prev = idx > 0 ? sortedItems[idx - 1] : null;
-                    const gh = groupHeading(it.group);
-                    const showGroup = gh && (!prev || groupHeading(prev.group) !== gh);
+                    const cat = itemCategory(it);
+                    const gh = categoryHeading(cat);
+                    const showGroup = gh && (!prev || itemCategory(prev) !== cat);
                     const itemKey = `${it.kind}:${it.target_key ?? ""}`;
                     return (
                       <li key={itemKey} className="border-b border-[var(--color-border)] last:border-b-0">
@@ -166,15 +218,30 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
                         <Link
                           className="block px-3 py-2.5 text-left hover:bg-[var(--color-cell)]"
                           href={it.href}
-                          onClick={() => onItemNavigate(it)}
+                          onClick={() => void onItemNavigate(it)}
                         >
                           <div className="flex items-start justify-between gap-2">
-                            <span className="text-sm font-medium text-[var(--color-text)]">{it.title}</span>
-                            <span className="shrink-0 rounded bg-[var(--color-header)] px-1.5 py-0.5 text-xs font-semibold text-[var(--color-text)]">
-                              {it.count}
-                            </span>
+                            <div className="flex min-w-0 flex-1 items-start gap-2">
+                              <span
+                                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                                  it.priority === "high" ? "bg-red-500" : "bg-[var(--color-border-dark)]"
+                                }`}
+                                aria-hidden
+                              />
+                              <span className="min-w-0 text-sm font-medium text-[var(--color-text)]">{it.title}</span>
+                            </div>
+                            <div className="flex shrink-0 flex-col items-end gap-0.5">
+                              {it.priority === "high" ? (
+                                <span className="rounded bg-red-100 px-1 py-0.5 text-[10px] font-bold uppercase text-red-900">
+                                  {t("notifications.priority_high", "High")}
+                                </span>
+                              ) : null}
+                              <span className="rounded bg-[var(--color-header)] px-1.5 py-0.5 text-xs font-semibold text-[var(--color-text)]">
+                                {it.count}
+                              </span>
+                            </div>
                           </div>
-                          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{it.description}</p>
+                          <p className="mt-0.5 pl-4 text-xs text-[var(--color-text-muted)]">{it.description}</p>
                         </Link>
                       </li>
                     );

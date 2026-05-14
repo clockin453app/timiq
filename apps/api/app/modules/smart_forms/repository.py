@@ -118,6 +118,18 @@ def count_submissions_by_status_global(db: Session, *, status_filter: str) -> in
     return int(db.scalar(stmt) or 0)
 
 
+def count_draft_submissions_for_user(db: Session, *, user_id: uuid.UUID) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(SmartFormSubmission)
+        .where(
+            SmartFormSubmission.submitted_by_user_id == user_id,
+            SmartFormSubmission.status == "draft",
+        )
+    )
+    return int(db.scalar(stmt) or 0)
+
+
 def save_submission(db: Session, row: SmartFormSubmission) -> SmartFormSubmission:
     db.add(row)
     db.commit()

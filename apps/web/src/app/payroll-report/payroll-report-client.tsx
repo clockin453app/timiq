@@ -75,6 +75,27 @@ function lateUnpaidBlockForUser(
   return blocks.find((b) => b.user_id === userId) ?? null;
 }
 
+/** Late shifts tied to this paid payroll row with payable (rounded > 0) time. */
+function paidRowHasPayableLateShiftsForRef(row: PayrollItemRow, lateBlock: PayrollLateUnpaidEmployee | null): boolean {
+  if (row.status !== "paid" || !lateBlock?.shifts?.length) {
+    return false;
+  }
+  return lateBlock.shifts.some((s) => s.reference_paid_item_id === row.id && s.rounded_seconds > 0);
+}
+
+function canShowLateAdjustmentForPaidRow(
+  row: PayrollItemRow,
+  lateBlock: PayrollLateUnpaidEmployee | null,
+  report: PayrollReportResponse | null,
+): boolean {
+  if (!paidRowHasPayableLateShiftsForRef(row, lateBlock)) {
+    return false;
+  }
+  return (
+    report?.has_payable_late_unpaid_shifts === true || (report?.late_unpaid_total_rounded_seconds ?? 0) > 0
+  );
+}
+
 function statusBadgeClass(status: string): string {
   if (status === "pending") {
     return "bg-amber-100 text-amber-900 border border-amber-800/20";
@@ -623,6 +644,10 @@ export function PayrollReportClient() {
   const payrollNeedsRecalculation = Boolean(alerts?.payroll_needs_recalculation);
   const paidRowCount = period?.paid_count ?? 0;
   const approvedRowCount = period?.approved_count ?? 0;
+  const lateShiftDetected = Boolean(report?.has_late_unpaid_shifts);
+  const lateDetectedCount = report?.late_shift_count_detected ?? report?.late_shift_count ?? 0;
+  const canAdjustLateShiftsGlobally =
+    report?.has_payable_late_unpaid_shifts === true || (report?.late_unpaid_total_rounded_seconds ?? 0) > 0;
 
   return (
     <Sheet>
@@ -772,18 +797,32 @@ export function PayrollReportClient() {
           </div>
         ) : null}
 
-        {hasCompany && report?.has_late_unpaid_shifts ? (
+        {hasCompany && lateShiftDetected ? (
           <div
             className="rounded-[var(--radius-md)] border border-amber-800/30 bg-amber-50 px-4 py-3 text-sm text-amber-950"
             role="status"
           >
             <p className="font-semibold">Late completed shifts after payroll was paid</p>
             <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
-              {report.late_shift_count ?? 0} shift
-              {(report.late_shift_count ?? 0) === 1 ? "" : "s"} detected (
-              {formatHoursFromSeconds(report.late_unpaid_total_rounded_seconds ?? 0)} unpaid rounded hours). Use{" "}
-              <span className="font-medium">Adjustment</span> on the paid row to create a pending supplemental payroll
-              item. Paid rows stay frozen.
+              {canAdjustLateShiftsGlobally ? (
+                <>
+                  {lateDetectedCount} shift
+                  {lateDetectedCount === 1 ? "" : "s"} detected (
+                  {formatHoursFromSeconds(report?.late_unpaid_total_rounded_seconds ?? 0)} unpaid rounded hours). Use{" "}
+                  <span className="font-medium">Adjustment</span> on the paid row to create a pending supplemental payroll
+                  item. Paid rows stay frozen.
+                </>
+              ) : lateDetectedCount === 1 ? (
+                <>
+                  1 late shift was detected, but it has 0 payroll-rounded hours, so no adjustment is required. Paid rows
+                  stay frozen.
+                </>
+              ) : (
+                <>
+                  {lateDetectedCount} late shifts were detected, but they have 0 payroll-rounded hours, so no adjustment
+                  is required. Paid rows stay frozen.
+                </>
+              )}
             </p>
           </div>
         ) : null}
@@ -1108,7 +1147,7 @@ export function PayrollReportClient() {
                                     >
                                       Undo paid
                                     </Button>
-                                    {lateBlock && lateBlock.shifts.length > 0 ? (
+                                    {canShowLateAdjustmentForPaidRow(row, lateBlock, report) ? (
                                       <Button
                                         className="min-h-8 px-2 py-1 text-xs"
                                         disabled={busyId === row.id}

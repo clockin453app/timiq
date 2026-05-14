@@ -9,6 +9,8 @@ import {
   getEmployeeNavigationGroups,
   getManagementNavigationGroups,
 } from "../../config/navigation";
+import type { NotificationSummary } from "../../features/notifications/api";
+import { navBadgesFromSummary } from "../../features/notifications/nav-badges";
 import { useCurrentUser, UserAccountSummary } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
@@ -59,6 +61,19 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
   const flatNav = useMemo(() => getAllNavLinksForRole(user.system_role), [user.system_role]);
 
   const [accordionOpenGroupId, setAccordionOpenGroupId] = useState<string | null>(null);
+  const [navBadges, setNavBadges] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const onSummary = (ev: Event) => {
+      const d = (ev as CustomEvent<NotificationSummary>).detail;
+      if (!d?.items) {
+        return;
+      }
+      setNavBadges(navBadgesFromSummary(d.items));
+    };
+    window.addEventListener("timiq:notification-summary", onSummary as EventListener);
+    return () => window.removeEventListener("timiq:notification-summary", onSummary as EventListener);
+  }, []);
 
   useEffect(() => {
     setAccordionOpenGroupId(findDefaultAccordionGroupId(employeeGroups, managementGroups, activeHref));
@@ -118,11 +133,12 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
               item.href === "/dashboard"
                 ? activeHref === "/dashboard"
                 : activeHref === item.href || activeHref.startsWith(`${item.href}/`);
+            const n = navBadges[item.href] ?? 0;
             return (
               <Link
                 aria-label={label}
                 className={[
-                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border transition-colors",
+                  "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border transition-colors",
                   active
                     ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)]"
                     : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] hover:text-[var(--color-text)]",
@@ -132,6 +148,9 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
                 title={label}
               >
                 <NavItemIcon labelKey={item.labelKey} className="h-5 w-5 shrink-0" />
+                {n > 0 ? (
+                  <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-red-600 ring-2 ring-[var(--color-sidebar-bg)]" />
+                ) : null}
               </Link>
             );
           })}
@@ -141,6 +160,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
           <GroupedNavBlock
             accordionOpenGroupId={accordionOpenGroupId}
             activeHref={activeHref}
+            badgeByHref={navBadges}
             groups={employeeGroups}
             onAccordionOpenGroupChange={setAccordionOpenGroupId}
             role={user.system_role}
@@ -157,6 +177,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
               <GroupedNavBlock
                 accordionOpenGroupId={accordionOpenGroupId}
                 activeHref={activeHref}
+                badgeByHref={navBadges}
                 groups={managementGroups}
                 onAccordionOpenGroupChange={setAccordionOpenGroupId}
                 role={user.system_role}

@@ -164,7 +164,19 @@ class PayrollReportResponse(BaseModel):
     )
     has_late_unpaid_shifts: bool = False
     late_shift_count: int = 0
+    late_shift_count_detected: int = Field(
+        default=0,
+        description="Late completed shifts after paid_at (same as late_shift_count for backward compatibility).",
+    )
+    late_shift_count_payable: int = Field(
+        default=0,
+        description="Subset of detected late shifts with payroll-rounded duration > 0.",
+    )
     late_unpaid_total_rounded_seconds: int = 0
+    has_payable_late_unpaid_shifts: bool = Field(
+        default=False,
+        description="True when an adjustment row would carry payable rounded time.",
+    )
     late_unpaid_employees: list[PayrollLateUnpaidEmployee] = Field(default_factory=list)
     accounting_payroll_export_overlaps: bool = Field(
         default=False,

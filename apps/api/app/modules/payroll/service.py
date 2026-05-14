@@ -672,8 +672,11 @@ def _compute_late_unpaid_employees(
     period: PayrollPeriod,
     all_items: list[PayrollItem],
     policy,
-) -> tuple[list[PayrollLateUnpaidEmployee], int, int]:
-    """Employees with paid items and completed shifts after paid_at not yet reserved on a pending adjustment."""
+) -> tuple[list[PayrollLateUnpaidEmployee], int, int, int]:
+    """Employees with paid items and completed shifts after paid_at not yet reserved on a pending adjustment.
+
+    Returns (blocks, total_rounded_seconds, detected_shift_count, payable_shift_count).
+    """
     company = get_company_by_id(db_session, company_id)
     default_tax = float(company.default_tax_rate) if company is not None and company.default_tax_rate is not None else None
     workplace_tax = first_workplace_tax(db_session, company_id)
@@ -687,7 +690,8 @@ def _compute_late_unpaid_employees(
             paid_by_user[it.user_id] = (it.paid_at, it.id)
     blocks: list[PayrollLateUnpaidEmployee] = []
     total_seconds = 0
-    shift_count = 0
+    detected_shift_total = 0
+    payable_shift_total = 0
     ot_mult = Decimal(str(policy.overtime_multiplier))
     for user_id, (paid_cutoff, ref_item_id) in paid_by_user.items():
         reserved = reserved_late_shift_ids_for_user_period(all_items, user_id)
@@ -731,6 +735,8 @@ def _compute_late_unpaid_employees(
             sum_sec += rs
         if not late_rows:
             continue
+        detected_shift_total += len(late_rows)
+        payable_shift_total += sum(1 for r in late_rows if r.rounded_seconds > 0)
         profile = get_employee_profile_by_user_id(db_session, user_id)
         hourly = None
         if profile is not None and profile.hourly_rate is not None:
@@ -767,8 +773,7 @@ def _compute_late_unpaid_employees(
             )
         )
         total_seconds += sum_sec
-        shift_count += len(late_rows)
-    return blocks, total_seconds, shift_count
+    return blocks, total_seconds, detected_shift_total, payable_shift_total
 
 
 def _late_shift_rounded_entries_after_paid_cutoff(
@@ -962,7 +967,10 @@ def get_payroll_report(
             split=split,
             has_late_unpaid_shifts=False,
             late_shift_count=0,
+            late_shift_count_detected=0,
+            late_shift_count_payable=0,
             late_unpaid_total_rounded_seconds=0,
+            has_payable_late_unpaid_shifts=False,
             late_unpaid_employees=[],
             accounting_payroll_export_overlaps=acct_overlap,
         )
@@ -1005,7 +1013,7 @@ def get_payroll_report(
         )
         return inner.model_copy(update={"payroll_auto_recalculated": True})
     split = _build_pay_split(all_items)
-    late_employees, late_secs, late_n = _compute_late_unpaid_employees(
+    late_employees, late_secs, late_n, late_payable_n = _compute_late_unpaid_employees(
         db_session,
         company_id=company_id,
         week_start=week_start,
@@ -1022,6 +1030,7 @@ def get_payroll_report(
         week_start=week_start,
         filter_user_id=user_id,
     )
+    has_payable_late = late_payable_n > 0 or late_secs > 0
     return PayrollReportResponse(
         period=_summarize_period(db_session, period, all_items),
         items=[item_to_response(db_session, i) for i in display_items],
@@ -1029,7 +1038,10 @@ def get_payroll_report(
         split=split,
         has_late_unpaid_shifts=late_n > 0,
         late_shift_count=late_n,
+        late_shift_count_detected=late_n,
+        late_shift_count_payable=late_payable_n,
         late_unpaid_total_rounded_seconds=late_secs,
+        has_payable_late_unpaid_shifts=has_payable_late,
         late_unpaid_employees=late_employees,
         accounting_payroll_export_overlaps=acct_overlap,
         approved_leave_in_week=leave_rows,
@@ -1212,7 +1224,7 @@ def recalculate_payroll(
         all_items=items,
     )
     split = _build_pay_split(items)
-    late_employees, late_secs, late_n = _compute_late_unpaid_employees(
+    late_employees, late_secs, late_n, late_payable_n = _compute_late_unpaid_employees(
         db_session,
         company_id=company_id,
         week_start=week_start,
@@ -1229,6 +1241,7 @@ def recalculate_payroll(
         week_start=week_start,
         filter_user_id=None,
     )
+    has_payable_late = late_payable_n > 0 or late_secs > 0
     return PayrollReportResponse(
         period=_summarize_period(db_session, period, items),
         items=[item_to_response(db_session, i) for i in items],
@@ -1236,7 +1249,10 @@ def recalculate_payroll(
         split=split,
         has_late_unpaid_shifts=late_n > 0,
         late_shift_count=late_n,
+        late_shift_count_detected=late_n,
+        late_shift_count_payable=late_payable_n,
         late_unpaid_total_rounded_seconds=late_secs,
+        has_payable_late_unpaid_shifts=has_payable_late,
         late_unpaid_employees=late_employees,
         accounting_payroll_export_overlaps=acct_overlap,
         approved_leave_in_week=leave_rows,
@@ -1483,6 +1499,14 @@ def create_late_shift_adjustment_from_paid_item(
         selected = list(candidates)
     if not selected:
         raise PayrollError("No late unpaid shifts remain for an adjustment.")
+    if all(sec <= 0 for _sid, sec in selected):
+        if len(selected) == 1:
+            raise PayrollError(
+                "No payable late hours were found. The detected shift has zero payroll-rounded time.",
+            )
+        raise PayrollError(
+            "No payable late hours were found. The detected shifts have zero payroll-rounded time.",
+        )
     total_r = sum(sec for _sid, sec in selected)
     shift_ids_ordered = [sid for sid, _sec in selected]
     reg_s, ot_s = split_regular_overtime(total_r, policy.overtime_after_hours)
@@ -1587,7 +1611,7 @@ def approve_all_pending(
         all_items=items,
     )
     split = _build_pay_split(items)
-    late_employees, late_secs, late_n = _compute_late_unpaid_employees(
+    late_employees, late_secs, late_n, late_payable_n = _compute_late_unpaid_employees(
         db_session,
         company_id=company_id,
         week_start=week_start,
@@ -1604,6 +1628,7 @@ def approve_all_pending(
         week_start=week_start,
         filter_user_id=None,
     )
+    has_payable_late = late_payable_n > 0 or late_secs > 0
     return PayrollReportResponse(
         period=_summarize_period(db_session, period, items),
         items=[item_to_response(db_session, i) for i in items],
@@ -1611,7 +1636,10 @@ def approve_all_pending(
         split=split,
         has_late_unpaid_shifts=late_n > 0,
         late_shift_count=late_n,
+        late_shift_count_detected=late_n,
+        late_shift_count_payable=late_payable_n,
         late_unpaid_total_rounded_seconds=late_secs,
+        has_payable_late_unpaid_shifts=has_payable_late,
         late_unpaid_employees=late_employees,
         accounting_payroll_export_overlaps=acct_overlap,
         approved_leave_in_week=leave_rows,
