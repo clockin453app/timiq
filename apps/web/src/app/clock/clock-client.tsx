@@ -111,9 +111,8 @@ export function ClockClient() {
   );
   const [mapMountDeferred, setMapMountDeferred] = useState(false);
   const [clockMapSessionOff, setClockMapSessionOff] = useState(false);
-  const [networkOnline, setNetworkOnline] = useState(
-    () => typeof navigator === "undefined" || navigator.onLine,
-  );
+  // Match server render: assume online until after mount, then sync from navigator (avoids hydration mismatch when offline).
+  const [networkOnline, setNetworkOnline] = useState(true);
 
   const handleClockMapFault = useCallback(() => {
     setClockMapSessionOff(true);
@@ -176,6 +175,7 @@ export function ClockClient() {
   }, []);
 
   useEffect(() => {
+    setNetworkOnline(typeof navigator !== "undefined" ? navigator.onLine : true);
     const onUp = () => setNetworkOnline(true);
     const onDown = () => setNetworkOnline(false);
     window.addEventListener("online", onUp);

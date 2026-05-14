@@ -1,6 +1,9 @@
 """Smart form schema and answer validation (no DB)."""
 
 import pytest
+from fastapi.testclient import TestClient
+
+from app.main import app
 
 from app.modules.smart_forms.schema_validate import (
     SchemaValidationError,
@@ -55,6 +58,23 @@ def test_submit_ok_with_required_yes_no() -> None:
         {"walkways_clear": "yes"},
         require_all_required=True,
     )
+
+
+def test_professional_templates_load() -> None:
+    from app.modules.smart_forms.service import list_professional_templates
+
+    rows = list_professional_templates()
+    assert len(rows) == 9
+    assert rows[0].id
+    assert rows[0].form_schema.get("sections")
+
+
+def test_professional_templates_route_registered() -> None:
+    paths = [getattr(r, "path", "") for r in app.routes if hasattr(r, "path")]
+    assert "/api/smart-forms/professional-templates" in paths
+    assert "/api/smart-forms/submissions/{submission_id}/pdf" in paths
+    client = TestClient(app)
+    assert client.get("/api/smart-forms/professional-templates").status_code == 401
 
 
 def test_draft_allows_missing_required() -> None:

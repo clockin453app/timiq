@@ -12,6 +12,7 @@ import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
 import { findDefaultAccordionGroupId, GroupedNavBlock } from "./grouped-nav";
+import { NotificationBell } from "./notification-bell";
 
 type MobileHeaderProps = {
   activeHref?: string;
@@ -45,7 +46,9 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
           <p className="truncate text-xs text-[#4b5563]">{t("nav.tagline_sub", "Payroll & workforce")}</p>
         </div>
 
-        <details className="relative shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
+          <NotificationBell />
+          <details className="relative shrink-0">
           <summary className="timiq-touch-target list-none flex items-center rounded-[var(--radius-md)] border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] px-3 text-sm font-semibold text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
             {t("nav.menu", "Menu")}
           </summary>
@@ -110,6 +113,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             </div>
           </div>
         </details>
+        </div>
       </div>
     </header>
   );

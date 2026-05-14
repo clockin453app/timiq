@@ -206,6 +206,44 @@ def list_items_for_user_pay_history(
     return list(db_session.scalars(statement).all())
 
 
+def count_pending_payroll_items_for_company(db_session: Session, company_id: uuid.UUID) -> int:
+    statement = (
+        select(func.count())
+        .select_from(PayrollItem)
+        .where(PayrollItem.company_id == company_id)
+        .where(PayrollItem.status == "pending")
+    )
+    return int(db_session.scalar(statement) or 0)
+
+
+def count_rate_missing_payroll_items_for_company(db_session: Session, company_id: uuid.UUID) -> int:
+    statement = (
+        select(func.count())
+        .select_from(PayrollItem)
+        .where(PayrollItem.company_id == company_id)
+        .where(PayrollItem.rate_missing.is_(True))
+    )
+    return int(db_session.scalar(statement) or 0)
+
+
+def count_approved_paid_items_for_user_since_week_start(
+    db_session: Session,
+    user_id: uuid.UUID,
+    *,
+    min_period_week_start: date,
+) -> int:
+    """Approved/paid rows for pay history visibility; scoped by payroll period week_start (v1 payslip bell count)."""
+    statement = (
+        select(func.count())
+        .select_from(PayrollItem)
+        .join(PayrollPeriod, PayrollItem.period_id == PayrollPeriod.id)
+        .where(PayrollItem.user_id == user_id)
+        .where(PayrollItem.status.in_(("approved", "paid")))
+        .where(PayrollPeriod.week_start >= min_period_week_start)
+    )
+    return int(db_session.scalar(statement) or 0)
+
+
 def list_payroll_items_for_user_company_ytd_calendar_year(
     db_session: Session,
     *,

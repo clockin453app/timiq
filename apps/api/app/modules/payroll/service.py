@@ -16,6 +16,8 @@ from app.core.export_csv import seconds_to_hours_csv
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
+from app.modules.accounting.repository import payroll_export_run_overlaps_date_range
+from app.modules.leave import repository as leave_repo
 from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
@@ -32,6 +34,11 @@ from app.modules.payroll.calculation import (
     sum_rounded_seconds_payroll_week,
     week_bounds_utc,
 )
+from app.modules.payroll.late_shifts import (
+    append_late_shift_ids_marker,
+    reserved_late_shift_ids_for_user_period,
+    shift_completed_after_paid_cutoff,
+)
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.payroll.permissions import (
     PayrollPermissionError,
@@ -39,6 +46,7 @@ from app.modules.payroll.permissions import (
     assert_payroll_admin_or_administrator,
     assert_payroll_company_scope,
 )
+from app.modules.payroll_policies.service import effective_early_access_for_shift, effective_time_policy_for_shift
 from app.modules.payroll.repository import (
     count_open_shifts_started_in_week,
     delete_pending_items_for_period,
@@ -57,17 +65,24 @@ from app.modules.payroll.repository import (
     save_period,
     update_item,
 )
+from app.modules.time_records.calculation import compute_shift_metrics
+from app.modules.time_records.repository import list_time_shifts_for_payroll_week
 from app.modules.payroll.schemas import (
     PayHistoryEntry,
     PayrollItemCompanySnippet,
     PayrollItemPatchRequest,
     PayrollItemResponse,
     PayrollItemSummaryResponse,
+    PayrollApprovedLeaveRow,
+    PayrollLateAdjustmentRequest,
+    PayrollLateShiftRow,
+    PayrollLateUnpaidEmployee,
     PayrollMonthSummaryResponse,
     PayrollPaySplit,
     PayrollPeriodSummary,
     PayrollReportAlerts,
     PayrollReportResponse,
+    PayrollUndoPaidRequest,
 )
 
 
@@ -200,6 +215,53 @@ def _employee_tax_identifiers_for_payroll(
 
 def _week_end_display(week_start: date) -> date:
     return week_start + timedelta(days=6)
+
+
+def _accounting_export_overlaps_payroll_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start: date,
+) -> bool:
+    return payroll_export_run_overlaps_date_range(
+        db_session,
+        company_id=company_id,
+        range_start=week_start,
+        range_end=_week_end_display(week_start),
+    )
+
+
+def _payroll_approved_leave_rows(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start: date,
+    filter_user_id: uuid.UUID | None,
+) -> list[PayrollApprovedLeaveRow]:
+    w_end = week_start + timedelta(days=6)
+    rows = leave_repo.list_leave_overlapping_week(
+        db_session,
+        company_id=company_id,
+        week_start=week_start,
+        week_end=w_end,
+        statuses=("approved",),
+        user_id=filter_user_id,
+    )
+    out: list[PayrollApprovedLeaveRow] = []
+    for r in rows:
+        email, name, _jt = _employee_display(db_session, r.user_id)
+        out.append(
+            PayrollApprovedLeaveRow(
+                user_id=r.user_id,
+                employee_email=email,
+                employee_name=name,
+                leave_type=r.leave_type,
+                date_from=r.date_from,
+                date_to=r.date_to,
+                total_days=Decimal(str(r.total_days)),
+            )
+        )
+    return out
 
 
 def _utc_dt_display_for_payslip(dt: datetime | None) -> str:
@@ -602,6 +664,155 @@ def _build_report_alerts(
     )
 
 
+def _compute_late_unpaid_employees(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start: date,
+    period: PayrollPeriod,
+    all_items: list[PayrollItem],
+    policy,
+) -> tuple[list[PayrollLateUnpaidEmployee], int, int]:
+    """Employees with paid items and completed shifts after paid_at not yet reserved on a pending adjustment."""
+    company = get_company_by_id(db_session, company_id)
+    default_tax = float(company.default_tax_rate) if company is not None and company.default_tax_rate is not None else None
+    workplace_tax = first_workplace_tax(db_session, company_id)
+    week_start_utc, week_end_utc = week_bounds_utc(policy, week_start)
+    paid_by_user: dict[uuid.UUID, tuple[datetime, uuid.UUID]] = {}
+    for it in all_items:
+        if it.status != "paid" or it.paid_at is None:
+            continue
+        cur = paid_by_user.get(it.user_id)
+        if cur is None or it.paid_at > cur[0]:
+            paid_by_user[it.user_id] = (it.paid_at, it.id)
+    blocks: list[PayrollLateUnpaidEmployee] = []
+    total_seconds = 0
+    shift_count = 0
+    ot_mult = Decimal(str(policy.overtime_multiplier))
+    for user_id, (paid_cutoff, ref_item_id) in paid_by_user.items():
+        reserved = reserved_late_shift_ids_for_user_period(all_items, user_id)
+        rows = list_time_shifts_for_payroll_week(
+            db_session,
+            company_id=company_id,
+            subject_user_id=user_id,
+            week_start_utc=week_start_utc,
+            week_end_utc=week_end_utc,
+        )
+        late_rows: list[PayrollLateShiftRow] = []
+        sum_sec = 0
+        for shift, location, _owner, profile in rows:
+            if not shift_completed_after_paid_cutoff(shift, paid_cutoff):
+                continue
+            if shift.id in reserved:
+                continue
+            pol = effective_time_policy_for_shift(db_session, shift, location)
+            profile_early = bool(profile.early_access_enabled) if profile is not None else False
+            early_access = effective_early_access_for_shift(
+                db_session, location, profile_early_access=profile_early
+            )
+            metrics = compute_shift_metrics(
+                clock_in_at_utc=shift.clock_in_at,
+                clock_out_at_utc=shift.clock_out_at,
+                break_seconds_tracked=int(shift.break_seconds or 0),
+                early_access_enabled=early_access,
+                policy=pol,
+            )
+            rs = int(metrics.rounded_seconds or 0)
+            late_rows.append(
+                PayrollLateShiftRow(
+                    shift_id=shift.id,
+                    clock_in_at=shift.clock_in_at,
+                    clock_out_at=shift.clock_out_at,
+                    rounded_seconds=rs,
+                    reason="completed_after_paid",
+                    reference_paid_item_id=ref_item_id,
+                )
+            )
+            sum_sec += rs
+        if not late_rows:
+            continue
+        profile = get_employee_profile_by_user_id(db_session, user_id)
+        hourly = None
+        if profile is not None and profile.hourly_rate is not None:
+            hourly = Decimal(str(profile.hourly_rate))
+        tax_pct = resolve_effective_tax_rate_percent(profile, default_tax, workplace_tax)
+        ref_item = next((it for it in all_items if it.id == ref_item_id), None)
+        pay_mode = (
+            normalize_payroll_payment_mode(ref_item.payment_mode) if ref_item is not None else "net_payment"
+        )
+        reg_s, ot_s = split_regular_overtime(sum_sec, policy.overtime_after_hours)
+        bundle = compute_money_bundle(
+            regular_seconds=reg_s,
+            overtime_seconds=ot_s,
+            hourly_rate=hourly,
+            overtime_multiplier=ot_mult,
+            tax_rate_percent=tax_pct,
+            other_deductions=Decimal(0),
+            payment_mode=pay_mode,
+        )
+        eg = Decimal(str(bundle["gross_amount"])) if bundle["gross_amount"] is not None else None
+        en = Decimal(str(bundle["net_amount"])) if bundle["net_amount"] is not None else None
+        et = Decimal(str(bundle["tax_amount"])) if bundle["tax_amount"] is not None else None
+        email, name, _jt = _employee_display(db_session, user_id)
+        blocks.append(
+            PayrollLateUnpaidEmployee(
+                user_id=user_id,
+                employee_email=email,
+                employee_name=name,
+                total_late_rounded_seconds=sum_sec,
+                shifts=late_rows,
+                estimated_gross_amount=eg,
+                estimated_net_amount=en,
+                estimated_cis_tax_amount=et,
+            )
+        )
+        total_seconds += sum_sec
+        shift_count += len(late_rows)
+    return blocks, total_seconds, shift_count
+
+
+def _late_shift_rounded_entries_after_paid_cutoff(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start: date,
+    policy,
+    user_id: uuid.UUID,
+    paid_cutoff: datetime,
+    reserved_ids: set[uuid.UUID],
+) -> list[tuple[uuid.UUID, int]]:
+    """Completed shifts in the payroll week after paid_cutoff, excluding IDs reserved on pending rows."""
+    week_start_utc, week_end_utc = week_bounds_utc(policy, week_start)
+    rows = list_time_shifts_for_payroll_week(
+        db_session,
+        company_id=company_id,
+        subject_user_id=user_id,
+        week_start_utc=week_start_utc,
+        week_end_utc=week_end_utc,
+    )
+    out: list[tuple[uuid.UUID, int]] = []
+    for shift, location, _owner, profile in rows:
+        if not shift_completed_after_paid_cutoff(shift, paid_cutoff):
+            continue
+        if shift.id in reserved_ids:
+            continue
+        pol = effective_time_policy_for_shift(db_session, shift, location)
+        profile_early = bool(profile.early_access_enabled) if profile is not None else False
+        early_access = effective_early_access_for_shift(
+            db_session, location, profile_early_access=profile_early
+        )
+        metrics = compute_shift_metrics(
+            clock_in_at_utc=shift.clock_in_at,
+            clock_out_at_utc=shift.clock_out_at,
+            break_seconds_tracked=int(shift.break_seconds or 0),
+            early_access_enabled=early_access,
+            policy=pol,
+        )
+        rs = int(metrics.rounded_seconds or 0)
+        out.append((shift.id, rs))
+    return out
+
+
 def item_to_response(db_session: Session, item: PayrollItem) -> PayrollItemResponse:
     email, name, job_title = _employee_display(db_session, item.user_id)
     return PayrollItemResponse(
@@ -741,7 +952,20 @@ def get_payroll_report(
             total_other_deductions=Decimal(0),
         )
         split = _build_pay_split([])
-        return PayrollReportResponse(period=empty, items=[], alerts=alerts, split=split)
+        acct_overlap = _accounting_export_overlaps_payroll_week(
+            db_session, company_id=company_id, week_start=week_start
+        )
+        return PayrollReportResponse(
+            period=empty,
+            items=[],
+            alerts=alerts,
+            split=split,
+            has_late_unpaid_shifts=False,
+            late_shift_count=0,
+            late_unpaid_total_rounded_seconds=0,
+            late_unpaid_employees=[],
+            accounting_payroll_export_overlaps=acct_overlap,
+        )
 
     all_items = list_items_for_period(db_session, period.id)
     if user_id is not None:
@@ -781,11 +1005,34 @@ def get_payroll_report(
         )
         return inner.model_copy(update={"payroll_auto_recalculated": True})
     split = _build_pay_split(all_items)
+    late_employees, late_secs, late_n = _compute_late_unpaid_employees(
+        db_session,
+        company_id=company_id,
+        week_start=week_start,
+        period=period,
+        all_items=all_items,
+        policy=policy,
+    )
+    acct_overlap = _accounting_export_overlaps_payroll_week(
+        db_session, company_id=company_id, week_start=period.week_start
+    )
+    leave_rows = _payroll_approved_leave_rows(
+        db_session,
+        company_id=company_id,
+        week_start=week_start,
+        filter_user_id=user_id,
+    )
     return PayrollReportResponse(
         period=_summarize_period(db_session, period, all_items),
         items=[item_to_response(db_session, i) for i in display_items],
         alerts=alerts,
         split=split,
+        has_late_unpaid_shifts=late_n > 0,
+        late_shift_count=late_n,
+        late_unpaid_total_rounded_seconds=late_secs,
+        late_unpaid_employees=late_employees,
+        accounting_payroll_export_overlaps=acct_overlap,
+        approved_leave_in_week=leave_rows,
     )
 
 
@@ -965,11 +1212,34 @@ def recalculate_payroll(
         all_items=items,
     )
     split = _build_pay_split(items)
+    late_employees, late_secs, late_n = _compute_late_unpaid_employees(
+        db_session,
+        company_id=company_id,
+        week_start=week_start,
+        period=period,
+        all_items=items,
+        policy=policy,
+    )
+    acct_overlap = _accounting_export_overlaps_payroll_week(
+        db_session, company_id=company_id, week_start=period.week_start
+    )
+    leave_rows = _payroll_approved_leave_rows(
+        db_session,
+        company_id=company_id,
+        week_start=week_start,
+        filter_user_id=None,
+    )
     return PayrollReportResponse(
         period=_summarize_period(db_session, period, items),
         items=[item_to_response(db_session, i) for i in items],
         alerts=alerts,
         split=split,
+        has_late_unpaid_shifts=late_n > 0,
+        late_shift_count=late_n,
+        late_unpaid_total_rounded_seconds=late_secs,
+        late_unpaid_employees=late_employees,
+        accounting_payroll_export_overlaps=acct_overlap,
+        approved_leave_in_week=leave_rows,
     )
 
 
@@ -984,6 +1254,30 @@ def patch_payroll_item(
     if item is None:
         raise PayrollError("Payroll item not found.")
     assert_payroll_company_scope(actor, item.company_id)
+
+    if item.status == "paid":
+        money_touched = (
+            request.payment_mode is not None
+            or request.other_deductions_amount is not None
+            or request.display_tax_amount is not None
+            or request.display_net_amount is not None
+        )
+        if money_touched:
+            raise PayrollError("Paid payroll rows are locked; only notes may be edited.")
+        if request.notes is not None:
+            item.notes = request.notes
+        item.updated_at = datetime.now(timezone.utc)
+        update_item(db_session, item)
+        create_internal_audit_event(
+            db_session=db_session,
+            actor=actor,
+            action="payroll_item_edited",
+            entity_type="payroll_item",
+            entity_id=str(item.id),
+            company_id=item.company_id,
+            details={"paid_locked": True},
+        )
+        return item_to_response(db_session, item)
 
     if request.notes is not None:
         item.notes = request.notes
@@ -1089,6 +1383,171 @@ def mark_paid_item(db_session: Session, actor: User, item_id: uuid.UUID) -> Payr
     return item_to_response(db_session, item)
 
 
+def undo_paid_item(
+    db_session: Session,
+    actor: User,
+    item_id: uuid.UUID,
+    request: PayrollUndoPaidRequest,
+) -> PayrollItemResponse:
+    assert_payroll_admin_or_administrator(actor)
+    if not request.confirm:
+        raise PayrollError("confirm must be true to undo paid status.")
+    item = get_item_by_id(db_session, item_id)
+    if item is None:
+        raise PayrollError("Payroll item not found.")
+    assert_payroll_company_scope(actor, item.company_id)
+    if item.status != "paid":
+        raise PayrollItemStateError("Only paid rows can be moved back to approved.")
+    period = db_session.get(PayrollPeriod, item.period_id)
+    if period is None:
+        raise PayrollError("Payroll period not found.")
+    overlap = _accounting_export_overlaps_payroll_week(
+        db_session,
+        company_id=item.company_id,
+        week_start=period.week_start,
+    )
+    if overlap and not request.acknowledge_accounting_export:
+        raise PayrollError(
+            "An accounting payroll export overlaps this week. "
+            "Set acknowledge_accounting_export to true if you still want to undo paid."
+        )
+    prev_paid_at = item.paid_at.isoformat() if item.paid_at else None
+    prev_paid_by = str(item.paid_by_user_id) if item.paid_by_user_id else None
+    item.status = "approved"
+    item.paid_at = None
+    item.paid_by_user_id = None
+    item.updated_at = datetime.now(timezone.utc)
+    update_item(db_session, item)
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="payroll.payment_undone",
+        entity_type="payroll_item",
+        entity_id=str(item.id),
+        company_id=item.company_id,
+        details={
+            "item_id": str(item.id),
+            "period_id": str(item.period_id),
+            "user_id": str(item.user_id),
+            "company_id": str(item.company_id),
+            "week_start": str(period.week_start),
+            "reason": request.reason.strip(),
+            "actor_user_id": str(actor.id),
+            "previous_paid_at": prev_paid_at,
+            "previous_paid_by_user_id": prev_paid_by,
+            "accounting_export_overlap": overlap,
+        },
+    )
+    return item_to_response(db_session, item)
+
+
+def create_late_shift_adjustment_from_paid_item(
+    db_session: Session,
+    actor: User,
+    paid_item_id: uuid.UUID,
+    request: PayrollLateAdjustmentRequest,
+) -> PayrollItemResponse:
+    assert_payroll_admin_or_administrator(actor)
+    if not request.confirm:
+        raise PayrollError("confirm must be true to create an adjustment.")
+    paid_ref = get_item_by_id(db_session, paid_item_id)
+    if paid_ref is None:
+        raise PayrollError("Payroll item not found.")
+    assert_payroll_company_scope(actor, paid_ref.company_id)
+    if paid_ref.status != "paid" or paid_ref.paid_at is None:
+        raise PayrollItemStateError(
+            "Create adjustment from a paid payroll row that has a paid timestamp.",
+        )
+    period = db_session.get(PayrollPeriod, paid_ref.period_id)
+    if period is None:
+        raise PayrollError("Payroll period not found.")
+    policy = ensure_company_time_policy(db_session, paid_ref.company_id)
+    all_items = list_items_for_period(db_session, period.id)
+    reserved = reserved_late_shift_ids_for_user_period(all_items, paid_ref.user_id)
+    candidates = _late_shift_rounded_entries_after_paid_cutoff(
+        db_session,
+        company_id=paid_ref.company_id,
+        week_start=period.week_start,
+        policy=policy,
+        user_id=paid_ref.user_id,
+        paid_cutoff=paid_ref.paid_at,
+        reserved_ids=reserved,
+    )
+    cand_map: dict[uuid.UUID, int] = {sid: sec for sid, sec in candidates}
+    if request.shift_ids:
+        wanted = set(request.shift_ids)
+        if not wanted.issubset(cand_map.keys()):
+            raise PayrollError("One or more shift_ids are not uncovered late shifts for this paid row.")
+        selected = [(sid, cand_map[sid]) for sid in wanted]
+    else:
+        selected = list(candidates)
+    if not selected:
+        raise PayrollError("No late unpaid shifts remain for an adjustment.")
+    total_r = sum(sec for _sid, sec in selected)
+    shift_ids_ordered = [sid for sid, _sec in selected]
+    reg_s, ot_s = split_regular_overtime(total_r, policy.overtime_after_hours)
+    pay_mode = normalize_payroll_payment_mode(paid_ref.payment_mode)
+    hourly = _decimal_or_none(paid_ref.hourly_rate_snapshot)
+    tax_pct = _decimal_or_none(paid_ref.tax_rate_snapshot)
+    ot_mult = _decimal_or_none(paid_ref.overtime_multiplier_snapshot) or Decimal(1)
+    other_d = Decimal(0)
+    bundle = compute_money_bundle(
+        regular_seconds=reg_s,
+        overtime_seconds=ot_s,
+        hourly_rate=hourly,
+        overtime_multiplier=ot_mult,
+        tax_rate_percent=tax_pct,
+        other_deductions=other_d,
+        payment_mode=pay_mode,
+    )
+    snap = paid_ref.policy_snapshot if paid_ref.policy_snapshot else policy_snapshot_dict(policy)
+    base_note = "Adjustment for late completed shifts after payroll was paid"
+    notes_val = append_late_shift_ids_marker(base_note, shift_ids_ordered)
+    new_item = PayrollItem(
+        period_id=period.id,
+        user_id=paid_ref.user_id,
+        company_id=paid_ref.company_id,
+        regular_seconds=reg_s,
+        overtime_seconds=ot_s,
+        rounded_total_seconds=total_r,
+        hourly_rate_snapshot=float(hourly) if hourly is not None else None,
+        tax_rate_snapshot=float(tax_pct) if tax_pct is not None else None,
+        overtime_multiplier_snapshot=float(ot_mult),
+        gross_amount=float(bundle["gross_amount"]) if bundle["gross_amount"] is not None else None,
+        tax_amount=float(bundle["tax_amount"]) if bundle["tax_amount"] is not None else None,
+        net_amount=float(bundle["net_amount"]) if bundle["net_amount"] is not None else None,
+        other_deductions_amount=float(other_d),
+        display_tax_amount=float(bundle["display_tax_amount"]) if bundle["display_tax_amount"] is not None else None,
+        display_net_amount=float(bundle["display_net_amount"]) if bundle["display_net_amount"] is not None else None,
+        policy_snapshot=snap,
+        status="pending",
+        rate_missing=bool(bundle["rate_missing"]),
+        payment_mode=pay_mode,
+        notes=notes_val,
+    )
+    save_item(db_session, new_item)
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="payroll.adjustment_created",
+        entity_type="payroll_item",
+        entity_id=str(new_item.id),
+        company_id=paid_ref.company_id,
+        details={
+            "new_item_id": str(new_item.id),
+            "reference_paid_item_id": str(paid_ref.id),
+            "period_id": str(period.id),
+            "user_id": str(paid_ref.user_id),
+            "company_id": str(paid_ref.company_id),
+            "week_start": str(period.week_start),
+            "shift_count": len(shift_ids_ordered),
+            "rounded_seconds": total_r,
+            "actor_user_id": str(actor.id),
+        },
+    )
+    return item_to_response(db_session, new_item)
+
+
 def approve_all_pending(
     db_session: Session,
     actor: User,
@@ -1128,11 +1587,34 @@ def approve_all_pending(
         all_items=items,
     )
     split = _build_pay_split(items)
+    late_employees, late_secs, late_n = _compute_late_unpaid_employees(
+        db_session,
+        company_id=company_id,
+        week_start=week_start,
+        period=period,
+        all_items=items,
+        policy=policy,
+    )
+    acct_overlap = _accounting_export_overlaps_payroll_week(
+        db_session, company_id=company_id, week_start=period.week_start
+    )
+    leave_rows = _payroll_approved_leave_rows(
+        db_session,
+        company_id=company_id,
+        week_start=week_start,
+        filter_user_id=None,
+    )
     return PayrollReportResponse(
         period=_summarize_period(db_session, period, items),
         items=[item_to_response(db_session, i) for i in items],
         alerts=alerts,
         split=split,
+        has_late_unpaid_shifts=late_n > 0,
+        late_shift_count=late_n,
+        late_unpaid_total_rounded_seconds=late_secs,
+        late_unpaid_employees=late_employees,
+        accounting_payroll_export_overlaps=acct_overlap,
+        approved_leave_in_week=leave_rows,
     )
 
 

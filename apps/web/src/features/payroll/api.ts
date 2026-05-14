@@ -69,12 +69,49 @@ export type PayrollReportAlerts = {
   can_auto_recalculate?: boolean;
 };
 
+export type PayrollLateShiftRow = {
+  shift_id: string;
+  clock_in_at: string;
+  clock_out_at: string | null;
+  rounded_seconds: number;
+  reason: string;
+  reference_paid_item_id: string | null;
+};
+
+export type PayrollLateUnpaidEmployee = {
+  user_id: string;
+  employee_email: string | null;
+  employee_name: string | null;
+  total_late_rounded_seconds: number;
+  shifts: PayrollLateShiftRow[];
+  estimated_gross_amount: string | null;
+  estimated_net_amount: string | null;
+  estimated_cis_tax_amount: string | null;
+};
+
+export type PayrollApprovedLeaveRow = {
+  user_id: string;
+  employee_email: string | null;
+  employee_name: string | null;
+  leave_type: string;
+  date_from: string;
+  date_to: string;
+  total_days: string;
+};
+
 export type PayrollReportResponse = {
   period: PayrollPeriodSummary;
   items: PayrollItemRow[];
   alerts: PayrollReportAlerts;
   split: PayrollPaySplit;
   payroll_auto_recalculated?: boolean;
+  has_late_unpaid_shifts?: boolean;
+  late_shift_count?: number;
+  late_unpaid_total_rounded_seconds?: number;
+  late_unpaid_employees?: PayrollLateUnpaidEmployee[];
+  accounting_payroll_export_overlaps?: boolean;
+  approved_leave_in_week?: PayrollApprovedLeaveRow[];
+  payroll_leave_review_note?: string;
 };
 
 export type PayrollMonthSummary = {
@@ -292,6 +329,71 @@ export async function unlockPayrollItem(itemId: string): Promise<PayrollItemRow>
   });
   if (!response.ok) {
     throw new Error("Could not unlock row.");
+  }
+  return response.json() as Promise<PayrollItemRow>;
+}
+
+export type UndoPayrollPaidRequest = {
+  reason: string;
+  confirm: boolean;
+  acknowledge_accounting_export?: boolean;
+};
+
+export type PayrollLateAdjustmentBody = {
+  confirm: boolean;
+  shift_ids?: string[] | null;
+};
+
+export async function undoPayrollPaid(
+  itemId: string,
+  body: UndoPayrollPaidRequest,
+): Promise<PayrollItemRow> {
+  const response = await fetch(`${API_URL}/api/payroll/items/${encodeURIComponent(itemId)}/undo-paid`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      reason: body.reason,
+      confirm: body.confirm,
+      acknowledge_accounting_export: body.acknowledge_accounting_export ?? false,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(
+      fastApiDetailToMessage(
+        (detail as { detail?: unknown }).detail,
+        "Could not undo paid status.",
+      ),
+    );
+  }
+  return response.json() as Promise<PayrollItemRow>;
+}
+
+export async function createPayrollLateShiftAdjustment(
+  paidItemId: string,
+  body: PayrollLateAdjustmentBody,
+): Promise<PayrollItemRow> {
+  const response = await fetch(
+    `${API_URL}/api/payroll/items/${encodeURIComponent(paidItemId)}/adjustment-for-late-shifts`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({
+        confirm: body.confirm,
+        shift_ids: body.shift_ids ?? null,
+      }),
+    },
+  );
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(
+      fastApiDetailToMessage(
+        (detail as { detail?: unknown }).detail,
+        "Could not create adjustment row.",
+      ),
+    );
   }
   return response.json() as Promise<PayrollItemRow>;
 }

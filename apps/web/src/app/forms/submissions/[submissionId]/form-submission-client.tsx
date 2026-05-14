@@ -4,14 +4,15 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button, Input, PageHeader } from "../../../../components/ui";
+import { SignaturePad } from "../../../../components/signature/signature-pad";
 import { useCurrentUser } from "../../../../features/auth";
 import {
   clearSmartFormLocalDraft,
-  isNavigatorOffline,
   loadSmartFormLocalDraft,
   saveSmartFormLocalDraft,
 } from "../../../../features/offline";
 import {
+  downloadSmartFormSubmissionPdf,
   getSmartFormSubmission,
   getSmartFormTemplate,
   patchSmartFormSubmission,
@@ -200,9 +201,26 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
   const [locations, setLocations] = useState<WorkProgressLocationOption[]>([]);
   const [locationId, setLocationId] = useState("");
   const [signatureName, setSignatureName] = useState("");
+  const [signaturePng, setSignaturePng] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [navigatorOffline, setNavigatorOffline] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const sync = () => setNavigatorOffline(typeof navigator !== "undefined" && !navigator.onLine);
+    sync();
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+
+  const offlineBlock = mounted && navigatorOffline;
 
   const fields = useMemo(() => {
     const schema = template?.schema_json;
@@ -220,13 +238,14 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
       setAnswers({ ...(sub.answers_json ?? {}) });
       setLocationId(sub.location_id ?? "");
       setSignatureName(sub.signature_name ?? "");
+      setSignaturePng(null);
       const tpl = await getSmartFormTemplate(sub.template_id);
       setTemplate(tpl);
       if (tpl.requires_location) {
         const opt = await fetchWorkProgressMeOptions();
         setLocations(opt.locations);
       }
-      if (user?.id && isNavigatorOffline()) {
+      if (user?.id && typeof navigator !== "undefined" && !navigator.onLine) {
         const local = await loadSmartFormLocalDraft(user.id, tpl.id);
         if (local && (!sub.answers_json || Object.keys(sub.answers_json).length === 0)) {
           setAnswers(local.answers_json);
@@ -256,7 +275,7 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
     setError("");
     setNotice("");
     try {
-      if (isNavigatorOffline()) {
+      if (offlineBlock) {
         await saveSmartFormLocalDraft(user.id, template.id, answers);
         setNotice(t("forms.offline_local_saved"));
         return;
@@ -265,6 +284,7 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
         answers_json: answers,
         location_id: template.requires_location ? locationId || null : null,
         signature_name: template.requires_signature ? signatureName || null : null,
+        ...(template.requires_signature && signaturePng ? { signature_image_data: signaturePng } : {}),
       });
       setSubmission(updated);
       await clearSmartFormLocalDraft(user.id, template.id);
@@ -284,14 +304,19 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
     setError("");
     setNotice("");
     try {
-      if (isNavigatorOffline()) {
+      if (offlineBlock) {
         setError(t("offline.banner"));
+        return;
+      }
+      if (template.requires_signature && !submission.has_signature && !signaturePng) {
+        setError(t("forms.signature_draw_required", "Draw your signature before submitting."));
         return;
       }
       await patchSmartFormSubmission(submission.id, {
         answers_json: answers,
         location_id: template.requires_location ? locationId || null : null,
         signature_name: template.requires_signature ? signatureName || null : null,
+        ...(template.requires_signature && signaturePng ? { signature_image_data: signaturePng } : {}),
       });
       const done = await submitSmartFormSubmission(submission.id);
       setSubmission(done);
@@ -336,16 +361,12 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
         </label>
       ) : null}
 
-      {template?.requires_signature && !readOnly ? (
-        <label className="flex flex-col gap-1 text-sm">
-          <span>{t("forms.signature_name")}</span>
-          <Input onChange={(e) => setSignatureName(e.target.value)} value={signatureName} />
-        </label>
-      ) : null}
-
       {template?.schema_json.sections.map((sec) => (
-        <section className="space-y-3" key={sec.id}>
-          <h2 className="text-base font-semibold text-[var(--color-text)]">{sec.title}</h2>
+        <section
+          className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm"
+          key={sec.id}
+        >
+          <h2 className="border-b border-[var(--color-border)] pb-2 text-base font-semibold text-[var(--color-text)]">{sec.title}</h2>
           <div className="flex flex-col gap-4">
             {sec.fields.map((field) =>
               readOnly ? (
@@ -365,10 +386,62 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
         </section>
       ))}
 
+      {template?.requires_signature ? (
+        <div className="space-y-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+          <h2 className="border-b border-[var(--color-border)] pb-2 text-base font-semibold text-[var(--color-text)]">
+            {t("forms.sign_off_section", "Sign-off")}
+          </h2>
+          {readOnly ? (
+            <p className="text-sm text-[var(--color-text-soft)]">
+              {submission?.signature_name ? (
+                <>
+                  {t("forms.printed_name_label", "Printed name")}:{" "}
+                  <span className="font-medium text-[var(--color-text)]">{submission.signature_name}</span>
+                </>
+              ) : null}
+              {submission?.has_signature ? (
+                <span className="mt-1 block text-sm text-[var(--color-text)]">
+                  {t("forms.signature_on_file", "Drawn signature on file.")}
+                </span>
+              ) : (
+                <span className="mt-1 block text-sm text-amber-800">{t("forms.no_signature_recorded", "No drawn signature recorded.")}</span>
+              )}
+            </p>
+          ) : (
+            <>
+              <label className="flex flex-col gap-1 text-sm">
+                <span>{t("forms.printed_full_name", "Printed full name")}</span>
+                <Input onChange={(e) => setSignatureName(e.target.value)} value={signatureName} />
+              </label>
+              {submission?.has_signature ? (
+                <p className="text-sm text-[var(--color-text-soft)]">{t("forms.signature_saved", "Signature saved. Submit to finalise or draw again to replace.")}</p>
+              ) : null}
+              <SignaturePad disabled={busy || offlineBlock} value={signaturePng} onChange={setSignaturePng} />
+            </>
+          )}
+        </div>
+      ) : null}
+
       {submission?.review_notes ? (
         <div className="rounded border border-[var(--color-border)] bg-[var(--color-header)] p-3 text-sm">
           <div className="font-medium">{t("forms.review_notes")}</div>
           <p className="mt-1 whitespace-pre-wrap text-[var(--color-text-soft)]">{submission.review_notes}</p>
+        </div>
+      ) : null}
+
+      {submission && submission.status !== "draft" ? (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() =>
+              void downloadSmartFormSubmissionPdf(submission.id).catch((e) =>
+                setError(e instanceof Error ? e.message : t("forms.error_pdf", "Could not download PDF.")),
+              )
+            }
+          >
+            {t("forms.download_pdf", "Download PDF")}
+          </Button>
         </div>
       ) : null}
 
@@ -377,7 +450,7 @@ export function FormSubmissionClient({ submissionId }: { submissionId: string })
           <Button disabled={busy} onClick={() => void saveDraft()} type="button" variant="secondary">
             {t("forms.save_draft")}
           </Button>
-          <Button disabled={busy || isNavigatorOffline()} onClick={() => void submit()} type="button">
+          <Button disabled={busy || offlineBlock} onClick={() => void submit()} type="button">
             {t("forms.submit_form")}
           </Button>
         </div>

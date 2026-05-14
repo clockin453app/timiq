@@ -15,12 +15,15 @@ from .schemas import (
     ColleagueResponse,
     ConversationCreateRequest,
     ConversationListItem,
+    ConversationParticipantsAddRequest,
+    ConversationPatchRequest,
     MessageCreateRequest,
     MessageResponse,
 )
 from .service import (
     MessagingNotFoundError,
     MessagingPermissionError,
+    add_group_conversation_participants,
     append_message,
     archive_announcement,
     create_announcement,
@@ -33,6 +36,7 @@ from .service import (
     mark_announcement_read,
     mark_conversation_read,
     patch_announcement,
+    patch_group_conversation_title,
 )
 
 router = APIRouter(prefix="/api/messaging", tags=["messaging"])
@@ -173,6 +177,36 @@ def post_conversation(
         return create_conversation(db_session, current_user, body)
     except MessagingPermissionError as exc:
         raise _perm(exc) from exc
+
+
+@router.patch("/conversations/{conversation_id}", response_model=ConversationListItem)
+def patch_conversation_route(
+    conversation_id: uuid.UUID,
+    body: ConversationPatchRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> ConversationListItem:
+    try:
+        return patch_group_conversation_title(db_session, current_user, conversation_id, body)
+    except MessagingPermissionError as exc:
+        raise _perm(exc) from exc
+    except MessagingNotFoundError as exc:
+        raise _nf(exc) from exc
+
+
+@router.post("/conversations/{conversation_id}/participants", response_model=ConversationListItem)
+def post_conversation_participants(
+    conversation_id: uuid.UUID,
+    body: ConversationParticipantsAddRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> ConversationListItem:
+    try:
+        return add_group_conversation_participants(db_session, current_user, conversation_id, body)
+    except MessagingPermissionError as exc:
+        raise _perm(exc) from exc
+    except MessagingNotFoundError as exc:
+        raise _nf(exc) from exc
 
 
 @router.get("/conversations/{conversation_id}/messages", response_model=list[MessageResponse])

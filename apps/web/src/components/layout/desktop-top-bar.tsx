@@ -7,6 +7,8 @@ import { Building2, Clock, MessageSquare, UserRound } from "lucide-react";
 import { formatSystemRole, LogoutButton, useCurrentUser } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
+import { NotificationBell } from "./notification-bell";
+
 type DesktopTopBarProps = {
   activeHref?: string;
 };
@@ -91,6 +93,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
         {quickBtn("/clock", "nav.clock", "Clock In / Out", Clock)}
         {quickBtn("/site-progress", "nav.site_progress", "Site Progress", Building2)}
         {quickBtn("/messages", "nav.messages", "Messages", MessageSquare)}
+        <NotificationBell />
 
         <details className="relative shrink-0">
           <summary

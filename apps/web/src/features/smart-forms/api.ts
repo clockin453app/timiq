@@ -64,6 +64,7 @@ export type SmartFormSubmission = {
   reviewed_at: string | null;
   review_notes: string | null;
   signature_name: string | null;
+  has_signature: boolean;
   created_at: string;
   updated_at: string;
 };
@@ -214,7 +215,12 @@ export async function getSmartFormSubmission(submissionId: string): Promise<Smar
 
 export async function patchSmartFormSubmission(
   submissionId: string,
-  body: { answers_json?: Record<string, unknown>; location_id?: string | null; signature_name?: string | null },
+  body: {
+    answers_json?: Record<string, unknown>;
+    location_id?: string | null;
+    signature_name?: string | null;
+    signature_image_data?: string | null;
+  },
 ): Promise<SmartFormSubmissionWithTemplate> {
   const response = await fetch(`${API_URL}/api/smart-forms/submissions/${submissionId}`, {
     method: "PATCH",
@@ -274,6 +280,36 @@ export async function reviewSmartFormSubmission(
     throw new Error(await parseErrorMessage(response, "Could not record review."));
   }
   return response.json() as Promise<SmartFormSubmissionWithTemplate>;
+}
+
+export async function downloadSmartFormSubmissionPdf(submissionId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/smart-forms/submissions/${submissionId}/pdf`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not download PDF."));
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `form-${submissionId}.pdf`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function deleteSmartFormTemplate(templateId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/smart-forms/templates/${templateId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not delete template."));
+  }
 }
 
 export const EXAMPLE_SMART_FORM_SCHEMA: SmartFormSchemaJson = {

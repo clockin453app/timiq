@@ -1,8 +1,10 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.core.storage.file_response import content_disposition_attachment
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import (
     get_current_user,
@@ -11,6 +13,7 @@ from app.modules.auth.dependencies import (
 )
 from app.modules.auth.models import User
 from app.modules.smart_forms.schemas import (
+    SmartFormProfessionalTemplateResponse,
     SmartFormReviewQueueResponse,
     SmartFormReviewRequest,
     SmartFormSubmissionCreateRequest,
@@ -29,9 +32,12 @@ from app.modules.smart_forms.service import (
     archive_template,
     create_submission,
     create_template,
+    delete_template_hard,
+    export_submission_pdf_bytes,
     get_submission,
     get_template,
     list_my_submissions,
+    list_professional_templates,
     list_review_submissions_queue,
     list_templates,
     patch_submission,
@@ -41,6 +47,14 @@ from app.modules.smart_forms.service import (
 )
 
 router = APIRouter(prefix="/api/smart-forms", tags=["smart_forms"])
+
+
+@router.get("/professional-templates", response_model=list[SmartFormProfessionalTemplateResponse])
+def http_list_professional_templates(
+    current_user: User = Depends(require_authenticated_employee),
+) -> list[SmartFormProfessionalTemplateResponse]:
+    _ = current_user
+    return list_professional_templates()
 
 
 def _http_exc(exc: SmartFormError) -> HTTPException:
@@ -108,6 +122,19 @@ def http_archive_template(
         return archive_template(db_session, current_user, template_id)
     except (SmartFormNotFoundError, SmartFormPermissionError, SmartFormValidationError) as exc:
         raise _http_exc(exc) from exc
+
+
+@router.delete("/templates/{template_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def http_delete_template(
+    template_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        delete_template_hard(db_session, current_user, template_id)
+    except (SmartFormNotFoundError, SmartFormPermissionError, SmartFormValidationError) as exc:
+        raise _http_exc(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/submissions/me", response_model=list[SmartFormSubmissionWithTemplateResponse])
@@ -210,3 +237,17 @@ def http_review_submission(
         return review_submission(db_session, current_user, submission_id, body)
     except (SmartFormNotFoundError, SmartFormPermissionError, SmartFormValidationError) as exc:
         raise _http_exc(exc) from exc
+
+
+@router.get("/submissions/{submission_id}/pdf")
+def http_submission_pdf(
+    submission_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_authenticated_employee),
+) -> Response:
+    try:
+        raw, filename = export_submission_pdf_bytes(db_session, current_user, submission_id)
+    except (SmartFormNotFoundError, SmartFormPermissionError, SmartFormValidationError) as exc:
+        raise _http_exc(exc) from exc
+    headers = {"Content-Disposition": content_disposition_attachment(filename)}
+    return Response(content=raw, media_type="application/pdf", headers=headers)

@@ -7,6 +7,22 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class SmartFormProfessionalTemplateResponse(BaseModel):
+    model_config = ConfigDict(protected_namespaces=(), populate_by_name=True)
+
+    id: str
+    name: str
+    category: str
+    description: str
+    requires_location: bool
+    requires_signature: bool
+    allow_photos: bool
+    form_schema: dict[str, Any] = Field(
+        validation_alias="schema_json",
+        serialization_alias="schema_json",
+    )
+
+
 class SmartFormTemplateCreateRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=(), populate_by_name=True)
 
@@ -76,6 +92,10 @@ class SmartFormSubmissionPatchRequest(BaseModel):
     answers_json: dict[str, Any] | None = None
     location_id: uuid.UUID | None = None
     signature_name: str | None = Field(default=None, max_length=200)
+    signature_image_data: str | None = Field(
+        default=None,
+        description="PNG data URL (data:image/png;base64,...). Stored privately; never returned.",
+    )
 
 
 class SmartFormSubmissionResponse(BaseModel):
@@ -93,6 +113,7 @@ class SmartFormSubmissionResponse(BaseModel):
     reviewed_at: datetime | None
     review_notes: str | None
     signature_name: str | None
+    has_signature: bool = False
     created_at: datetime
     updated_at: datetime
 

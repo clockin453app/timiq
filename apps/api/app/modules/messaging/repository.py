@@ -247,3 +247,85 @@ def list_announcements_visible(
         .offset(offset)
     )
     return list(db_session.scalars(stmt).unique().all())
+
+
+def count_unread_visible_announcements(
+    db_session: Session,
+    *,
+    actor: User,
+    company_filter: uuid.UUID | None,
+    now: datetime,
+) -> int:
+    """Published announcements visible to the actor with no AnnouncementRead row."""
+    vis = _announcement_visibility_clause(actor, company_filter)
+    active = Announcement.is_active.is_(True)
+    not_expired = or_(Announcement.expires_at.is_(None), Announcement.expires_at > now)
+    published_live = and_(Announcement.published_at.isnot(None), Announcement.published_at <= now)
+    where = and_(active, not_expired, vis, published_live)
+    stmt = (
+        select(func.count())
+        .select_from(Announcement)
+        .outerjoin(
+            AnnouncementRead,
+            and_(
+                AnnouncementRead.announcement_id == Announcement.id,
+                AnnouncementRead.user_id == actor.id,
+            ),
+        )
+        .where(where)
+        .where(AnnouncementRead.id.is_(None))
+    )
+    return int(db_session.scalar(stmt) or 0)
+
+
+def count_conversations_with_unread_incoming(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+) -> int:
+    """Conversations where an incoming message exists after last_read_at (or last_read is null)."""
+    sub_exists = (
+        select(1)
+        .select_from(Message)
+        .where(
+            Message.conversation_id == ConversationParticipant.conversation_id,
+            Message.deleted_at.is_(None),
+            Message.sender_user_id != user_id,
+            or_(
+                ConversationParticipant.last_read_at.is_(None),
+                Message.created_at > ConversationParticipant.last_read_at,
+            ),
+        )
+        .exists()
+    )
+    stmt = (
+        select(func.count())
+        .select_from(ConversationParticipant)
+        .where(ConversationParticipant.user_id == user_id)
+        .where(sub_exists)
+    )
+    return int(db_session.scalar(stmt) or 0)
+
+
+def find_direct_conversation_between_users(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    user_a: uuid.UUID,
+    user_b: uuid.UUID,
+) -> Conversation | None:
+    """Return an existing direct conversation with exactly these two participants, if any."""
+    if user_a == user_b:
+        return None
+    convs = list_conversations_for_user(db_session, user_id=user_a, limit=200, offset=0)
+    want = {user_a, user_b}
+    for conv in convs:
+        if getattr(conv, "conversation_type", "direct") != "direct":
+            continue
+        if conv.company_id != company_id:
+            continue
+        parts = list_participants_for_conversation(db_session, conv.id)
+        ids = {p.user_id for p in parts}
+        if ids == want:
+            return conv
+    return None

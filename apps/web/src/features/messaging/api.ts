@@ -35,6 +35,10 @@ export type AnnouncementDetail = AnnouncementListItem & {
 export type ConversationListItem = {
   id: string;
   company_id: string;
+  conversation_type: string;
+  title: string | null;
+  participant_count: number;
+  other_user_display_name: string | null;
   updated_at: string;
   participant_user_ids: string[];
   last_message_preview: string | null;
@@ -180,6 +184,8 @@ export async function fetchConversations(): Promise<ConversationListItem[]> {
 
 export async function createConversation(body: {
   company_id?: string | null;
+  conversation_type?: "direct" | "group";
+  title?: string | null;
   participant_user_ids: string[];
   initial_message: string;
 }): Promise<ConversationListItem> {

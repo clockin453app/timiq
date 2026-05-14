@@ -9,6 +9,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.signature_data_url import SignatureDataUrlError, decode_png_data_url
+from app.core.storage.factory import get_storage_backend
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
@@ -23,7 +25,9 @@ from app.modules.rams.constants import (
     risk_band,
     risk_score,
 )
-from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsHazard
+from app.modules.rams.document_presets import RAMS_DOCUMENT_PRESETS, document_preset_public, get_document_preset_by_id
+from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard
+from app.modules.rams.print_service import build_professional_rams_print_html
 from app.modules.rams.schemas import (
     RamsAcknowledgementResponse,
     RamsAcknowledgementsAddRequest,
@@ -32,13 +36,18 @@ from app.modules.rams.schemas import (
     RamsAssessmentDetailResponse,
     RamsAssessmentListItem,
     RamsAssessmentPatchRequest,
+    RamsAttachmentResponse,
     RamsDeclineRequest,
+    RamsDocumentPresetPublic,
+    RamsFromPresetRequest,
     RamsHazardCreateRequest,
     RamsHazardPatchRequest,
     RamsHazardResponse,
     RamsPresetsResponse,
+    RamsSignoffProgress,
 )
 from app.modules.site_access.repository import list_site_access_for_location_ids
+from app.modules.work_progress.image_processing import detect_magic_file_kind, process_site_progress_photo
 
 
 class RamsError(Exception):
@@ -55,6 +64,69 @@ class RamsPermissionError(RamsError):
 
 class RamsValidationError(RamsError):
     pass
+
+
+_MAX_RAMS_ORIGINAL_BYTES = 25 * 1024 * 1024
+_MAX_RAMS_STORED_BYTES = 10 * 1024 * 1024
+_MAX_RAMS_ATTACHMENTS = 36
+_RAMS_SECTION_KEYS = frozenset(
+    {
+        "cover_image",
+        "emergency_plan",
+        "site_layout",
+        "welfare_area",
+        "delivery_area",
+        "storage_area",
+        "ppe_image",
+        "glove_image",
+        "method_step",
+        "hazard_image",
+        "safe_stand",
+        "housekeeping",
+        "coshh",
+        "other",
+    },
+)
+_STORED_JPEG = "image/jpeg"
+
+
+def _rams_process_upload_image(file_bytes: bytes) -> tuple[bytes, int, int, int]:
+    if len(file_bytes) == 0:
+        raise RamsValidationError("Uploaded file is empty.")
+    if len(file_bytes) > _MAX_RAMS_ORIGINAL_BYTES:
+        raise RamsValidationError("Image file is too large before processing.")
+    kind = detect_magic_file_kind(file_bytes)
+    if kind == "pdf":
+        raise RamsValidationError("PDF uploads are not allowed for RAMS photo slots in v1.")
+    if kind not in ("jpeg", "png", "webp"):
+        raise RamsValidationError("Unsupported image type. Only JPEG, PNG, or WebP are allowed.")
+    try:
+        processed, w, h = process_site_progress_photo(file_bytes)
+    except Exception:
+        raise RamsValidationError("Failed to process image. Try a different photo.") from None
+    if len(processed) > _MAX_RAMS_STORED_BYTES:
+        raise RamsValidationError("Processed image is too large.")
+    return processed, len(file_bytes), w, h
+
+
+def _coerce_str_list(val: object | None) -> list[str] | None:
+    if val is None:
+        return None
+    if isinstance(val, list):
+        return [str(x) for x in val]
+    return None
+
+
+def _coerce_obj_list(val: object | None) -> list[dict[str, object]] | None:
+    if val is None:
+        return None
+    if isinstance(val, list):
+        out: list[dict[str, object]] = []
+        for item in val:
+            if isinstance(item, dict):
+                out.append({str(k): v for k, v in item.items()})
+        return out or None
+    return None
 
 
 def _utc_now() -> datetime:
@@ -147,7 +219,35 @@ def _ack_to_response(
         acknowledged_at=row.acknowledged_at,
         acknowledgement_name=row.acknowledgement_name if row.status == "acknowledged" and (is_self or viewer.system_role != SystemRole.EMPLOYEE) else None,
         declined_reason=None if hide_peer_decline else row.declined_reason,
+        has_signature=bool((row.signature_image_path or "").strip()),
     )
+
+
+def _signoff_progress_rows(ack_rows: list[RamsAcknowledgement]) -> RamsSignoffProgress:
+    tot = len(ack_rows)
+    pen = sum(1 for a in ack_rows if a.status == "pending")
+    ack = sum(1 for a in ack_rows if a.status == "acknowledged")
+    dec = sum(1 for a in ack_rows if a.status == "declined")
+    return RamsSignoffProgress(total_assigned=tot, pending=pen, acknowledged=ack, declined=dec)
+
+
+def _attachments_public(db: Session, assessment_id: uuid.UUID) -> list[RamsAttachmentResponse]:
+    return [
+        RamsAttachmentResponse(
+            id=a.id,
+            assessment_id=assessment_id,
+            section_key=a.section_key,
+            hazard_id=a.hazard_id,
+            method_step_key=a.method_step_key,
+            caption=a.caption,
+            original_filename=a.original_filename,
+            content_type=a.content_type,
+            file_size_bytes=a.file_size_bytes,
+            created_at=a.created_at,
+            download_href=f"/api/rams/{assessment_id}/attachments/{a.id}/download",
+        )
+        for a in rams_repo.list_attachments_for_assessment(db, assessment_id)
+    ]
 
 
 def _build_detail(
@@ -156,8 +256,15 @@ def _build_detail(
     viewer: User,
 ) -> RamsAssessmentDetailResponse:
     hazards = [_hazard_to_response(h) for h in rams_repo.list_hazards(db, row.id)]
-    acks = [_ack_to_response(db, a, viewer=viewer) for a in rams_repo.list_acknowledgements_for_assessment(db, row.id)]
+    raw_ack = rams_repo.list_acknowledgements_for_assessment(db, row.id)
+    acks = [_ack_to_response(db, a, viewer=viewer) for a in raw_ack]
     ppe = _normalize_ppe(list(row.ppe_json) if isinstance(row.ppe_json, list) else [])
+    signoff: RamsSignoffProgress | None = None
+    if viewer.system_role in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR) and _can_admin_manage_company(
+        viewer, row.company_id
+    ):
+        signoff = _signoff_progress_rows(raw_ack)
+    attachments = _attachments_public(db, row.id)
     return RamsAssessmentDetailResponse(
         id=row.id,
         company_id=row.company_id,
@@ -178,8 +285,39 @@ def _build_detail(
         published_at=row.published_at,
         reviewed_at=row.reviewed_at,
         archived_at=row.archived_at,
+        project_name=getattr(row, "project_name", None),
+        client_name=getattr(row, "client_name", None),
+        principal_contractor=getattr(row, "principal_contractor", None),
+        subcontractor_name=getattr(row, "subcontractor_name", None),
+        site_address=getattr(row, "site_address", None),
+        revision=getattr(row, "revision", None) or "01",
+        reason_for_issue=getattr(row, "reason_for_issue", None),
+        produced_by_name=getattr(row, "produced_by_name", None),
+        checked_by_name=getattr(row, "checked_by_name", None),
+        approved_by_name=getattr(row, "approved_by_name", None),
+        emergency_contact=getattr(row, "emergency_contact", None),
+        site_manager=getattr(row, "site_manager", None),
+        first_aider=getattr(row, "first_aider", None),
+        fire_marshal=getattr(row, "fire_marshal", None),
+        muster_point=getattr(row, "muster_point", None),
+        nearest_hospital=getattr(row, "nearest_hospital", None),
+        emergency_arrangements=getattr(row, "emergency_arrangements", None),
+        site_security=getattr(row, "site_security", None),
+        welfare_arrangements=getattr(row, "welfare_arrangements", None),
+        public_protection=getattr(row, "public_protection", None),
+        deliveries_storage=getattr(row, "deliveries_storage", None),
+        scope_of_works=getattr(row, "scope_of_works", None),
+        sequence_of_works=_coerce_obj_list(getattr(row, "sequence_of_works", None)),
+        pre_start_checklist=_coerce_str_list(getattr(row, "pre_start_checklist", None)),
+        plant_tools=_coerce_str_list(getattr(row, "plant_tools", None)),
+        training_requirements=_coerce_str_list(getattr(row, "training_requirements", None)),
+        coshh_items=_coerce_str_list(getattr(row, "coshh_items", None)),
+        glove_requirements=_coerce_str_list(getattr(row, "glove_requirements", None)),
+        method_statement_sections=_coerce_obj_list(getattr(row, "method_statement_sections", None)),
         hazards=hazards,
         acknowledgements=acks,
+        attachments=attachments,
+        signoff_progress=signoff,
     )
 
 
@@ -201,7 +339,119 @@ def _can_view_assessment(db: Session, actor: User, row: RamsAssessment) -> bool:
 
 
 def get_presets() -> RamsPresetsResponse:
-    return RamsPresetsResponse(hazard_examples=list(HAZARD_EXAMPLE_PRESETS), ppe_options=list(PPE_OPTION_PRESETS))
+    doc_presets = [RamsDocumentPresetPublic.model_validate(document_preset_public(p)) for p in RAMS_DOCUMENT_PRESETS]
+    return RamsPresetsResponse(
+        hazard_examples=list(HAZARD_EXAMPLE_PRESETS),
+        ppe_options=list(PPE_OPTION_PRESETS),
+        document_presets=doc_presets,
+        assessment_presets=doc_presets,
+    )
+
+
+def create_assessment_from_preset(
+    db: Session,
+    actor: User,
+    body: RamsFromPresetRequest,
+) -> RamsAssessmentDetailResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    preset = get_document_preset_by_id(body.preset_id.strip())
+    if preset is None:
+        raise RamsValidationError("Unknown preset_id.")
+    company_id = body.company_id
+    if actor.system_role == SystemRole.ADMIN:
+        if actor.company_id is None:
+            raise RamsValidationError("Your account is not linked to a company.")
+        if company_id is not None and company_id != actor.company_id:
+            raise RamsPermissionError()
+        company_id = actor.company_id
+    elif actor.system_role == SystemRole.ADMINISTRATOR:
+        if company_id is None:
+            raise RamsValidationError("company_id is required.")
+    else:
+        raise RamsPermissionError()
+    assert company_id is not None
+    rl = preset["risk_level"].strip().lower()
+    if rl not in RISK_LEVELS:
+        raise RamsValidationError("Invalid preset risk_level.")
+    _assert_location_for_company(db, company_id, body.location_id)
+    now = _utc_now()
+    ppe = _normalize_ppe(list(preset["ppe"]))
+
+    def _strip_opt(val: str | None) -> str | None:
+        if val is None:
+            return None
+        t = val.strip()
+        return t or None
+
+    mg = list(preset.get("mandatory_gloves") or [])
+    gr = list(preset.get("glove_requirements") or [])
+    gloves_combined: list[str] | None = (mg + gr) if (mg or gr) else None
+    row = RamsAssessment(
+        company_id=company_id,
+        location_id=body.location_id,
+        title=preset["title"].strip()[:300],
+        reference=body.reference.strip() if body.reference else None,
+        work_activity=preset["work_activity"].strip()[:2000],
+        description=(preset["description"] or "").strip() or None,
+        status="draft",
+        risk_level=rl,
+        review_due_date=body.review_due_date,
+        ppe_json=ppe,
+        no_special_ppe=len(ppe) == 0,
+        created_by_user_id=actor.id,
+        reviewed_by_user_id=None,
+        created_at=now,
+        updated_at=now,
+        published_at=None,
+        reviewed_at=None,
+        archived_at=None,
+        project_name=_strip_opt(body.project_name),
+        client_name=_strip_opt(body.client_name),
+        principal_contractor=_strip_opt(body.principal_contractor),
+        subcontractor_name=_strip_opt(body.subcontractor_name),
+        site_address=_strip_opt(body.site_address),
+        revision="01",
+        sequence_of_works=preset.get("sequence_of_works"),
+        pre_start_checklist=preset.get("pre_start_checklist"),
+        plant_tools=preset.get("plant_tools"),
+        training_requirements=preset.get("training_requirements"),
+        coshh_items=preset.get("coshh_items"),
+        glove_requirements=gloves_combined,
+        method_statement_sections=preset.get("method_statement_sections"),
+    )
+    rams_repo.save_assessment(db, row)
+    for i, hz in enumerate(preset["hazards"]):
+        hrow = RamsHazard(
+            assessment_id=row.id,
+            company_id=company_id,
+            hazard=hz["hazard"].strip()[:2000],
+            who_might_be_harmed=(hz["who_might_be_harmed"] or "").strip()[:2000] or None,
+            initial_likelihood=int(hz["initial_likelihood"]),
+            initial_severity=int(hz["initial_severity"]),
+            control_measures=hz["control_measures"].strip(),
+            residual_likelihood=int(hz["residual_likelihood"]),
+            residual_severity=int(hz["residual_severity"]),
+            sort_order=i,
+            created_at=now,
+            updated_at=now,
+        )
+        rams_repo.save_hazard(db, hrow)
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="rams.assessment_created_from_preset",
+        entity_type="rams_assessment",
+        entity_id=str(row.id),
+        company_id=row.company_id,
+        details={
+            "assessment_id": str(row.id),
+            "preset_id": body.preset_id.strip(),
+            "actor_user_id": str(actor.id),
+            "hazard_count": len(preset["hazards"]),
+        },
+    )
+    return _build_detail(db, row, actor)
 
 
 def list_me(db: Session, actor: User) -> list[RamsAssessmentListItem]:
@@ -417,6 +667,92 @@ def patch_assessment(
         if bool(body.no_special_ppe) != row.no_special_ppe:
             changed.append("no_special_ppe")
         row.no_special_ppe = bool(body.no_special_ppe)
+
+    def _set_text(name: str, val: str | None) -> None:
+        nonlocal changed
+        if val is None:
+            return
+        stripped = val.strip() or None
+        if getattr(row, name) != stripped:
+            changed.append(name)
+            setattr(row, name, stripped)
+
+    _set_text("project_name", body.project_name)
+    _set_text("client_name", body.client_name)
+    _set_text("principal_contractor", body.principal_contractor)
+    _set_text("subcontractor_name", body.subcontractor_name)
+    if body.site_address is not None:
+        ns = body.site_address.strip() or None
+        if row.site_address != ns:
+            changed.append("site_address")
+        row.site_address = ns
+    _set_text("revision", body.revision)
+    if body.reason_for_issue is not None:
+        ns = body.reason_for_issue.strip() or None
+        if row.reason_for_issue != ns:
+            changed.append("reason_for_issue")
+        row.reason_for_issue = ns
+    _set_text("produced_by_name", body.produced_by_name)
+    _set_text("checked_by_name", body.checked_by_name)
+    _set_text("approved_by_name", body.approved_by_name)
+    _set_text("emergency_contact", body.emergency_contact)
+    _set_text("site_manager", body.site_manager)
+    _set_text("first_aider", body.first_aider)
+    _set_text("fire_marshal", body.fire_marshal)
+    _set_text("muster_point", body.muster_point)
+    _set_text("nearest_hospital", body.nearest_hospital)
+    if body.emergency_arrangements is not None:
+        ns = body.emergency_arrangements.strip() or None
+        if row.emergency_arrangements != ns:
+            changed.append("emergency_arrangements")
+        row.emergency_arrangements = ns
+    if body.site_security is not None:
+        ns = body.site_security.strip() or None
+        if row.site_security != ns:
+            changed.append("site_security")
+        row.site_security = ns
+    if body.welfare_arrangements is not None:
+        ns = body.welfare_arrangements.strip() or None
+        if row.welfare_arrangements != ns:
+            changed.append("welfare_arrangements")
+        row.welfare_arrangements = ns
+    if body.public_protection is not None:
+        ns = body.public_protection.strip() or None
+        if row.public_protection != ns:
+            changed.append("public_protection")
+        row.public_protection = ns
+    if body.deliveries_storage is not None:
+        ns = body.deliveries_storage.strip() or None
+        if row.deliveries_storage != ns:
+            changed.append("deliveries_storage")
+        row.deliveries_storage = ns
+    if body.scope_of_works is not None:
+        ns = body.scope_of_works.strip() or None
+        if row.scope_of_works != ns:
+            changed.append("scope_of_works")
+        row.scope_of_works = ns
+    if body.sequence_of_works is not None:
+        row.sequence_of_works = body.sequence_of_works
+        changed.append("sequence_of_works")
+    if body.pre_start_checklist is not None:
+        row.pre_start_checklist = body.pre_start_checklist
+        changed.append("pre_start_checklist")
+    if body.plant_tools is not None:
+        row.plant_tools = body.plant_tools
+        changed.append("plant_tools")
+    if body.training_requirements is not None:
+        row.training_requirements = body.training_requirements
+        changed.append("training_requirements")
+    if body.coshh_items is not None:
+        row.coshh_items = body.coshh_items
+        changed.append("coshh_items")
+    if body.glove_requirements is not None:
+        row.glove_requirements = body.glove_requirements
+        changed.append("glove_requirements")
+    if body.method_statement_sections is not None:
+        row.method_statement_sections = body.method_statement_sections
+        changed.append("method_statement_sections")
+
     _assert_location_for_company(db, row.company_id, row.location_id)
     row.updated_at = _utc_now()
     rams_repo.save_assessment(db, row)
@@ -758,6 +1094,19 @@ def acknowledge_assessment(db: Session, actor: User, assessment_id: uuid.UUID, b
     if att.status != "pending":
         raise RamsValidationError("You cannot acknowledge in the current state.")
     name = body.acknowledgement_name.strip()
+    try:
+        png = decode_png_data_url(body.signature_image_data)
+    except SignatureDataUrlError as exc:
+        raise RamsValidationError(str(exc)) from exc
+    rel = f"rams-signatures/{row.company_id}/{assessment_id}/{actor.id}/signature-{uuid.uuid4().hex}.png"
+    backend = get_storage_backend()
+    if att.signature_image_path:
+        try:
+            backend.delete_file(att.signature_image_path)
+        except Exception:
+            pass
+    backend.write_bytes(rel, png)
+    att.signature_image_path = rel
     att.status = "acknowledged"
     att.acknowledgement_name = name
     att.acknowledged_at = _utc_now()
@@ -817,60 +1166,7 @@ def decline_assessment(db: Session, actor: User, assessment_id: uuid.UUID, body:
 
 def render_print_html(db: Session, actor: User, assessment_id: uuid.UUID) -> str:
     detail = get_assessment_detail(db, actor, assessment_id)
-    company = get_company_by_id(db, detail.company_id)
-    company_name = html.escape(company.name if company else "Company")
-    loc_name = "—"
-    if detail.location_id:
-        loc = get_location_by_id(db, detail.location_id)
-        if loc:
-            loc_name = html.escape(loc.name)
-    title = html.escape(detail.title)
-    ref = html.escape(detail.reference or "—")
-    work = html.escape(detail.work_activity).replace("\n", "<br/>")
-    desc = html.escape(detail.description or "").replace("\n", "<br/>") if detail.description else "—"
-    ppe_lines = "".join(f"<li>{html.escape(p)}</li>" for p in detail.ppe_json)
-    if not ppe_lines:
-        ppe_lines = "<li>—</li>" if not detail.no_special_ppe else "<li>No special PPE (as recorded)</li>"
-
-    haz_rows = []
-    for h in detail.hazards:
-        haz_rows.append(
-            "<tr>"
-            f"<td>{html.escape(h.hazard)}</td>"
-            f"<td>{html.escape(h.who_might_be_harmed or '—')}</td>"
-            f"<td>{h.initial_risk_score} ({html.escape(h.initial_risk_band)})</td>"
-            f"<td>{html.escape(h.control_measures).replace('\n', '<br/>')}</td>"
-            f"<td>{h.residual_risk_score} ({html.escape(h.residual_risk_band)})</td>"
-            "</tr>",
-        )
-
-    ack_rows = []
-    raw_ack = rams_repo.list_acknowledgements_for_assessment(db, assessment_id)
-    for a in raw_ack:
-        sch = _ack_to_response(db, a, viewer=actor)
-        if actor.system_role == SystemRole.EMPLOYEE and a.user_id != actor.id:
-            ack_rows.append(
-                "<tr>"
-                f"<td>{html.escape(sch.display_name or 'Employee')}</td>"
-                f"<td>{html.escape(sch.status)}</td>"
-                f"<td>{html.escape(sch.acknowledged_at.isoformat() if sch.acknowledged_at else '—')}</td>"
-                f"<td>{html.escape(sch.acknowledgement_name or '—')}</td>"
-                "<td>—</td>"
-                "</tr>",
-            )
-        else:
-            u = get_user_by_id(db, a.user_id)
-            email = html.escape(u.email if u else "")
-            ack_rows.append(
-                "<tr>"
-                f"<td>{html.escape(sch.display_name or '')} ({email})</td>"
-                f"<td>{html.escape(sch.status)}</td>"
-                f"<td>{html.escape(sch.acknowledged_at.isoformat() if sch.acknowledged_at else '—')}</td>"
-                f"<td>{html.escape(sch.acknowledgement_name or '—')}</td>"
-                f"<td>{html.escape(sch.declined_reason or '—')}</td>"
-                "</tr>",
-            )
-
+    html_out = build_professional_rams_print_html(detail)
     create_internal_audit_event(
         db_session=db,
         actor=actor,
@@ -878,38 +1174,123 @@ def render_print_html(db: Session, actor: User, assessment_id: uuid.UUID) -> str
         entity_type="rams_assessment",
         entity_id=str(assessment_id),
         company_id=detail.company_id,
-        details={"assessment_id": str(assessment_id), "actor_user_id": str(actor.id), "export_type": "print_html"},
+        details={"assessment_id": str(assessment_id), "actor_user_id": str(actor.id), "export_type": "print_html_pack"},
     )
-    gen = html.escape(_utc_now().isoformat())
-    return f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/><title>RAMS — {title}</title>
-<style>
-body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #222; }}
-h1 {{ font-size: 22px; }}
-table {{ border-collapse: collapse; width: 100%; margin-top: 16px; }}
-th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 13px; vertical-align: top; }}
-th {{ background: #f5f5f5; }}
-.meta {{ font-size: 14px; color: #444; }}
-@media print {{ body {{ margin: 12px; }} }}
-</style></head><body>
-<h1>Risk assessment (RAMS) record</h1>
-<p class="meta"><strong>Company:</strong> {company_name}</p>
-<p class="meta"><strong>Title:</strong> {title}</p>
-<p class="meta"><strong>Reference:</strong> {ref}</p>
-<p class="meta"><strong>Location:</strong> {loc_name}</p>
-<p class="meta"><strong>Work activity:</strong></p><div class="meta">{work}</div>
-<p class="meta"><strong>Description:</strong></p><div class="meta">{desc}</div>
-<p class="meta"><strong>Risk level (overall):</strong> {html.escape(detail.risk_level)}</p>
-<p class="meta"><strong>Status:</strong> {html.escape(detail.status)}</p>
-<p class="meta"><strong>Review due:</strong> {html.escape(str(detail.review_due_date) if detail.review_due_date else '—')}</p>
-<h2 style="margin-top:20px;font-size:16px;">PPE</h2>
-<ul>{ppe_lines}</ul>
-<h2 style="margin-top:20px;font-size:16px;">Hazards</h2>
-<table><thead><tr><th>Hazard</th><th>Who might be harmed</th><th>Initial risk</th><th>Controls</th><th>Residual risk</th></tr></thead><tbody>{"".join(haz_rows)}</tbody></table>
-<h2 style="margin-top:20px;font-size:16px;">Acknowledgements</h2>
-<table><thead><tr><th>Employee</th><th>Status</th><th>Acknowledged at</th><th>Name given</th><th>Declined reason</th></tr></thead><tbody>{"".join(ack_rows)}</tbody></table>
-<p style="margin-top:16px;font-size:12px;color:#666;">Generated {gen}. Use Print to save as PDF.</p>
-</body></html>"""
+    return html_out
+
+
+def list_rams_attachments_service(db: Session, actor: User, assessment_id: uuid.UUID) -> list[RamsAttachmentResponse]:
+    get_assessment_detail(db, actor, assessment_id)
+    return _attachments_public(db, assessment_id)
+
+
+def upload_rams_attachment_service(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+    *,
+    file_bytes: bytes,
+    original_filename: str,
+    section_key: str,
+    caption: str | None,
+    hazard_id: uuid.UUID | None,
+    method_step_key: str | None,
+) -> RamsAssessmentDetailResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_admin_manage_company(actor, row.company_id):
+        raise RamsNotFoundError()
+    if row.status == "archived":
+        raise RamsValidationError("Archived assessments cannot be edited.")
+    sk = section_key.strip()
+    if sk not in _RAMS_SECTION_KEYS:
+        raise RamsValidationError("Invalid section_key.")
+    if hazard_id is not None:
+        hz = rams_repo.get_hazard(db, hazard_id)
+        if hz is None or hz.assessment_id != assessment_id:
+            raise RamsValidationError("Invalid hazard_id for this assessment.")
+    if rams_repo.count_attachments_for_assessment(db, assessment_id) >= _MAX_RAMS_ATTACHMENTS:
+        raise RamsValidationError("Maximum RAMS attachments reached for this assessment.")
+    processed, _orig_len, _w, _h = _rams_process_upload_image(file_bytes)
+    rel_path = f"rams-files/{row.company_id}/{assessment_id}/{uuid.uuid4().hex}.jpg"
+    get_storage_backend().write_bytes(rel_path, processed)
+    now = _utc_now()
+    cap = caption.strip() if caption else None
+    att = RamsAttachment(
+        assessment_id=assessment_id,
+        company_id=row.company_id,
+        section_key=sk,
+        hazard_id=hazard_id,
+        method_step_key=method_step_key.strip()[:120] if method_step_key else None,
+        original_filename=(original_filename or "upload.jpg")[:500],
+        content_type=_STORED_JPEG,
+        file_size_bytes=len(processed),
+        storage_path=rel_path,
+        caption=cap[:500] if cap else None,
+        created_by_user_id=actor.id,
+        created_at=now,
+    )
+    rams_repo.save_attachment(db, att)
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="rams.attachment_uploaded",
+        entity_type="rams_attachment",
+        entity_id=str(att.id),
+        company_id=row.company_id,
+        details={"assessment_id": str(assessment_id), "section_key": sk},
+    )
+    row2 = rams_repo.get_assessment(db, assessment_id)
+    assert row2 is not None
+    return _build_detail(db, row2, actor)
+
+
+def delete_rams_attachment_service(db: Session, actor: User, assessment_id: uuid.UUID, attachment_id: uuid.UUID) -> None:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_admin_manage_company(actor, row.company_id):
+        raise RamsNotFoundError()
+    if row.status == "archived":
+        raise RamsValidationError("Archived assessments cannot be edited.")
+    att = rams_repo.get_attachment(db, attachment_id)
+    if att is None or att.assessment_id != assessment_id:
+        raise RamsNotFoundError()
+    try:
+        get_storage_backend().delete_file(att.storage_path)
+    except OSError:
+        pass
+    rams_repo.delete_attachment(db, att)
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="rams.attachment_deleted",
+        entity_type="rams_attachment",
+        entity_id=str(attachment_id),
+        company_id=row.company_id,
+        details={"assessment_id": str(assessment_id)},
+    )
+
+
+def download_rams_attachment_file(
+    db: Session, actor: User, assessment_id: uuid.UUID, attachment_id: uuid.UUID
+) -> tuple[bytes, str, str]:
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_view_assessment(db, actor, row):
+        raise RamsNotFoundError()
+    att = rams_repo.get_attachment(db, attachment_id)
+    if att is None or att.assessment_id != assessment_id:
+        raise RamsNotFoundError()
+    data = get_storage_backend().read_bytes(att.storage_path)
+    name = att.original_filename or "download.jpg"
+    return data, name, att.content_type
 
 
 def export_csv_bytes(db: Session, actor: User, assessment_id: uuid.UUID) -> tuple[bytes, str]:
@@ -973,3 +1354,59 @@ def export_csv_bytes(db: Session, actor: User, assessment_id: uuid.UUID) -> tupl
         details={"assessment_id": str(assessment_id), "actor_user_id": str(actor.id), "export_type": "csv"},
     )
     return buf.getvalue().encode("utf-8"), f"rams-{assessment_id}.csv"
+
+
+def delete_assessment_hard(db: Session, actor: User, assessment_id: uuid.UUID) -> None:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_admin_manage_company(actor, row.company_id):
+        raise RamsNotFoundError()
+    if row.status != "draft":
+        raise RamsValidationError("Only draft RAMS can be permanently deleted. Archive assessments with compliance history.")
+    for a in rams_repo.list_acknowledgements_for_assessment(db, assessment_id):
+        if a.status != "pending":
+            raise RamsValidationError("This RAMS has acknowledgement activity. Archive it instead of deleting.")
+        if a.signature_image_path:
+            try:
+                get_storage_backend().delete_file(a.signature_image_path)
+            except Exception:
+                pass
+    for att in rams_repo.list_attachments_for_assessment(db, assessment_id):
+        try:
+            get_storage_backend().delete_file(att.storage_path)
+        except Exception:
+            pass
+    cid = row.company_id
+    rams_repo.delete_assessment_row(db, row)
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="rams.assessment_deleted",
+        entity_type="rams_assessment",
+        entity_id=str(assessment_id),
+        company_id=cid,
+        details={"assessment_id": str(assessment_id), "actor_user_id": str(actor.id), "company_id": str(cid)},
+    )
+
+
+def export_assessment_pdf_bytes(db: Session, actor: User, assessment_id: uuid.UUID) -> tuple[bytes, str]:
+    detail = get_assessment_detail(db, actor, assessment_id)
+    from app.modules.rams.pdf_export import build_rams_assessment_pdf
+
+    pdf = build_rams_assessment_pdf(detail)
+    ref = (detail.reference or str(assessment_id))[:80]
+    safe_ref = "".join(ch for ch in ref if ch.isalnum() or ch in ("-", "_")) or str(assessment_id)
+    fname = f"rams-{safe_ref}.pdf"
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="rams.exported",
+        entity_type="rams_assessment",
+        entity_id=str(assessment_id),
+        company_id=detail.company_id,
+        details={"assessment_id": str(assessment_id), "actor_user_id": str(actor.id), "export_type": "pdf"},
+    )
+    return pdf, fname

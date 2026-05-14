@@ -128,6 +128,20 @@ const STARTER_FORM: NavigationItem = {
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
+const LEAVE: NavigationItem = {
+  label: "Leave",
+  labelKey: "nav.leave",
+  href: "/leave",
+  allowedRoles: ["administrator", "admin", "employee"],
+};
+
+const LEAVE_MANAGE: NavigationItem = {
+  label: "Leave management",
+  labelKey: "nav.leave_manage",
+  href: "/leave/manage",
+  allowedRoles: ["administrator", "admin"],
+};
+
 const PROFILE: NavigationItem = {
   label: "Profile",
   labelKey: "nav.profile",
@@ -282,7 +296,7 @@ const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "emp-profile",
     label: "Profile",
     groupLabelKey: "nav.group.emp_profile",
-    items: [STARTER_FORM, PROFILE, SETTINGS, PRIVACY_PORTAL],
+    items: [STARTER_FORM, LEAVE, PROFILE, SETTINGS, PRIVACY_PORTAL],
   },
 ];
 
@@ -292,7 +306,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mgmt-people",
     label: "People",
     groupLabelKey: "nav.group.mgmt_people",
-    items: [EMPLOYEES, ONBOARDING_REVIEW, CLOCK_SELFIES, PRIVACY_REQUESTS],
+    items: [EMPLOYEES, LEAVE_MANAGE, ONBOARDING_REVIEW, CLOCK_SELFIES, PRIVACY_REQUESTS],
   },
   {
     id: "mgmt-sites",

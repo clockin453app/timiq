@@ -9,10 +9,12 @@ from sqlalchemy.orm import Session
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id, list_users_visible_to_user_with_profile_names
+from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
 from app.modules.messaging.models import Announcement, Conversation, ConversationParticipant, Message
 from app.modules.messaging.repository import (
     add_participant,
     count_announcement_reads,
+    find_direct_conversation_between_users,
     get_announcement,
     get_announcement_read_for_user,
     get_conversation,
@@ -38,6 +40,8 @@ from app.modules.messaging.schemas import (
     ColleagueResponse,
     ConversationCreateRequest,
     ConversationListItem,
+    ConversationParticipantsAddRequest,
+    ConversationPatchRequest,
     MessageCreateRequest,
     MessageResponse,
 )
@@ -405,12 +409,28 @@ def _validate_participants_same_company(
     return users
 
 
+def _peer_display_name(db_session: Session, user_id: uuid.UUID) -> str:
+    u = get_user_by_id(db_session, user_id)
+    if u is None:
+        return "User"
+    profile = get_employee_profile_by_user_id(db_session, user_id)
+    if profile is not None:
+        name = f"{(profile.first_name or '').strip()} {(profile.last_name or '').strip()}".strip()
+        if name:
+            return name
+    return u.email or "User"
+
+
 def create_conversation(
     db_session: Session,
     actor: User,
     body: ConversationCreateRequest,
 ) -> ConversationListItem:
     cid = _conversation_company_id(actor, body.company_id)
+    msg_text = _strip_html(body.initial_message)
+    if not msg_text:
+        raise MessagingPermissionError("Message cannot be empty.")
+    ct = body.conversation_type
     participants = list({*body.participant_user_ids, actor.id})
     if len(participants) < 2:
         raise MessagingPermissionError("Select at least one other participant.")
@@ -418,10 +438,69 @@ def create_conversation(
     if not others:
         raise MessagingPermissionError("Select at least one other participant.")
     _validate_participants_same_company(db_session, company_id=cid, user_ids=participants, actor=actor)
-    msg_text = _strip_html(body.initial_message)
-    if not msg_text:
-        raise MessagingPermissionError("Message cannot be empty.")
-    conv = Conversation(company_id=cid, created_by_user_id=actor.id)
+
+    if ct == "direct":
+        if len(others) != 1:
+            raise MessagingPermissionError("Direct conversations must have exactly one other participant.")
+        other = others[0]
+        existing = find_direct_conversation_between_users(
+            db_session,
+            company_id=cid,
+            user_a=actor.id,
+            user_b=other,
+        )
+        if existing is not None:
+            msg = Message(conversation_id=existing.id, sender_user_id=actor.id, body=msg_text[:4000])
+            save_message(db_session, msg)
+            touch_conversation_updated(db_session, existing.id, _now())
+            create_internal_audit_event(
+                db_session,
+                actor,
+                action="messaging.message_sent",
+                entity_type="conversation",
+                entity_id=str(existing.id),
+                company_id=cid,
+                details={"conversation_id": str(existing.id), "recipient_count": 1},
+            )
+            return _conversation_to_list_item(db_session, existing, actor.id)
+
+        conv = Conversation(
+            company_id=cid,
+            created_by_user_id=actor.id,
+            conversation_type="direct",
+            title=None,
+        )
+        save_conversation(db_session, conv)
+        for uid in participants:
+            add_participant(
+                db_session,
+                ConversationParticipant(conversation_id=conv.id, user_id=uid, last_read_at=None),
+            )
+        msg = Message(conversation_id=conv.id, sender_user_id=actor.id, body=msg_text[:4000])
+        save_message(db_session, msg)
+        touch_conversation_updated(db_session, conv.id, _now())
+        create_internal_audit_event(
+            db_session,
+            actor,
+            action="messaging.message_sent",
+            entity_type="conversation",
+            entity_id=str(conv.id),
+            company_id=cid,
+            details={"conversation_id": str(conv.id), "recipient_count": len(others)},
+        )
+        return _conversation_to_list_item(db_session, conv, actor.id)
+
+    if len(others) < 2:
+        raise MessagingPermissionError("Group conversations require at least two other participants.")
+    title = _strip_html(body.title or "")
+    if not title:
+        raise MessagingPermissionError("Group title cannot be empty.")
+    conv = Conversation(
+        company_id=cid,
+        created_by_user_id=actor.id,
+        conversation_type="group",
+        title=title[:200],
+    )
     save_conversation(db_session, conv)
     for uid in participants:
         add_participant(
@@ -434,14 +513,11 @@ def create_conversation(
     create_internal_audit_event(
         db_session,
         actor,
-        action="messaging.message_sent",
+        action="messaging.group_created",
         entity_type="conversation",
         entity_id=str(conv.id),
         company_id=cid,
-        details={
-            "conversation_id": str(conv.id),
-            "recipient_count": len(others),
-        },
+        details={"conversation_id": str(conv.id), "participant_count": len(participants)},
     )
     return _conversation_to_list_item(db_session, conv, actor.id)
 
@@ -459,17 +535,28 @@ def list_conversations(
 
 def _conversation_to_list_item(db_session: Session, conv: Conversation, viewer_id: uuid.UUID) -> ConversationListItem:
     parts = list_participants_for_conversation(db_session, conv.id)
+    pids = [p.user_id for p in parts]
     last = get_last_message(db_session, conv.id)
     preview = None
     last_at = None
     if last is not None:
         preview = last.body[:140] + ("…" if len(last.body) > 140 else "")
         last_at = last.created_at
+    ctype = getattr(conv, "conversation_type", None) or "direct"
+    gtitle = getattr(conv, "title", None)
+    other_name: str | None = None
+    if ctype == "direct" and len(pids) == 2:
+        other = pids[0] if pids[1] == viewer_id else pids[1]
+        other_name = _peer_display_name(db_session, other)
     return ConversationListItem(
         id=conv.id,
         company_id=conv.company_id,
+        conversation_type=ctype,
+        title=gtitle,
+        participant_count=len(parts),
+        other_user_display_name=other_name,
         updated_at=conv.updated_at,
-        participant_user_ids=[p.user_id for p in parts],
+        participant_user_ids=pids,
         last_message_preview=preview,
         last_message_at=last_at,
     )
@@ -517,6 +604,79 @@ def append_message(
         details={"conversation_id": str(conversation_id), "recipient_count": len(others)},
     )
     return MessageResponse.model_validate(msg)
+
+
+def patch_group_conversation_title(
+    db_session: Session,
+    actor: User,
+    conversation_id: uuid.UUID,
+    body: ConversationPatchRequest,
+) -> ConversationListItem:
+    if get_participant(db_session, conversation_id=conversation_id, user_id=actor.id) is None:
+        raise MessagingPermissionError("You are not part of this conversation.")
+    conv = get_conversation(db_session, conversation_id)
+    if conv is None:
+        raise MessagingNotFoundError("Conversation not found.")
+    if conv.conversation_type != "group":
+        raise MessagingPermissionError("Only group conversations can be renamed.")
+    t = _strip_html(body.title)
+    if not t:
+        raise MessagingPermissionError("Title cannot be empty.")
+    conv.title = t[:200]
+    conv.updated_at = _now()
+    db_session.add(conv)
+    db_session.flush()
+    create_internal_audit_event(
+        db_session,
+        actor,
+        action="messaging.group_renamed",
+        entity_type="conversation",
+        entity_id=str(conversation_id),
+        company_id=conv.company_id,
+        details={"conversation_id": str(conversation_id), "change": "title_updated"},
+    )
+    return _conversation_to_list_item(db_session, conv, actor.id)
+
+
+def add_group_conversation_participants(
+    db_session: Session,
+    actor: User,
+    conversation_id: uuid.UUID,
+    body: ConversationParticipantsAddRequest,
+) -> ConversationListItem:
+    if get_participant(db_session, conversation_id=conversation_id, user_id=actor.id) is None:
+        raise MessagingPermissionError("You are not part of this conversation.")
+    conv = get_conversation(db_session, conversation_id)
+    if conv is None:
+        raise MessagingNotFoundError("Conversation not found.")
+    if conv.conversation_type != "group":
+        raise MessagingPermissionError("You can only add participants to group conversations.")
+    existing_ids = {p.user_id for p in list_participants_for_conversation(db_session, conversation_id)}
+    to_add = [uid for uid in body.user_ids if uid not in existing_ids]
+    if not to_add:
+        raise MessagingPermissionError("No new participants to add.")
+    _validate_participants_same_company(
+        db_session,
+        company_id=conv.company_id,
+        user_ids=to_add,
+        actor=actor,
+    )
+    for uid in to_add:
+        add_participant(
+            db_session,
+            ConversationParticipant(conversation_id=conversation_id, user_id=uid, last_read_at=None),
+        )
+    touch_conversation_updated(db_session, conversation_id, _now())
+    create_internal_audit_event(
+        db_session,
+        actor,
+        action="messaging.group_participants_updated",
+        entity_type="conversation",
+        entity_id=str(conversation_id),
+        company_id=conv.company_id,
+        details={"conversation_id": str(conversation_id), "added_count": len(to_add)},
+    )
+    return _conversation_to_list_item(db_session, conv, actor.id)
 
 
 def mark_conversation_read(

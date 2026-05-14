@@ -11,6 +11,15 @@ class ToolboxTopicOption(BaseModel):
     label: str
 
 
+class ToolboxTopicTemplateResponse(BaseModel):
+    topic: str
+    category: str
+    default_title: str
+    default_body: str
+    key_points: list[str]
+    required_ppe: list[str] = Field(default_factory=list)
+
+
 class ToolboxTalkCreateRequest(BaseModel):
     company_id: uuid.UUID | None = Field(
         default=None,
@@ -82,6 +91,10 @@ class ToolboxTalkAttendeesAddRequest(BaseModel):
 class ToolboxTalkSignRequest(BaseModel):
     attended_ack: bool = False
     signature_name: str = Field(min_length=2, max_length=200)
+    signature_image_data: str = Field(
+        min_length=50,
+        description="PNG data URL. Stored privately; never returned in JSON.",
+    )
 
 
 class ToolboxTalkDeclineRequest(BaseModel):

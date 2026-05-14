@@ -20,6 +20,7 @@ import { listCompanies, type Company } from "../../features/companies/api";
 import {
   approveAllPending,
   approvePayrollItem,
+  createPayrollLateShiftAdjustment,
   downloadPayrollCsv,
   fetchPayrollMonthSummary,
   fetchPayrollReport,
@@ -28,8 +29,10 @@ import {
   openPayrollPrintView,
   patchPayrollItem,
   recalculatePayroll,
+  undoPayrollPaid,
   unlockPayrollItem,
   type PayrollItemRow,
+  type PayrollLateUnpaidEmployee,
   type PayrollMonthSummary,
   type PayrollReportResponse,
 } from "../../features/payroll/api";
@@ -40,6 +43,7 @@ import {
   formatPayrollWeekRangeLabel,
 } from "../../features/payroll/format";
 import { listAdminTimeRecords, type TimeRecordShiftRow } from "../../features/time-records/api";
+import { leaveTypeLabel } from "../../features/leave/labels";
 import {
   addDaysIsoYmd,
   browserDefaultTimeZone,
@@ -58,6 +62,17 @@ function statusBadgeLabel(status: string): string {
     return "Pending";
   }
   return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function lateUnpaidBlockForUser(
+  report: PayrollReportResponse | null,
+  userId: string,
+): PayrollLateUnpaidEmployee | null {
+  const blocks = report?.late_unpaid_employees;
+  if (!blocks?.length) {
+    return null;
+  }
+  return blocks.find((b) => b.user_id === userId) ?? null;
 }
 
 function statusBadgeClass(status: string): string {
@@ -159,6 +174,9 @@ export function PayrollReportClient() {
     {},
   );
   const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
+  const [undoPaidRow, setUndoPaidRow] = useState<PayrollItemRow | null>(null);
+  const [undoPaidReason, setUndoPaidReason] = useState("");
+  const [undoPaidAckExport, setUndoPaidAckExport] = useState(false);
 
   const editOpenRef = useRef(false);
   const busyRef = useRef<string | null>(null);
@@ -413,13 +431,19 @@ export function PayrollReportClient() {
     setBusyId(editRow.id);
     setError("");
     try {
-      await patchPayrollItem(editRow.id, {
-        notes: editNotes || null,
-        other_deductions_amount: editOtherDed || null,
-        display_tax_amount: editDispTax || null,
-        display_net_amount: editDispNet || null,
-        payment_mode: editPaymentMode,
-      });
+      if (editRow.status === "paid") {
+        await patchPayrollItem(editRow.id, {
+          notes: editNotes || null,
+        });
+      } else {
+        await patchPayrollItem(editRow.id, {
+          notes: editNotes || null,
+          other_deductions_amount: editOtherDed || null,
+          display_tax_amount: editDispTax || null,
+          display_net_amount: editDispNet || null,
+          payment_mode: editPaymentMode,
+        });
+      }
       setEditRow(null);
       setPayrollSaveMessage("Payroll row saved.");
       await loadReport();
@@ -487,6 +511,53 @@ export function PayrollReportClient() {
       await loadReport();
     } catch {
       setError("Action failed.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function runCreateLateAdjustment(paidItemId: string) {
+    setBusyId(paidItemId);
+    setError("");
+    try {
+      await createPayrollLateShiftAdjustment(paidItemId, { confirm: true });
+      setPayrollSaveMessage("Pending adjustment row created for late shifts.");
+      await loadReport();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create adjustment.");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function submitUndoPaid() {
+    if (!undoPaidRow) {
+      return;
+    }
+    const reason = undoPaidReason.trim();
+    if (!reason) {
+      setError("A reason is required to undo paid.");
+      return;
+    }
+    if (report?.accounting_payroll_export_overlaps && !undoPaidAckExport) {
+      setError("Confirm the accounting export acknowledgment, or refresh the report.");
+      return;
+    }
+    setBusyId(undoPaidRow.id);
+    setError("");
+    try {
+      await undoPayrollPaid(undoPaidRow.id, {
+        reason,
+        confirm: true,
+        acknowledge_accounting_export: undoPaidAckExport,
+      });
+      setUndoPaidRow(null);
+      setUndoPaidReason("");
+      setUndoPaidAckExport(false);
+      setPayrollSaveMessage("Payroll row moved back to Approved.");
+      await loadReport();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Undo paid failed.");
     } finally {
       setBusyId(null);
     }
@@ -700,6 +771,22 @@ export function PayrollReportClient() {
           </div>
         ) : null}
 
+        {hasCompany && report?.has_late_unpaid_shifts ? (
+          <div
+            className="rounded-[var(--radius-md)] border border-amber-800/30 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+            role="status"
+          >
+            <p className="font-semibold">Late completed shifts after payroll was paid</p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
+              {report.late_shift_count ?? 0} shift
+              {(report.late_shift_count ?? 0) === 1 ? "" : "s"} detected (
+              {formatHoursFromSeconds(report.late_unpaid_total_rounded_seconds ?? 0)} unpaid rounded hours). Use{" "}
+              <span className="font-medium">Adjustment</span> on the paid row to create a pending supplemental payroll
+              item. Paid rows stay frozen.
+            </p>
+          </div>
+        ) : null}
+
         {hasCompany && payrollPeriodNotCalculated ? (
           <div
             className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-3 text-sm text-[#1f2937]"
@@ -843,6 +930,45 @@ export function PayrollReportClient() {
               <p className="mb-3 text-xs text-[var(--color-text-muted)]">
                 Summary by employee for this payroll week. Use + to open employee payroll details (shift lines).
               </p>
+              {report ? (
+                <div className="mb-3 rounded-[var(--radius-md)] border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-xs text-slate-900">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600">Approved leave (review)</p>
+                  <p className="mt-1 leading-relaxed text-slate-700">
+                    {report.payroll_leave_review_note ??
+                      "Leave is shown for review only. Automatic paid leave in gross totals is not enabled in this batch."}
+                  </p>
+                  {(report.approved_leave_in_week?.length ?? 0) > 0 ? (
+                    <div className="mt-2 overflow-x-auto">
+                      <table className="w-full min-w-[520px] border-collapse text-left text-[11px]">
+                        <thead>
+                          <tr className="border-b border-slate-300 text-slate-600">
+                            <th className="py-1 pr-2 font-semibold">Employee</th>
+                            <th className="py-1 pr-2 font-semibold">Type</th>
+                            <th className="py-1 pr-2 font-semibold">Dates</th>
+                            <th className="py-1 pr-2 font-semibold">Days</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(report.approved_leave_in_week ?? []).map((lv) => (
+                            <tr className="border-b border-slate-200/80" key={`${lv.user_id}-${lv.date_from}-${lv.date_to}-${lv.leave_type}`}>
+                              <td className="py-1 pr-2">
+                                {lv.employee_name?.trim() || lv.employee_email || lv.user_id}
+                              </td>
+                              <td className="py-1 pr-2">{leaveTypeLabel(lv.leave_type)}</td>
+                              <td className="py-1 pr-2 tabular-nums text-slate-600">
+                                {lv.date_from} → {lv.date_to}
+                              </td>
+                              <td className="py-1 pr-2 tabular-nums">{lv.total_days}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-[11px] text-slate-600">No approved leave overlaps this payroll week.</p>
+                  )}
+                </div>
+              ) : null}
               <div className="timiq-scroll-x w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[#111827]">
                 <Table className="min-w-full">
                 <TableHeader>
@@ -888,7 +1014,9 @@ export function PayrollReportClient() {
                     </TableRow>
                   ) : null}
                   {!loading && report
-                    ? report.items.map((row) => (
+                    ? report.items.map((row) => {
+                        const lateBlock = lateUnpaidBlockForUser(report, row.user_id);
+                        return (
                         <Fragment key={row.id}>
                           <TableRow>
                             <TableCell className="align-top">
@@ -942,6 +1070,7 @@ export function PayrollReportClient() {
                                 className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadgeClass(row.status)}`}
                               >
                                 {statusBadgeLabel(row.status)}
+                                {row.status === "paid" ? " · Locked" : ""}
                               </span>
                             </TableCell>
                             <TableCell className="align-top">
@@ -952,8 +1081,45 @@ export function PayrollReportClient() {
                                   onClick={() => openEdit(row)}
                                   type="button"
                                 >
-                                  Edit
+                                  {row.status === "paid" ? "Edit notes" : "Edit"}
                                 </Button>
+                                {row.status === "paid" ? (
+                                  <>
+                                    <Button
+                                      className="min-h-8 px-2 py-1 text-xs"
+                                      disabled={busyId === row.id}
+                                      onClick={() => openPayrollItemPayslip(row.id)}
+                                      type="button"
+                                      variant="secondary"
+                                    >
+                                      Payslip
+                                    </Button>
+                                    <Button
+                                      className="min-h-8 px-2 py-1 text-xs"
+                                      disabled={busyId === row.id}
+                                      onClick={() => {
+                                        setUndoPaidRow(row);
+                                        setUndoPaidReason("");
+                                        setUndoPaidAckExport(false);
+                                      }}
+                                      type="button"
+                                      variant="secondary"
+                                    >
+                                      Undo paid
+                                    </Button>
+                                    {lateBlock && lateBlock.shifts.length > 0 ? (
+                                      <Button
+                                        className="min-h-8 px-2 py-1 text-xs"
+                                        disabled={busyId === row.id}
+                                        onClick={() => void runCreateLateAdjustment(row.id)}
+                                        type="button"
+                                        variant="secondary"
+                                      >
+                                        Adjustment
+                                      </Button>
+                                    ) : null}
+                                  </>
+                                ) : null}
                                 {row.status === "pending" ? (
                                   <Button
                                     className="min-h-8 px-2 py-1 text-xs"
@@ -1069,11 +1235,59 @@ export function PayrollReportClient() {
                                     </table>
                                   </div>
                                 )}
+                                {lateBlock && lateBlock.shifts.length > 0 ? (
+                                  <div className="mt-4 border-t border-amber-800/25 pt-3">
+                                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-950">
+                                      Unpaid late shifts (completed after payroll was paid)
+                                    </p>
+                                    <p className="mb-2 text-[11px] leading-relaxed text-amber-950/90">
+                                      Est. gross {formatMoneyGBP(lateBlock.estimated_gross_amount)} · CIS{" "}
+                                      {formatMoneyGBP(lateBlock.estimated_cis_tax_amount)} · net{" "}
+                                      {formatMoneyGBP(lateBlock.estimated_net_amount)} for these shifts (pending
+                                      adjustment uses the same rules as payroll).
+                                    </p>
+                                    <div className="min-w-0 max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+                                      <table className="w-full min-w-[28rem] border-collapse text-left text-xs">
+                                        <thead>
+                                          <tr className="border-b border-amber-800/30 text-amber-950/80">
+                                            <th className="py-1 pr-2">Clock in</th>
+                                            <th className="py-1 pr-2">Clock out</th>
+                                            <th className="py-1 pr-2">Rounded</th>
+                                            <th className="py-1 pr-2">Reason</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {lateBlock.shifts.map((ls) => (
+                                            <tr key={ls.shift_id} className="border-b border-amber-800/15">
+                                              <td className="py-1 pr-2 tabular-nums">
+                                                {formatShiftDateTime(ls.clock_in_at, policyTimeZone)}
+                                              </td>
+                                              <td className="py-1 pr-2 tabular-nums">
+                                                {ls.clock_out_at
+                                                  ? formatShiftDateTime(ls.clock_out_at, policyTimeZone)
+                                                  : "—"}
+                                              </td>
+                                              <td className="py-1 pr-2 tabular-nums">
+                                                {formatHoursFromSeconds(ls.rounded_seconds)}
+                                              </td>
+                                              <td className="py-1 pr-2 text-[var(--color-text-muted)]">
+                                                {ls.reason === "completed_after_paid"
+                                                  ? "After paid (heuristic)"
+                                                  : ls.reason}
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                ) : null}
                               </TableCell>
                             </TableRow>
                           ) : null}
                         </Fragment>
-                      ))
+                        );
+                      })
                     : null}
                 </TableBody>
               </Table>
@@ -1262,7 +1476,9 @@ export function PayrollReportClient() {
           >
             <div className="timiq-sheet mx-auto my-4 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md sm:max-w-[min(42rem,calc(100vw-3rem))]">
               <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
-                <p className="text-sm font-bold text-[var(--color-text)]">Edit payroll row</p>
+                <p className="text-sm font-bold text-[var(--color-text)]">
+                  {editRow.status === "paid" ? "Edit paid payroll row (notes only)" : "Edit payroll row"}
+                </p>
                 <Button onClick={() => setEditRow(null)} type="button">
                   Close
                 </Button>
@@ -1277,6 +1493,11 @@ export function PayrollReportClient() {
                   <p className="mt-1.5">
                     Total rounded h: {formatHoursFromSeconds(editRow.rounded_total_seconds)}
                   </p>
+                  {editRow.status === "paid" ? (
+                    <p className="mt-2 rounded border border-slate-600/20 bg-slate-100 px-2 py-1.5 text-[11px] font-medium text-slate-900">
+                      This row is paid and locked. Hours and pay amounts cannot be changed here.
+                    </p>
+                  ) : null}
                 </div>
                 <label className="block text-xs font-bold">
                   Notes
@@ -1290,6 +1511,7 @@ export function PayrollReportClient() {
                   Other deductions
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    disabled={editRow.status === "paid"}
                     onChange={(event) => setEditOtherDed(event.target.value)}
                     type="text"
                     value={editOtherDed}
@@ -1299,6 +1521,7 @@ export function PayrollReportClient() {
                   Display CIS tax
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    disabled={editRow.status === "paid"}
                     onChange={(event) => setEditDispTax(event.target.value)}
                     type="text"
                     value={editDispTax}
@@ -1308,6 +1531,7 @@ export function PayrollReportClient() {
                   Display net
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    disabled={editRow.status === "paid"}
                     onChange={(event) => setEditDispNet(event.target.value)}
                     type="text"
                     value={editDispNet}
@@ -1317,6 +1541,7 @@ export function PayrollReportClient() {
                   Payment mode
                   <select
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    disabled={editRow.status === "paid"}
                     onChange={(event) =>
                       setEditPaymentMode(
                         normalizePaymentMode(event.target.value),
@@ -1332,6 +1557,71 @@ export function PayrollReportClient() {
                   {busyId === editRow.id ? "Saving…" : "Save edits"}
                 </Button>
               </form>
+            </div>
+          </div>
+        ) : null}
+
+        {undoPaidRow ? (
+          <div
+            aria-modal="true"
+            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6"
+            role="dialog"
+          >
+            <div className="timiq-sheet mx-auto my-4 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md sm:max-w-[min(42rem,calc(100vw-3rem))]">
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
+                <p className="text-sm font-bold text-[var(--color-text)]">Undo paid</p>
+                <Button
+                  onClick={() => {
+                    setUndoPaidRow(null);
+                    setUndoPaidReason("");
+                    setUndoPaidAckExport(false);
+                  }}
+                  type="button"
+                >
+                  Close
+                </Button>
+              </div>
+              <div className="mt-4 space-y-3 text-sm">
+                <PayrollEmployeeIdentity
+                  employee_email={undoPaidRow.employee_email}
+                  employee_name={undoPaidRow.employee_name}
+                  className="text-[var(--color-text)]"
+                />
+                <p className="rounded border border-amber-800/25 bg-amber-50 px-2 py-2 text-xs font-medium text-amber-950">
+                  Undoing paid moves this payroll item back to <span className="font-semibold">Approved</span>. Amounts
+                  are not recalculated. Use only if payment was marked paid by mistake.
+                </p>
+                {report?.accounting_payroll_export_overlaps ? (
+                  <label className="flex cursor-pointer items-start gap-2 text-xs text-[#111827]">
+                    <input
+                      checked={undoPaidAckExport}
+                      className="mt-0.5"
+                      onChange={(e) => setUndoPaidAckExport(e.target.checked)}
+                      type="checkbox"
+                    />
+                    <span>
+                      A payroll accounting export overlaps this week. I understand the risk and still want to undo
+                      paid.
+                    </span>
+                  </label>
+                ) : null}
+                <label className="block text-xs font-bold">
+                  Reason (required)
+                  <textarea
+                    className="mt-1 min-h-[4rem] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1 text-sm"
+                    onChange={(e) => setUndoPaidReason(e.target.value)}
+                    placeholder="Explain why paid status is being reversed."
+                    value={undoPaidReason}
+                  />
+                </label>
+                <Button
+                  disabled={busyId === undoPaidRow.id}
+                  onClick={() => void submitUndoPaid()}
+                  type="button"
+                >
+                  {busyId === undoPaidRow.id ? "Working…" : "Confirm undo paid"}
+                </Button>
+              </div>
             </div>
           </div>
         ) : null}

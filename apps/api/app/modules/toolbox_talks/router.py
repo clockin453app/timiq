@@ -28,6 +28,7 @@ from app.modules.toolbox_talks.schemas import (
     ToolboxTalkSignRequest,
     ToolboxTalkSummaryResponse,
     ToolboxTopicOption,
+    ToolboxTopicTemplateResponse,
 )
 from app.modules.toolbox_talks.service import (
     ToolboxTalkError,
@@ -39,11 +40,14 @@ from app.modules.toolbox_talks.service import (
     complete_talk,
     create_talk,
     decline_talk,
+    delete_talk_hard,
     export_csv_bytes,
+    export_talk_pdf_bytes,
     get_talk_for_viewer,
     list_talks_admin,
     list_talks_me,
     list_topic_options,
+    list_topic_templates,
     patch_talk,
     publish_talk,
     remove_attendee,
@@ -71,6 +75,13 @@ def get_toolbox_topics(
     _current_user: User = Depends(get_current_user),
 ) -> list[ToolboxTopicOption]:
     return list_topic_options()
+
+
+@router.get("/templates", response_model=list[ToolboxTopicTemplateResponse])
+def get_toolbox_talk_templates(
+    _current_user: User = Depends(get_current_user),
+) -> list[ToolboxTopicTemplateResponse]:
+    return list_topic_templates()
 
 
 @router.get("/me", response_model=list[ToolboxTalkSummaryResponse])
@@ -179,6 +190,33 @@ def post_archive_toolbox_talk(
         return archive_talk(db_session, current_user, talk_id)
     except ToolboxTalkError as exc:
         _raise_http_from_toolbox_exc(exc)
+
+
+@router.delete("/{talk_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_toolbox_talk_route(
+    talk_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        delete_talk_hard(db_session, current_user, talk_id)
+    except ToolboxTalkError as exc:
+        _raise_http_from_toolbox_exc(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{talk_id}/pdf")
+def get_toolbox_talk_pdf(
+    talk_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        raw, filename = export_talk_pdf_bytes(db_session, current_user, talk_id)
+    except ToolboxTalkError as exc:
+        _raise_http_from_toolbox_exc(exc)
+    headers = {"Content-Disposition": content_disposition_attachment(filename)}
+    return Response(content=raw, media_type="application/pdf", headers=headers)
 
 
 @router.get("/{talk_id}/attendees", response_model=list[ToolboxTalkAttendeeResponse])

@@ -10,8 +10,12 @@ from app.modules.rams.service import get_presets
 def test_rams_routes_registered() -> None:
     paths = [getattr(r, "path", "") for r in app.routes if hasattr(r, "path")]
     assert "/api/rams/presets" in paths
+    assert "/api/rams/from-preset" in paths
     assert "/api/rams/me" in paths
     assert "/api/rams/{assessment_id}/export.csv" in paths
+    assert "/api/rams/{assessment_id}/pdf" in paths
+    assert "/api/rams/{assessment_id}/attachments" in paths
+    assert "/api/rams/{assessment_id}/print" in paths
 
 
 def test_rams_presets_requires_authentication() -> None:
@@ -38,3 +42,14 @@ def test_presets_non_empty() -> None:
     p = get_presets()
     assert len(p.hazard_examples) >= 5
     assert len(p.ppe_options) >= 5
+
+
+def test_presets_include_brickwork_template() -> None:
+    p = get_presets()
+    brick = next(
+        (x for x in p.document_presets if "brick" in x.id.lower() or "brick" in x.title.lower()),
+        None,
+    )
+    assert brick is not None
+    assert brick.hazard_count >= 10
+    assert len(brick.ppe) >= 1

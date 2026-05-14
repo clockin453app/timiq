@@ -3,6 +3,7 @@ import io
 import uuid
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -21,6 +22,8 @@ from app.modules.payroll_policies.service import (
     effective_time_policy_for_shift,
     time_policy_source_for_shift,
 )
+from app.modules.leave import repository as leave_repo
+from app.modules.leave.schemas import WeekLeaveRow
 from app.modules.locations.models import Location
 from app.modules.time_clock.models import TimeShift
 from app.modules.time_records.calculation import compute_shift_metrics
@@ -439,6 +442,31 @@ def timesheet_week_for_user(
         bucket.break_seconds += metrics.break_seconds
         week_break += metrics.break_seconds
 
+    week_leave: list[WeekLeaveRow] = []
+    if subject.company_id is not None:
+        w_end = week_start + timedelta(days=6)
+        for r in leave_repo.list_leave_overlapping_week(
+            db_session,
+            company_id=subject.company_id,
+            week_start=week_start,
+            week_end=w_end,
+            statuses=("approved", "pending"),
+            user_id=subject_user_id,
+        ):
+            week_leave.append(
+                WeekLeaveRow(
+                    request_id=r.id,
+                    user_id=r.user_id,
+                    leave_type=r.leave_type,
+                    status=r.status,
+                    date_from=r.date_from,
+                    date_to=r.date_to,
+                    total_days=Decimal(str(r.total_days)),
+                    start_half_day=r.start_half_day,
+                    end_half_day=r.end_half_day,
+                )
+            )
+
     return TimesheetWeekResponse(
         week_start=week_start,
         company_timezone=policy.timezone_name,
@@ -452,6 +480,7 @@ def timesheet_week_for_user(
         completed_shift_count=completed_shift_count,
         open_shifts=open_summaries,
         locations_worked=sorted(location_names),
+        week_leave=week_leave,
     )
 
 
@@ -661,6 +690,31 @@ def week_report_all_employees_for_company(
 
     roster = list_company_employee_users_with_profiles(db_session, company_id=resolved)
 
+    w_end = week_start + timedelta(days=6)
+    leave_all = leave_repo.list_leave_overlapping_week(
+        db_session,
+        company_id=resolved,
+        week_start=week_start,
+        week_end=w_end,
+        statuses=("approved", "pending"),
+        user_id=None,
+    )
+    leave_by_user: dict[uuid.UUID, list[WeekLeaveRow]] = defaultdict(list)
+    for r in leave_all:
+        leave_by_user[r.user_id].append(
+            WeekLeaveRow(
+                request_id=r.id,
+                user_id=r.user_id,
+                leave_type=r.leave_type,
+                status=r.status,
+                date_from=r.date_from,
+                date_to=r.date_to,
+                total_days=Decimal(str(r.total_days)),
+                start_half_day=r.start_half_day,
+                end_half_day=r.end_half_day,
+            )
+        )
+
     employees_out: list[AdminWeekReportEmployeeSummary] = []
     totals = AdminWeekReportCompanyTotals()
 
@@ -718,6 +772,7 @@ def week_report_all_employees_for_company(
                 break_seconds=break_sum,
                 locations_worked=sorted(loc_names),
                 open_shift_in_week=open_any,
+                week_leave=leave_by_user.get(owner.id, []),
             ),
         )
 

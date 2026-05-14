@@ -9,6 +9,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.companies.router import router as companies_router
 from app.modules.dashboard.router import router as dashboard_router
 from app.modules.employee_profiles.router import router as employee_profiles_router
+from app.modules.leave.router import router as leave_router
 from app.modules.live_attendance.router import router as live_attendance_router
 from app.modules.locations.router import router as locations_router
 from app.modules.site_access.router import router as site_access_router
@@ -22,6 +23,7 @@ from app.modules.time_records.router import time_records_router, timesheets_rout
 from app.modules.workplaces.router import router as workplaces_router
 from app.modules.budgets.router import router as budgets_router
 from app.modules.messaging.router import router as messaging_router
+from app.modules.notifications.router import router as notifications_router
 from app.modules.privacy.router import router as privacy_router
 from app.modules.payroll_policies.router import router as payroll_policies_router
 from app.modules.settings.router import router as settings_router
@@ -61,6 +63,7 @@ app.include_router(employee_profiles_router)
 app.include_router(system_api_router)
 app.include_router(system_health_router)
 app.include_router(time_clock_router)
+app.include_router(leave_router)
 app.include_router(live_attendance_router)
 app.include_router(time_records_router)
 app.include_router(timesheets_router)
@@ -69,6 +72,7 @@ app.include_router(onboarding_router)
 app.include_router(work_progress_router)
 app.include_router(budgets_router)
 app.include_router(messaging_router)
+app.include_router(notifications_router)
 app.include_router(privacy_router)
 app.include_router(payroll_policies_router)
 app.include_router(settings_router)

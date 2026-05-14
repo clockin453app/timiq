@@ -16,7 +16,7 @@ class Announcement(Base):
         primary_key=True,
         default=uuid.uuid4,
     )
-    company_id: Mapped[uuid.UUID] = mapped_column(
+    company_id = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=True,
@@ -26,14 +26,14 @@ class Announcement(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     audience_type: Mapped[str] = mapped_column(String(32), nullable=False)
     priority: Mapped[str] = mapped_column(String(32), nullable=False, default="normal")
-    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+    created_by_user_id = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
-    published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_at = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at = mapped_column(DateTime(timezone=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -90,12 +90,14 @@ class Conversation(Base):
         nullable=False,
         index=True,
     )
-    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+    created_by_user_id = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
+    conversation_type: Mapped[str] = mapped_column(String(16), nullable=False, default="direct")
+    title = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -132,7 +134,7 @@ class ConversationParticipant(Base):
         nullable=False,
         index=True,
     )
-    last_read_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_read_at = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class Message(Base):
@@ -161,4 +163,4 @@ class Message(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
-    deleted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_at = mapped_column(DateTime(timezone=True), nullable=True)

@@ -83,6 +83,7 @@ export type ToolboxTalkAttendeesAddBody = {
 export type ToolboxTalkSignBody = {
   attended_ack: boolean;
   signature_name: string;
+  signature_image_data: string;
 };
 
 export async function listToolboxTopics(): Promise<ToolboxTopicOption[]> {
@@ -281,6 +282,36 @@ export async function openToolboxTalkPrint(talkId: string): Promise<void> {
   }
   w.document.write(html);
   w.document.close();
+}
+
+export async function downloadToolboxTalkPdf(talkId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/toolbox-talks/${talkId}/pdf`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not download PDF."));
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `toolbox-talk-${talkId}.pdf`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function deleteToolboxTalk(talkId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/toolbox-talks/${talkId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not delete talk."));
+  }
 }
 
 export async function downloadToolboxTalkCsv(talkId: string): Promise<void> {

@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button, PageHeader, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui";
 import { isAdministrator, isAdmin, useCurrentUser } from "../../features/auth";
-import { isNavigatorOffline } from "../../features/offline";
 import { listMySmartFormSubmissions, listSmartFormTemplates, type SmartFormSubmissionWithTemplate, type SmartFormTemplate } from "../../features/smart-forms/api";
 import { smartFormCategoryLabel } from "../../features/smart-forms/form-categories";
 import { useI18n } from "../../lib/i18n";
@@ -43,6 +42,22 @@ export function FormsClient() {
   const [submissions, setSubmissions] = useState<SmartFormSubmissionWithTemplate[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
+  const [navigatorOffline, setNavigatorOffline] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const sync = () => setNavigatorOffline(typeof navigator !== "undefined" && !navigator.onLine);
+    sync();
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+
+  const offlineBlock = mounted && navigatorOffline;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -143,15 +158,15 @@ export function FormsClient() {
                 <div className="shrink-0">
                   <Link
                     className={`inline-flex h-9 items-center justify-center rounded border px-4 text-sm font-medium ${
-                      !user?.company_id || isNavigatorOffline()
+                      !user?.company_id || offlineBlock
                         ? "pointer-events-none border-[var(--color-border)] bg-[var(--color-header)] text-[var(--color-text-muted)]"
                         : "border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]"
                     }`}
-                    href={!user?.company_id || isNavigatorOffline() ? "#" : `/forms/start/${tpl.id}`}
+                    href={!user?.company_id || offlineBlock ? "#" : `/forms/start/${tpl.id}`}
                   >
                     {t("forms.start_form")}
                   </Link>
-                  {isNavigatorOffline() ? (
+                  {offlineBlock ? (
                     <p className="mt-1 max-w-xs text-xs text-[var(--color-text-muted)]">{t("offline.banner")}</p>
                   ) : null}
                 </div>

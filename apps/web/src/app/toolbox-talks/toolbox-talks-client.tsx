@@ -15,10 +15,11 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui";
+import { SignaturePad } from "../../components/signature/signature-pad";
 import { isEmployee, useCurrentUser } from "../../features/auth";
-import { isNavigatorOffline } from "../../features/offline";
 import {
   declineToolboxTalk,
+  downloadToolboxTalkPdf,
   getToolboxTalk,
   listMyToolboxTalks,
   signToolboxTalk,
@@ -50,9 +51,26 @@ export function ToolboxTalksClient() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
   const [signName, setSignName] = useState("");
+  const [signaturePng, setSignaturePng] = useState<string | null>(null);
   const [attendedAck, setAttendedAck] = useState(false);
   const [declineReason, setDeclineReason] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [navigatorOffline, setNavigatorOffline] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const sync = () => setNavigatorOffline(typeof navigator !== "undefined" && !navigator.onLine);
+    sync();
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+
+  const offlineBlock = mounted && navigatorOffline;
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -100,6 +118,7 @@ export function ToolboxTalksClient() {
     setDetailLoading(true);
     setError("");
     setSignName("");
+    setSignaturePng(null);
     setAttendedAck(false);
     setDeclineReason("");
     try {
@@ -125,8 +144,12 @@ export function ToolboxTalksClient() {
     if (!detail) {
       return;
     }
-    if (isNavigatorOffline()) {
+    if (offlineBlock) {
       setError(t("toolbox_talks.offline_sign", "Signing requires an internet connection."));
+      return;
+    }
+    if (!signaturePng) {
+      setError(t("toolbox_talks.signature_draw_required", "Draw your signature before signing."));
       return;
     }
     setActionBusy(true);
@@ -135,6 +158,7 @@ export function ToolboxTalksClient() {
       const next = await signToolboxTalk(detail.id, {
         attended_ack: attendedAck,
         signature_name: signName.trim(),
+        signature_image_data: signaturePng,
       });
       setDetail(next);
       await loadList();
@@ -150,7 +174,7 @@ export function ToolboxTalksClient() {
     if (!detail) {
       return;
     }
-    if (isNavigatorOffline()) {
+    if (offlineBlock) {
       setError(t("toolbox_talks.offline_sign", "Signing requires an internet connection."));
       return;
     }
@@ -252,9 +276,22 @@ export function ToolboxTalksClient() {
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <h2 className="text-lg font-semibold text-[var(--color-text)]">{detail.title}</h2>
-                <Button onClick={() => setSelectedId(null)} size="sm" type="button" variant="secondary">
-                  {t("toolbox_talks.close_detail", "Close")}
-                </Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    type="button"
+                    onClick={() =>
+                      void downloadToolboxTalkPdf(detail.id).catch((e) =>
+                        setError(e instanceof Error ? e.message : t("toolbox_talks.error_pdf", "Could not download PDF.")),
+                      )
+                    }
+                  >
+                    {t("toolbox_talks.download_pdf", "Download PDF")}
+                  </Button>
+                  <Button onClick={() => setSelectedId(null)} size="sm" type="button" variant="secondary">
+                    {t("toolbox_talks.close_detail", "Close")}
+                  </Button>
+                </div>
               </div>
               <div className="flex flex-wrap gap-2 text-sm text-[var(--color-text-soft)]">
                 <span>
@@ -272,7 +309,7 @@ export function ToolboxTalksClient() {
                   <strong className="text-[var(--color-text)]">{formatDate(detail.scheduled_date)}</strong>
                 </span>
               </div>
-              <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-sm leading-relaxed text-[var(--color-text)] whitespace-pre-wrap">
+              <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-sm leading-relaxed text-[var(--color-text)] shadow-sm whitespace-pre-wrap">
                 {detail.talk_body}
               </div>
 
@@ -281,7 +318,7 @@ export function ToolboxTalksClient() {
                   <h3 className="text-sm font-semibold text-[var(--color-text)]">
                     {t("toolbox_talks.sign_heading", "Sign talk")}
                   </h3>
-                  {isNavigatorOffline() ? (
+                  {offlineBlock ? (
                     <p className="text-sm text-amber-800">{t("toolbox_talks.offline_sign", "Signing requires an internet connection.")}</p>
                   ) : null}
                   <form className="space-y-3" onSubmit={onSign}>
@@ -296,7 +333,7 @@ export function ToolboxTalksClient() {
                     </label>
                     <div>
                       <label className="mb-1 block text-xs font-medium text-[var(--color-text-soft)]" htmlFor="tt-sign-name">
-                        {t("toolbox_talks.signature_name", "Your name (typed signature)")}
+                        {t("toolbox_talks.printed_full_name", "Printed full name")}
                       </label>
                       <Input
                         autoComplete="name"
@@ -305,7 +342,8 @@ export function ToolboxTalksClient() {
                         value={signName}
                       />
                     </div>
-                    <Button disabled={actionBusy || isNavigatorOffline()} type="submit">
+                    <SignaturePad disabled={actionBusy || offlineBlock} value={signaturePng} onChange={setSignaturePng} />
+                    <Button disabled={actionBusy || offlineBlock || !signaturePng || !signName.trim() || !attendedAck} type="submit">
                       {t("toolbox_talks.sign_button", "Sign")}
                     </Button>
                   </form>
@@ -315,16 +353,33 @@ export function ToolboxTalksClient() {
                       {t("toolbox_talks.decline_reason", "Reason")}
                     </label>
                     <Input id="tt-decline" onChange={(e) => setDeclineReason(e.target.value)} value={declineReason} />
-                    <Button disabled={actionBusy || isNavigatorOffline()} type="submit" variant="secondary">
+                    <Button disabled={actionBusy || offlineBlock} type="submit" variant="secondary">
                       {t("toolbox_talks.decline_submit", "Submit decline")}
                     </Button>
                   </form>
                 </div>
               ) : myRow ? (
-                <p className="text-sm text-[var(--color-text-soft)]">
-                  {t("toolbox_talks.your_status", "Your status")}: <strong className="capitalize">{myRow.status}</strong>
-                  {myRow.signed_at ? ` · ${formatDate(myRow.signed_at)}` : null}
-                </p>
+                <div className="space-y-2 text-sm text-[var(--color-text-soft)]">
+                  <p>
+                    {t("toolbox_talks.your_status", "Your status")}: <strong className="capitalize">{myRow.status}</strong>
+                    {myRow.signed_at ? ` · ${formatDate(myRow.signed_at)}` : null}
+                    {myRow.has_signature ? ` · ${t("toolbox_talks.signature_on_file", "Signature on file")}` : null}
+                  </p>
+                  {myRow.status === "signed" ? (
+                    <Button
+                      size="sm"
+                      type="button"
+                      variant="secondary"
+                      onClick={() =>
+                        void downloadToolboxTalkPdf(detail.id).catch((e) =>
+                          setError(e instanceof Error ? e.message : t("toolbox_talks.error_pdf", "Could not download PDF.")),
+                        )
+                      }
+                    >
+                      {t("toolbox_talks.download_pdf", "Download PDF")}
+                    </Button>
+                  ) : null}
+                </div>
               ) : null}
             </>
           ) : null}

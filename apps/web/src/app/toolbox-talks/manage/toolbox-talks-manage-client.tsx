@@ -24,7 +24,8 @@ import {
   archiveToolboxTalk,
   completeToolboxTalk,
   createToolboxTalk,
-  downloadToolboxTalkCsv,
+  deleteToolboxTalk,
+  downloadToolboxTalkPdf,
   getToolboxTalk,
   listToolboxTalksAdmin,
   listToolboxTopics,
@@ -76,6 +77,16 @@ export function ToolboxTalksManageClient() {
   const [presenterId, setPresenterId] = useState("");
 
   const [pickUserId, setPickUserId] = useState("");
+
+  const canHardDeleteToolboxTalk = useMemo(() => {
+    if (!detail) {
+      return false;
+    }
+    if (detail.status === "archived") {
+      return false;
+    }
+    return detail.attendees.every((a) => a.status !== "signed");
+  }, [detail]);
 
   const loadLists = useCallback(async () => {
     setLoading(true);
@@ -507,25 +518,61 @@ export function ToolboxTalksManageClient() {
                   </Button>
                   <Button
                     disabled={busy}
+                    onClick={() =>
+                      void downloadToolboxTalkPdf(detail.id).catch((e) =>
+                        setError(e instanceof Error ? e.message : "PDF failed"),
+                      )
+                    }
+                    size="sm"
+                    type="button"
+                  >
+                    {t("toolbox_talks.download_pdf", "Download PDF")}
+                  </Button>
+                  <Button
+                    disabled={busy}
                     onClick={() => void openToolboxTalkPrint(detail.id).catch((e) => setError(e instanceof Error ? e.message : "Print failed"))}
                     size="sm"
                     type="button"
                     variant="secondary"
                   >
-                    {t("toolbox_talks.print_record", "Print talk record")}
+                    {t("toolbox_talks.print_record", "Print")}
                   </Button>
                   <Button
-                    disabled={busy}
-                    onClick={() =>
-                      void downloadToolboxTalkCsv(detail.id).catch((e) =>
-                        setError(e instanceof Error ? e.message : "Export failed"),
-                      )
-                    }
+                    disabled={busy || !canHardDeleteToolboxTalk}
+                    onClick={() => {
+                      if (!window.confirm(t("toolbox_talks.delete_confirm", "Delete permanently? This cannot be undone."))) {
+                        return;
+                      }
+                      void (async () => {
+                        setBusy(true);
+                        setError("");
+                        try {
+                          await deleteToolboxTalk(detail.id);
+                          setSelectedId(null);
+                          setDetail(null);
+                          await loadLists();
+                        } catch (e) {
+                          const msg = e instanceof Error ? e.message : t("toolbox_talks.error_delete", "Could not delete.");
+                          if (msg.toLowerCase().includes("signed") || msg.toLowerCase().includes("409")) {
+                            setError(
+                              t(
+                                "toolbox_talks.delete_blocked_archive",
+                                "This record has compliance activity. Archive it instead.",
+                              ),
+                            );
+                          } else {
+                            setError(msg);
+                          }
+                        } finally {
+                          setBusy(false);
+                        }
+                      })();
+                    }}
                     size="sm"
                     type="button"
                     variant="secondary"
                   >
-                    {t("toolbox_talks.export_csv", "Export CSV")}
+                    {t("toolbox_talks.delete", "Delete")}
                   </Button>
                 </div>
 

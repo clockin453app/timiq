@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timezone
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
-from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsHazard
+from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard
 
 
 def get_assessment(db: Session, assessment_id: uuid.UUID) -> RamsAssessment | None:
@@ -125,8 +125,70 @@ def count_acknowledgements(db: Session, assessment_id: uuid.UUID) -> int:
     return int(db.scalar(stmt) or 0)
 
 
+def count_pending_acknowledgements_for_user(db: Session, user_id: uuid.UUID) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(RamsAcknowledgement)
+        .join(RamsAssessment, RamsAssessment.id == RamsAcknowledgement.assessment_id)
+        .where(RamsAcknowledgement.user_id == user_id)
+        .where(RamsAcknowledgement.status == "pending")
+        .where(RamsAssessment.status.in_(("published", "reviewed")))
+    )
+    return int(db.scalar(stmt) or 0)
+
+
+def count_assessments_for_company_by_status(db: Session, company_id: uuid.UUID, assessment_status: str) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(RamsAssessment)
+        .where(RamsAssessment.company_id == company_id)
+        .where(RamsAssessment.status == assessment_status)
+    )
+    return int(db.scalar(stmt) or 0)
+
+
+def count_assessments_by_status_global(db: Session, assessment_status: str) -> int:
+    stmt = select(func.count()).select_from(RamsAssessment).where(RamsAssessment.status == assessment_status)
+    return int(db.scalar(stmt) or 0)
+
+
 def save_acknowledgement(db: Session, row: RamsAcknowledgement) -> RamsAcknowledgement:
     db.add(row)
     db.commit()
     db.refresh(row)
     return row
+
+
+def list_attachments_for_assessment(db: Session, assessment_id: uuid.UUID) -> list[RamsAttachment]:
+    stmt = (
+        select(RamsAttachment)
+        .where(RamsAttachment.assessment_id == assessment_id)
+        .order_by(RamsAttachment.created_at.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def count_attachments_for_assessment(db: Session, assessment_id: uuid.UUID) -> int:
+    stmt = select(func.count()).select_from(RamsAttachment).where(RamsAttachment.assessment_id == assessment_id)
+    return int(db.scalar(stmt) or 0)
+
+
+def get_attachment(db: Session, attachment_id: uuid.UUID) -> RamsAttachment | None:
+    return db.get(RamsAttachment, attachment_id)
+
+
+def save_attachment(db: Session, row: RamsAttachment) -> RamsAttachment:
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def delete_attachment(db: Session, row: RamsAttachment) -> None:
+    db.delete(row)
+    db.commit()
+
+
+def delete_assessment_row(db: Session, row: RamsAssessment) -> None:
+    db.delete(row)
+    db.commit()

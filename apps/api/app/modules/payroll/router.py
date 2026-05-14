@@ -16,9 +16,11 @@ from app.modules.payroll.schemas import (
     PayrollItemPatchRequest,
     PayrollItemResponse,
     PayrollItemSummaryResponse,
+    PayrollLateAdjustmentRequest,
     PayrollMonthSummaryResponse,
     PayrollRecalculateRequest,
     PayrollReportResponse,
+    PayrollUndoPaidRequest,
 )
 from app.modules.payroll.service import (
     PayrollApprovedBlockingError,
@@ -29,6 +31,7 @@ from app.modules.payroll.service import (
     PayrollPermissionError,
     approve_all_pending,
     approve_item,
+    create_late_shift_adjustment_from_paid_item,
     export_csv_report,
     export_print_html,
     get_payroll_item_summary,
@@ -39,6 +42,7 @@ from app.modules.payroll.service import (
     patch_payroll_item,
     recalculate_payroll,
     render_payroll_item_payslip_html,
+    undo_paid_item,
     unlock_item,
 )
 
@@ -180,6 +184,32 @@ def payroll_mark_paid(
 ) -> PayrollItemResponse:
     try:
         return mark_paid_item(db_session, current_user, item_id)
+    except (PayrollPermissionError, PayrollItemStateError, PayrollError) as exc:
+        raise _handle_payroll_exc(exc) from exc
+
+
+@router.post("/items/{item_id}/undo-paid", response_model=PayrollItemResponse)
+def payroll_undo_paid(
+    item_id: uuid.UUID,
+    request: PayrollUndoPaidRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> PayrollItemResponse:
+    try:
+        return undo_paid_item(db_session, current_user, item_id, request)
+    except (PayrollPermissionError, PayrollItemStateError, PayrollError) as exc:
+        raise _handle_payroll_exc(exc) from exc
+
+
+@router.post("/items/{item_id}/adjustment-for-late-shifts", response_model=PayrollItemResponse)
+def payroll_adjustment_for_late_shifts(
+    item_id: uuid.UUID,
+    request: PayrollLateAdjustmentRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> PayrollItemResponse:
+    try:
+        return create_late_shift_adjustment_from_paid_item(db_session, current_user, item_id, request)
     except (PayrollPermissionError, PayrollItemStateError, PayrollError) as exc:
         raise _handle_payroll_exc(exc) from exc
 

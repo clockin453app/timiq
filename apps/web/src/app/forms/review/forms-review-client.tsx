@@ -10,6 +10,7 @@ import {
   getSmartFormTemplate,
   listSmartFormReviewQueue,
   reviewSmartFormSubmission,
+  downloadSmartFormSubmissionPdf,
   type SmartFormReviewQueueItem,
   type SmartFormSchemaJson,
   type SmartFormSubmissionWithTemplate,
@@ -144,7 +145,23 @@ export function FormsReviewClient() {
         </div>
 
         <div className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm lg:col-span-7">
-          <h2 className="mb-3 text-sm font-semibold text-[var(--color-text)]">{t("forms.review_detail_title", "Submission detail")}</h2>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">{t("forms.review_detail_title", "Submission detail")}</h2>
+            {selected ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  void downloadSmartFormSubmissionPdf(selected.id).catch((e) =>
+                    setError(e instanceof Error ? e.message : t("forms.error_pdf", "Could not download PDF.")),
+                  )
+                }
+              >
+                {t("forms.download_pdf", "Download PDF")}
+              </Button>
+            ) : null}
+          </div>
           {!selected || !selectedRow ? (
             <div className="rounded border border-dashed border-[var(--color-border)] bg-[var(--color-cell)] px-4 py-12 text-center">
               <p className="text-sm text-[var(--color-text-soft)]">{t("forms.review_select_prompt", "Select a submission from the list to review it.")}</p>
@@ -177,6 +194,14 @@ export function FormsReviewClient() {
                 <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 sm:col-span-2">
                   <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">{t("forms.location_label")}</dt>
                   <dd className="mt-1 text-[var(--color-text)]">{selectedRow.location_name ?? "—"}</dd>
+                </div>
+                <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 sm:col-span-2">
+                  <dt className="text-xs font-semibold uppercase text-[var(--color-text-muted)]">
+                    {t("forms.signature_status", "Drawn signature")}
+                  </dt>
+                  <dd className="mt-1 text-[var(--color-text)]">
+                    {selected.has_signature ? t("forms.signature_on_file_short", "On file") : t("forms.signature_missing_short", "Not on file")}
+                  </dd>
                 </div>
               </dl>
 

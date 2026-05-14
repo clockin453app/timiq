@@ -106,6 +106,53 @@ class PayrollReportAlerts(BaseModel):
     )
 
 
+class PayrollLateShiftRow(BaseModel):
+    shift_id: uuid.UUID
+    clock_in_at: datetime
+    clock_out_at: datetime | None
+    rounded_seconds: int
+    reason: str = Field(description="completed_after_paid when clock-out after paid_at (v1 heuristic).")
+    reference_paid_item_id: uuid.UUID | None = None
+
+
+class PayrollLateUnpaidEmployee(BaseModel):
+    user_id: uuid.UUID
+    employee_email: str | None = None
+    employee_name: str | None = None
+    total_late_rounded_seconds: int
+    shifts: list[PayrollLateShiftRow]
+    estimated_gross_amount: Decimal | None = None
+    estimated_net_amount: Decimal | None = None
+    estimated_cis_tax_amount: Decimal | None = None
+
+
+class PayrollUndoPaidRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
+    confirm: bool = Field(description="Must be true.")
+    acknowledge_accounting_export: bool = Field(
+        default=False,
+        description="Set true when an accounting payroll export overlaps this week and you still want to undo paid.",
+    )
+
+
+class PayrollLateAdjustmentRequest(BaseModel):
+    confirm: bool = Field(default=True)
+    shift_ids: list[uuid.UUID] | None = Field(
+        default=None,
+        description="Optional subset of detected late shifts; default is all non-reserved late shifts.",
+    )
+
+
+class PayrollApprovedLeaveRow(BaseModel):
+    user_id: uuid.UUID
+    employee_email: str | None = None
+    employee_name: str | None = None
+    leave_type: str
+    date_from: date
+    date_to: date
+    total_days: Decimal
+
+
 class PayrollReportResponse(BaseModel):
     period: PayrollPeriodSummary
     items: list[PayrollItemResponse]
@@ -114,6 +161,19 @@ class PayrollReportResponse(BaseModel):
     payroll_auto_recalculated: bool = Field(
         default=False,
         description="True when this payload was returned immediately after an automatic safe recalculation.",
+    )
+    has_late_unpaid_shifts: bool = False
+    late_shift_count: int = 0
+    late_unpaid_total_rounded_seconds: int = 0
+    late_unpaid_employees: list[PayrollLateUnpaidEmployee] = Field(default_factory=list)
+    accounting_payroll_export_overlaps: bool = Field(
+        default=False,
+        description="True when a recorded accounting payroll export run overlaps this payroll week.",
+    )
+    approved_leave_in_week: list[PayrollApprovedLeaveRow] = Field(default_factory=list)
+    payroll_leave_review_note: str = Field(
+        default="Leave is shown for review only. Automatic paid leave in gross totals is not enabled in this batch.",
+        description="Explains that clocked payroll totals are unchanged by leave rows.",
     )
 
 

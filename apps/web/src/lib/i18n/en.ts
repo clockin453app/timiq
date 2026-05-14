@@ -29,6 +29,8 @@ export const EN_STRINGS: Record<string, string> = {
   "nav.forms_manage": "Form templates",
   "nav.forms_review": "Form review",
   "nav.starter_form": "Starter Form",
+  "nav.leave": "Leave",
+  "nav.leave_manage": "Leave management",
   "nav.profile": "Profile",
   "nav.settings": "Settings",
   "nav.privacy": "Data & privacy",
@@ -201,6 +203,12 @@ export const EN_STRINGS: Record<string, string> = {
   "shell.role.admin": "Admin",
   "shell.role.employee": "Employee",
   "shell.role.unknown": "User",
+
+  "notifications.title": "Notifications",
+  "notifications.empty": "No notifications",
+  "notifications.refresh": "Refresh",
+  "notifications.bell_aria": "Notifications",
+  "notifications.close_overlay": "Close",
 
   "common.save": "Save",
   "common.cancel": "Cancel",

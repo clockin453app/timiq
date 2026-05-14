@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
@@ -152,6 +152,36 @@ def list_company_employee_users_with_profiles(
     for user, profile in rows:
         out.append((user, profile if isinstance(profile, EmployeeProfile) else None))
     return out
+
+
+def count_completed_shifts_for_user_payroll_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    subject_user_id: uuid.UUID,
+    week_start_utc: datetime,
+    week_end_utc: datetime,
+) -> int:
+    statement = (
+        select(func.count())
+        .select_from(TimeShift)
+        .join(Location, TimeShift.location_id == Location.id)
+        .where(TimeShift.user_id == subject_user_id)
+        .where(
+            or_(
+                TimeShift.company_id == company_id,
+                Location.company_id == company_id,
+            ),
+        )
+        .where(
+            and_(
+                TimeShift.clock_in_at >= week_start_utc,
+                TimeShift.clock_in_at < week_end_utc,
+            ),
+        )
+        .where(TimeShift.status == "completed")
+    )
+    return int(db_session.scalar(statement) or 0)
 
 
 def list_time_shifts_for_payroll_week(

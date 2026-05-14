@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Select, and_, select
+from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
 from app.modules.toolbox_talks.models import ToolboxTalk, ToolboxTalkAttendee
@@ -89,7 +89,48 @@ def delete_attendee(db: Session, row: ToolboxTalkAttendee) -> None:
     db.commit()
 
 
+def count_pending_sign_for_user(db: Session, user_id: uuid.UUID) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(ToolboxTalkAttendee)
+        .join(ToolboxTalk, ToolboxTalk.id == ToolboxTalkAttendee.talk_id)
+        .where(ToolboxTalkAttendee.user_id == user_id)
+        .where(ToolboxTalkAttendee.status == "pending")
+        .where(ToolboxTalk.status == "published")
+    )
+    return int(db.scalar(stmt) or 0)
+
+
+def count_talks_for_company_by_status(db: Session, company_id: uuid.UUID, talk_status: str) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(ToolboxTalk)
+        .where(ToolboxTalk.company_id == company_id)
+        .where(ToolboxTalk.status == talk_status)
+    )
+    return int(db.scalar(stmt) or 0)
+
+
+def count_talks_by_status_global(db: Session, talk_status: str) -> int:
+    stmt = select(func.count()).select_from(ToolboxTalk).where(ToolboxTalk.status == talk_status)
+    return int(db.scalar(stmt) or 0)
+
+
 def count_attendees_for_talk(db: Session, talk_id: uuid.UUID) -> int:
     stmt = select(ToolboxTalkAttendee).where(ToolboxTalkAttendee.talk_id == talk_id)
     return len(list(db.scalars(stmt).all()))
 
+
+def count_signed_attendees_for_talk(db: Session, talk_id: uuid.UUID) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(ToolboxTalkAttendee)
+        .where(ToolboxTalkAttendee.talk_id == talk_id)
+        .where(ToolboxTalkAttendee.status == "signed")
+    )
+    return int(db.scalar(stmt) or 0)
+
+
+def delete_talk_row(db: Session, talk: ToolboxTalk) -> None:
+    db.delete(talk)
+    db.commit()

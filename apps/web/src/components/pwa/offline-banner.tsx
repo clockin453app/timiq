@@ -6,11 +6,13 @@ import { useT } from "../../lib/i18n";
 
 export function OfflineBanner() {
   const t = useT();
-  const [online, setOnline] = useState(() =>
-    typeof navigator === "undefined" ? true : navigator.onLine,
-  );
+  // Assume "online" until after mount so SSR and the first client paint match (navigator is undefined on server).
+  const [mounted, setMounted] = useState(false);
+  const [online, setOnline] = useState(true);
 
   useEffect(() => {
+    setMounted(true);
+    setOnline(typeof navigator !== "undefined" ? navigator.onLine : true);
     const onUp = () => setOnline(true);
     const onDown = () => setOnline(false);
     window.addEventListener("online", onUp);
@@ -21,7 +23,7 @@ export function OfflineBanner() {
     };
   }, []);
 
-  if (online) {
+  if (!mounted || online) {
     return null;
   }
 

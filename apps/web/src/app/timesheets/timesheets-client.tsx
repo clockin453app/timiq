@@ -34,7 +34,9 @@ import {
   type AdminTimesheetWeekAllEmployeesResponse,
   type TimesheetDayTotals,
   type TimesheetWeekResponse,
+  type WeekLeaveRow,
 } from "../../features/timesheets/api";
+import { leaveTypeLabel } from "../../features/leave/labels";
 import {
   browserDefaultTimeZone,
   mondayWeekStartIso,
@@ -561,6 +563,53 @@ export function TimesheetsClient() {
             break rules. <span className="font-semibold text-[var(--color-text)]">Payroll time</span> = rounded time
             used by payroll.
           </p>
+        ) : null}
+
+        {!loading && sheet && !viewingAllEmployees && (sheet.week_leave?.length ?? 0) > 0 ? (
+          <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+            <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+                Leave & absence (week overlap)
+              </p>
+            </div>
+            <div className="overflow-x-auto p-2">
+              <Table className="min-w-[560px] text-xs">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Dates</TableHead>
+                    <TableHead>Days</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(sheet.week_leave ?? []).map((lv: WeekLeaveRow) => (
+                    <TableRow key={lv.request_id}>
+                      <TableCell>{leaveTypeLabel(lv.leave_type)}</TableCell>
+                      <TableCell className="tabular-nums text-[var(--color-text-muted)]">
+                        {lv.date_from} → {lv.date_to}
+                      </TableCell>
+                      <TableCell className="tabular-nums">{lv.total_days}</TableCell>
+                      <TableCell>
+                        <span
+                          className={`inline-block rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${
+                            lv.status === "approved"
+                              ? "border-emerald-800/30 bg-emerald-50 text-emerald-950"
+                              : "border-amber-800/30 bg-amber-50 text-amber-950"
+                          }`}
+                        >
+                          {lv.status}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+            <p className="border-t border-[var(--color-border-dark)] px-3 py-2 text-[11px] text-[var(--color-text-muted)]">
+              Separate from clocked hours; for context only.
+            </p>
+          </div>
         ) : null}
 
         {showNoCompleted ? (

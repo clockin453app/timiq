@@ -9,7 +9,18 @@ from typing import Any
 _SLUG = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 ALLOWED_CATEGORIES = frozenset(
-    {"daily_checklist", "hs_inspection", "equipment_check", "general"},
+    {
+        "daily_checklist",
+        "hs_inspection",
+        "equipment_check",
+        "general",
+        "scaffold_inspection",
+        "ppe_compliance",
+        "housekeeping_inspection",
+        "fire_point_inspection",
+        "delivery_visitor",
+        "site_close_checklist",
+    },
 )
 ALLOWED_TEMPLATE_STATUSES = frozenset({"draft", "active", "archived"})
 ALLOWED_SUBMISSION_STATUSES = frozenset({"draft", "submitted", "reviewed", "rejected"})

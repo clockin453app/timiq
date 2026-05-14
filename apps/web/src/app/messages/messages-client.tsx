@@ -81,6 +81,14 @@ function formatTs(iso: string | null): string {
   return d.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 }
 
+function convLabel(c: ConversationListItem): string {
+  if (c.conversation_type === "group") {
+    const title = c.title?.trim() || "Group chat";
+    return `${title} (${c.participant_count})`;
+  }
+  return c.other_user_display_name || c.last_message_preview || "Conversation";
+}
+
 export function MessagesClient() {
   const user = useCurrentUser();
   const [tab, setTab] = useState<TabId>("news");
@@ -105,11 +113,18 @@ export function MessagesClient() {
   const [msgLoading, setMsgLoading] = useState(false);
   const [msgInput, setMsgInput] = useState("");
   const [newConvOpen, setNewConvOpen] = useState(false);
+  const [newConvMode, setNewConvMode] = useState<"direct" | "group">("direct");
+  const [groupTitle, setGroupTitle] = useState("");
+  const [groupPick, setGroupPick] = useState<string[]>([]);
   const [colleagues, setColleagues] = useState<Colleague[]>([]);
   const [pickUserId, setPickUserId] = useState("");
   const [newConvMessage, setNewConvMessage] = useState("");
 
   const effectiveCompanyId = useMemo(() => resolveCompanyId(user, companyOverride), [user, companyOverride]);
+  const activeConv = useMemo(
+    () => conversations.find((c) => c.id === selectedConvId) ?? null,
+    [conversations, selectedConvId],
+  );
   const mgmt = canAccessManagement(user);
 
   useEffect(() => {
@@ -194,6 +209,9 @@ export function MessagesClient() {
 
   async function openNewConversation() {
     setNewConvOpen(true);
+    setNewConvMode("direct");
+    setGroupTitle("");
+    setGroupPick([]);
     setPickUserId("");
     setNewConvMessage("");
     try {
@@ -206,13 +224,35 @@ export function MessagesClient() {
 
   async function submitNewConversation(e: FormEvent) {
     e.preventDefault();
-    if (!pickUserId || !newConvMessage.trim()) {
+    if (!newConvMessage.trim()) {
       return;
     }
     try {
+      if (newConvMode === "direct") {
+        if (!pickUserId) {
+          return;
+        }
+        const conv = await createConversation({
+          company_id: isAdministrator(user) ? effectiveCompanyId : null,
+          conversation_type: "direct",
+          participant_user_ids: [pickUserId],
+          initial_message: newConvMessage.trim(),
+        });
+        setNewConvOpen(false);
+        await loadConversations();
+        setSelectedConvId(conv.id);
+        return;
+      }
+      const title = groupTitle.trim();
+      if (!title || groupPick.length < 2) {
+        setConvError("Group chats need a title and at least two colleagues.");
+        return;
+      }
       const conv = await createConversation({
         company_id: isAdministrator(user) ? effectiveCompanyId : null,
-        participant_user_ids: [pickUserId],
+        conversation_type: "group",
+        title,
+        participant_user_ids: groupPick,
         initial_message: newConvMessage.trim(),
       });
       setNewConvOpen(false);
@@ -439,8 +479,9 @@ export function MessagesClient() {
                       type="button"
                       onClick={() => setSelectedConvId(c.id)}
                     >
-                      <div className="truncate">{c.last_message_preview || "Conversation"}</div>
+                      <div className="truncate font-medium text-[var(--color-text)]">{convLabel(c)}</div>
                       <div className="truncate text-xs text-[var(--color-text-soft)]">
+                        {c.last_message_preview ? `${c.last_message_preview} · ` : ""}
                         {formatTs(c.last_message_at || c.updated_at)}
                       </div>
                     </button>
@@ -451,6 +492,16 @@ export function MessagesClient() {
             <div className="flex min-w-0 flex-1 flex-col">
               {selectedConvId ? (
                 <>
+                  {activeConv ? (
+                    <div className="mb-2 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
+                      <p className="font-semibold text-[var(--color-text)]">{convLabel(activeConv)}</p>
+                      {activeConv.conversation_type === "group" ? (
+                        <p className="text-xs text-[var(--color-text-soft)]">
+                          {activeConv.participant_count} participants
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                   <div className="mb-2 flex justify-end">
                     <Button type="button" variant="secondary" onClick={() => void loadMessages(selectedConvId)}>
                       Reload thread
@@ -569,28 +620,84 @@ export function MessagesClient() {
 
         {newConvOpen ? (
           <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/40 p-3 sm:items-center">
-            <div className="w-full max-w-md rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg">
+            <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg">
               <h3 className="text-sm font-semibold">Start conversation</h3>
               <form className="mt-3 space-y-3" onSubmit={submitNewConversation}>
-                <div>
-                  <label className={fieldLabel()} htmlFor="conv-peer">
-                    Colleague
-                  </label>
-                  <select
-                    className={inputClass()}
-                    id="conv-peer"
-                    required
-                    value={pickUserId}
-                    onChange={(ev) => setPickUserId(ev.target.value)}
+                <div className="flex flex-wrap gap-2 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-1">
+                  <button
+                    className={segmentBtnClass(newConvMode === "direct")}
+                    type="button"
+                    onClick={() => setNewConvMode("direct")}
                   >
-                    <option value="">Select…</option>
-                    {colleagues.map((c) => (
-                      <option key={c.user_id} value={c.user_id}>
-                        {c.display_name}
-                      </option>
-                    ))}
-                  </select>
+                    Direct message
+                  </button>
+                  <button
+                    className={segmentBtnClass(newConvMode === "group")}
+                    type="button"
+                    onClick={() => setNewConvMode("group")}
+                  >
+                    Group chat
+                  </button>
                 </div>
+                {newConvMode === "direct" ? (
+                  <div>
+                    <label className={fieldLabel()} htmlFor="conv-peer">
+                      Colleague
+                    </label>
+                    <select
+                      className={inputClass()}
+                      id="conv-peer"
+                      value={pickUserId}
+                      onChange={(ev) => setPickUserId(ev.target.value)}
+                    >
+                      <option value="">Select…</option>
+                      {colleagues.map((c) => (
+                        <option key={c.user_id} value={c.user_id}>
+                          {c.display_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <label className={fieldLabel()} htmlFor="conv-group-title">
+                        Group title
+                      </label>
+                      <Input
+                        className="mt-1.5"
+                        id="conv-group-title"
+                        maxLength={200}
+                        value={groupTitle}
+                        onChange={(e) => setGroupTitle(e.target.value)}
+                      />
+                    </div>
+                    <div>
+                      <p className={fieldLabel()}>Colleagues (select at least two)</p>
+                      <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] p-2">
+                        {colleagues.map((c) => {
+                          const on = groupPick.includes(c.user_id);
+                          return (
+                            <li key={c.user_id}>
+                              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                                <input
+                                  checked={on}
+                                  type="checkbox"
+                                  onChange={() => {
+                                    setGroupPick((prev) =>
+                                      on ? prev.filter((id) => id !== c.user_id) : [...prev, c.user_id],
+                                    );
+                                  }}
+                                />
+                                <span>{c.display_name}</span>
+                              </label>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className={fieldLabel()} htmlFor="conv-first">
                     First message

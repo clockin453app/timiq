@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.modules.leave.schemas import WeekLeaveRow
+
 
 class TimeRecordShiftRow(BaseModel):
     shift_id: uuid.UUID
@@ -69,6 +71,7 @@ class TimesheetWeekResponse(BaseModel):
     completed_shift_count: int = 0
     open_shifts: list[TimesheetOpenShiftSummary] = Field(default_factory=list)
     locations_worked: list[str] = Field(default_factory=list)
+    week_leave: list[WeekLeaveRow] = Field(default_factory=list)
 
 
 class AdminTimesheetEmployeeDayRow(BaseModel):
@@ -125,6 +128,7 @@ class AdminWeekReportEmployeeSummary(BaseModel):
     break_seconds: int = 0
     locations_worked: list[str] = Field(default_factory=list)
     open_shift_in_week: bool = False
+    week_leave: list[WeekLeaveRow] = Field(default_factory=list)
 
 
 class AdminWeekReportCompanyTotals(BaseModel):

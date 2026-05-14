@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.modules.smart_forms.models import SmartFormSubmission, SmartFormTemplate
@@ -61,6 +61,20 @@ def get_submission(db: Session, submission_id: uuid.UUID) -> SmartFormSubmission
     return db.get(SmartFormSubmission, submission_id)
 
 
+def count_submissions_for_template(db: Session, template_id: uuid.UUID) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(SmartFormSubmission)
+        .where(SmartFormSubmission.template_id == template_id)
+    )
+    return int(db.scalar(stmt) or 0)
+
+
+def delete_template_row(db: Session, row: SmartFormTemplate) -> None:
+    db.delete(row)
+    db.commit()
+
+
 def list_submissions_for_user(db: Session, user_id: uuid.UUID) -> list[SmartFormSubmission]:
     stmt = (
         select(SmartFormSubmission)
@@ -82,6 +96,26 @@ def list_submissions_for_review(
     if status_filter:
         stmt = stmt.where(SmartFormSubmission.status == status_filter)
     return list(db.scalars(stmt).all())
+
+
+def count_submissions_for_review(
+    db: Session,
+    *,
+    company_id: uuid.UUID,
+    status_filter: str,
+) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(SmartFormSubmission)
+        .where(SmartFormSubmission.company_id == company_id)
+        .where(SmartFormSubmission.status == status_filter)
+    )
+    return int(db.scalar(stmt) or 0)
+
+
+def count_submissions_by_status_global(db: Session, *, status_filter: str) -> int:
+    stmt = select(func.count()).select_from(SmartFormSubmission).where(SmartFormSubmission.status == status_filter)
+    return int(db.scalar(stmt) or 0)
 
 
 def save_submission(db: Session, row: SmartFormSubmission) -> SmartFormSubmission:

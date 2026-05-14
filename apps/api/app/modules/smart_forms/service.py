@@ -6,9 +6,12 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.signature_data_url import SignatureDataUrlError, decode_png_data_url
+from app.core.storage.factory import get_storage_backend
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
+from app.modules.companies.repository import get_company_by_id
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
 from app.modules.locations.repository import get_location_by_id
 from app.modules.site_access.repository import list_site_access_for_user
@@ -23,6 +26,7 @@ from app.modules.smart_forms.schema_validate import (
     validate_template_schema,
 )
 from app.modules.smart_forms.schemas import (
+    SmartFormProfessionalTemplateResponse,
     SmartFormReviewQueueItem,
     SmartFormReviewRequest,
     SmartFormSubmissionCreateRequest,
@@ -152,7 +156,14 @@ def _template_to_response(row: SmartFormTemplate) -> SmartFormTemplateResponse:
 
 
 def _submission_to_response(row: SmartFormSubmission) -> SmartFormSubmissionResponse:
-    return SmartFormSubmissionResponse.model_validate(row)
+    base = SmartFormSubmissionResponse.model_validate(row)
+    return base.model_copy(update={"has_signature": bool((row.signature_image_path or "").strip())})
+
+
+def list_professional_templates() -> list[SmartFormProfessionalTemplateResponse]:
+    from app.modules.smart_forms.professional_templates import list_professional_template_dicts
+
+    return [SmartFormProfessionalTemplateResponse.model_validate(d) for d in list_professional_template_dicts()]
 
 
 def list_templates(db: Session, actor: User) -> list[SmartFormTemplateResponse]:
@@ -362,6 +373,43 @@ def archive_template(db: Session, actor: User, template_id: uuid.UUID) -> SmartF
     return patch_template(db, actor, template_id, SmartFormTemplatePatchRequest(status="archived"))
 
 
+def delete_template_hard(db: Session, actor: User, template_id: uuid.UUID) -> None:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise SmartFormPermissionError("Employees cannot delete templates.")
+    row = sf_repo.get_template(db, template_id)
+    if row is None:
+        raise SmartFormNotFoundError()
+    if actor.system_role == SystemRole.ADMIN:
+        if not _admin_can_manage_template(actor, row):
+            raise SmartFormNotFoundError()
+    elif actor.system_role == SystemRole.ADMINISTRATOR:
+        if not _administrator_can_manage_template(actor, row):
+            raise SmartFormNotFoundError()
+    else:
+        raise SmartFormPermissionError()
+    if row.status != "draft":
+        raise SmartFormValidationError(
+            "Only draft templates can be permanently deleted. Archive the template if it was active or has history.",
+        )
+    if sf_repo.count_submissions_for_template(db, row.id) > 0:
+        raise SmartFormValidationError(
+            "Cannot delete a template that has submissions. Archive it instead to keep compliance history.",
+        )
+    tid = row.id
+    cid = row.company_id
+    cat = row.category
+    sf_repo.delete_template_row(db, row)
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="smart_form.template_deleted",
+        entity_type="smart_form_template",
+        entity_id=str(tid),
+        company_id=cid,
+        details={"template_id": str(tid), "actor_user_id": str(actor.id), "category": cat},
+    )
+
+
 def create_submission(
     db: Session,
     actor: User,
@@ -514,6 +562,24 @@ def patch_submission(
     row.answers_json = merged_answers
     if body.signature_name is not None:
         row.signature_name = body.signature_name.strip() or None
+    if body.signature_image_data is not None:
+        s = body.signature_image_data.strip()
+        if not s:
+            raise SmartFormValidationError("signature_image_data cannot be empty when provided.")
+        try:
+            raw = decode_png_data_url(s)
+        except SignatureDataUrlError as exc:
+            raise SmartFormValidationError(str(exc)) from exc
+        rel = f"smart-form-signatures/{company_id}/{row.id}/{actor.id}/signature-{uuid.uuid4().hex}.png"
+        backend = get_storage_backend()
+        prev = row.signature_image_path
+        backend.write_bytes(rel, raw)
+        if prev:
+            try:
+                backend.delete_file(prev)
+            except Exception:
+                pass
+        row.signature_image_path = rel
     row.updated_at = _utc_now()
     sf_repo.save_submission(db, row)
     return get_submission(db, actor, row.id)
@@ -553,6 +619,8 @@ def submit_submission(db: Session, actor: User, submission_id: uuid.UUID) -> Sma
         name = (row.signature_name or "").strip()
         if not name:
             raise SmartFormValidationError("signature_name is required for this template.")
+        if not (row.signature_image_path or "").strip():
+            raise SmartFormValidationError("Draw your signature before submitting this form.")
 
     row.status = "submitted"
     row.submitted_at = _utc_now()
@@ -678,3 +746,51 @@ def review_submission(
         },
     )
     return get_submission(db, actor, row.id)
+
+
+def export_submission_pdf_bytes(db: Session, actor: User, submission_id: uuid.UUID) -> tuple[bytes, str]:
+    row = sf_repo.get_submission(db, submission_id)
+    if row is None:
+        raise SmartFormNotFoundError()
+    if not _can_view_submission(db, actor, row):
+        raise SmartFormNotFoundError()
+    template = sf_repo.get_template(db, row.template_id)
+    if template is None:
+        raise SmartFormNotFoundError()
+    company = get_company_by_id(db, row.company_id)
+    company_name = company.name if company else "Company"
+    owner = get_user_by_id(db, row.submitted_by_user_id)
+    submitter = owner.email if owner else ""
+    loc_name = None
+    if row.location_id:
+        loc = get_location_by_id(db, row.location_id)
+        loc_name = loc.name if loc else None
+    from app.modules.smart_forms.pdf_export import build_smart_form_submission_pdf
+
+    pdf = build_smart_form_submission_pdf(
+        company_name=company_name,
+        template_name=template.name,
+        template_category=template.category,
+        submitter_email=submitter,
+        submitter_display=_display_name_for_user(db, row.submitted_by_user_id),
+        location_name=loc_name,
+        submission_status=row.status,
+        answers_json=row.answers_json or {},
+        schema_json=template.schema_json,
+        signature_name=row.signature_name,
+        has_signature=bool((row.signature_image_path or "").strip()),
+        review_notes=row.review_notes,
+        submitted_at=row.submitted_at,
+        reviewed_at=row.reviewed_at,
+    )
+    fname = f"form-{submission_id}.pdf"
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="smart_form.submission_pdf_exported",
+        entity_type="smart_form_submission",
+        entity_id=str(submission_id),
+        company_id=row.company_id,
+        details={"submission_id": str(submission_id), "actor_user_id": str(actor.id)},
+    )
+    return pdf, fname

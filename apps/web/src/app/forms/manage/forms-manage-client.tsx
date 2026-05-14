@@ -19,6 +19,7 @@ import { listCompanies, type Company } from "../../../features/companies/api";
 import {
   archiveSmartFormTemplate,
   createSmartFormTemplate,
+  deleteSmartFormTemplate,
   EXAMPLE_EQUIPMENT_PRESTART_SCHEMA,
   EXAMPLE_HS_INSPECTION_SCHEMA,
   EXAMPLE_SMART_FORM_SCHEMA,
@@ -31,10 +32,23 @@ import {
   type SmartFormTemplate,
   type SmartFormTemplateCreateBody,
 } from "../../../features/smart-forms/api";
-import { SMART_FORM_CATEGORY_VALUES, smartFormCategoryLabel } from "../../../features/smart-forms/form-categories";
+import {
+  SMART_FORM_CATEGORY_VALUES,
+  smartFormCategoryLabel,
+  type SmartFormCategoryValue,
+} from "../../../features/smart-forms/form-categories";
 import { useI18n } from "../../../lib/i18n";
 
 const FIELD_TYPES = ["text", "textarea", "yes_no", "number", "date", "select", "checkbox"] as const;
+
+type ProfessionalFormPreset = {
+  id: string;
+  title: string;
+  category: SmartFormCategoryValue;
+  schema: SmartFormSchemaJson;
+  requires_location?: boolean;
+  requires_signature?: boolean;
+};
 
 function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -42,6 +56,180 @@ function newId(prefix: string): string {
 
 function cloneSchema(s: SmartFormSchemaJson): SmartFormSchemaJson {
   return JSON.parse(JSON.stringify(s)) as SmartFormSchemaJson;
+}
+
+function professionalPresets(t: (k: string, f: string) => string): ProfessionalFormPreset[] {
+  const yesNo = (id: string, label: string, required = true): SmartFormFieldDef => ({
+    id,
+    label,
+    type: "yes_no",
+    required,
+  });
+  const ta = (id: string, label: string, required = false): SmartFormFieldDef => ({
+    id,
+    label,
+    type: "textarea",
+    required,
+  });
+  return [
+    {
+      id: "daily_site",
+      title: t("forms.preset_daily_site", "Daily site checklist"),
+      category: "daily_checklist",
+      schema: {
+        sections: [
+          {
+            id: newId("section"),
+            title: t("forms.preset_section_site", "Site condition"),
+            fields: [
+              yesNo("access_clear", t("forms.preset_q_access_clear", "Access routes clear")),
+              yesNo("housekeeping_ok", t("forms.preset_q_housekeeping", "Housekeeping acceptable")),
+              ta("site_notes", t("forms.preset_q_site_notes", "Notes"), false),
+            ],
+          },
+        ],
+      },
+      requires_location: true,
+      requires_signature: true,
+    },
+    {
+      id: "equipment_prestart",
+      title: t("forms.preset_equipment_prestart", "Equipment pre-start"),
+      category: "equipment_check",
+      schema: cloneSchema(EXAMPLE_EQUIPMENT_PRESTART_SCHEMA),
+      requires_signature: true,
+    },
+    {
+      id: "hs_inspection",
+      title: t("forms.preset_hs_inspection", "H&S inspection"),
+      category: "hs_inspection",
+      schema: cloneSchema(EXAMPLE_HS_INSPECTION_SCHEMA),
+      requires_location: true,
+      requires_signature: true,
+    },
+    {
+      id: "scaffold",
+      title: t("forms.preset_scaffold", "Scaffold / access inspection"),
+      category: "general",
+      schema: {
+        sections: [
+          {
+            id: newId("section"),
+            title: t("forms.preset_section_scaffold", "Access / scaffold"),
+            fields: [
+              yesNo("guardrails", t("forms.preset_q_guardrails", "Guardrails and toe boards in place")),
+              yesNo("ladder_ok", t("forms.preset_q_ladder", "Ladders / towers inspected")),
+              ta("defects", t("forms.preset_q_defects", "Defects / actions"), false),
+            ],
+          },
+        ],
+      },
+      requires_location: true,
+      requires_signature: true,
+    },
+    {
+      id: "ppe",
+      title: t("forms.preset_ppe", "PPE compliance"),
+      category: "hs_inspection",
+      schema: {
+        sections: [
+          {
+            id: newId("section"),
+            title: t("forms.preset_section_ppe", "PPE"),
+            fields: [
+              yesNo("head_foot", t("forms.preset_q_ppe_hf", "Head / foot / eye protection correct")),
+              yesNo("hi_vis", t("forms.preset_q_hi_vis", "Hi-vis worn as required")),
+              ta("ppe_notes", t("forms.preset_q_ppe_notes", "Notes"), false),
+            ],
+          },
+        ],
+      },
+      requires_signature: true,
+    },
+    {
+      id: "housekeeping",
+      title: t("forms.preset_housekeeping", "Housekeeping inspection"),
+      category: "daily_checklist",
+      schema: {
+        sections: [
+          {
+            id: newId("section"),
+            title: t("forms.preset_section_housekeeping", "Housekeeping"),
+            fields: [
+              yesNo("waste_contained", t("forms.preset_q_waste", "Waste contained and segregated")),
+              yesNo("tripping", t("forms.preset_q_trips", "Walkways free of trip hazards")),
+              ta("hk_notes", t("forms.preset_q_hk_notes", "Notes"), false),
+            ],
+          },
+        ],
+      },
+      requires_location: true,
+    },
+    {
+      id: "fire_point",
+      title: t("forms.preset_fire_point", "Fire point inspection"),
+      category: "hs_inspection",
+      schema: {
+        sections: [
+          {
+            id: newId("section"),
+            title: t("forms.preset_section_fire", "Fire safety"),
+            fields: [
+              yesNo("extinguisher", t("forms.preset_q_extinguisher", "Extinguishers / blankets available and signed")),
+              yesNo("exits_clear", t("forms.preset_q_exits", "Exits and fire points clear")),
+              ta("fire_notes", t("forms.preset_q_fire_notes", "Notes"), false),
+            ],
+          },
+        ],
+      },
+      requires_location: true,
+      requires_signature: true,
+    },
+    {
+      id: "visitor_delivery",
+      title: t("forms.preset_visitor_delivery", "Visitor / delivery checklist"),
+      category: "general",
+      schema: {
+        sections: [
+          {
+            id: newId("section"),
+            title: t("forms.preset_section_visitor", "Visitor / delivery"),
+            fields: [
+              {
+                id: newId("field"),
+                label: t("forms.preset_q_visitor_name", "Visitor / company name"),
+                type: "text",
+                required: true,
+              },
+              yesNo("induction_done", t("forms.preset_q_induction", "Site induction / briefing completed")),
+              ta("vehicle_reg", t("forms.preset_q_vehicle", "Vehicle registration / notes"), false),
+            ],
+          },
+        ],
+      },
+      requires_location: true,
+    },
+    {
+      id: "site_close",
+      title: t("forms.preset_site_close", "End-of-day site close"),
+      category: "daily_checklist",
+      schema: {
+        sections: [
+          {
+            id: newId("section"),
+            title: t("forms.preset_section_close", "Close-down"),
+            fields: [
+              yesNo("plant_off", t("forms.preset_q_plant_off", "Plant isolated and secure")),
+              yesNo("perimeter", t("forms.preset_q_perimeter", "Perimeter secure")),
+              ta("close_notes", t("forms.preset_q_close_notes", "Handover notes"), false),
+            ],
+          },
+        ],
+      },
+      requires_location: true,
+      requires_signature: true,
+    },
+  ];
 }
 
 function statusBadgeClass(status: string): string {
@@ -79,6 +267,8 @@ export function FormsManageClient() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [advancedText, setAdvancedText] = useState("");
   const [advancedError, setAdvancedError] = useState("");
+  const [workspace, setWorkspace] = useState<"presets" | "builder" | "templates">("presets");
+  const [showTechnicalIds, setShowTechnicalIds] = useState(false);
 
   const load = useCallback(async () => {
     setError("");
@@ -163,6 +353,7 @@ export function FormsManageClient() {
       setAdvancedOpen(false);
       setAdvancedText("");
       setAdvancedError("");
+      setWorkspace("builder");
     } catch (e) {
       setError(e instanceof Error ? e.message : t("common.error"));
     } finally {
@@ -360,6 +551,46 @@ export function FormsManageClient() {
     [companies, t],
   );
 
+  const presetList = useMemo(() => professionalPresets(t), [t]);
+
+  const applyProfessionalPreset = (p: ProfessionalFormPreset) => {
+    setEditingId(null);
+    setName(p.title);
+    setCategory(p.category);
+    setSchemaJson(cloneSchema(p.schema));
+    setRequiresLocation(p.requires_location ?? false);
+    setRequiresSignature(p.requires_signature ?? false);
+    setAllowPhotos(false);
+    setAdvancedOpen(false);
+    setAdvancedText("");
+    setAdvancedError("");
+    setWorkspace("builder");
+  };
+
+  async function hardDeleteTemplate(id: string) {
+    if (!window.confirm(t("forms.delete_template_confirm", "Delete permanently? This cannot be undone."))) {
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await deleteSmartFormTemplate(id);
+      if (editingId === id) {
+        resetFormForCreate();
+      }
+      await load();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : t("common.error");
+      if (msg.toLowerCase().includes("submission") || msg.toLowerCase().includes("active") || msg.toLowerCase().includes("draft")) {
+        setError(t("forms.delete_template_blocked", "Cannot delete: use Archive if the template is active or has submissions."));
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6">
       <div className="flex flex-wrap gap-2">
@@ -372,36 +603,105 @@ export function FormsManageClient() {
         <p className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</p>
       ) : null}
 
-      {user && isAdministrator(user) ? (
-        <label className="flex max-w-md flex-col gap-1 text-sm text-[var(--color-text)]">
-          <span className="font-medium">{t("forms.company_scope", "Company")}</span>
-          <select
-            className="timiq-input h-10 w-full rounded border border-[var(--color-border)] bg-[var(--color-input)] px-2 text-sm"
-            onChange={(e) => setCompanyId(e.target.value)}
-            value={companyId}
-          >
-            <option value="">{t("forms.company_global_option", "Global (all companies)")}</option>
-            {companies
-              .filter((c) => c.is_active)
-              .map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-          </select>
-        </label>
+      <div className="flex flex-wrap items-center gap-2 border-b border-[var(--color-border)] pb-3">
+        <button
+          type="button"
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            workspace === "presets" ? "bg-[var(--color-text)] text-white" : "bg-[var(--color-cell)] text-[var(--color-text)]"
+          }`}
+          onClick={() => setWorkspace("presets")}
+        >
+          {t("forms.tab_professional_templates", "Professional templates")}
+        </button>
+        <button
+          type="button"
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            workspace === "builder" ? "bg-[var(--color-text)] text-white" : "bg-[var(--color-cell)] text-[var(--color-text)]"
+          }`}
+          onClick={() => setWorkspace("builder")}
+        >
+          {t("forms.tab_builder", "Builder")}
+        </button>
+        <button
+          type="button"
+          className={`rounded px-3 py-1.5 text-sm font-medium ${
+            workspace === "templates" ? "bg-[var(--color-text)] text-white" : "bg-[var(--color-cell)] text-[var(--color-text)]"
+          }`}
+          onClick={() => setWorkspace("templates")}
+        >
+          {t("forms.tab_saved_templates", "Saved templates")}
+        </button>
+        <Link
+          className="ml-auto inline-flex h-9 items-center rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+          href="/forms/review"
+        >
+          {t("forms.review_title")}
+        </Link>
+      </div>
+
+      {workspace === "presets" ? (
+        <section className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+          <h2 className="mb-1 text-base font-semibold text-[var(--color-text)]">
+            {t("forms.presets_heading", "Start from a professional template")}
+          </h2>
+          <p className="mb-4 text-sm text-[var(--color-text-soft)]">
+            {t("forms.presets_intro", "Pick a checklist — the builder opens with questions ready to edit.")}
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {presetList.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="rounded-lg border border-[var(--color-border)] bg-white p-4 text-left shadow-sm transition hover:border-[var(--color-primary)]"
+                onClick={() => applyProfessionalPreset(p)}
+              >
+                <p className="font-semibold text-[var(--color-text)]">{p.title}</p>
+                <p className="mt-2 text-xs text-[var(--color-text-soft)]">{smartFormCategoryLabel(p.category, t)}</p>
+                <p className="mt-3 text-xs font-medium text-[var(--color-link)]">{t("forms.preset_use", "Use template →")}</p>
+              </button>
+            ))}
+          </div>
+        </section>
       ) : null}
 
-      <section className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+      {workspace === "builder" ? (
+        <>
+          {user && isAdministrator(user) ? (
+            <label className="flex max-w-md flex-col gap-1 text-sm text-[var(--color-text)]">
+              <span className="font-medium">{t("forms.company_scope", "Company")}</span>
+              <select
+                className="timiq-input h-10 w-full rounded border border-[var(--color-border)] bg-[var(--color-input)] px-2 text-sm"
+                onChange={(e) => setCompanyId(e.target.value)}
+                value={companyId}
+              >
+                <option value="">{t("forms.company_global_option", "Global (all companies)")}</option>
+                {companies
+                  .filter((c) => c.is_active)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          ) : null}
+
+          <section className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-[var(--color-text)]">
             {editingId ? t("forms.edit_template", "Edit template") : t("forms.create_template", "Create template")}
           </h2>
-          {editingId ? (
-            <Button onClick={() => resetFormForCreate()} type="button" variant="ghost">
-              {t("forms.cancel_edit", "Cancel edit")}
-            </Button>
-          ) : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
+              <input checked={showTechnicalIds} onChange={(e) => setShowTechnicalIds(e.target.checked)} type="checkbox" />
+              {t("forms.show_technical_ids", "Technical IDs")}
+            </label>
+            {editingId ? (
+              <Button onClick={() => resetFormForCreate()} type="button" variant="ghost">
+                {t("forms.cancel_edit", "Cancel edit")}
+              </Button>
+            ) : null}
+          </div>
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -478,7 +778,7 @@ export function FormsManageClient() {
                     value={section.title}
                   />
                 </label>
-                <span className="text-xs text-[var(--color-text-muted)]">id: {section.id}</span>
+                {showTechnicalIds ? <span className="text-xs text-[var(--color-text-muted)]">id: {section.id}</span> : null}
                 <Button
                   disabled={schemaJson.sections.length <= 1}
                   onClick={() => removeSection(si)}
@@ -496,10 +796,10 @@ export function FormsManageClient() {
                     className="rounded border border-[var(--color-border)] bg-[var(--color-header)] p-3"
                     key={field.id}
                   >
-                    <div className="mb-2 text-xs text-[var(--color-text-muted)]">id: {field.id}</div>
+                    {showTechnicalIds ? <div className="mb-2 text-xs text-[var(--color-text-muted)]">id: {field.id}</div> : null}
                     <div className="grid gap-2 md:grid-cols-2">
                       <label className="text-sm">
-                        <span className="font-medium">{t("forms.builder_field_label", "Field label")}</span>
+                        <span className="font-medium">{t("forms.builder_question_label", "Question")}</span>
                         <Input
                           className="mt-1"
                           onChange={(e) => updateField(si, fi, { label: e.target.value })}
@@ -507,7 +807,7 @@ export function FormsManageClient() {
                         />
                       </label>
                       <label className="text-sm">
-                        <span className="font-medium">{t("forms.builder_field_type", "Field type")}</span>
+                        <span className="font-medium">{t("forms.builder_field_type", "Answer type")}</span>
                         <select
                           className="timiq-input mt-1 h-10 w-full rounded border border-[var(--color-border)] bg-[var(--color-input)] px-2 text-sm"
                           onChange={(e) => {
@@ -575,7 +875,7 @@ export function FormsManageClient() {
             }}
             type="button"
           >
-            <span>{t("forms.advanced_schema_heading", "Advanced: form structure (JSON)")}</span>
+            <span>{t("forms.advanced_structure", "Advanced structure")}</span>
             <span className="text-[var(--color-text-muted)]">{advancedOpen ? "▾" : "▸"}</span>
           </button>
           {advancedOpen ? (
@@ -625,7 +925,10 @@ export function FormsManageClient() {
           </Button>
         </div>
       </section>
+        </>
+      ) : null}
 
+      {workspace === "templates" ? (
       <section className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 shadow-sm">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-[var(--color-text)]">{t("forms.templates_list_title", "Templates")}</h2>
@@ -714,6 +1017,17 @@ export function FormsManageClient() {
                           {t("forms.archive")}
                         </Button>
                       ) : null}
+                      {canManageRow(row) && row.status === "draft" ? (
+                        <Button
+                          disabled={busy}
+                          onClick={() => void hardDeleteTemplate(row.id)}
+                          size="sm"
+                          type="button"
+                          variant="secondary"
+                        >
+                          {t("forms.delete", "Delete")}
+                        </Button>
+                      ) : null}
                     </TableCell>
                   </TableRow>
                 ))
@@ -722,6 +1036,7 @@ export function FormsManageClient() {
           </Table>
         </div>
       </section>
+      ) : null}
     </div>
   );
 }

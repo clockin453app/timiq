@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, func, select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
@@ -10,6 +10,20 @@ from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
 from app.modules.site_access.models import EmployeeLocationAccess
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
+
+
+def count_open_shifts_for_company_employees(db_session: Session, company_id: uuid.UUID) -> int:
+    """Open (incomplete) shifts for active employees of the company."""
+    statement = (
+        select(func.count())
+        .select_from(TimeShift)
+        .join(User, TimeShift.user_id == User.id)
+        .where(User.company_id == company_id)
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
+        .where(TimeShift.status == "open")
+    )
+    return int(db_session.scalar(statement) or 0)
 
 
 def get_open_shift_for_user(db_session: Session, user_id: uuid.UUID) -> TimeShift | None:

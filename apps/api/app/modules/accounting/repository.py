@@ -61,6 +61,25 @@ def list_export_runs(
     return list(db_session.scalars(statement).all())
 
 
+def payroll_export_run_overlaps_date_range(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    range_start: date,
+    range_end: date,
+) -> bool:
+    """True if a recorded payroll CSV export's date range overlaps [range_start, range_end] inclusive."""
+    statement = (
+        select(AccountingExportRun.id)
+        .where(AccountingExportRun.company_id == company_id)
+        .where(AccountingExportRun.export_type.in_(("payroll_items", "payroll_summary")))
+        .where(AccountingExportRun.date_from <= range_end)
+        .where(AccountingExportRun.date_to >= range_start)
+        .limit(1)
+    )
+    return db_session.scalar(statement) is not None
+
+
 def add_export_run(
     db_session: Session,
     *,

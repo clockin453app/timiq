@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 AUDIENCE_TYPES = frozenset({"company", "administrators", "all_companies"})
 PRIORITIES = frozenset({"normal", "important", "urgent"})
@@ -91,13 +91,46 @@ class AnnouncementDetailResponse(AnnouncementListItem):
 
 class ConversationCreateRequest(BaseModel):
     company_id: uuid.UUID | None = None
+    conversation_type: str = Field(default="direct", max_length=16)
+    title: str | None = Field(default=None, max_length=200)
     participant_user_ids: list[uuid.UUID]
     initial_message: str = Field(..., min_length=1, max_length=4000)
+
+    @field_validator("conversation_type")
+    @classmethod
+    def _conv_type(cls, v: str) -> str:
+        s = v.strip().lower()
+        if s not in ("direct", "group"):
+            raise ValueError("conversation_type must be direct or group.")
+        return s
+
+    @model_validator(mode="after")
+    def _group_title_rule(self) -> ConversationCreateRequest:
+        if self.conversation_type == "group":
+            t = (self.title or "").strip()
+            if not t:
+                raise ValueError("title is required for group conversations.")
+            self.title = t
+        else:
+            self.title = None
+        return self
+
+
+class ConversationPatchRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+
+
+class ConversationParticipantsAddRequest(BaseModel):
+    user_ids: list[uuid.UUID] = Field(default_factory=list, min_length=1)
 
 
 class ConversationListItem(BaseModel):
     id: uuid.UUID
     company_id: uuid.UUID
+    conversation_type: str = "direct"
+    title: str | None = None
+    participant_count: int = 0
+    other_user_display_name: str | None = None
     updated_at: datetime
     participant_user_ids: list[uuid.UUID]
     last_message_preview: str | None

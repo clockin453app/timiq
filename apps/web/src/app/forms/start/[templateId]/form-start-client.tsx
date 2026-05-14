@@ -5,7 +5,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Button, PageHeader } from "../../../../components/ui";
 import { useCurrentUser } from "../../../../features/auth";
-import { isNavigatorOffline } from "../../../../features/offline";
 import { createSmartFormSubmission, getSmartFormTemplate, type SmartFormTemplate } from "../../../../features/smart-forms/api";
 import { fetchWorkProgressMeOptions, type WorkProgressLocationOption } from "../../../../features/work-progress/api";
 import { useI18n } from "../../../../lib/i18n";
@@ -19,6 +18,22 @@ export function FormStartClient({ templateId }: { templateId: string }) {
   const [locationId, setLocationId] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [navigatorOffline, setNavigatorOffline] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+    const sync = () => setNavigatorOffline(typeof navigator !== "undefined" && !navigator.onLine);
+    sync();
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    return () => {
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, []);
+
+  const offlineBlock = mounted && navigatorOffline;
 
   const load = useCallback(async () => {
     setError("");
@@ -39,7 +54,7 @@ export function FormStartClient({ templateId }: { templateId: string }) {
   }, [load]);
 
   async function start() {
-    if (!template || isNavigatorOffline()) {
+    if (!template || offlineBlock) {
       return;
     }
     setBusy(true);
@@ -64,7 +79,7 @@ export function FormStartClient({ templateId }: { templateId: string }) {
       <PageHeader title={template?.name ?? t("forms.start_form")} description={template?.description ?? undefined} />
       {error ? <p className="text-sm text-red-700">{error}</p> : null}
       {!user?.company_id ? <p className="text-sm text-amber-800">{t("forms.no_company")}</p> : null}
-      {isNavigatorOffline() ? <p className="text-sm text-amber-800">{t("offline.banner")}</p> : null}
+      {offlineBlock ? <p className="text-sm text-amber-800">{t("offline.banner")}</p> : null}
       {template?.requires_location ? (
         <label className="flex flex-col gap-1 text-sm">
           <span>{t("forms.location_label")}</span>
@@ -82,7 +97,7 @@ export function FormStartClient({ templateId }: { templateId: string }) {
           </select>
         </label>
       ) : null}
-      <Button disabled={busy || !user?.company_id || isNavigatorOffline()} onClick={() => void start()} type="button">
+      <Button disabled={busy || !user?.company_id || offlineBlock} onClick={() => void start()} type="button">
         {busy ? t("common.loading") : t("forms.continue")}
       </Button>
     </div>

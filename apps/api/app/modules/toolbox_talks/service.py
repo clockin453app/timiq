@@ -8,6 +8,8 @@ from datetime import date, datetime, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.signature_data_url import SignatureDataUrlError, decode_png_data_url
+from app.core.storage.factory import get_storage_backend
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
@@ -28,6 +30,7 @@ from app.modules.toolbox_talks.schemas import (
     ToolboxTalkSignRequest,
     ToolboxTalkSummaryResponse,
     ToolboxTopicOption,
+    ToolboxTopicTemplateResponse,
 )
 
 
@@ -59,6 +62,12 @@ def list_topic_options() -> list[ToolboxTopicOption]:
     from app.modules.toolbox_talks.constants import TOOLBOX_TOPIC_VALUES
 
     return [ToolboxTopicOption(value=v, label=topic_label(v)) for v in TOOLBOX_TOPIC_VALUES]
+
+
+def list_topic_templates() -> list[ToolboxTopicTemplateResponse]:
+    from app.modules.toolbox_talks.topic_templates import list_topic_template_dicts
+
+    return [ToolboxTopicTemplateResponse.model_validate(d) for d in list_topic_template_dicts()]
 
 
 def _validate_topic_fields(topic: str, topic_custom: str | None) -> None:
@@ -121,7 +130,7 @@ def _attendee_row_to_schema(
     display = _display_name(db, row.user_id)
     is_self = viewer.id == row.user_id
     hide_peer_decline = viewer.system_role == SystemRole.EMPLOYEE and not is_self
-    has_sig = bool((row.signature_name or "").strip() or (row.signature_image_path or "").strip())
+    has_sig = bool((row.signature_image_path or "").strip())
     return ToolboxTalkAttendeeResponse(
         user_id=row.user_id,
         user_email=email if is_self or viewer.system_role != SystemRole.EMPLOYEE else None,
@@ -549,8 +558,21 @@ def sign_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalkSig
     if not body.attended_ack:
         raise ToolboxTalkValidationError("You must confirm you have attended and understood this talk.")
     name = body.signature_name.strip()
+    try:
+        png = decode_png_data_url(body.signature_image_data)
+    except SignatureDataUrlError as exc:
+        raise ToolboxTalkValidationError(str(exc)) from exc
+    rel = f"toolbox-talk-signatures/{talk.company_id}/{talk_id}/{actor.id}/signature-{uuid.uuid4().hex}.png"
+    backend = get_storage_backend()
+    if att.signature_image_path:
+        try:
+            backend.delete_file(att.signature_image_path)
+        except Exception:
+            pass
+    backend.write_bytes(rel, png)
     att.status = "signed"
     att.signature_name = name
+    att.signature_image_path = rel
     att.signed_at = _utc_now()
     att.updated_at = _utc_now()
     att.declined_reason = None
@@ -587,6 +609,12 @@ def decline_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalk
     att.status = "declined"
     att.declined_reason = reason
     att.updated_at = _utc_now()
+    if att.signature_image_path:
+        try:
+            get_storage_backend().delete_file(att.signature_image_path)
+        except Exception:
+            pass
+    att.signature_image_path = None
     att.signature_name = None
     att.signed_at = None
     tt_repo.save_attendee(db, att)
@@ -639,9 +667,6 @@ def render_print_html(db: Session, actor: User, talk_id: uuid.UUID) -> str:
                 "</tr>",
             )
 
-    hdr = (
-        "<tr><th>Employee</th><th>Status</th><th>Signed at</th><th>Signature name</th><th>Declined reason</th></tr>"
-    )
     create_internal_audit_event(
         db_session=db,
         actor=actor,
@@ -651,30 +676,50 @@ def render_print_html(db: Session, actor: User, talk_id: uuid.UUID) -> str:
         company_id=detail.company_id,
         details={"talk_id": str(talk_id), "actor_user_id": str(actor.id), "export_type": "print_html"},
     )
+    gen = html.escape(_utc_now().isoformat())
+    cover = f"""
+<section class="tt-page">
+<h1>Toolbox talk record</h1>
+<p class="tt-meta"><strong>Company:</strong> {company_name}</p>
+<p class="tt-meta"><strong>Title:</strong> {title}</p>
+<p class="tt-meta"><strong>Topic:</strong> {topic}</p>
+<p class="tt-meta"><strong>Location:</strong> {loc_name}</p>
+<p class="tt-meta"><strong>Scheduled:</strong> {html.escape(str(detail.scheduled_date) if detail.scheduled_date else '—')}</p>
+<p class="tt-meta"><strong>Status:</strong> {html.escape(detail.status)}</p>
+</section>"""
+    content = f"""
+<section class="tt-page">
+<h2>Talk content</h2>
+<div class="tt-body">{body_html}</div>
+<p class="tt-note">TimIQ operational record — not legal advice. Use Print to save as PDF.</p>
+</section>"""
+    hdr = (
+        "<tr><th>Employee</th><th>Status</th><th>Signed at</th><th>Signature name</th><th>Declined reason</th></tr>"
+    )
+    att_sec = f"""
+<section class="tt-page tt-page-last">
+<h2>Attendees / signatures</h2>
+<table class="tt-table"><thead>{hdr}</thead><tbody>{"".join(rows_html)}</tbody></table>
+<p class="tt-footer">Generated {gen}</p>
+</section>"""
     return f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><title>Toolbox talk — {title}</title>
 <style>
-body {{ font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #222; }}
-h1 {{ font-size: 22px; }}
-table {{ border-collapse: collapse; width: 100%; margin-top: 16px; }}
-th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 13px; }}
-th {{ background: #f5f5f5; }}
-.meta {{ font-size: 14px; color: #444; }}
-.body {{ margin-top: 20px; line-height: 1.5; }}
-@media print {{ body {{ margin: 12px; }} }}
-</style></head><body>
-<h1>Toolbox talk record</h1>
-<p class="meta"><strong>Company:</strong> {company_name}</p>
-<p class="meta"><strong>Title:</strong> {title}</p>
-<p class="meta"><strong>Topic:</strong> {topic}</p>
-<p class="meta"><strong>Location:</strong> {loc_name}</p>
-<p class="meta"><strong>Scheduled:</strong> {html.escape(str(detail.scheduled_date) if detail.scheduled_date else '—')}</p>
-<p class="meta"><strong>Status:</strong> {html.escape(detail.status)}</p>
-<div class="body"><strong>Talk content</strong><br/>{body_html}</div>
-<h2 style="margin-top:24px;font-size:16px;">Attendees</h2>
-<table><thead>{hdr}</thead><tbody>{"".join(rows_html)}</tbody></table>
-<p style="margin-top:16px;font-size:12px;color:#666;">Use your browser&rsquo;s Print dialog to print or save as PDF.</p>
-</body></html>"""
+body {{ margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #111827; background: #fff; }}
+.tt-pack {{ max-width: 900px; margin: 0 auto; }}
+.tt-page {{ page-break-after: always; padding: 28px 32px; }}
+.tt-page-last {{ page-break-after: auto; }}
+h1 {{ font-size: 24px; margin-top: 0; }}
+h2 {{ font-size: 17px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; }}
+.tt-meta {{ font-size: 14px; color: #374151; margin: 6px 0; }}
+.tt-body {{ font-size: 14px; line-height: 1.55; margin-top: 12px; }}
+.tt-table {{ border-collapse: collapse; width: 100%; margin-top: 12px; font-size: 12px; }}
+.tt-table th, .tt-table td {{ border: 1px solid #d1d5db; padding: 8px; vertical-align: top; text-align: left; }}
+.tt-table th {{ background: #f3f4f6; font-weight: 600; }}
+.tt-note {{ font-size: 12px; color: #6b7280; margin-top: 16px; }}
+.tt-footer {{ font-size: 12px; color: #6b7280; text-align: center; margin-top: 20px; }}
+@media print {{ .tt-page {{ padding: 16px 20px; }} }}
+</style></head><body><div class="tt-pack">{cover}{content}{att_sec}</div></body></html>"""
 
 
 def export_csv_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple[bytes, str]:
@@ -734,3 +779,78 @@ def export_csv_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple[byte
         details={"talk_id": str(talk_id), "actor_user_id": str(actor.id), "export_type": "csv"},
     )
     return buf.getvalue().encode("utf-8"), f"toolbox-talk-{talk_id}.csv"
+
+
+def delete_talk_hard(db: Session, actor: User, talk_id: uuid.UUID) -> None:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise ToolboxTalkPermissionError()
+    talk = tt_repo.get_talk(db, talk_id)
+    if talk is None:
+        raise ToolboxTalkNotFoundError()
+    if not _can_admin_manage_company(actor, talk.company_id):
+        raise ToolboxTalkNotFoundError()
+    if tt_repo.count_signed_attendees_for_talk(db, talk_id) > 0:
+        raise ToolboxTalkValidationError("This record has compliance sign-offs. Archive it instead of deleting.")
+    for a in tt_repo.list_attendees_for_talk(db, talk_id):
+        if a.signature_image_path:
+            try:
+                get_storage_backend().delete_file(a.signature_image_path)
+            except Exception:
+                pass
+    cid = talk.company_id
+    tt_repo.delete_talk_row(db, talk)
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="toolbox_talk.deleted",
+        entity_type="toolbox_talk",
+        entity_id=str(talk_id),
+        company_id=cid,
+        details={"talk_id": str(talk_id), "actor_user_id": str(actor.id), "company_id": str(cid)},
+    )
+
+
+def export_talk_pdf_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple[bytes, str]:
+    detail = get_talk_for_viewer(db, actor, talk_id)
+    company = get_company_by_id(db, detail.company_id)
+    company_name = company.name if company else "Company"
+    loc_name = None
+    if detail.location_id:
+        loc = get_location_by_id(db, detail.location_id)
+        loc_name = loc.name if loc else None
+    rows: list[list[str]] = []
+    for a in detail.attendees:
+        u = get_user_by_id(db, a.user_id)
+        email = u.email if u else ""
+        name_cell = f"{a.display_name or ''} ({email})".strip()
+        rows.append(
+            [
+                name_cell[:120],
+                a.status,
+                a.signed_at.isoformat() if a.signed_at else "—",
+                (a.signature_name or ("Yes" if a.has_signature else "—"))[:120],
+                (a.declined_reason or "—")[:200],
+            ],
+        )
+    from app.modules.toolbox_talks.pdf_export import build_toolbox_talk_pdf
+
+    pdf = build_toolbox_talk_pdf(
+        company_name=company_name,
+        title=detail.title,
+        topic_display=detail.topic_display,
+        location_name=loc_name,
+        scheduled=detail.scheduled_date.isoformat() if detail.scheduled_date else None,
+        talk_status=detail.status,
+        talk_body=detail.talk_body,
+        attendees_rows=rows,
+    )
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="toolbox_talk.exported",
+        entity_type="toolbox_talk",
+        entity_id=str(talk_id),
+        company_id=detail.company_id,
+        details={"talk_id": str(talk_id), "actor_user_id": str(actor.id), "export_type": "pdf"},
+    )
+    return pdf, f"toolbox-talk-{talk_id}.pdf"

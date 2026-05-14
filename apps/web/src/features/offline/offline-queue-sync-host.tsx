@@ -14,9 +14,9 @@ const FOCUS_SYNC_MS = 2500;
 export function OfflineQueueSyncHost() {
   const user = useCurrentUser();
   const t = useT();
-  const [online, setOnline] = useState(() =>
-    typeof navigator === "undefined" ? true : navigator.onLine,
-  );
+  // Defer any UI that depends on navigator / IndexedDB until after mount to avoid SSR vs client HTML mismatch.
+  const [mounted, setMounted] = useState(false);
+  const [online, setOnline] = useState(true);
   const [queued, setQueued] = useState(0);
   const [failed, setFailed] = useState(0);
   const [syncing, setSyncing] = useState(0);
@@ -51,16 +51,30 @@ export function OfflineQueueSyncHost() {
   }, [refreshCounts, user.id]);
 
   useEffect(() => {
-    void refreshCounts();
-  }, [refreshCounts]);
+    setMounted(true);
+    setOnline(typeof navigator !== "undefined" ? navigator.onLine : true);
+  }, []);
 
   useEffect(() => {
+    if (!mounted) {
+      return;
+    }
+    void refreshCounts();
+  }, [mounted, refreshCounts]);
+
+  useEffect(() => {
+    if (!mounted) {
+      return;
+    }
     const onQueue = () => void refreshCounts();
     window.addEventListener(TIMIQ_OFFLINE_QUEUE_CHANGED, onQueue);
     return () => window.removeEventListener(TIMIQ_OFFLINE_QUEUE_CHANGED, onQueue);
-  }, [refreshCounts]);
+  }, [mounted, refreshCounts]);
 
   useEffect(() => {
+    if (!mounted) {
+      return;
+    }
     const onUp = () => {
       setOnline(true);
       void runSync();
@@ -72,9 +86,12 @@ export function OfflineQueueSyncHost() {
       window.removeEventListener("online", onUp);
       window.removeEventListener("offline", onDown);
     };
-  }, [runSync]);
+  }, [mounted, runSync]);
 
   useEffect(() => {
+    if (!mounted) {
+      return;
+    }
     const onFocus = () => {
       const now = Date.now();
       if (now - lastAutoSyncRef.current < FOCUS_SYNC_MS) {
@@ -96,7 +113,11 @@ export function OfflineQueueSyncHost() {
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [runSync]);
+  }, [mounted, runSync]);
+
+  if (!mounted) {
+    return null;
+  }
 
   const totalPending = queued + failed + syncing;
   const showBar = !online || totalPending > 0 || busy;

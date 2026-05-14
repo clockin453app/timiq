@@ -15,6 +15,7 @@ from app.modules.messaging.models import (
     ConversationParticipant,
     Message,
 )
+from app.modules.leave.models import LeaveBalanceAdjustment, LeavePolicy, LeaveRequest
 from app.modules.locations.models import Location
 from app.modules.site_access.models import EmployeeLocationAccess
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
@@ -24,7 +25,7 @@ from app.modules.payroll_policies.models import LocationPayrollPolicy
 from app.modules.privacy.models import PrivacyPolicyAcknowledgement, PrivacyRequest
 from app.modules.settings.models import CompanyAppSettings, UserPreference
 from app.modules.smart_forms.models import SmartFormSubmission, SmartFormTemplate
-from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsHazard
+from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard
 from app.modules.toolbox_talks.models import ToolboxTalk, ToolboxTalkAttendee
 from app.modules.workplaces.models import Workplace
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
@@ -47,6 +48,9 @@ __all__ = [
     "EmployeeProfile",
     "EmployeeJobRole",
     "EmployeeLocationAccess",
+    "LeaveBalanceAdjustment",
+    "LeavePolicy",
+    "LeaveRequest",
     "Location",
     "CompanyAppSettings",
     "ClockSelfie",
@@ -66,6 +70,7 @@ __all__ = [
     "SmartFormTemplate",
     "RamsAcknowledgement",
     "RamsAssessment",
+    "RamsAttachment",
     "RamsHazard",
     "ToolboxTalk",
     "ToolboxTalkAttendee",

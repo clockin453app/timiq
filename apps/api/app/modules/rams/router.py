@@ -6,11 +6,11 @@ import uuid
 from datetime import date
 from typing import NoReturn
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.core.storage.file_response import content_disposition_attachment
+from app.core.storage.file_response import content_disposition_attachment, protected_file_response
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import (
     get_current_user,
@@ -26,7 +26,9 @@ from app.modules.rams.schemas import (
     RamsAssessmentDetailResponse,
     RamsAssessmentListItem,
     RamsAssessmentPatchRequest,
+    RamsAttachmentResponse,
     RamsDeclineRequest,
+    RamsFromPresetRequest,
     RamsHazardCreateRequest,
     RamsHazardPatchRequest,
     RamsHazardResponse,
@@ -41,9 +43,14 @@ from app.modules.rams.service import (
     add_acknowledgements,
     archive_assessment,
     create_assessment,
+    create_assessment_from_preset,
     create_hazard,
     decline_assessment,
+    delete_assessment_hard,
     delete_hazard,
+    delete_rams_attachment_service,
+    download_rams_attachment_file,
+    export_assessment_pdf_bytes,
     export_csv_bytes,
     get_assessment_detail,
     get_presets,
@@ -51,11 +58,13 @@ from app.modules.rams.service import (
     list_assessments_admin,
     list_hazards,
     list_me,
+    list_rams_attachments_service,
     patch_assessment,
     patch_hazard,
     publish_assessment,
     render_print_html,
     review_assessment,
+    upload_rams_attachment_service,
 )
 
 router = APIRouter(prefix="/api/rams", tags=["rams"])
@@ -125,6 +134,90 @@ def post_rams_assessment(
         return create_assessment(db_session, current_user, body)
     except RamsError as exc:
         _raise_http(exc)
+
+
+@router.post("/from-preset", response_model=RamsAssessmentDetailResponse, status_code=status.HTTP_201_CREATED)
+def post_rams_from_preset(
+    body: RamsFromPresetRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> RamsAssessmentDetailResponse:
+    try:
+        return create_assessment_from_preset(db_session, current_user, body)
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.get("/{assessment_id}/attachments", response_model=list[RamsAttachmentResponse])
+def get_rams_attachments(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> list[RamsAttachmentResponse]:
+    try:
+        return list_rams_attachments_service(db_session, current_user, assessment_id)
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.post("/{assessment_id}/attachments", response_model=RamsAssessmentDetailResponse)
+async def post_rams_attachment(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+    file: UploadFile = File(...),
+    section_key: str = Form(...),
+    caption: str | None = Form(default=None),
+    hazard_id: uuid.UUID | None = Form(default=None),
+    method_step_key: str | None = Form(default=None),
+) -> RamsAssessmentDetailResponse:
+    raw = await file.read()
+    try:
+        return upload_rams_attachment_service(
+            db_session,
+            current_user,
+            assessment_id,
+            file_bytes=raw,
+            original_filename=file.filename or "upload.jpg",
+            section_key=section_key,
+            caption=caption,
+            hazard_id=hazard_id,
+            method_step_key=method_step_key,
+        )
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.delete(
+    "/{assessment_id}/attachments/{attachment_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    response_class=Response,
+)
+def delete_rams_attachment_route(
+    assessment_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        delete_rams_attachment_service(db_session, current_user, assessment_id, attachment_id)
+    except RamsError as exc:
+        _raise_http(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/{assessment_id}/attachments/{attachment_id}/download")
+def download_rams_attachment_route(
+    assessment_id: uuid.UUID,
+    attachment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        body, filename, media = download_rams_attachment_file(db_session, current_user, assessment_id, attachment_id)
+    except RamsError as exc:
+        _raise_http(exc)
+    return protected_file_response(body=body, download_filename=filename, media_type=media)
 
 
 @router.get("/{assessment_id}/hazards", response_model=list[RamsHazardResponse])
@@ -296,6 +389,33 @@ def get_rams_export_csv(
         _raise_http(exc)
     headers = {"Content-Disposition": content_disposition_attachment(filename)}
     return Response(content=raw, media_type="text/csv; charset=utf-8", headers=headers)
+
+
+@router.get("/{assessment_id}/pdf")
+def get_rams_pdf(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        raw, filename = export_assessment_pdf_bytes(db_session, current_user, assessment_id)
+    except RamsError as exc:
+        _raise_http(exc)
+    headers = {"Content-Disposition": content_disposition_attachment(filename)}
+    return Response(content=raw, media_type="application/pdf", headers=headers)
+
+
+@router.delete("/{assessment_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
+def delete_rams_assessment_route(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        delete_assessment_hard(db_session, current_user, assessment_id)
+    except RamsError as exc:
+        _raise_http(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/{assessment_id}", response_model=RamsAssessmentDetailResponse)

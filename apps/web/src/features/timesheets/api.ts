@@ -17,6 +17,18 @@ export type TimesheetOpenShiftSummary = {
   break_seconds: number;
 };
 
+export type WeekLeaveRow = {
+  request_id: string;
+  user_id: string;
+  leave_type: string;
+  status: string;
+  date_from: string;
+  date_to: string;
+  total_days: string;
+  start_half_day?: string | null;
+  end_half_day?: string | null;
+};
+
 export type TimesheetWeekResponse = {
   week_start: string;
   company_timezone: string;
@@ -30,6 +42,7 @@ export type TimesheetWeekResponse = {
   completed_shift_count: number;
   open_shifts: TimesheetOpenShiftSummary[];
   locations_worked: string[];
+  week_leave: WeekLeaveRow[];
 };
 
 export async function fetchMyTimesheetWeek(
@@ -126,6 +139,7 @@ export type AdminWeekReportEmployeeSummary = {
   break_seconds: number;
   locations_worked: string[];
   open_shift_in_week: boolean;
+  week_leave: WeekLeaveRow[];
 };
 
 export type AdminWeekReportCompanyTotals = {
