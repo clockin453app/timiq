@@ -76,6 +76,40 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("TIMIQ_S3_FORCE_PATH_STYLE", "timiq_s3_force_path_style"),
     )
 
+    # Transactional email (password reset, invites, verification). Optional; see docs/env-production-checklist.md.
+    timiq_email_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("TIMIQ_EMAIL_ENABLED", "timiq_email_enabled"),
+    )
+    timiq_email_from: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_EMAIL_FROM", "timiq_email_from"),
+    )
+    timiq_smtp_host: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_SMTP_HOST", "timiq_smtp_host"),
+    )
+    timiq_smtp_port: int = Field(
+        default=587,
+        validation_alias=AliasChoices("TIMIQ_SMTP_PORT", "timiq_smtp_port"),
+    )
+    timiq_smtp_username: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_SMTP_USERNAME", "timiq_smtp_username"),
+    )
+    timiq_smtp_password: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_SMTP_PASSWORD", "timiq_smtp_password"),
+    )
+    timiq_smtp_use_tls: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("TIMIQ_SMTP_USE_TLS", "timiq_smtp_use_tls"),
+    )
+    timiq_web_app_url: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("TIMIQ_WEB_APP_URL", "timiq_web_app_url"),
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -9,7 +9,12 @@ import {
   updateMyEmployeeProfile,
   type EmployeeProfile,
 } from "../../features/employee-profiles/api";
-import { formatSystemRole, isEmployee, useCurrentUser } from "../../features/auth";
+import {
+  formatSystemRole,
+  isEmployee,
+  sendVerificationEmail,
+  useCurrentUser,
+} from "../../features/auth";
 import {
   fetchOnboardingDocumentBlob,
   fetchOnboardingProfilePhotoBlob,
@@ -40,6 +45,11 @@ export function ProfileClient() {
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+
+  const [verifySending, setVerifySending] = useState(false);
+  const [verifyMessage, setVerifyMessage] = useState("");
+  const [verifyError, setVerifyError] = useState("");
+  const [verifyDevLink, setVerifyDevLink] = useState<string | null>(null);
 
   const [onboarding, setOnboarding] = useState<OnboardingSubmissionDetail | null>(null);
   const [onboardingLoading, setOnboardingLoading] = useState(false);
@@ -189,6 +199,22 @@ export function ProfileClient() {
     });
   }
 
+  async function handleSendVerificationEmail() {
+    setVerifyError("");
+    setVerifyMessage("");
+    setVerifyDevLink(null);
+    setVerifySending(true);
+    try {
+      const res = await sendVerificationEmail();
+      setVerifyMessage(res.message);
+      setVerifyDevLink(res.dev_verification_link ?? null);
+    } catch (err) {
+      setVerifyError(err instanceof Error ? err.message : "Could not send verification email.");
+    } finally {
+      setVerifySending(false);
+    }
+  }
+
   const accountRows = [
     { label: "Email", value: user.email },
     { label: "Role", value: formatSystemRole(user.system_role) },
@@ -203,6 +229,12 @@ export function ProfileClient() {
     {
       label: "Account status",
       value: user.is_active ? "Active" : "Inactive",
+    },
+    {
+      label: "Email verified",
+      value: user.email_verified_at
+        ? formatOptionalDate(user.email_verified_at)
+        : "Not verified yet",
     },
     {
       label: "Early clock-in access",
@@ -333,6 +365,33 @@ export function ProfileClient() {
                 </div>
               ))}
             </dl>
+            {!user.email_verified_at ? (
+              <div className="mt-3 border-t border-[var(--color-border)] pt-3">
+                <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                  Verify your email
+                </p>
+                <p className="mt-1 text-sm text-[var(--color-text-muted)]">
+                  After you complete verification, reload this page so your status updates here.
+                </p>
+                <div className="mt-2">
+                  <Button disabled={verifySending} onClick={() => void handleSendVerificationEmail()} type="button">
+                    {verifySending ? "Sending…" : "Send verification email"}
+                  </Button>
+                </div>
+                {verifyError ? (
+                  <p className="mt-2 text-sm text-[var(--color-danger-700)]">{verifyError}</p>
+                ) : null}
+                {verifyMessage ? (
+                  <p className="mt-2 text-sm text-[var(--color-text)]">{verifyMessage}</p>
+                ) : null}
+                {verifyDevLink ? (
+                  <div className="mt-2 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2 text-xs">
+                    <p className="font-bold text-[var(--color-text)]">Development verification link</p>
+                    <p className="mt-1 break-all text-[var(--color-text-muted)]">{verifyDevLink}</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           {loadError ? (

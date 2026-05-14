@@ -32,3 +32,16 @@ export {
   type AuthUser,
   type LoginResponse,
 } from "./api";
+export {
+  acceptInvite,
+  changeMyPassword,
+  inviteUserByEmail,
+  requestForgotPassword,
+  resetPasswordWithToken,
+  sendVerificationEmail,
+  verifyEmailWithToken,
+  type GenericMessageResponse,
+  type InviteUserRequest,
+  type InviteUserResponse,
+  type SendVerificationEmailResponse,
+} from "./account-access-api";

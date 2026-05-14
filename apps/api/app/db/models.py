@@ -4,7 +4,7 @@ from app.modules.accounting.models import (
     CompanyAccountingSettings,
 )
 from app.modules.audit.models import AuditEvent
-from app.modules.auth.models import EmployeeJobRole, User
+from app.modules.auth.models import AccountActionToken, EmployeeJobRole, User
 from app.modules.budgets.models import BudgetExpense, BudgetProject
 from app.modules.companies.models import Company, CompanyTimePolicy
 from app.modules.employee_profiles.models import EmployeeProfile
@@ -36,6 +36,7 @@ __all__ = [
     "AccountingExportSettings",
     "Announcement",
     "AnnouncementRead",
+    "AccountActionToken",
     "Conversation",
     "ConversationParticipant",
     "Message",

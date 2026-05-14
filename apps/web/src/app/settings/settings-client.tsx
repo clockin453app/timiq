@@ -5,6 +5,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
 import {
   canAccessManagement,
+  changeMyPassword,
   isAdministrator,
   LogoutButton,
   useCurrentUser,
@@ -78,6 +79,12 @@ export function SettingsClient() {
   const [coBrandColor, setCoBrandColor] = useState("");
 
   const previewDate = new Date(2026, 4, 11, 14, 30, 0);
+
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwMessage, setPwMessage] = useState("");
 
   const load = useCallback(async () => {
     setLoadError("");
@@ -380,6 +387,84 @@ export function SettingsClient() {
               {savingMy ? "Saving…" : "Save my preferences"}
             </Button>
             {myMessage ? <span className="text-sm text-[var(--color-text-muted)]">{myMessage}</span> : null}
+          </div>
+        </form>
+
+        <form
+          className={cardClass()}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setPwMessage("");
+            if (pwNew !== pwConfirm) {
+              setPwMessage("New password and confirmation do not match.");
+              return;
+            }
+            if (pwNew.length < 12) {
+              setPwMessage("New password must be at least 12 characters.");
+              return;
+            }
+            setPwSaving(true);
+            try {
+              await changeMyPassword(pwCurrent, pwNew);
+              setPwMessage("Password updated.");
+              setPwCurrent("");
+              setPwNew("");
+              setPwConfirm("");
+            } catch (err) {
+              setPwMessage(err instanceof Error ? err.message : "Could not change password.");
+            } finally {
+              setPwSaving(false);
+            }
+          }}
+        >
+          <h2 className="text-base font-semibold text-[var(--color-text)]">Change password</h2>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Use at least 12 characters with at least one letter and one number.
+          </p>
+          <div>
+            <label className={labelClass()} htmlFor="pw-current">
+              Current password
+            </label>
+            <input
+              id="pw-current"
+              className={fieldClass()}
+              type="password"
+              autoComplete="current-password"
+              value={pwCurrent}
+              onChange={(ev) => setPwCurrent(ev.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelClass()} htmlFor="pw-new">
+              New password
+            </label>
+            <input
+              id="pw-new"
+              className={fieldClass()}
+              type="password"
+              autoComplete="new-password"
+              value={pwNew}
+              onChange={(ev) => setPwNew(ev.target.value)}
+            />
+          </div>
+          <div>
+            <label className={labelClass()} htmlFor="pw-confirm">
+              Confirm new password
+            </label>
+            <input
+              id="pw-confirm"
+              className={fieldClass()}
+              type="password"
+              autoComplete="new-password"
+              value={pwConfirm}
+              onChange={(ev) => setPwConfirm(ev.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" disabled={pwSaving}>
+              {pwSaving ? "Updating…" : "Update password"}
+            </Button>
+            {pwMessage ? <span className="text-sm text-[var(--color-text-muted)]">{pwMessage}</span> : null}
           </div>
         </form>
 

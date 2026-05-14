@@ -16,6 +16,7 @@ import {
 } from "../../components/ui";
 import {
   createManagedUser,
+  inviteUserByEmail,
   isAdministrator,
   listManagedUsers,
   RoleGuard,
@@ -64,6 +65,15 @@ export function EmployeesClient() {
   const [successMessage, setSuccessMessage] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteFirstName, setInviteFirstName] = useState("");
+  const [inviteLastName, setInviteLastName] = useState("");
+  const [invitePersonalMessage, setInvitePersonalMessage] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteSuccess, setInviteSuccess] = useState("");
+  const [inviteDevLink, setInviteDevLink] = useState<string | null>(null);
+  const [isInviting, setIsInviting] = useState(false);
 
   const roleOptions = getRoleOptions(currentUser);
 
@@ -130,11 +140,56 @@ export function EmployeesClient() {
     loadCompaniesForPage();
   }, []);
 
+  async function handleInviteUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    setInviteError("");
+    setInviteSuccess("");
+    setInviteDevLink(null);
+    setErrorMessage("");
+    setSuccessMessage("");
+    setIsInviting(true);
+
+    const selectedCompanyId = showCompanySelector ? companyId : undefined;
+
+    if (showCompanySelector && !selectedCompanyId) {
+      setInviteError("Select a company for this user.");
+      setIsInviting(false);
+      return;
+    }
+
+    try {
+      const res = await inviteUserByEmail({
+        email: inviteEmail.trim(),
+        system_role: systemRole,
+        company_id: selectedCompanyId ?? null,
+        first_name: inviteFirstName.trim() || null,
+        last_name: inviteLastName.trim() || null,
+        personal_message: invitePersonalMessage.trim() || null,
+      });
+
+      setInviteSuccess(`Invitation sent to ${res.user.email}.`);
+      setInviteDevLink(res.dev_invite_link ?? null);
+      setInviteEmail("");
+      setInviteFirstName("");
+      setInviteLastName("");
+      setInvitePersonalMessage("");
+      await loadUsers();
+    } catch (error) {
+      setInviteError(error instanceof Error ? error.message : "Could not send invite.");
+    } finally {
+      setIsInviting(false);
+    }
+  }
+
   async function handleCreateUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setErrorMessage("");
     setSuccessMessage("");
+    setInviteError("");
+    setInviteSuccess("");
+    setInviteDevLink(null);
     setIsCreating(true);
 
     const selectedCompanyId = showCompanySelector ? companyId : undefined;
@@ -270,6 +325,87 @@ export function EmployeesClient() {
                 </Button>
               </div>
             </div>
+          </form>
+
+          <form
+            className="mb-4 w-full max-w-[min(48rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
+            onSubmit={handleInviteUser}
+          >
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+              Invite by email
+            </p>
+            <p className="mb-3 text-sm text-[var(--color-text-muted)]">
+              Sends an invitation link. The person sets their own password to activate the account. In local
+              development without SMTP, an invite link is shown below after you submit.
+            </p>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <label className="block text-xs font-bold text-[var(--color-text)]">
+                Email
+                <input
+                  autoComplete="email"
+                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                  name="invite_email"
+                  onChange={(event) => setInviteEmail(event.target.value)}
+                  required
+                  type="email"
+                  value={inviteEmail}
+                />
+              </label>
+              <label className="block text-xs font-bold text-[var(--color-text)]">
+                First name (optional)
+                <input
+                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                  name="invite_fn"
+                  onChange={(event) => setInviteFirstName(event.target.value)}
+                  type="text"
+                  value={inviteFirstName}
+                />
+              </label>
+              <label className="block text-xs font-bold text-[var(--color-text)]">
+                Last name (optional)
+                <input
+                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                  name="invite_ln"
+                  onChange={(event) => setInviteLastName(event.target.value)}
+                  type="text"
+                  value={inviteLastName}
+                />
+              </label>
+              <label className="block text-xs font-bold text-[var(--color-text)] md:col-span-2">
+                Personal message (optional, included in invite email)
+                <input
+                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                  name="invite_pm"
+                  onChange={(event) => setInvitePersonalMessage(event.target.value)}
+                  type="text"
+                  value={invitePersonalMessage}
+                />
+              </label>
+            </div>
+            <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+              Uses the same role and company selection as &quot;Create user&quot; above.
+            </p>
+            <div className="mt-3">
+              <Button disabled={isInviting} type="submit">
+                {isInviting ? "Sending invite…" : "Send invitation"}
+              </Button>
+            </div>
+            {inviteError ? (
+              <div className="mt-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
+                {inviteError}
+              </div>
+            ) : null}
+            {inviteSuccess ? (
+              <div className="mt-3 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
+                {inviteSuccess}
+              </div>
+            ) : null}
+            {inviteDevLink ? (
+              <div className="mt-3 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-xs">
+                <p className="font-bold text-[var(--color-text)]">Development invite link</p>
+                <p className="mt-1 break-all text-[var(--color-text-muted)]">{inviteDevLink}</p>
+              </div>
+            ) : null}
           </form>
 
           <label className="mb-3 block text-xs font-bold text-[var(--color-text)]">

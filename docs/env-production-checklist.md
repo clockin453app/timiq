@@ -38,6 +38,21 @@ See also: [render-deployment.md](./render-deployment.md), [deployment-runbook.md
 |----------|--------|
 | `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REDIRECT_URI` | Optional; only if Google Drive integration is enabled. Not required for core payroll/clocking. |
 
+### Transactional email (password reset, invites, verification)
+
+| Variable | Required | Notes |
+|----------|----------|--------|
+| `TIMIQ_WEB_APP_URL` | **Yes** (email flows) | Public web app origin used in emailed links, e.g. `https://your-frontend.onrender.com` — no trailing slash. |
+| `TIMIQ_EMAIL_ENABLED` | For SMTP sending | `true` to send mail. When `false`, forgot-password does not persist reset tokens unless SMTP is later enabled. |
+| `TIMIQ_EMAIL_FROM` | When sending | From header, e.g. `TimIQ <noreply@yourdomain.com>`. |
+| `TIMIQ_SMTP_HOST` | When sending | SMTP server hostname. |
+| `TIMIQ_SMTP_PORT` | No | Default `587`. |
+| `TIMIQ_SMTP_USERNAME` | Often | May be empty for some relays (rare in production). |
+| `TIMIQ_SMTP_PASSWORD` | Often | Render secret; never commit. |
+| `TIMIQ_SMTP_USE_TLS` | No | Default `true` (STARTTLS). |
+
+**Production:** configure SMTP before relying on forgot-password, invite-by-email, or verification. Never log raw tokens. Do not return reset links in public API responses.
+
 ---
 
 ## Frontend (`apps/web`)

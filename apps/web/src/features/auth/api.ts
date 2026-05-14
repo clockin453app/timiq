@@ -8,6 +8,10 @@ export type AuthUser = {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  email_verified_at?: string | null;
+  invited_at?: string | null;
+  invite_accepted_at?: string | null;
+  password_changed_at?: string | null;
   profile_first_name?: string | null;
   profile_last_name?: string | null;
   profile_job_title?: string | null;

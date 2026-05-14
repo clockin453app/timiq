@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -46,6 +47,9 @@ def authenticate_user(
     user = get_user_by_email(db_session, email)
 
     if user is None:
+        return None
+
+    if not user.is_active:
         return None
 
     if not verify_password(password, user.password_hash):
@@ -124,12 +128,14 @@ def create_user_by_admin(
         requested_role=request.system_role,
     )
 
+    now = datetime.now(timezone.utc)
     user = User(
         email=request.email,
         password_hash=hash_password(request.password),
         system_role=request.system_role,
         company_id=company_id,
         is_active=request.is_active,
+        password_changed_at=now,
     )
 
     return save_user(db_session, user)
@@ -208,5 +214,6 @@ def reset_user_password_by_admin(
         raise PermissionDeniedError("You cannot reset this user's password.")
 
     user.password_hash = hash_password(request.password)
+    user.password_changed_at = datetime.now(timezone.utc)
 
     return update_user(db_session, user)

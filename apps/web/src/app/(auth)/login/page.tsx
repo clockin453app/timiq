@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { AuthShell } from "../../../components/layout";
@@ -68,6 +69,11 @@ export default function LoginPage() {
         <Button className="w-full" disabled={isSubmitting} type="submit">
           {isSubmitting ? "Signing in..." : "Sign in"}
         </Button>
+        <p className="text-center text-sm">
+          <Link className="text-[var(--color-accent)] underline" href="/forgot-password">
+            Forgot password?
+          </Link>
+        </p>
       </form>
     </AuthShell>
   );
