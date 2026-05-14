@@ -156,6 +156,13 @@ const SETTINGS: NavigationItem = {
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
+const HELP_CENTRE: NavigationItem = {
+  label: "Help centre",
+  labelKey: "nav.help",
+  href: "/help",
+  allowedRoles: ["administrator", "admin", "employee"],
+};
+
 const PRIVACY_PORTAL: NavigationItem = {
   label: "Data & privacy",
   labelKey: "nav.privacy",
@@ -296,7 +303,7 @@ const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "emp-profile",
     label: "Profile",
     groupLabelKey: "nav.group.emp_profile",
-    items: [STARTER_FORM, LEAVE, PROFILE, SETTINGS, PRIVACY_PORTAL],
+    items: [STARTER_FORM, LEAVE, PROFILE, SETTINGS, HELP_CENTRE, PRIVACY_PORTAL],
   },
 ];
 

@@ -39,7 +39,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   }, [activeHref, employeeGroups, managementGroups]);
 
   return (
-    <header className="w-full min-w-0 overflow-x-clip border-b border-[var(--color-border-dark)] bg-[var(--color-header)] pt-[env(safe-area-inset-top,0px)] xl:hidden">
+    <header className="timiq-print-hide-chrome w-full min-w-0 overflow-x-clip border-b border-[var(--color-border-dark)] bg-[var(--color-header)] pt-[env(safe-area-inset-top,0px)] xl:hidden">
       <div className="flex min-w-0 items-center justify-between gap-3 px-3 py-2.5">
         <div className="min-w-0">
           <p className="truncate font-bold tracking-tight text-[var(--color-text)]">{t("nav.tagline", "TimIQ")}</p>

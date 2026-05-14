@@ -68,7 +68,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
 
   return (
     <aside
-      className="hidden min-w-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm transition-[width] duration-200 ease-out xl:flex xl:h-full xl:max-h-full xl:min-h-0 xl:shrink-0 xl:overflow-hidden"
+      className="timiq-print-hide-chrome hidden min-w-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm transition-[width] duration-200 ease-out xl:flex xl:h-full xl:max-h-full xl:min-h-0 xl:shrink-0 xl:overflow-hidden"
       style={{ width: hydrated ? sidebarWidth : "var(--layout-sidebar-width)" }}
     >
       <div className="flex shrink-0 items-start justify-between gap-1 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-3">

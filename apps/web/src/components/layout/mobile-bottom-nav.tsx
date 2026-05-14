@@ -21,7 +21,7 @@ export function MobileBottomNav({ activeHref = "/dashboard" }: MobileBottomNavPr
   const t = useT();
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[var(--color-border-dark)] bg-[var(--color-header)] pb-[env(safe-area-inset-bottom,0px)] text-[11px] leading-tight xl:hidden"
+      className="timiq-print-hide-chrome fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[var(--color-border-dark)] bg-[var(--color-header)] pb-[env(safe-area-inset-bottom,0px)] text-[11px] leading-tight xl:hidden"
     >
       {mobilePrimaryLinks.map((item) => {
         const Icon = item.Icon;

@@ -63,7 +63,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
   };
 
   return (
-    <header className="sticky top-0 z-20 hidden h-[var(--layout-topbar-height)] w-full min-w-0 shrink-0 items-center gap-4 border-b border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-4 shadow-[0_1px_0_rgba(15,23,42,0.04)] xl:flex">
+    <header className="timiq-print-hide-chrome sticky top-0 z-20 hidden h-[var(--layout-topbar-height)] w-full min-w-0 shrink-0 items-center gap-4 border-b border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-4 shadow-[0_1px_0_rgba(15,23,42,0.04)] xl:flex">
       <div className="flex min-w-0 flex-1 items-center gap-4">
         <Link className="shrink-0 no-underline" href="/dashboard">
           <p className="text-base font-bold tracking-tight text-[var(--color-text)]">{t("nav.tagline", "TimIQ")}</p>

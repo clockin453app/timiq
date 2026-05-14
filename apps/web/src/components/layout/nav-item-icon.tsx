@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react";
 import {
   Activity,
+  BookOpen,
   Building,
   Building2,
   Calculator,
@@ -44,6 +45,7 @@ const NAV_ICON_BY_LABEL_KEY: Record<string, LucideIcon> = {
   "nav.starter_form": FileText,
   "nav.profile": User,
   "nav.settings": Settings,
+  "nav.help": BookOpen,
   "nav.privacy": Shield,
   "nav.overview": LineChart,
   "nav.employees": Users,

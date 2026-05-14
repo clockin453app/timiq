@@ -211,3 +211,19 @@ select.timiq-select:focus-visible {
   min-height: 44px;
   touch-action: manipulation;
 }
+
+/* Help centre print: hide app chrome and guide controls */
+@media print {
+  body.timiq-help-print .timiq-print-hide-chrome {
+    display: none !important;
+  }
+
+  body.timiq-help-print .timiq-help-print-toolbar,
+  body.timiq-help-print .timiq-help-print-toc {
+    display: none !important;
+  }
+
+  body.timiq-help-print .timiq-app-main {
+    padding-bottom: 0 !important;
+  }
+}
