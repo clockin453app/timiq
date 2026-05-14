@@ -76,3 +76,8 @@ def test_company_patch_rejects_bad_currency() -> None:
 def test_user_patch_accepts_ro_locale() -> None:
     body = UserPreferencesPatchRequest(locale="ro-RO")
     assert body.locale == "ro-RO"
+
+
+def test_user_patch_accepts_pl_locale() -> None:
+    body = UserPreferencesPatchRequest(locale="pl-PL")
+    assert body.locale == "pl-PL"

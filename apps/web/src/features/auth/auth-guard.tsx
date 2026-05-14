@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { getCurrentUser, type AuthUser } from "./api";
 import { AuthUserProvider, TIMIQ_AUTH_REFRESH_EVENT } from "./auth-context";
+import { AuthenticatedLocaleSync, useT } from "../../lib/i18n";
 import { OfflineQueueSyncHost } from "../offline/offline-queue-sync-host";
 
 type AuthGuardProps = {
@@ -13,6 +14,7 @@ type AuthGuardProps = {
 
 export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
+  const t = useT();
 
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -104,7 +106,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
       <div className="timiq-page flex min-h-screen items-center justify-center px-4 py-8">
         <div className="timiq-loading-panel text-center text-sm text-[var(--color-text)]">
           <div aria-hidden className="timiq-spinner" />
-          <p>Loading…</p>
+          <p>{t("common.loading", "Loading…")}</p>
         </div>
       </div>
     );
@@ -116,6 +118,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
 
   return (
     <AuthUserProvider refreshAuthUser={refreshAuthUser} user={user}>
+      <AuthenticatedLocaleSync />
       <OfflineQueueSyncHost />
       {children}
     </AuthUserProvider>

@@ -7,8 +7,10 @@ import { useRouter } from "next/navigation";
 import { AuthShell } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
 import { loginWithEmailPassword } from "../../../features/auth/api";
+import { useT } from "../../../lib/i18n";
 
 export default function LoginPage() {
+  const t = useT();
   const router = useRouter();
 
   const [email, setEmail] = useState("");
@@ -26,7 +28,7 @@ export default function LoginPage() {
       await loginWithEmailPassword(email, password);
       router.replace("/dashboard");
     } catch {
-      setErrorMessage("Invalid email or password.");
+      setErrorMessage(t("auth.login.error_invalid", "Invalid email or password."));
     } finally {
       setIsSubmitting(false);
     }
@@ -34,8 +36,8 @@ export default function LoginPage() {
 
   return (
     <AuthShell
-      title="Welcome back"
-      subtitle="Sign in to manage your workforce."
+      title={t("auth.login.title", "Welcome back")}
+      subtitle={t("auth.login.subtitle", "Sign in to manage your workforce.")}
     >
       <form className="space-y-4" onSubmit={handleSubmit}>
         {errorMessage ? (
@@ -46,7 +48,7 @@ export default function LoginPage() {
 
         <Input
           autoComplete="email"
-          label="Email"
+          label={t("auth.login.email", "Email")}
           name="email"
           onChange={(event) => setEmail(event.target.value)}
           required
@@ -57,7 +59,7 @@ export default function LoginPage() {
 
         <Input
           autoComplete="current-password"
-          label="Password"
+          label={t("auth.login.password", "Password")}
           name="password"
           onChange={(event) => setPassword(event.target.value)}
           required
@@ -67,11 +69,11 @@ export default function LoginPage() {
         />
 
         <Button className="w-full" disabled={isSubmitting} type="submit">
-          {isSubmitting ? "Signing in..." : "Sign in"}
+          {isSubmitting ? t("auth.login.signing_in", "Signing in…") : t("auth.login.sign_in", "Sign in")}
         </Button>
         <p className="text-center text-sm">
           <Link className="text-[var(--color-accent)] underline" href="/forgot-password">
-            Forgot password?
+            {t("auth.login.forgot_password", "Forgot password?")}
           </Link>
         </p>
       </form>

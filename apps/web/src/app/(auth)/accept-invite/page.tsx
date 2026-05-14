@@ -7,8 +7,10 @@ import { useSearchParams } from "next/navigation";
 import { AuthShell } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
 import { acceptInvite } from "../../../features/auth";
+import { useT } from "../../../lib/i18n";
 
 function AcceptInviteForm() {
+  const t = useT();
   const searchParams = useSearchParams();
   const tokenFromUrl = searchParams.get("token") ?? "";
 
@@ -26,11 +28,11 @@ function AcceptInviteForm() {
     setError("");
     setMessage("");
     if (password !== confirm) {
-      setError("Passwords do not match.");
+      setError(t("auth.invite.password_mismatch", "Passwords do not match."));
       return;
     }
     if (password.length < 12) {
-      setError("Password must be at least 12 characters.");
+      setError(t("auth.invite.password_short", "Password must be at least 12 characters."));
       return;
     }
     setSubmitting(true);
@@ -43,7 +45,7 @@ function AcceptInviteForm() {
       );
       setMessage(res.message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not complete invite.");
+      setError(err instanceof Error ? err.message : t("auth.invite.error_generic", "Could not complete invite."));
     } finally {
       setSubmitting(false);
     }
@@ -55,7 +57,7 @@ function AcceptInviteForm() {
         <div className="space-y-2 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm text-[var(--color-text)]">
           <p>{message}</p>
           <Link className="text-[var(--color-accent)] underline" href="/login">
-            Sign in
+            {t("auth.verify.sign_in", "Sign in")}
           </Link>
         </div>
       ) : null}
@@ -65,15 +67,15 @@ function AcceptInviteForm() {
         </div>
       ) : null}
       {!tokenFromUrl ? (
-        <Input label="Invite token" name="token" onChange={(ev) => setToken(ev.target.value)} required value={token} />
+        <Input label={t("auth.invite.token_label", "Invite token")} name="token" onChange={(ev) => setToken(ev.target.value)} required value={token} />
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
-        <Input label="First name (optional)" name="fn" onChange={(ev) => setFirstName(ev.target.value)} value={firstName} />
-        <Input label="Last name (optional)" name="ln" onChange={(ev) => setLastName(ev.target.value)} value={lastName} />
+        <Input label={t("auth.invite.first_optional", "First name (optional)")} name="fn" onChange={(ev) => setFirstName(ev.target.value)} value={firstName} />
+        <Input label={t("auth.invite.last_optional", "Last name (optional)")} name="ln" onChange={(ev) => setLastName(ev.target.value)} value={lastName} />
       </div>
       <Input
         autoComplete="new-password"
-        label="New password"
+        label={t("auth.reset.new_password", "New password")}
         name="password"
         onChange={(ev) => setPassword(ev.target.value)}
         required
@@ -82,7 +84,7 @@ function AcceptInviteForm() {
       />
       <Input
         autoComplete="new-password"
-        label="Confirm password"
+        label={t("auth.invite.confirm_password", "Confirm password")}
         name="confirm"
         onChange={(ev) => setConfirm(ev.target.value)}
         required
@@ -90,16 +92,20 @@ function AcceptInviteForm() {
         value={confirm}
       />
       <Button className="w-full" disabled={submitting || Boolean(message)} type="submit">
-        {submitting ? "Saving…" : "Activate account"}
+        {submitting ? t("auth.reset.saving", "Saving…") : t("auth.invite.activate", "Activate account")}
       </Button>
     </form>
   );
 }
 
 export default function AcceptInvitePage() {
+  const t = useT();
   return (
-    <AuthShell title="Accept invitation" subtitle="Set your password to activate your TimIQ account.">
-      <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">Loading…</p>}>
+    <AuthShell
+      title={t("auth.invite.title", "Accept invitation")}
+      subtitle={t("auth.invite.subtitle", "Set your password to activate your TimIQ account.")}
+    >
+      <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">{t("auth.common.loading", "Loading…")}</p>}>
         <AcceptInviteForm />
       </Suspense>
     </AuthShell>

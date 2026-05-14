@@ -29,6 +29,7 @@ import {
   supportedLocales,
   supportedTimeFormats,
 } from "../../lib/preferences-format";
+import { normalizeAppLocale, useI18n, useT } from "../../lib/i18n";
 
 function fieldClass(): string {
   return "mt-1 w-full max-w-md rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]";
@@ -44,6 +45,8 @@ function cardClass(): string {
 
 export function SettingsClient() {
   const user = useCurrentUser();
+  const t = useT();
+  const { setLocale: setAppLocale } = useI18n();
   const showCompany = canAccessManagement(user);
   const platformAdmin = isAdministrator(user);
 
@@ -171,11 +174,12 @@ export function SettingsClient() {
         notification_in_app_enabled: notifInApp,
         push_notifications_enabled: notifPushUser,
       });
-      setMyMessage("Your preferences were saved.");
+      setMyMessage(t("settings.prefs_saved", "Your preferences were saved."));
+      setAppLocale(normalizeAppLocale(locale));
       const eff = await getSettingsEffective(platformAdmin ? adminCompanyId : null);
       setEffective(eff);
     } catch (err) {
-      setMyMessage(err instanceof Error ? err.message : "Save failed.");
+      setMyMessage(err instanceof Error ? err.message : t("settings.save_failed", "Save failed."));
     } finally {
       setSavingMy(false);
     }
@@ -184,7 +188,7 @@ export function SettingsClient() {
   async function onSaveCompany(e: FormEvent) {
     e.preventDefault();
     if (platformAdmin && !adminCompanyId) {
-      setCompanyMessage("Select a company first.");
+      setCompanyMessage(t("settings.select_company_first", "Select a company first."));
       return;
     }
     setSavingCompany(true);
@@ -205,11 +209,11 @@ export function SettingsClient() {
         },
         platformAdmin ? adminCompanyId : null,
       );
-      setCompanyMessage("Company settings were saved.");
+      setCompanyMessage(t("settings.company_saved", "Company settings were saved."));
       const eff = await getSettingsEffective(platformAdmin ? adminCompanyId : null);
       setEffective(eff);
     } catch (err) {
-      setCompanyMessage(err instanceof Error ? err.message : "Save failed.");
+      setCompanyMessage(err instanceof Error ? err.message : t("settings.save_failed", "Save failed."));
     } finally {
       setSavingCompany(false);
     }
@@ -222,8 +226,11 @@ export function SettingsClient() {
     <Sheet>
       <PageHeader
         action={<LogoutButton />}
-        description="Personal display preferences, notification choices, and (for admins) company defaults. Delivery channels are not wired yet."
-        title="Settings"
+        description={t(
+          "settings.page_description",
+          "Personal display preferences, notification choices, and (for admins) company defaults. Delivery channels are not wired yet.",
+        )}
+        title={t("settings.page_title", "Settings")}
       />
       <SheetBody className="min-w-0 space-y-6 md:p-5">
         {loadError ? (
@@ -234,13 +241,18 @@ export function SettingsClient() {
 
         {platformAdmin ? (
           <div className={cardClass()}>
-            <h2 className="text-base font-semibold text-[var(--color-text)]">Company context</h2>
+            <h2 className="text-base font-semibold text-[var(--color-text)]">
+              {t("settings.company_context_title", "Company context")}
+            </h2>
             <p className="text-sm text-[var(--color-text-muted)]">
-              As a platform administrator, choose which company&apos;s settings you are viewing or editing.
+              {t(
+                "settings.admin_company_intro",
+                "As a platform administrator, choose which company's settings you are viewing or editing.",
+              )}
             </p>
             <div>
               <label className={labelClass()} htmlFor="settings-admin-company">
-                Company
+                {t("settings.company_label", "Company")}
               </label>
               <select
                 id="settings-admin-company"
@@ -248,7 +260,9 @@ export function SettingsClient() {
                 value={adminCompanyId ?? ""}
                 onChange={(ev) => setAdminCompanyId(ev.target.value || null)}
               >
-                {companies.length === 0 ? <option value="">No companies</option> : null}
+                {companies.length === 0 ? (
+                  <option value="">{t("settings.no_companies", "No companies")}</option>
+                ) : null}
                 {companies.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name}
@@ -261,32 +275,39 @@ export function SettingsClient() {
 
         {effective ? (
           <div className={cardClass()}>
-            <h2 className="text-base font-semibold text-[var(--color-text)]">Preview</h2>
+            <h2 className="text-base font-semibold text-[var(--color-text)]">
+              {t("settings.preview_title", "Preview")}
+            </h2>
             <p className="text-sm text-[var(--color-text-muted)]">
-              Sample formatting using your effective preferences (this page only).
+              {t(
+                "settings.preview_hint",
+                "Sample formatting using your effective preferences (this page only).",
+              )}
             </p>
             <ul className="text-sm text-[var(--color-text)] space-y-1">
               <li>
-                <span className="text-[var(--color-text-muted)]">Date:</span>{" "}
+                <span className="text-[var(--color-text-muted)]">{t("settings.date_label", "Date")}:</span>{" "}
                 {formatDateByPreference(previewDate, effective.date_format)}
               </li>
               <li>
-                <span className="text-[var(--color-text-muted)]">Time:</span>{" "}
-                {formatTimeByPreference(previewDate, effective.time_format, effective.locale)}
+                <span className="text-[var(--color-text-muted)]">{t("settings.time_label", "Time")}:</span>{" "}
+                {formatTimeByPreference(previewDate, effective.time_format, locale)}
               </li>
               <li>
-                <span className="text-[var(--color-text-muted)]">Amount:</span>{" "}
-                {formatMoneyByPreference(1234.5, effective.currency_code, effective.locale)}
+                <span className="text-[var(--color-text-muted)]">{t("settings.amount_label", "Amount")}:</span>{" "}
+                {formatMoneyByPreference(1234.5, effective.currency_code, locale)}
               </li>
             </ul>
           </div>
         ) : null}
 
         <form className={cardClass()} onSubmit={onSaveMy}>
-          <h2 className="text-base font-semibold text-[var(--color-text)]">My preferences</h2>
+          <h2 className="text-base font-semibold text-[var(--color-text)]">
+            {t("settings.my_prefs_title", "My preferences")}
+          </h2>
           <div>
             <label className={labelClass()} htmlFor="pref-locale">
-              Locale
+              {t("settings.locale_label", "Locale")}
             </label>
             <select
               id="pref-locale"
@@ -296,19 +317,29 @@ export function SettingsClient() {
             >
               {supportedLocales.map((loc) => (
                 <option key={loc} value={loc}>
-                  {loc}
+                  {loc === "en-GB"
+                    ? t("settings.locale_en_GB", "English (United Kingdom)")
+                    : loc === "ro-RO"
+                      ? t("settings.locale_ro_RO", "Romanian")
+                      : t("settings.locale_pl_PL", "Polish")}
                 </option>
               ))}
             </select>
+            <p className="mt-2 max-w-md text-xs text-[var(--color-text-muted)]">
+              {t(
+                "settings.locale_note",
+                "Some legal, payroll, and compliance text may remain in English until professionally reviewed.",
+              )}
+            </p>
           </div>
           <div>
             <label className={labelClass()} htmlFor="pref-tz">
-              Timezone override
+              {t("settings.timezone_label", "Timezone override")}
             </label>
             <input
               id="pref-tz"
               className={fieldClass()}
-              placeholder="e.g. Europe/London (optional)"
+              placeholder={t("settings.timezone_placeholder", "e.g. Europe/London (optional)")}
               maxLength={64}
               value={myTimezone}
               onChange={(ev) => setMyTimezone(ev.target.value)}
@@ -317,7 +348,7 @@ export function SettingsClient() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div>
               <label className={labelClass()} htmlFor="pref-df">
-                Date format
+                {t("settings.date_format_label", "Date format")}
               </label>
               <select
                 id="pref-df"
@@ -334,7 +365,7 @@ export function SettingsClient() {
             </div>
             <div>
               <label className={labelClass()} htmlFor="pref-tf">
-                Time format
+                {t("settings.time_format_label", "Time format")}
               </label>
               <select
                 id="pref-tf"
@@ -356,21 +387,21 @@ export function SettingsClient() {
               checked={compactMode}
               onChange={(ev) => setCompactMode(ev.target.checked)}
             />
-            Compact mode
+            {t("settings.compact_mode", "Compact mode")}
           </label>
 
           <div className="border-t border-[var(--color-border-dark)] pt-3 space-y-2">
-            <h3 className="text-sm font-semibold text-[var(--color-text)]">Notifications</h3>
-            <p className="text-sm text-[var(--color-text-muted)]">
-              Delivery preferences only. Email and push are not configured yet; values are stored for future use.
-            </p>
+            <h3 className="text-sm font-semibold text-[var(--color-text)]">
+              {t("settings.notifications_title", "Notifications")}
+            </h3>
+            <p className="text-sm text-[var(--color-text-muted)]">{t("settings.delivery_note")}</p>
             <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
               <input type="checkbox" checked={notifInApp} onChange={(ev) => setNotifInApp(ev.target.checked)} />
-              In-app notifications
+              {t("settings.notif_in_app", "In-app notifications")}
             </label>
             <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
               <input type="checkbox" checked={notifEmail} onChange={(ev) => setNotifEmail(ev.target.checked)} />
-              Email notifications (when delivery is available)
+              {t("settings.notif_email", "Email notifications (when delivery is available)")}
             </label>
             <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
               <input
@@ -378,13 +409,13 @@ export function SettingsClient() {
                 checked={notifPushUser}
                 onChange={(ev) => setNotifPushUser(ev.target.checked)}
               />
-              Push notifications (stored only; mobile push not available yet)
+              {t("settings.notif_push", "Push notifications (stored only; mobile push not available yet)")}
             </label>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" disabled={savingMy}>
-              {savingMy ? "Saving…" : "Save my preferences"}
+              {savingMy ? t("settings.saving", "Saving…") : t("settings.save_my_prefs", "Save my preferences")}
             </Button>
             {myMessage ? <span className="text-sm text-[var(--color-text-muted)]">{myMessage}</span> : null}
           </div>
@@ -417,13 +448,13 @@ export function SettingsClient() {
             }
           }}
         >
-          <h2 className="text-base font-semibold text-[var(--color-text)]">Change password</h2>
-          <p className="text-sm text-[var(--color-text-muted)]">
-            Use at least 12 characters with at least one letter and one number.
-          </p>
+          <h2 className="text-base font-semibold text-[var(--color-text)]">
+            {t("settings.change_password_title", "Change password")}
+          </h2>
+          <p className="text-sm text-[var(--color-text-muted)]">{t("settings.pw_hint")}</p>
           <div>
             <label className={labelClass()} htmlFor="pw-current">
-              Current password
+              {t("settings.pw_current", "Current password")}
             </label>
             <input
               id="pw-current"
@@ -436,7 +467,7 @@ export function SettingsClient() {
           </div>
           <div>
             <label className={labelClass()} htmlFor="pw-new">
-              New password
+              {t("settings.pw_new", "New password")}
             </label>
             <input
               id="pw-new"
@@ -449,7 +480,7 @@ export function SettingsClient() {
           </div>
           <div>
             <label className={labelClass()} htmlFor="pw-confirm">
-              Confirm new password
+              {t("settings.pw_confirm", "Confirm new password")}
             </label>
             <input
               id="pw-confirm"
@@ -462,7 +493,7 @@ export function SettingsClient() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" disabled={pwSaving}>
-              {pwSaving ? "Updating…" : "Update password"}
+              {pwSaving ? t("settings.updating_password", "Updating…") : t("settings.update_password", "Update password")}
             </Button>
             {pwMessage ? <span className="text-sm text-[var(--color-text-muted)]">{pwMessage}</span> : null}
           </div>
@@ -470,9 +501,13 @@ export function SettingsClient() {
 
         {showCompany ? (
           <form className={cardClass()} onSubmit={onSaveCompany}>
-            <h2 className="text-base font-semibold text-[var(--color-text)]">Company settings</h2>
+            <h2 className="text-base font-semibold text-[var(--color-text)]">
+              {t("settings.company_settings_title", "Company settings")}
+            </h2>
             {platformAdmin && !adminCompanyId ? (
-              <p className="text-sm text-[var(--color-text-muted)]">Create or select a company to edit defaults.</p>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                {t("settings.create_select_company", "Create or select a company to edit defaults.")}
+              </p>
             ) : (
               <>
                 <div>
@@ -625,7 +660,7 @@ export function SettingsClient() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Button type="submit" disabled={savingCompany || (platformAdmin && !adminCompanyId)}>
-                    {savingCompany ? "Saving…" : "Save company settings"}
+                    {savingCompany ? t("settings.saving", "Saving…") : t("settings.save_company", "Save company settings")}
                   </Button>
                   {companyMessage ? (
                     <span className="text-sm text-[var(--color-text-muted)]">{companyMessage}</span>

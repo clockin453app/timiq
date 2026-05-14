@@ -7,8 +7,10 @@ import { useSearchParams } from "next/navigation";
 import { AuthShell } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
 import { TIMIQ_AUTH_REFRESH_EVENT, verifyEmailWithToken } from "../../../features/auth";
+import { useT } from "../../../lib/i18n";
 
 function VerifyEmailForm() {
+  const t = useT();
   const searchParams = useSearchParams();
   const tokenFromUrl = searchParams.get("token") ?? "";
 
@@ -29,7 +31,7 @@ function VerifyEmailForm() {
         window.dispatchEvent(new Event(TIMIQ_AUTH_REFRESH_EVENT));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Verification failed.");
+      setError(err instanceof Error ? err.message : t("auth.verify.failed", "Verification failed."));
     } finally {
       setSubmitting(false);
     }
@@ -40,24 +42,24 @@ function VerifyEmailForm() {
       {verified ? (
         <div className="space-y-3 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm text-[var(--color-text)]">
           <div>
-            <p className="font-semibold text-[var(--color-text)]">Email verified.</p>
-            <p className="mt-1 text-[var(--color-text-muted)]">You can return to TimIQ.</p>
+            <p className="font-semibold text-[var(--color-text)]">{t("auth.verify.success_title", "Email verified.")}</p>
+            <p className="mt-1 text-[var(--color-text-muted)]">{t("auth.verify.success_body", "You can return to TimIQ.")}</p>
           </div>
           <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
             <Link
               className="text-[var(--color-accent)] underline"
               href="/profile"
             >
-              Go to profile
+              {t("auth.verify.go_profile", "Go to profile")}
             </Link>
             <Link
               className="text-[var(--color-accent)] underline"
               href="/settings"
             >
-              Go to settings
+              {t("auth.verify.go_settings", "Go to settings")}
             </Link>
             <Link className="text-[var(--color-accent)] underline" href="/login">
-              Sign in
+              {t("auth.verify.sign_in", "Sign in")}
             </Link>
           </div>
         </div>
@@ -68,19 +70,23 @@ function VerifyEmailForm() {
         </div>
       ) : null}
       {!tokenFromUrl ? (
-        <Input label="Verification token" name="token" onChange={(ev) => setToken(ev.target.value)} required value={token} />
+        <Input label={t("auth.verify.token_label", "Verification token")} name="token" onChange={(ev) => setToken(ev.target.value)} required value={token} />
       ) : null}
       <Button className="w-full" disabled={submitting || verified} type="submit">
-        {submitting ? "Verifying…" : "Verify email"}
+        {submitting ? t("auth.verify.verifying", "Verifying…") : t("auth.verify.verify_btn", "Verify email")}
       </Button>
     </form>
   );
 }
 
 export default function VerifyEmailPage() {
+  const t = useT();
   return (
-    <AuthShell title="Verify email" subtitle="Confirm your email address for TimIQ.">
-      <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">Loading…</p>}>
+    <AuthShell
+      title={t("auth.verify.title", "Verify email")}
+      subtitle={t("auth.verify.subtitle", "Confirm your email address for TimIQ.")}
+    >
+      <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">{t("auth.common.loading", "Loading…")}</p>}>
         <VerifyEmailForm />
       </Suspense>
     </AuthShell>

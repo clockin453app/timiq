@@ -7,8 +7,10 @@ import { useSearchParams } from "next/navigation";
 import { AuthShell } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
 import { resetPasswordWithToken } from "../../../features/auth";
+import { useT } from "../../../lib/i18n";
 
 function ResetPasswordForm() {
+  const t = useT();
   const searchParams = useSearchParams();
   const tokenFromUrl = searchParams.get("token") ?? "";
 
@@ -24,11 +26,11 @@ function ResetPasswordForm() {
     setError("");
     setMessage("");
     if (password !== confirm) {
-      setError("Passwords do not match.");
+      setError(t("auth.reset.password_mismatch", "Passwords do not match."));
       return;
     }
     if (password.length < 12) {
-      setError("Password must be at least 12 characters.");
+      setError(t("auth.reset.password_short", "Password must be at least 12 characters."));
       return;
     }
     setSubmitting(true);
@@ -36,7 +38,7 @@ function ResetPasswordForm() {
       const res = await resetPasswordWithToken(token.trim(), password);
       setMessage(res.message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Reset failed.");
+      setError(err instanceof Error ? err.message : t("auth.reset.failed", "Reset failed."));
     } finally {
       setSubmitting(false);
     }
@@ -48,7 +50,7 @@ function ResetPasswordForm() {
         <div className="space-y-2 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm text-[var(--color-text)]">
           <p>{message}</p>
           <Link className="text-[var(--color-accent)] underline" href="/login">
-            Sign in
+            {t("auth.verify.sign_in", "Sign in")}
           </Link>
         </div>
       ) : null}
@@ -60,7 +62,7 @@ function ResetPasswordForm() {
       {!tokenFromUrl ? (
         <Input
           autoComplete="off"
-          label="Reset token (from email)"
+          label={t("auth.reset.token_label", "Reset token (from email)")}
           name="token"
           onChange={(ev) => setToken(ev.target.value)}
           required
@@ -69,7 +71,7 @@ function ResetPasswordForm() {
       ) : null}
       <Input
         autoComplete="new-password"
-        label="New password"
+        label={t("auth.reset.new_password", "New password")}
         name="password"
         onChange={(ev) => setPassword(ev.target.value)}
         required
@@ -78,7 +80,7 @@ function ResetPasswordForm() {
       />
       <Input
         autoComplete="new-password"
-        label="Confirm new password"
+        label={t("auth.reset.confirm", "Confirm new password")}
         name="confirm"
         onChange={(ev) => setConfirm(ev.target.value)}
         required
@@ -86,11 +88,11 @@ function ResetPasswordForm() {
         value={confirm}
       />
       <Button className="w-full" disabled={submitting || Boolean(message)} type="submit">
-        {submitting ? "Saving…" : "Set new password"}
+        {submitting ? t("auth.reset.saving", "Saving…") : t("auth.reset.set_password", "Set new password")}
       </Button>
       <p className="text-center text-sm">
         <Link className="text-[var(--color-accent)] underline" href="/login">
-          Back to sign in
+          {t("auth.forgot.back", "Back to sign in")}
         </Link>
       </p>
     </form>
@@ -98,9 +100,13 @@ function ResetPasswordForm() {
 }
 
 export default function ResetPasswordPage() {
+  const t = useT();
   return (
-    <AuthShell title="Reset password" subtitle="Choose a new password for your account.">
-      <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">Loading…</p>}>
+    <AuthShell
+      title={t("auth.reset.title", "Reset password")}
+      subtitle={t("auth.reset.subtitle", "Choose a new password for your account.")}
+    >
+      <Suspense fallback={<p className="text-sm text-[var(--color-text-muted)]">{t("auth.common.loading", "Loading…")}</p>}>
         <ResetPasswordForm />
       </Suspense>
     </AuthShell>

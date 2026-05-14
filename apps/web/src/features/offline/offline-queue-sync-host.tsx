@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "../../components/ui";
+import { useT } from "../../lib/i18n";
 import { useCurrentUser } from "../auth/auth-context";
 import { TIMIQ_OFFLINE_QUEUE_CHANGED } from "./events";
 import { isNavigatorOffline } from "./network";
@@ -12,6 +13,7 @@ const FOCUS_SYNC_MS = 2500;
 
 export function OfflineQueueSyncHost() {
   const user = useCurrentUser();
+  const t = useT();
   const [online, setOnline] = useState(() =>
     typeof navigator === "undefined" ? true : navigator.onLine,
   );
@@ -107,45 +109,54 @@ export function OfflineQueueSyncHost() {
     <div
       className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm text-[var(--color-text)] shadow-sm"
       role="region"
-      aria-label="Offline sync status"
+      aria-label={t("offline.aria_sync_status", "Offline sync status")}
     >
       <div className="mx-auto flex max-w-[min(72rem,100%)] flex-wrap items-center justify-between gap-2">
         <div className="min-w-0 flex-1 space-y-0.5">
           {!online ? (
-            <p className="font-medium text-[var(--color-warning-700)]">Offline — queued work will sync when you reconnect.</p>
+            <p className="font-medium text-[var(--color-warning-700)]">
+              {t("offline.sync_offline_hint", "Offline — queued work will sync when you reconnect.")}
+            </p>
           ) : null}
           {online && totalPending > 0 ? (
             <p>
               {busy || syncing > 0 ? (
-                <span className="font-medium">Syncing… </span>
+                <span className="font-medium">{t("offline.sync_working", "Syncing… ")}</span>
               ) : (
-                <span className="font-medium">Offline queue: </span>
+                <span className="font-medium">{t("offline.sync_queued", "Offline queue:")} </span>
               )}
-              {queued > 0 ? <span>{queued} queued</span> : null}
+              {queued > 0 ? (
+                <span>{t("offline.sync_queued_n", "{{n}} queued", { n: queued })}</span>
+              ) : null}
               {queued > 0 && failed > 0 ? <span> · </span> : null}
               {failed > 0 ? (
-                <span className="text-[var(--color-danger-700)]">{failed} failed (retry with Sync now)</span>
+                <span className="text-[var(--color-danger-700)]">
+                  {t("offline.sync_failed", "{{n}} failed (retry with Sync now)", { n: failed })}
+                </span>
               ) : null}
             </p>
           ) : null}
-          {online && totalPending === 0 && busy ? <p className="font-medium">Checking queue…</p> : null}
+          {online && totalPending === 0 && busy ? (
+            <p className="font-medium">{t("offline.sync_checking", "Checking queue…")}</p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button disabled={busy || isNavigatorOffline()} onClick={() => void runSync()} size="sm" type="button">
-            {busy ? "Syncing…" : "Sync now"}
+            {busy ? t("common.syncing", "Syncing…") : t("common.sync_now", "Sync now")}
           </Button>
           {totalPending > 0 ? (
             <Button onClick={() => setExpanded((v) => !v)} size="sm" type="button" variant="secondary">
-              {expanded ? "Hide" : "Details"}
+              {expanded ? t("common.hide", "Hide") : t("common.details", "Details")}
             </Button>
           ) : null}
         </div>
       </div>
       {expanded && totalPending > 0 ? (
         <p className="mx-auto mt-2 max-w-[min(72rem,100%)] text-xs text-[var(--color-text-muted)]">
-          Site progress updates are sent to the server when you are online. Failed items keep a copy on this device
-          until they succeed or you discard them from a future release. Duplicates are unlikely unless the server
-          accepted a request but the device did not get the response.
+          {t(
+            "offline.sync_details",
+            "Site progress updates are sent to the server when you are online. Failed items keep a copy on this device until they succeed or you discard them from a future release. Duplicates are unlikely unless the server accepted a request but the device did not get the response.",
+          )}
         </p>
       ) : null}
     </div>

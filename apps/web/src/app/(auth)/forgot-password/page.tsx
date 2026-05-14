@@ -6,8 +6,10 @@ import Link from "next/link";
 import { AuthShell } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
 import { requestForgotPassword } from "../../../features/auth";
+import { useT } from "../../../lib/i18n";
 
 export default function ForgotPasswordPage() {
+  const t = useT();
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -22,7 +24,7 @@ export default function ForgotPasswordPage() {
       const res = await requestForgotPassword(email.trim());
       setMessage(res.message);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("auth.forgot.error_generic", "Something went wrong."));
     } finally {
       setSubmitting(false);
     }
@@ -30,8 +32,11 @@ export default function ForgotPasswordPage() {
 
   return (
     <AuthShell
-      title="Forgot password"
-      subtitle="Enter your email address. If an account exists, you will receive reset instructions."
+      title={t("auth.forgot.title", "Forgot password")}
+      subtitle={t(
+        "auth.forgot.subtitle",
+        "Enter your email address. If an account exists, you will receive reset instructions.",
+      )}
     >
       <form className="space-y-4" onSubmit={onSubmit}>
         {message ? (
@@ -46,7 +51,7 @@ export default function ForgotPasswordPage() {
         ) : null}
         <Input
           autoComplete="email"
-          label="Email"
+          label={t("auth.login.email", "Email")}
           name="email"
           onChange={(ev) => setEmail(ev.target.value)}
           required
@@ -54,11 +59,11 @@ export default function ForgotPasswordPage() {
           value={email}
         />
         <Button className="w-full" disabled={submitting} type="submit">
-          {submitting ? "Submitting…" : "Send reset link"}
+          {submitting ? t("auth.forgot.submitting", "Submitting…") : t("auth.forgot.submit", "Send reset link")}
         </Button>
         <p className="text-center text-sm">
           <Link className="text-[var(--color-accent)] underline" href="/login">
-            Back to sign in
+            {t("auth.forgot.back", "Back to sign in")}
           </Link>
         </p>
       </form>

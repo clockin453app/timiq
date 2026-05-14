@@ -8,6 +8,7 @@ import {
   getManagementNavigationGroups,
 } from "../../config/navigation";
 import { useCurrentUser } from "../../features/auth";
+import { useT } from "../../lib/i18n";
 
 import { GroupedNavBlock } from "./grouped-nav";
 
@@ -17,6 +18,7 @@ type MobileHeaderProps = {
 
 export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const user = useCurrentUser();
+  const t = useT();
 
   const employeeGroups = useMemo(
     () => filterNavGroupsForMobileQuickNav(getEmployeeNavigationGroups(user.system_role)),
@@ -32,13 +34,13 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     <header className="w-full min-w-0 overflow-x-clip border-b border-[var(--color-border-dark)] bg-[var(--color-header)] pt-[env(safe-area-inset-top,0px)] xl:hidden">
       <div className="flex min-w-0 items-center justify-between gap-3 px-3 py-2.5">
         <div className="min-w-0">
-          <p className="truncate font-bold tracking-tight text-[var(--color-text)]">TimIQ</p>
-          <p className="truncate text-xs text-[#4b5563]">Payroll & workforce</p>
+          <p className="truncate font-bold tracking-tight text-[var(--color-text)]">{t("nav.tagline", "TimIQ")}</p>
+          <p className="truncate text-xs text-[#4b5563]">{t("nav.tagline_sub", "Payroll & workforce")}</p>
         </div>
 
         <details className="relative shrink-0">
           <summary className="timiq-touch-target list-none flex items-center rounded-[var(--radius-md)] border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] px-3 text-sm font-semibold text-[var(--color-text)] [&::-webkit-details-marker]:hidden">
-            Menu
+            {t("nav.menu", "Menu")}
           </summary>
 
           <div className="absolute right-0 z-20 mt-2 w-[min(100vw-1.5rem,19rem)] max-w-[calc(100vw-1rem)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_4px_rgba(15,23,42,0.08)]">
@@ -52,13 +54,15 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                   variant="drawer"
                 />
               ) : (
-                <p className="px-2 py-2 text-xs text-[var(--color-text-muted)]">All primary pages are on the bottom bar.</p>
+                <p className="px-2 py-2 text-xs text-[var(--color-text-muted)]">
+                  {t("nav.drawer_hint_primary", "All primary pages are on the bottom bar.")}
+                </p>
               )}
 
               {managementGroups.length > 0 ? (
                 <div className="mt-3 border-t border-[var(--color-border)] pt-3">
                   <p className="mb-2 px-2 text-xs font-medium tracking-normal text-[#374151]">
-                    Management
+                    {t("nav.management", "Management")}
                   </p>
                   <GroupedNavBlock
                     activeHref={activeHref}

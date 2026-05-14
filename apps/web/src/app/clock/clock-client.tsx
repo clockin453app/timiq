@@ -23,6 +23,7 @@ import {
 } from "../../features/time-clock/gps";
 import { useLiveShiftDuration } from "../../features/time-clock/shift-duration";
 import { haversineDistanceMeters } from "../../lib/geo";
+import { useT } from "../../lib/i18n";
 
 const EMPTY_ASSIGNED_SITES: ClockAssignedSite[] = [];
 
@@ -58,24 +59,25 @@ function deriveFlowStatus(cs: ClockStatus): FlowStatus {
   return "not_clocked_in";
 }
 
-function statusCardTitle(flow: FlowStatus): string {
+function statusCardTitle(flow: FlowStatus, t: (key: string, fallback?: string) => string): string {
   switch (flow) {
     case "no_assigned_sites":
-      return "No assigned sites";
+      return t("clock.status_no_assigned_sites", "No assigned sites");
     case "completed_today":
-      return "Shift completed today";
+      return t("clock.status_completed_today", "Shift completed today");
     case "open_break":
-      return "Break in progress";
+      return t("clock.status_break_in_progress", "Break in progress");
     case "on_shift":
-      return "On shift";
+      return t("clock.status_on_shift", "On shift");
     case "not_clocked_in":
-      return "Not clocked in";
+      return t("clock.status_not_clocked_in", "Not clocked in");
     default:
-      return "Clock";
+      return t("clock.status_default", "Clock");
   }
 }
 
 export function ClockClient() {
+  const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -756,17 +758,17 @@ export function ClockClient() {
   return (
     <Sheet>
       <PageHeader
-        title="Clock In / Out"
-        description="GPS and a live camera selfie are required for each clock-in and clock-out."
+        title={t("nav.clock", "Clock In / Out")}
+        description={t(
+          "clock.page_description",
+          "GPS and a live camera selfie are required for each clock-in and clock-out.",
+        )}
       />
       <SheetBody className="min-w-0 space-y-4 pb-6 sm:pb-8">
         {!networkOnline ? (
           <div className="rounded border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] p-3 text-sm text-[var(--color-warning-700)]">
-            <p className="font-semibold">Clock-in requires server confirmation</p>
-            <p className="mt-1">
-              TimIQ cannot accept clock-in, clock-out, or break actions while you are offline. The status below is from
-              the last successful refresh. Connect to update. Offline clock drafts are not enabled in this release.
-            </p>
+            <p className="font-semibold">{t("clock.offline_title")}</p>
+            <p className="mt-1">{t("clock.offline_body")}</p>
           </div>
         ) : null}
         <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-4 text-sm">
@@ -774,12 +776,12 @@ export function ClockClient() {
             Current status
           </p>
           {isRefreshing && !clockStatus ? (
-            <p className="mt-2 text-[var(--color-text-muted)]">Loading…</p>
+            <p className="mt-2 text-[var(--color-text-muted)]">{t("common.loading", "Loading…")}</p>
           ) : null}
           {clockStatus ? (
             <>
               <p className="mt-2 text-xl font-semibold text-[var(--color-text)]">
-                {statusCardTitle(flowStatus)}
+                {statusCardTitle(flowStatus, t)}
               </p>
               {flowStatus === "on_shift" || flowStatus === "open_break" ? (
                 <div className="mt-2 space-y-1 text-[var(--color-text-muted)]">
@@ -843,32 +845,34 @@ export function ClockClient() {
               </li>
               {flowStatus === "not_clocked_in" ? (
                 <li className="flex flex-wrap items-start justify-between gap-2">
-                  <span>Clock-in selfie</span>
+                  <span>{t("clock.req_clock_in_selfie", "Clock-in selfie")}</span>
                   <span
                     className={
                       clockInSelfieOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"
                     }
                   >
-                    {clockInSelfieOk ? "Captured" : "Needed"}
+                    {clockInSelfieOk ? t("clock.req_captured", "Captured") : t("clock.req_needed", "Needed")}
                   </span>
                 </li>
               ) : null}
               {(flowStatus === "on_shift" || flowStatus === "open_break") && canClockOutServer ? (
                 <li className="flex flex-wrap items-start justify-between gap-2">
-                  <span>Clock-out selfie</span>
+                  <span>{t("clock.req_clock_out_selfie", "Clock-out selfie")}</span>
                   <span
                     className={
                       clockOutSelfieOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"
                     }
                   >
-                    {clockOutSelfieOk ? "Captured" : "Needed"}
+                    {clockOutSelfieOk ? t("clock.req_captured", "Captured") : t("clock.req_needed", "Needed")}
                   </span>
                 </li>
               ) : null}
               {flowStatus === "open_break" ? (
                 <li className="flex flex-wrap items-start justify-between gap-2">
-                  <span>Break</span>
-                  <span className="text-[var(--color-warning-700)]">End break before clock out</span>
+                  <span>{t("clock.action_break", "Break")}</span>
+                  <span className="text-[var(--color-warning-700)]">
+                    {t("clock.req_break_end_before_out", "End break before clock out")}
+                  </span>
                 </li>
               ) : null}
             </ul>
@@ -979,28 +983,29 @@ export function ClockClient() {
         {clockStatus && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
           <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-4 text-sm">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              {flowStatus === "not_clocked_in" ? "Clock in" : flowStatus === "open_break" ? "Break" : "Clock out"}
+              {flowStatus === "not_clocked_in"
+                ? t("clock.action_clock_in", "Clock in")
+                : flowStatus === "open_break"
+                  ? t("clock.action_break", "Break")
+                  : t("clock.action_clock_out", "Clock out")}
             </p>
 
             {flowStatus === "not_clocked_in" ? (
               <div className="mt-3 space-y-4">
-                <p className="text-xs text-[var(--color-text-muted)]">
-                  Step 1: Location is captured automatically when permission is granted. Step 2: Take your clock-in
-                  selfie. Step 3: Clock in.
-                </p>
+                <p className="text-xs text-[var(--color-text-muted)]">{t("clock.step_clock_in_intro")}</p>
                 <Button
                   className="w-full min-h-[3rem] text-base sm:w-auto"
                   disabled={isSubmitting || activeSelfiePhase !== null}
                   onClick={() => openSelfieCapture("clock_in")}
                   type="button"
                 >
-                  {selfieClockIn ? "Retake clock-in selfie" : "Take clock-in selfie"}
+                  {selfieClockIn ? t("clock.retake_selfie_in") : t("clock.take_selfie_in")}
                 </Button>
                 {selfieClockIn && clockInPreviewUrl ? (
                   <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      alt="Clock-in selfie preview"
+                      alt={t("clock.alt_selfie_in", "Clock-in selfie preview")}
                       className="mx-auto max-h-36 max-w-full object-contain"
                       src={clockInPreviewUrl}
                     />
@@ -1013,7 +1018,7 @@ export function ClockClient() {
                     onClick={handleClockIn}
                     type="button"
                   >
-                    Clock in
+                    {t("clock.action_clock_in", "Clock in")}
                   </Button>
                   {!clockInEnabled && clockInDisabledReason ? (
                     <p className="text-xs text-[var(--color-text-muted)]">{clockInDisabledReason}</p>
@@ -1024,17 +1029,17 @@ export function ClockClient() {
 
             {flowStatus === "open_break" ? (
               <div className="mt-3 space-y-3">
-                <p className="text-xs text-[var(--color-text-muted)]">End your break before you can clock out.</p>
+                <p className="text-xs text-[var(--color-text-muted)]">{t("clock.end_break_before_out_hint")}</p>
                 <Button
                   className="w-full min-h-[3rem] text-base"
                   disabled={!breakEndEnabled}
                   onClick={handleBreakEnd}
                   type="button"
                 >
-                  End break
+                  {t("clock.end_break", "End break")}
                 </Button>
                 {!breakEndEnabled && isSubmitting ? (
-                  <p className="text-xs text-[var(--color-text-muted)]">Working…</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">{t("clock.working", "Working…")}</p>
                 ) : null}
               </div>
             ) : null}
@@ -1047,13 +1052,13 @@ export function ClockClient() {
                   onClick={() => openSelfieCapture("clock_out")}
                   type="button"
                 >
-                  {selfieClockOut ? "Retake clock-out selfie" : "Take clock-out selfie"}
+                  {selfieClockOut ? t("clock.retake_selfie_out") : t("clock.take_selfie_out")}
                 </Button>
                 {selfieClockOut && clockOutPreviewUrl ? (
                   <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      alt="Clock-out selfie preview"
+                      alt={t("clock.alt_selfie_out", "Clock-out selfie preview")}
                       className="mx-auto max-h-36 max-w-full object-contain"
                       src={clockOutPreviewUrl}
                     />
@@ -1066,7 +1071,7 @@ export function ClockClient() {
                     onClick={handleClockOut}
                     type="button"
                   >
-                    Clock out
+                    {t("clock.action_clock_out", "Clock out")}
                   </Button>
                   {!clockOutEnabled && clockOutDisabledReason ? (
                     <p className="text-xs text-[var(--color-text-muted)]">{clockOutDisabledReason}</p>
@@ -1074,7 +1079,7 @@ export function ClockClient() {
                 </div>
                 {breakStartEnabled ? (
                   <Button disabled={!breakStartEnabled} onClick={handleBreakStart} type="button" variant="secondary">
-                    Start break
+                    {t("clock.start_break", "Start break")}
                   </Button>
                 ) : null}
               </div>
@@ -1085,14 +1090,14 @@ export function ClockClient() {
         {flowStatus === "on_shift" || flowStatus === "not_clocked_in" ? (
           <p className="text-xs text-[var(--color-text-muted)]">
             {flowStatus === "on_shift"
-              ? "Clock in is not available while you are on shift."
-              : "Clock out is available after you start a shift."}
+              ? t("clock.hint_on_shift", "Clock in is not available while you are on shift.")
+              : t("clock.hint_not_in", "Clock out is available after you start a shift.")}
           </p>
         ) : null}
 
         <div className="flex flex-wrap gap-2 border-t border-[var(--color-border)] pt-4">
           <Button disabled={isSubmitting || activeSelfiePhase !== null} onClick={() => void refreshStatus()} type="button" variant="secondary">
-            Refresh status
+            {t("common.refresh_status", "Refresh status")}
           </Button>
         </div>
 
@@ -1105,11 +1110,11 @@ export function ClockClient() {
               >
                 <div className="mx-auto w-full max-w-[min(24rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md">
                   <p className="text-sm font-bold text-[var(--color-text)]">
-                    {activeSelfiePhase === "clock_in" ? "Clock-in selfie" : "Clock-out selfie"}
+                    {activeSelfiePhase === "clock_in"
+                      ? t("clock.dialog_title_in", "Clock-in selfie")
+                      : t("clock.dialog_title_out", "Clock-out selfie")}
                   </p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    Position your face in frame, then tap Capture.
-                  </p>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">{t("clock.dialog_hint")}</p>
                   <div className="mt-2 overflow-hidden rounded border border-[var(--color-border-dark)] bg-black">
                     <video
                       ref={videoRef}
@@ -1121,10 +1126,10 @@ export function ClockClient() {
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Button onClick={handleConfirmSelfieCapture} type="button">
-                      Capture
+                      {t("clock.capture", "Capture")}
                     </Button>
                     <Button onClick={handleCancelSelfieCapture} type="button" variant="secondary">
-                      Cancel
+                      {t("common.cancel", "Cancel")}
                     </Button>
                   </div>
                 </div>

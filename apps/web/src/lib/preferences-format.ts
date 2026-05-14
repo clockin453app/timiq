@@ -1,6 +1,6 @@
 /** Supported display preferences (aligned with backend Batch 43). */
 
-export const supportedLocales = ["en-GB", "ro-RO"] as const;
+export const supportedLocales = ["en-GB", "ro-RO", "pl-PL"] as const;
 export type SupportedLocale = (typeof supportedLocales)[number];
 
 export const supportedDateFormats = ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"] as const;

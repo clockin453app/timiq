@@ -1,7 +1,9 @@
 export type SystemRole = "administrator" | "admin" | "employee";
 
 export type NavigationItem = {
+  /** English fallback when a translation key is missing */
   label: string;
+  labelKey: string;
   href: string;
   allowedRoles: SystemRole[];
 };
@@ -10,215 +12,269 @@ export type NavigationItem = {
 export type NavigationGroupDefinition = {
   id: string;
   label: string;
+  groupLabelKey: string;
   items: NavigationItem[];
 };
 
 const DASHBOARD: NavigationItem = {
   label: "Dashboard",
+  labelKey: "nav.dashboard",
   href: "/dashboard",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const MESSAGES: NavigationItem = {
   label: "Messages",
+  labelKey: "nav.messages",
   href: "/messages",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const CLOCK: NavigationItem = {
   label: "Clock In / Out",
+  labelKey: "nav.clock",
   href: "/clock",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const TIME_RECORDS: NavigationItem = {
   label: "Time Records",
+  labelKey: "nav.time_records",
   href: "/time-records",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const TIMESHEETS: NavigationItem = {
   label: "Timesheets",
+  labelKey: "nav.timesheets",
   href: "/timesheets",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const WEEK_REPORT: NavigationItem = {
   label: "Week Report",
+  labelKey: "nav.week_report",
   href: "/week-report",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const PAY_HISTORY: NavigationItem = {
   label: "Pay History",
+  labelKey: "nav.pay_history",
   href: "/pay-history",
   allowedRoles: ["employee"],
 };
 
 const SITE_PROGRESS: NavigationItem = {
   label: "Site Progress",
+  labelKey: "nav.site_progress",
   href: "/site-progress",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const STARTER_FORM: NavigationItem = {
   label: "Starter Form",
+  labelKey: "nav.starter_form",
   href: "/starter-form",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const PROFILE: NavigationItem = {
   label: "Profile",
+  labelKey: "nav.profile",
   href: "/profile",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const SETTINGS: NavigationItem = {
   label: "Settings",
+  labelKey: "nav.settings",
   href: "/settings",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const PRIVACY_PORTAL: NavigationItem = {
   label: "Data & privacy",
+  labelKey: "nav.privacy",
   href: "/privacy",
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const OVERVIEW: NavigationItem = {
   label: "Overview",
+  labelKey: "nav.overview",
   href: "/overview",
   allowedRoles: ["administrator", "admin"],
 };
 
 const EMPLOYEES: NavigationItem = {
   label: "Employees",
+  labelKey: "nav.employees",
   href: "/employees",
   allowedRoles: ["administrator", "admin"],
 };
 
 const PRIVACY_REQUESTS: NavigationItem = {
   label: "Privacy requests",
+  labelKey: "nav.privacy_requests",
   href: "/privacy/requests",
   allowedRoles: ["administrator", "admin"],
 };
 
 const ONBOARDING_REVIEW: NavigationItem = {
   label: "Onboarding Review",
+  labelKey: "nav.onboarding_review",
   href: "/onboarding-review",
   allowedRoles: ["administrator", "admin"],
 };
 
 const CLOCK_SELFIES: NavigationItem = {
   label: "Clock Selfies",
+  labelKey: "nav.clock_selfies",
   href: "/clock-selfie-review",
   allowedRoles: ["administrator", "admin"],
 };
 
 const COMPANIES: NavigationItem = {
   label: "Companies",
+  labelKey: "nav.companies",
   href: "/companies",
   allowedRoles: ["administrator"],
 };
 
 const WORKPLACES: NavigationItem = {
   label: "Workplaces",
+  labelKey: "nav.workplaces",
   href: "/workplaces",
   allowedRoles: ["administrator", "admin"],
 };
 
 const LOCATIONS: NavigationItem = {
   label: "Locations",
+  labelKey: "nav.locations",
   href: "/locations",
   allowedRoles: ["administrator", "admin"],
 };
 
 const SITE_ACCESS: NavigationItem = {
   label: "Site Access",
+  labelKey: "nav.site_access",
   href: "/site-access",
   allowedRoles: ["administrator", "admin"],
 };
 
 const LIVE_ATTENDANCE: NavigationItem = {
   label: "Live Attendance",
+  labelKey: "nav.live_attendance",
   href: "/live-attendance",
   allowedRoles: ["administrator", "admin"],
 };
 
 const PAYROLL_REPORT: NavigationItem = {
   label: "Payroll Report",
+  labelKey: "nav.payroll_report",
   href: "/payroll-report",
   allowedRoles: ["administrator", "admin"],
 };
 
 const SITE_PAYROLL_RULES: NavigationItem = {
   label: "Site payroll rules",
+  labelKey: "nav.site_payroll_rules",
   href: "/site-payroll-rules",
   allowedRoles: ["administrator", "admin"],
 };
 
 const BUDGET_CALCULATOR: NavigationItem = {
   label: "Budget calculator",
+  labelKey: "nav.budget_calculator",
   href: "/budgets",
   allowedRoles: ["administrator", "admin"],
 };
 
 const ACCOUNTING_LINK: NavigationItem = {
   label: "Accounting exports",
+  labelKey: "nav.accounting_exports",
   href: "/accounting",
   allowedRoles: ["administrator", "admin"],
 };
 
 const WORK_PROGRESS_REVIEW: NavigationItem = {
   label: "Work Progress Review",
+  labelKey: "nav.work_progress_review",
   href: "/work-progress-review",
   allowedRoles: ["administrator", "admin"],
 };
 
 const AUDIT_LOG: NavigationItem = {
   label: "Audit Log",
+  labelKey: "nav.audit_log",
   href: "/system/audit-log",
   allowedRoles: ["administrator", "admin"],
 };
 
 const SYSTEM_HEALTH: NavigationItem = {
   label: "System Health",
+  labelKey: "nav.system_health",
   href: "/system/health",
   allowedRoles: ["administrator"],
 };
 
 const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
-  { id: "emp-home", label: "Home", items: [DASHBOARD, MESSAGES] },
+  { id: "emp-home", label: "Home", groupLabelKey: "nav.group.emp_home", items: [DASHBOARD, MESSAGES] },
   {
     id: "emp-time",
     label: "Time",
+    groupLabelKey: "nav.group.emp_time",
     items: [CLOCK, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
   },
-  { id: "emp-pay", label: "Pay", items: [PAY_HISTORY] },
-  { id: "emp-work", label: "Work", items: [SITE_PROGRESS] },
-  { id: "emp-profile", label: "Profile", items: [STARTER_FORM, PROFILE, SETTINGS, PRIVACY_PORTAL] },
+  { id: "emp-pay", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
+  { id: "emp-work", label: "Work", groupLabelKey: "nav.group.emp_work", items: [SITE_PROGRESS] },
+  {
+    id: "emp-profile",
+    label: "Profile",
+    groupLabelKey: "nav.group.emp_profile",
+    items: [STARTER_FORM, PROFILE, SETTINGS, PRIVACY_PORTAL],
+  },
 ];
 
 const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
-  { id: "mgmt-overview", label: "Overview", items: [OVERVIEW] },
+  { id: "mgmt-overview", label: "Overview", groupLabelKey: "nav.group.mgmt_overview", items: [OVERVIEW] },
   {
     id: "mgmt-people",
     label: "People",
+    groupLabelKey: "nav.group.mgmt_people",
     items: [EMPLOYEES, ONBOARDING_REVIEW, CLOCK_SELFIES, PRIVACY_REQUESTS],
   },
   {
     id: "mgmt-sites",
     label: "Sites",
+    groupLabelKey: "nav.group.mgmt_sites",
     items: [COMPANIES, WORKPLACES, LOCATIONS, SITE_ACCESS],
   },
   {
     id: "mgmt-attendance",
     label: "Attendance",
+    groupLabelKey: "nav.group.mgmt_attendance",
     items: [LIVE_ATTENDANCE, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
   },
-  { id: "mgmt-payroll", label: "Payroll", items: [PAYROLL_REPORT, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK] },
-  { id: "mgmt-work", label: "Work", items: [WORK_PROGRESS_REVIEW] },
-  { id: "mgmt-system", label: "System", items: [AUDIT_LOG, SYSTEM_HEALTH, SETTINGS] },
+  {
+    id: "mgmt-payroll",
+    label: "Payroll",
+    groupLabelKey: "nav.group.mgmt_payroll",
+    items: [PAYROLL_REPORT, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
+  },
+  {
+    id: "mgmt-work",
+    label: "Work",
+    groupLabelKey: "nav.group.mgmt_work",
+    items: [WORK_PROGRESS_REVIEW],
+  },
+  {
+    id: "mgmt-system",
+    label: "System",
+    groupLabelKey: "nav.group.mgmt_system",
+    items: [AUDIT_LOG, SYSTEM_HEALTH, SETTINGS],
+  },
 ];
 
 function itemVisibleForRole(item: NavigationItem, role: SystemRole): boolean {

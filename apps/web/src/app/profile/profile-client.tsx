@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
@@ -30,9 +30,11 @@ import {
   onboardingSummaryFieldLabel,
   SENSITIVE_ONBOARDING_FIELD_KEYS,
 } from "../../features/onboarding/profile-summary";
+import { useT } from "../../lib/i18n";
 
 export function ProfileClient() {
   const user = useCurrentUser();
+  const t = useT();
   const refreshAuthUser = useRefreshAuthUser();
 
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
@@ -209,9 +211,7 @@ export function ProfileClient() {
     setVerifySending(true);
     try {
       const res = await sendVerificationEmail();
-      setVerifyMessage(
-        "Verification email sent. Open the link, then return here. This page updates when you return to this tab or when you click Refresh status below.",
-      );
+      setVerifyMessage(t("profile.verify_sent"));
       setVerifyDevLink(res.dev_verification_link ?? null);
     } catch (err) {
       setVerifyError(err instanceof Error ? err.message : "Could not send verification email.");
@@ -230,40 +230,43 @@ export function ProfileClient() {
     }
   }
 
-  const accountRows = [
-    { label: "Email", value: user.email },
-    { label: "Role", value: formatSystemRole(user.system_role) },
-    {
-      label: "Company",
-      value: isLoadingProfile
-        ? "Loading…"
-        : loadError
-          ? "—"
-          : profile?.company_name || "Not assigned",
-    },
-    {
-      label: "Account status",
-      value: user.is_active ? "Active" : "Inactive",
-    },
-    {
-      label: "Email verified",
-      value: user.email_verified_at
-        ? formatOptionalDate(user.email_verified_at)
-        : "Not verified yet",
-    },
-    {
-      label: "Early clock-in access",
-      value: isLoadingProfile
-        ? "Loading…"
-        : loadError
-          ? "—"
-          : profile
-            ? profile.early_access_enabled
-              ? "Enabled"
-              : "Off"
-            : "—",
-    },
-  ];
+  const accountRows = useMemo(
+    () => [
+      { label: t("profile.row_email", "Email"), value: user.email },
+      { label: t("profile.row_role", "Role"), value: formatSystemRole(user.system_role) },
+      {
+        label: t("profile.row_company", "Company"),
+        value: isLoadingProfile
+          ? t("common.loading", "Loading…")
+          : loadError
+            ? t("profile.value_dash", "—")
+            : profile?.company_name || t("profile.value_not_assigned", "Not assigned"),
+      },
+      {
+        label: t("profile.row_account_status", "Account status"),
+        value: user.is_active ? t("profile.value_active", "Active") : t("profile.value_inactive", "Inactive"),
+      },
+      {
+        label: t("profile.row_email_verified", "Email verified"),
+        value: user.email_verified_at
+          ? formatOptionalDate(user.email_verified_at)
+          : t("profile.not_verified", "Not verified yet"),
+      },
+      {
+        label: t("profile.row_early_clock", "Early clock-in access"),
+        value: isLoadingProfile
+          ? t("common.loading", "Loading…")
+          : loadError
+            ? t("profile.value_dash", "—")
+            : profile
+              ? profile.early_access_enabled
+                ? t("profile.value_enabled", "Enabled")
+                : t("profile.value_off", "Off")
+              : t("profile.value_dash", "—"),
+      },
+    ],
+    [t, user, isLoadingProfile, loadError, profile],
+  );
 
   const starterNote = isEmployee(user)
     ? "The editable section below updates your live profile. Submitted starter form answers (including sensitive items) appear read-only in Onboarding record once you have submitted."
@@ -338,8 +341,8 @@ export function ProfileClient() {
   return (
     <Sheet>
       <PageHeader
-        title="Profile"
-        description="Your TimIQ account and employee profile."
+        title={t("profile.page_title", "Profile")}
+        description={t("profile.page_description", "Your TimIQ account and employee profile.")}
       />
       <SheetBody>
         <div className="space-y-3">
@@ -358,7 +361,7 @@ export function ProfileClient() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-lg font-semibold leading-tight text-[var(--color-text)]">
-                  {isLoadingProfile ? "Loading…" : profileDisplayName()}
+                  {isLoadingProfile ? t("common.loading", "Loading…") : profileDisplayName()}
                 </p>
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">{user.email}</p>
               </div>
@@ -367,7 +370,7 @@ export function ProfileClient() {
 
           <div className="border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
             <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-              Account
+              {t("profile.account", "Account")}
             </p>
             <dl className="mt-2 grid gap-2 text-sm">
               {accountRows.map((row) => (
@@ -383,15 +386,17 @@ export function ProfileClient() {
             {!user.email_verified_at ? (
               <div className="mt-3 border-t border-[var(--color-border)] pt-3">
                 <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                  Verify your email
+                  {t("profile.verify_section", "Verify your email")}
                 </p>
                 <p className="mt-1 text-sm text-[var(--color-text-muted)]">
-                  When you have opened the verification link, return to this tab or click Refresh status so your
-                  account shows as verified.
+                  {t(
+                    "profile.verify_hint",
+                    "When you have opened the verification link, return to this tab or click Refresh status so your account shows as verified.",
+                  )}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button disabled={verifySending} onClick={() => void handleSendVerificationEmail()} type="button">
-                    {verifySending ? "Sending…" : "Send verification email"}
+                    {verifySending ? t("profile.sending", "Sending…") : t("profile.send_verify", "Send verification email")}
                   </Button>
                   <Button
                     disabled={authRefreshBusy}
@@ -399,7 +404,7 @@ export function ProfileClient() {
                     type="button"
                     variant="secondary"
                   >
-                    {authRefreshBusy ? "Refreshing…" : "Refresh status"}
+                    {authRefreshBusy ? t("profile.refreshing", "Refreshing…") : t("profile.refresh_status", "Refresh status")}
                   </Button>
                 </div>
                 {verifyError ? (
@@ -410,7 +415,7 @@ export function ProfileClient() {
                 ) : null}
                 {process.env.NODE_ENV === "development" && verifyDevLink ? (
                   <div className="mt-2 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2 text-xs">
-                    <p className="font-bold text-[var(--color-text)]">Development verification link</p>
+                    <p className="font-bold text-[var(--color-text)]">{t("profile.dev_verify_link")}</p>
                     <p className="mt-1 break-all text-[var(--color-text-muted)]">{verifyDevLink}</p>
                   </div>
                 ) : null}

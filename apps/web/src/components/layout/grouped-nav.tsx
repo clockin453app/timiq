@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import type { NavigationGroupDefinition, SystemRole } from "../../config/navigation";
+import { useT } from "../../lib/i18n";
 
 /**
  * v3: open state is route-driven on each navigation — we do not merge legacy localStorage blobs
@@ -68,6 +69,7 @@ export function GroupedNavBlock({
   variant,
   role,
 }: GroupedNavBlockProps) {
+  const t = useT();
   const [open, setOpen] = useState<Record<string, boolean>>(() => defaultOpenMap(groups, activeHref));
 
   useEffect(() => {
@@ -110,7 +112,7 @@ export function GroupedNavBlock({
           return (
             <div key={group.id}>
               <Link className={linkClass(only.href === activeHref, variant)} href={only.href}>
-                {only.label}
+                {t(only.labelKey, only.label)}
               </Link>
             </div>
           );
@@ -130,7 +132,7 @@ export function GroupedNavBlock({
               type="button"
               onClick={() => toggle(group.id)}
             >
-              <span className="min-w-0 truncate">{group.label}</span>
+              <span className="min-w-0 truncate">{t(group.groupLabelKey, group.label)}</span>
               <span
                 aria-hidden
                 className={[
@@ -149,7 +151,7 @@ export function GroupedNavBlock({
                     href={item.href}
                     key={item.href}
                   >
-                    {item.label}
+                    {t(item.labelKey, item.label)}
                   </Link>
                 ))}
               </div>
