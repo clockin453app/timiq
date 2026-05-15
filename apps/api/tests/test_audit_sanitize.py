@@ -2,7 +2,10 @@
 
 import copy
 
-from app.modules.audit.sanitize import audit_details_summary, sanitize_audit_details
+from app.modules.audit.sanitize import (
+    build_audit_details_summary,
+    sanitize_audit_details,
+)
 
 
 def test_sanitize_redacts_storage_and_path_keys() -> None:
@@ -43,6 +46,18 @@ def test_sanitize_redacts_path_like_string_values() -> None:
     assert sanitize_audit_details("postgresql://user:pass@host/db") == "[redacted]"
 
 
+def test_sanitize_redacts_selfie_and_password_hash_keys() -> None:
+    raw = {
+        "password_hash": "x",
+        "selfie_storage_path": "/data/selfie.jpg",
+        "face_reference_storage_path": "/data/face.bin",
+        "reset_token": "abc",
+    }
+    safe = sanitize_audit_details(raw)
+    for k in raw:
+        assert safe[k] == "[redacted]"
+
+
 def test_sanitize_does_not_mutate_original_dict() -> None:
     raw = {"storage_path": "keep", "nested": {"password": "x"}}
     snapshot = copy.deepcopy(raw)
@@ -50,7 +65,26 @@ def test_sanitize_does_not_mutate_original_dict() -> None:
     assert raw == snapshot
 
 
-def test_audit_details_summary_truncates_long_json() -> None:
-    long_list = {"items": [{"id": i} for i in range(200)]}
-    s = audit_details_summary(long_list, max_len=50)
+def test_build_summary_preferences_changed_fields() -> None:
+    details = {
+        "user_id": "00000000-0000-0000-0000-000000000001",
+        "changed_fields": ["compact_mode", "date_format", "locale"],
+    }
+    s = build_audit_details_summary("settings.user_preferences_updated", details)
+    assert "User preferences updated" in s
+    assert "Compact mode" in s
+    assert "Date format" in s
+    assert "Locale" in s
+    assert "user_id" not in s
+    assert "00000000" not in s
+
+
+def test_build_summary_face_reference_enrolled() -> None:
+    s = build_audit_details_summary("face_reference.enrolled", {"configured": True})
+    assert s == "Face reference was enrolled."
+
+
+def test_build_summary_truncates_long_text() -> None:
+    long_list = {"changed_fields": [f"field_{i}" for i in range(80)]}
+    s = build_audit_details_summary("budget.updated", long_list, max_len=50)
     assert len(s) <= 50

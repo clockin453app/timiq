@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.audit.models import AuditEvent
 from app.modules.audit.repository import list_audit_events_filtered, save_audit_event
-from app.modules.audit.sanitize import audit_details_summary, sanitize_audit_details
+from app.modules.audit.sanitize import build_audit_details_summary, sanitize_audit_details
 from app.modules.audit.schemas import AuditEventListItem, AuditEventListResponse
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
@@ -45,7 +45,7 @@ def _subject_uuid_from_details(details: dict[str, Any]) -> uuid.UUID | None:
 def _to_audit_list_item(db_session: Session, ev: AuditEvent) -> AuditEventListItem:
     raw_details = ev.details if isinstance(ev.details, dict) else {}
     safe_details = sanitize_audit_details(raw_details)
-    summary = audit_details_summary(raw_details)
+    summary = build_audit_details_summary(ev.action, raw_details)
 
     actor_email = actor_display = None
     if ev.actor_user_id is not None:

@@ -16,6 +16,14 @@ import {
 } from "../../components/ui";
 import { isAdministrator, useCurrentUser } from "../auth";
 import { listCompanies, type Company } from "../companies/api";
+import { AuditEventDetails } from "./audit-event-details";
+import {
+  formatAuditActionLabel,
+  formatAuditActor,
+  formatAuditEventSummary,
+  formatAuditSubject,
+  formatAuditTarget,
+} from "./audit-format";
 import { listAuditEvents, type AuditEventListItem, type AuditEventListResponse } from "./api";
 
 const PAGE_SIZE = 50;
@@ -269,48 +277,52 @@ export function AuditLogScreen() {
         </div>
 
         <div className="min-w-0 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)]">
-          <Table className="min-w-[56rem] text-sm">
+          <Table className="min-w-[52rem] text-sm">
             <TableHeader>
               <TableRow>
                 <TableHead>Time</TableHead>
-                <TableHead>Action</TableHead>
                 <TableHead>Actor</TableHead>
+                <TableHead>Action</TableHead>
+                <TableHead>Target</TableHead>
                 <TableHead>Subject</TableHead>
                 <TableHead>Company</TableHead>
-                <TableHead>Details</TableHead>
+                <TableHead>Summary</TableHead>
+                <TableHead className="w-[6.5rem]">Details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {!loading && rows.length === 0 ? (
                 <TableRow>
-                  <TableCell className="text-[var(--color-text-muted)]" colSpan={6}>
+                  <TableCell className="text-[var(--color-text-muted)]" colSpan={8}>
                     No audit events match the current filters.
                   </TableCell>
                 </TableRow>
               ) : null}
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={6}>Loading audit events…</TableCell>
+                  <TableCell colSpan={8}>Loading audit events…</TableCell>
                 </TableRow>
               ) : null}
               {!loading
                 ? rows.map((ev) => (
-                    <TableRow key={ev.id}>
+                    <TableRow key={ev.id} className="align-top">
                       <TableCell className="whitespace-nowrap text-xs">
                         {new Date(ev.created_at).toLocaleString()}
                       </TableCell>
-                      <TableCell className="max-w-[14rem] break-words text-xs font-medium">{ev.action}</TableCell>
-                      <TableCell className="max-w-[12rem] break-words text-xs">
-                        {ev.actor_display || ev.actor_email || ev.actor_user_id || "—"}
+                      <TableCell className="max-w-[11rem] break-words text-xs">{formatAuditActor(ev)}</TableCell>
+                      <TableCell className="max-w-[12rem] break-words text-xs font-medium text-[var(--color-text)]">
+                        {formatAuditActionLabel(ev.action)}
                       </TableCell>
-                      <TableCell className="max-w-[12rem] break-words text-xs">
-                        {ev.subject_display || ev.subject_email || ev.subject_user_id || "—"}
+                      <TableCell className="max-w-[10rem] break-words text-xs text-[var(--color-text-muted)]">
+                        {formatAuditTarget(ev)}
                       </TableCell>
-                      <TableCell className="max-w-[10rem] break-words text-xs">
-                        {ev.company_name || ev.company_id || "—"}
+                      <TableCell className="max-w-[11rem] break-words text-xs">{formatAuditSubject(ev)}</TableCell>
+                      <TableCell className="max-w-[9rem] break-words text-xs">{ev.company_name || "—"}</TableCell>
+                      <TableCell className="max-w-[18rem] break-words text-xs text-[var(--color-text)]">
+                        {formatAuditEventSummary(ev)}
                       </TableCell>
-                      <TableCell className="max-w-[24rem] break-words font-mono text-[11px] text-[var(--color-text-muted)]">
-                        {ev.details_summary}
+                      <TableCell className="text-xs">
+                        <AuditEventDetails event={ev} />
                       </TableCell>
                     </TableRow>
                   ))
