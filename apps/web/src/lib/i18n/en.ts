@@ -264,6 +264,8 @@ export const EN_STRINGS: Record<string, string> = {
   "messaging.participants": "Colleagues (select at least two)",
   "messaging.create_group": "Create group",
   "messaging.new_messages_button": "New messages",
+  "messaging.header_button_aria": "Messages",
+  "messaging.direct_peer": "Person",
 
   "common.save": "Save",
   "common.cancel": "Cancel",

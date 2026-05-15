@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { useMemo } from "react";
-import { Building2, Clock, MessageSquare, UserRound } from "lucide-react";
+import { Building2, Clock, UserRound } from "lucide-react";
 
 import { formatSystemRole, LogoutButton, useCurrentUser } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
+import { MessagesHeaderButton } from "./messages-header-button";
 import { NotificationBell } from "./notification-bell";
 
 type DesktopTopBarProps = {
@@ -92,7 +93,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
         {quickBtn("/clock", "nav.clock", "Clock In / Out", Clock)}
         {quickBtn("/site-progress", "nav.site_progress", "Site Progress", Building2)}
-        {quickBtn("/messages", "nav.messages", "Messages", MessageSquare)}
+        <MessagesHeaderButton activeHref={activeHref} />
         <NotificationBell />
 
         <details className="relative shrink-0">

@@ -17,6 +17,12 @@ class ColleagueResponse(BaseModel):
     display_name: str
 
 
+class MessageParticipantSummary(BaseModel):
+    user_id: uuid.UUID
+    display_name: str
+    email: str
+
+
 class AnnouncementCreateRequest(BaseModel):
     company_id: uuid.UUID | None = None
     audience_type: str
@@ -133,6 +139,7 @@ class ConversationListItem(BaseModel):
     other_user_display_name: str | None = None
     updated_at: datetime
     participant_user_ids: list[uuid.UUID]
+    participants: list[MessageParticipantSummary] = Field(default_factory=list)
     last_message_preview: str | None
     last_message_at: datetime | None
 
@@ -147,5 +154,6 @@ class MessageResponse(BaseModel):
     id: uuid.UUID
     conversation_id: uuid.UUID
     sender_user_id: uuid.UUID
+    sender_display_name: str
     body: str
     created_at: datetime

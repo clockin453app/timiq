@@ -46,6 +46,7 @@ from app.modules.messaging.schemas import (
     ColleagueResponse,
     ConversationCreateRequest,
     ConversationListItem,
+    MessageParticipantSummary,
     ConversationParticipantsAddRequest,
     ConversationPatchRequest,
     MessageCreateRequest,
@@ -448,6 +449,28 @@ def _peer_display_name(db_session: Session, user_id: uuid.UUID) -> str:
     return u.email or "User"
 
 
+def _participant_summary(db_session: Session, user_id: uuid.UUID) -> MessageParticipantSummary:
+    u = get_user_by_id(db_session, user_id)
+    if u is None:
+        return MessageParticipantSummary(user_id=user_id, display_name="User", email="")
+    return MessageParticipantSummary(
+        user_id=user_id,
+        display_name=_peer_display_name(db_session, user_id),
+        email=u.email or "",
+    )
+
+
+def _message_to_response(db_session: Session, message: Message) -> MessageResponse:
+    return MessageResponse(
+        id=message.id,
+        conversation_id=message.conversation_id,
+        sender_user_id=message.sender_user_id,
+        sender_display_name=_peer_display_name(db_session, message.sender_user_id),
+        body=message.body,
+        created_at=message.created_at,
+    )
+
+
 def create_conversation(
     db_session: Session,
     actor: User,
@@ -575,6 +598,7 @@ def _conversation_to_list_item(db_session: Session, conv: Conversation, viewer_i
     if ctype == "direct" and len(pids) == 2:
         other = pids[0] if pids[1] == viewer_id else pids[1]
         other_name = _peer_display_name(db_session, other)
+    participant_summaries = [_participant_summary(db_session, pid) for pid in pids]
     return ConversationListItem(
         id=conv.id,
         company_id=conv.company_id,
@@ -584,6 +608,7 @@ def _conversation_to_list_item(db_session: Session, conv: Conversation, viewer_i
         other_user_display_name=other_name,
         updated_at=conv.updated_at,
         participant_user_ids=pids,
+        participants=participant_summaries,
         last_message_preview=preview,
         last_message_at=last_at,
     )
@@ -600,7 +625,7 @@ def list_messages(
     if get_participant(db_session, conversation_id=conversation_id, user_id=actor.id) is None:
         raise MessagingPermissionError("You are not part of this conversation.")
     rows = list_messages_for_conversation(db_session, conversation_id=conversation_id, limit=limit, offset=offset)
-    return [MessageResponse.model_validate(m) for m in rows]
+    return [_message_to_response(db_session, m) for m in rows]
 
 
 def append_message(
@@ -630,7 +655,7 @@ def append_message(
         company_id=conv.company_id,
         details={"conversation_id": str(conversation_id), "recipient_count": len(others)},
     )
-    return MessageResponse.model_validate(msg)
+    return _message_to_response(db_session, msg)
 
 
 def patch_group_conversation_title(

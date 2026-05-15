@@ -28,6 +28,13 @@ import {
   type AuthUser,
 } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
+import {
+  buildParticipantLookup,
+  conversationListSubtitle,
+  conversationListTitle,
+  senderLabel,
+  threadHeaderSubtitle,
+} from "../../features/messaging/display";
 import { segmentBtnClass } from "../budgets/budget-ui";
 import { useT } from "../../lib/i18n";
 
@@ -83,14 +90,6 @@ function formatTs(iso: string | null): string {
   return d.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 }
 
-function convLabel(c: ConversationListItem): string {
-  if (c.conversation_type === "group") {
-    const title = c.title?.trim() || "Group chat";
-    return `${title} (${c.participant_count})`;
-  }
-  return c.other_user_display_name || c.last_message_preview || "Conversation";
-}
-
 function isNearBottom(el: HTMLElement, thresholdPx = 100): boolean {
   return el.scrollHeight - el.scrollTop - el.clientHeight < thresholdPx;
 }
@@ -139,6 +138,11 @@ export function MessagesClient() {
     [conversations, selectedConvId],
   );
   const mgmt = canAccessManagement(user);
+
+  const participantLookup = useMemo(
+    () => buildParticipantLookup(colleagues, conversations),
+    [colleagues, conversations],
+  );
 
   const replaceMessagesQuery = useCallback(
     (nextTab: TabId, conversationId: string | null) => {
@@ -484,7 +488,7 @@ export function MessagesClient() {
         description="Company news and internal messages. Conversations refresh automatically while this page is open."
         title="Messages"
       />
-      <SheetBody className="min-w-0 space-y-4 md:p-5">
+      <SheetBody className="min-w-0 max-w-full space-y-4 overflow-x-hidden md:p-5">
         <div className="flex flex-wrap gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-1">
           <button
             className={segmentBtnClass(tab === "news")}
@@ -597,8 +601,8 @@ export function MessagesClient() {
             ) : null}
           </div>
         ) : (
-          <div className="flex min-h-[320px] min-w-0 flex-col gap-3 md:flex-row">
-            <div className="w-full shrink-0 border-b border-[var(--color-border-dark)] pb-3 md:w-64 md:border-b-0 md:border-r md:pb-0 md:pr-3">
+          <div className="flex min-h-[320px] min-w-0 max-w-full flex-col gap-3 overflow-x-hidden md:flex-row">
+            <div className="w-full min-w-0 shrink-0 border-b border-[var(--color-border-dark)] pb-3 md:w-64 md:border-b-0 md:border-r md:pb-0 md:pr-3">
               <div className="mb-2 flex flex-wrap gap-2">
                 <Button type="button" variant="secondary" onClick={() => void loadConversations()}>
                   Refresh
@@ -632,7 +636,14 @@ export function MessagesClient() {
                         replaceMessagesQuery("messages", c.id);
                       }}
                     >
-                      <div className="truncate font-medium text-[var(--color-text)]">{convLabel(c)}</div>
+                      <div className="truncate font-medium text-[var(--color-text)]">
+                        {conversationListTitle(c, user.id)}
+                      </div>
+                      {conversationListSubtitle(c, user.id) ? (
+                        <div className="truncate text-[11px] text-[var(--color-text-soft)]">
+                          {conversationListSubtitle(c, user.id)}
+                        </div>
+                      ) : null}
                       <div className="truncate text-xs text-[var(--color-text-soft)]">
                         {c.last_message_preview ? `${c.last_message_preview} · ` : ""}
                         {formatTs(c.last_message_at || c.updated_at)}
@@ -646,11 +657,13 @@ export function MessagesClient() {
               {selectedConvId ? (
                 <>
                   {activeConv ? (
-                    <div className="mb-2 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
-                      <p className="font-semibold text-[var(--color-text)]">{convLabel(activeConv)}</p>
-                      {activeConv.conversation_type === "group" ? (
-                        <p className="text-xs text-[var(--color-text-soft)]">
-                          {activeConv.participant_count} participants
+                    <div className="mb-2 min-w-0 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
+                      <p className="truncate font-semibold text-[var(--color-text)]">
+                        {conversationListTitle(activeConv, user.id)}
+                      </p>
+                      {threadHeaderSubtitle(activeConv, user.id) ? (
+                        <p className="truncate text-xs text-[var(--color-text-soft)]">
+                          {threadHeaderSubtitle(activeConv, user.id)}
                         </p>
                       ) : null}
                     </div>
@@ -687,8 +700,9 @@ export function MessagesClient() {
                           m.sender_user_id === user.id ? "ml-auto bg-[var(--color-header)]" : "mr-auto bg-[var(--color-input)]"
                         }`}
                       >
-                        <div className="mb-0.5 text-[10px] uppercase text-[var(--color-text-soft)]">
-                          {m.sender_user_id === user.id ? "You" : "Colleague"} · {formatTs(m.created_at)}
+                        <div className="mb-0.5 truncate text-[10px] uppercase text-[var(--color-text-soft)]">
+                          {senderLabel(m.sender_user_id, user.id, participantLookup, m.sender_display_name)} ·{" "}
+                          {formatTs(m.created_at)}
                         </div>
                         <div className="whitespace-pre-wrap break-words">{m.body}</div>
                       </div>
@@ -813,7 +827,7 @@ export function MessagesClient() {
                 {newConvMode === "direct" ? (
                   <div>
                     <label className={fieldLabel()} htmlFor="conv-peer">
-                      Colleague
+                      {t("messaging.direct_peer", "Person")}
                     </label>
                     <select
                       className={inputClass()}

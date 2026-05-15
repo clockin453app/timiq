@@ -12,6 +12,7 @@ import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
 import { findDefaultAccordionGroupId, GroupedNavBlock } from "./grouped-nav";
+import { MessagesHeaderButton } from "./messages-header-button";
 import { NotificationBell } from "./notification-bell";
 
 type MobileHeaderProps = {
@@ -77,7 +78,8 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
           <p className="truncate text-xs text-[#4b5563]">{t("nav.tagline_sub", "Payroll & workforce")}</p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
+          <MessagesHeaderButton activeHref={activeHref} />
           <NotificationBell />
           <button
             aria-controls="timiq-mobile-menu"

@@ -32,6 +32,12 @@ export type AnnouncementDetail = AnnouncementListItem & {
   reads: { user_id: string; read_at: string }[] | null;
 };
 
+export type MessageParticipantSummary = {
+  user_id: string;
+  display_name: string;
+  email: string;
+};
+
 export type ConversationListItem = {
   id: string;
   company_id: string;
@@ -41,6 +47,7 @@ export type ConversationListItem = {
   other_user_display_name: string | null;
   updated_at: string;
   participant_user_ids: string[];
+  participants: MessageParticipantSummary[];
   last_message_preview: string | null;
   last_message_at: string | null;
 };
@@ -49,6 +56,7 @@ export type MessageRow = {
   id: string;
   conversation_id: string;
   sender_user_id: string;
+  sender_display_name: string;
   body: string;
   created_at: string;
 };
