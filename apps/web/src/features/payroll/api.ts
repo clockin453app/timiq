@@ -478,7 +478,45 @@ export async function downloadPayrollCsv(companyId: string, weekStartIso: string
   URL.revokeObjectURL(url);
 }
 
-export function openPayrollPrintView(companyId: string, weekStartIso: string): void {
-  const url = `${API_URL}/api/payroll/export.pdf?${qs({ company_id: companyId, week_start: weekStartIso })}`;
+export function openPayrollPrintView(
+  companyId: string,
+  weekStartIso: string,
+  userId?: string | null,
+): void {
+  const params: Record<string, string> = {
+    company_id: companyId,
+    week_start: weekStartIso,
+  };
+  if (userId) {
+    params.user_id = userId;
+  }
+  const url = `${API_URL}/api/payroll/export.print?${qs(params)}`;
   window.open(url, "_blank", "noopener,noreferrer");
+}
+
+export async function downloadPayrollPdfReport(
+  companyId: string,
+  weekStartIso: string,
+  userId?: string | null,
+): Promise<void> {
+  const params: Record<string, string> = {
+    company_id: companyId,
+    week_start: weekStartIso,
+  };
+  if (userId) {
+    params.user_id = userId;
+  }
+  const response = await fetch(`${API_URL}/api/payroll/export.pdf?${qs(params)}`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error("Could not download payroll PDF report.");
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `timiq-payroll-report-${weekStartIso}.pdf`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }

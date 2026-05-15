@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.core.export_csv import safe_export_filename
-from app.core.storage.file_response import content_disposition_attachment
+from app.core.storage.file_response import content_disposition_attachment, protected_file_response
 
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import (
@@ -37,6 +37,7 @@ from app.modules.payroll.service import (
     approve_item,
     create_late_shift_adjustment_from_paid_item,
     export_csv_report,
+    export_pdf_report,
     export_print_html,
     get_payroll_item_summary,
     get_payroll_month_summary,
@@ -317,20 +318,22 @@ def payroll_export_csv(
     )
 
 
-@router.get("/export.pdf")
-def payroll_export_pdf(
+@router.get("/export.print")
+def payroll_export_print(
     company_id: uuid.UUID = Query(...),
     week_start: date = Query(...),
+    user_id: uuid.UUID | None = Query(default=None),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
 ) -> Response:
-    """Print-ready HTML; use browser Print to PDF."""
+    """Print-ready HTML; use browser Print to save as PDF."""
     try:
         html = export_print_html(
             db_session,
             current_user,
             company_id=company_id,
             week_start=week_start,
+            user_id=user_id,
         )
     except PayrollPermissionError as exc:
         raise HTTPException(
@@ -343,4 +346,33 @@ def payroll_export_pdf(
         headers={
             "Content-Disposition": f'inline; filename="payroll-{company_id}-{week_start}.html"',
         },
+    )
+
+
+@router.get("/export.pdf")
+def payroll_export_pdf(
+    company_id: uuid.UUID = Query(...),
+    week_start: date = Query(...),
+    user_id: uuid.UUID | None = Query(default=None),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        body = export_pdf_report(
+            db_session,
+            current_user,
+            company_id=company_id,
+            week_start=week_start,
+            user_id=user_id,
+        )
+    except PayrollPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    filename = f"timiq-payroll-report-{week_start.isoformat()}.pdf"
+    return protected_file_response(
+        body=body,
+        download_filename=filename,
+        media_type="application/pdf",
     )

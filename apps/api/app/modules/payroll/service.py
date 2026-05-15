@@ -47,6 +47,7 @@ from app.modules.payroll.permissions import (
     assert_payroll_company_scope,
 )
 from app.modules.payroll_policies.service import effective_early_access_for_shift, effective_time_policy_for_shift
+from app.modules.payroll.pdf_export import build_payroll_report_pdf
 from app.modules.payroll.repository import (
     count_open_shifts_started_in_week,
     delete_pending_items_for_period,
@@ -1785,12 +1786,30 @@ def export_csv_report(
     return buffer.getvalue()
 
 
+def _payroll_report_alert_lines(alerts: PayrollReportAlerts) -> list[str]:
+    lines: list[str] = []
+    if alerts.payroll_period_not_calculated:
+        lines.append("Payroll not calculated for this week yet.")
+    if alerts.payroll_needs_recalculation:
+        lines.append("Time records changed; payroll may need recalculation.")
+    if alerts.pending_approval_count:
+        lines.append(f"Pending approval: {alerts.pending_approval_count}")
+    if alerts.rate_missing_employees_count:
+        lines.append(f"Employees with missing rate: {alerts.rate_missing_employees_count}")
+    if alerts.open_shifts_started_in_week_count:
+        lines.append(f"Open shifts started in week: {alerts.open_shifts_started_in_week_count}")
+    if alerts.zero_rounded_hours_employees_count:
+        lines.append(f"Employees with zero rounded hours: {alerts.zero_rounded_hours_employees_count}")
+    return lines
+
+
 def export_print_html(
     db_session: Session,
     actor: User,
     *,
     company_id: uuid.UUID,
     week_start: date,
+    user_id: uuid.UUID | None = None,
 ) -> str:
     company = get_company_by_id(db_session, company_id)
     name = html.escape(company.name if company else "Company")
@@ -1799,6 +1818,7 @@ def export_print_html(
         actor,
         company_id=company_id,
         week_start=week_start,
+        user_id=user_id,
         auto_recalculate_if_safe=False,
     )
     week_end = _week_end_display(week_start)
@@ -1869,6 +1889,101 @@ th {{ background: #f4f4f5; }}
             "export_type": "print_html",
             "week_start": str(week_start),
             "row_count": len(report.items),
+            "user_id": str(user_id) if user_id else None,
         },
     )
     return html_out
+
+
+def export_pdf_report(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID,
+    week_start: date,
+    user_id: uuid.UUID | None = None,
+) -> bytes:
+    assert_payroll_admin_or_administrator(actor)
+    assert_payroll_company_scope(actor, company_id)
+    company = get_company_by_id(db_session, company_id)
+    company_name = company.name if company is not None else "Company"
+    report = get_payroll_report(
+        db_session,
+        actor,
+        company_id=company_id,
+        week_start=week_start,
+        user_id=user_id,
+        auto_recalculate_if_safe=False,
+    )
+    week_end = _week_end_display(week_start)
+    tz_name = report.period.timezone_name if report.period.total_items else ""
+
+    by_id: dict[uuid.UUID, PayrollItem] = {}
+    if report.items:
+        pid = report.items[0].period_id
+        by_id = {i.id: i for i in list_items_for_period(db_session, pid)}
+
+    pdf_rows: list[dict[str, Any]] = []
+    total_seconds = 0
+    gross_sum = Decimal(0)
+    cis_sum = Decimal(0)
+    net_sum = Decimal(0)
+    has_gross = has_cis = has_net = False
+    for row in report.items:
+        item = by_id.get(row.id)
+        eff_cis = _effective_tax_amount_for_item(item) if item is not None else None
+        eff_net = _effective_net_amount_for_item(item) if item is not None else None
+        emp_label = (row.employee_name or row.employee_email or "").strip() or "—"
+        jt = (row.employee_job_title or "").strip() or "—"
+        total_seconds += row.rounded_total_seconds
+        if row.gross_amount is not None:
+            gross_sum += Decimal(str(row.gross_amount))
+            has_gross = True
+        if eff_cis is not None:
+            cis_sum += eff_cis
+            has_cis = True
+        if eff_net is not None:
+            net_sum += eff_net
+            has_net = True
+        pdf_rows.append(
+            {
+                "employee": emp_label,
+                "role": jt,
+                "hours": f"{row.rounded_total_seconds / 3600:.2f}",
+                "ot_hours": f"{row.overtime_seconds / 3600:.2f}",
+                "gross": "—" if row.gross_amount is None else f"{row.gross_amount:.2f}",
+                "cis_tax": "—" if eff_cis is None else f"{eff_cis:.2f}",
+                "net": "—" if eff_net is None else f"{eff_net:.2f}",
+                "other_deductions": f"{row.other_deductions_amount:.2f}",
+                "status": row.status,
+            },
+        )
+
+    body = build_payroll_report_pdf(
+        company_name=company_name,
+        week_start=week_start,
+        week_end=week_end,
+        timezone_name=tz_name,
+        rows=pdf_rows,
+        total_hours_seconds=total_seconds,
+        total_gross=gross_sum if has_gross else None,
+        total_cis_tax=cis_sum if has_cis else None,
+        total_net=net_sum if has_net else None,
+        alert_lines=_payroll_report_alert_lines(report.alerts),
+    )
+    period_entity = str(report.period.id) if report.period.total_items else None
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="payroll.report_exported",
+        entity_type="payroll_period",
+        entity_id=period_entity,
+        company_id=company_id,
+        details={
+            "export_type": "pdf",
+            "week_start": str(week_start),
+            "row_count": len(report.items),
+            "user_id": str(user_id) if user_id else None,
+        },
+    )
+    return body

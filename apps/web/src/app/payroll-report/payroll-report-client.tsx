@@ -23,6 +23,7 @@ import {
   approvePayrollItem,
   createPayrollLateShiftAdjustment,
   downloadPayrollCsv,
+  downloadPayrollPdfReport,
   fetchPayrollMonthSummary,
   fetchPayrollReport,
   markPayrollPaid,
@@ -223,13 +224,6 @@ export function PayrollReportClient() {
   }, [weekStart]);
 
   const policyTimeZone = report?.period.timezone_name ?? browserDefaultTimeZone();
-
-  const singleReportPayslipItemId = useMemo(() => {
-    if (!report || report.items.length !== 1) {
-      return null;
-    }
-    return report.items[0].id;
-  }, [report]);
 
   const weekRangeLabel = useMemo(
     () => formatPayrollWeekRangeLabel(weekStart, policyTimeZone),
@@ -615,7 +609,20 @@ export function PayrollReportClient() {
     if (!activeCompanyId) {
       return;
     }
-    openPayrollPrintView(activeCompanyId, weekStart);
+    openPayrollPrintView(activeCompanyId, weekStart, appliedEmployeeId || null);
+  }
+
+  async function handlePdfDownload() {
+    if (!activeCompanyId) {
+      return;
+    }
+    try {
+      await downloadPayrollPdfReport(activeCompanyId, weekStart, appliedEmployeeId || null);
+    } catch {
+      setError(
+        t("payroll.report.pdf_export_failed", "Could not download payroll PDF report."),
+      );
+    }
   }
 
   function applyEmployeeFilter() {
@@ -777,24 +784,12 @@ export function PayrollReportClient() {
                   {t("payroll.report.print_report", "Print report")}
                 </Button>
                 <Button
-                  disabled={loading || !activeCompanyId || !singleReportPayslipItemId}
-                  onClick={() => {
-                    if (singleReportPayslipItemId) {
-                      openPayrollItemPayslip(singleReportPayslipItemId);
-                    }
-                  }}
-                  title={
-                    singleReportPayslipItemId
-                      ? undefined
-                      : t(
-                          "payroll.report.payslip_title_hint",
-                          "Shown when the report lists exactly one employee for this week (filter to one employee if needed).",
-                        )
-                  }
+                  disabled={loading || !activeCompanyId}
+                  onClick={handlePdfDownload}
                   type="button"
                   variant="secondary"
                 >
-                  {t("payroll.report.open_payslip_btn", "Open payslip")}
+                  {t("payroll.report.export_pdf", "Download PDF report")}
                 </Button>
               </div>
             </div>
