@@ -1479,6 +1479,7 @@ export const ES_STRINGS: Record<string, string> = {
   "settings.locale_label": "Lugar",
   "settings.locale_note": "Algunos textos legales, de nómina y de cumplimiento pueden permanecer en inglés hasta que se revisen profesionalmente.",
   "settings.locale_pl_PL": "Polonia",
+  "settings.locale_preparing": "Additional languages are being prepared and will be enabled after full review.",
   "settings.locale_ro_RO": "Română",
   "settings.locale_ru_RU": "ruso",
   "settings.my_prefs_title": "Mis preferencias",

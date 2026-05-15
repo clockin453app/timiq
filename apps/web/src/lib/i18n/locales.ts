@@ -1,5 +1,5 @@
 import type { AppLocale } from "./types";
-import { APP_LOCALES } from "./types";
+import { APP_LOCALES, SELECTABLE_APP_LOCALES } from "./types";
 
 const LOCALE_ALIASES: Record<string, AppLocale> = {
   en: "en-GB",
@@ -24,4 +24,14 @@ export function normalizeAppLocale(raw: string | null | undefined): AppLocale {
     return alias;
   }
   return "en-GB";
+}
+
+export function isSelectableAppLocale(locale: AppLocale): boolean {
+  return (SELECTABLE_APP_LOCALES as readonly string[]).includes(locale);
+}
+
+/** UI + localStorage: coerce hidden/incomplete locales to English. */
+export function normalizeSelectableLocale(raw: string | null | undefined): AppLocale {
+  const normalized = normalizeAppLocale(raw);
+  return isSelectableAppLocale(normalized) ? normalized : "en-GB";
 }

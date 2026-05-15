@@ -1479,6 +1479,7 @@ export const RO_STRINGS: Record<string, string> = {
   "settings.locale_label": "Locale",
   "settings.locale_note": "Some legal, payroll, and compliance text may remain in English until professionally reviewed.",
   "settings.locale_pl_PL": "Polski",
+  "settings.locale_preparing": "Additional languages are being prepared and will be enabled after full review.",
   "settings.locale_ro_RO": "Română",
   "settings.locale_ru_RU": "Русский",
   "settings.my_prefs_title": "My preferences",

@@ -24,11 +24,11 @@ import {
   formatDateByPreference,
   formatMoneyByPreference,
   formatTimeByPreference,
+  selectableLocales,
   supportedDateFormats,
-  supportedLocales,
   supportedTimeFormats,
 } from "../../lib/preferences-format";
-import { normalizeAppLocale, useI18n, useT } from "../../lib/i18n";
+import { normalizeSelectableLocale, useI18n, useT } from "../../lib/i18n";
 
 function fieldClass(): string {
   return "mt-1 w-full max-w-md rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]";
@@ -131,7 +131,7 @@ export function SettingsClient() {
   }, [adminCompanyId, platformAdmin, showCompany]);
 
   function applyMe(me: UserPreferences) {
-    setLocale(me.locale ?? "en-GB");
+    setLocale(normalizeSelectableLocale(me.locale));
     setMyTimezone(me.timezone_name ?? "");
     setMyDateFormat(me.date_format ?? "DD/MM/YYYY");
     setMyTimeFormat(me.time_format ?? "24h");
@@ -163,8 +163,9 @@ export function SettingsClient() {
     setSavingMy(true);
     setMyMessage("");
     try {
+      const localeToSave = normalizeSelectableLocale(locale);
       await patchSettingsMe({
-        locale,
+        locale: localeToSave,
         timezone_name: myTimezone.trim() || null,
         date_format: myDateFormat,
         time_format: myTimeFormat,
@@ -174,7 +175,8 @@ export function SettingsClient() {
         push_notifications_enabled: notifPushUser,
       });
       setMyMessage(t("settings.prefs_saved", "Your preferences were saved."));
-      setAppLocale(normalizeAppLocale(locale));
+      setLocale(localeToSave);
+      setAppLocale(localeToSave);
       const eff = await getSettingsEffective(platformAdmin ? adminCompanyId : null);
       setEffective(eff);
     } catch (err) {
@@ -313,24 +315,16 @@ export function SettingsClient() {
               value={locale}
               onChange={(ev) => setLocale(ev.target.value)}
             >
-              {supportedLocales.map((loc) => (
+              {selectableLocales.map((loc) => (
                 <option key={loc} value={loc}>
-                  {loc === "en-GB"
-                    ? t("settings.locale_en_GB", "English (United Kingdom)")
-                    : loc === "ro-RO"
-                      ? t("settings.locale_ro_RO", "Română")
-                      : loc === "pl-PL"
-                        ? t("settings.locale_pl_PL", "Polski")
-                        : loc === "es-ES"
-                          ? t("settings.locale_es_ES", "Español")
-                          : t("settings.locale_ru_RU", "Русский")}
+                  {t("settings.locale_en_GB", "English (United Kingdom)")}
                 </option>
               ))}
             </select>
             <p className="mt-2 max-w-md text-xs text-[var(--color-text-muted)]">
               {t(
-                "settings.locale_note",
-                "Some legal, payroll, and compliance text may remain in English until professionally reviewed.",
+                "settings.locale_preparing",
+                "Additional languages are being prepared and will be enabled after full review.",
               )}
             </p>
           </div>

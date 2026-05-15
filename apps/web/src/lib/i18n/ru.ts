@@ -1479,6 +1479,7 @@ export const RU_STRINGS: Record<string, string> = {
   "settings.locale_label": "Языковой стандарт",
   "settings.locale_note": "Некоторые тексты по юридическим вопросам, вопросам заработной платы и нормативным требованиям могут оставаться на английском языке до тех пор, пока они не будут проверены профессиональными специалистами.",
   "settings.locale_pl_PL": "Польский",
+  "settings.locale_preparing": "Additional languages are being prepared and will be enabled after full review.",
   "settings.locale_ro_RO": "Романа",
   "settings.locale_ru_RU": "Русский",
   "settings.my_prefs_title": "Мои предпочтения",

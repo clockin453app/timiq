@@ -1,7 +1,11 @@
 /** Supported display preferences (aligned with backend Batch 43). */
 
+/** Backend-supported locale codes (unchanged). */
 export const supportedLocales = ["en-GB", "ro-RO", "pl-PL", "es-ES", "ru-RU"] as const;
 export type SupportedLocale = (typeof supportedLocales)[number];
+
+/** Shown in Settings while I18N safe mode is active — English only. */
+export const selectableLocales = ["en-GB"] as const satisfies readonly SupportedLocale[];
 
 export const supportedDateFormats = ["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"] as const;
 export type SupportedDateFormat = (typeof supportedDateFormats)[number];
