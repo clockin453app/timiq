@@ -24,6 +24,7 @@ from app.modules.time_records.service import (
     TimeRecordsPermissionError,
     export_admin_company_timesheet_week_csv,
     export_admin_company_week_report_csv,
+    export_admin_employee_week_report_csv,
     export_timesheet_week_shifts_csv,
     list_time_records_admin,
     list_time_records_me,
@@ -419,6 +420,45 @@ def export_admin_company_week_report_csv_route(
             current_user,
             company_id=company_id,
             week_start=parsed,
+        )
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except ValueError as exc:
+        detail = str(exc)
+        if "not found" in detail.lower():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=detail,
+        ) from exc
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition_attachment(fname)},
+    )
+
+
+@timesheets_router.get("/admin/week-report/users/{user_id}/export.csv")
+def export_admin_employee_week_report_csv_route(
+    user_id: uuid.UUID,
+    week_start: str = Query(...),
+    company_id: uuid.UUID | None = Query(default=None),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+):
+    try:
+        parsed = _opt_date(week_start)
+        if parsed is None:
+            raise ValueError("week_start is required.")
+        body, fname = export_admin_employee_week_report_csv(
+            db_session,
+            current_user,
+            subject_user_id=user_id,
+            week_start=parsed,
+            company_id=company_id,
         )
     except TimeRecordsPermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc

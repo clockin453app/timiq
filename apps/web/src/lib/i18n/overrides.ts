@@ -95,6 +95,7 @@ export const RO_STRINGS: Partial<Record<string, string>> = {
   "nav.mobile.clock": "Pontaj",
   "nav.mobile.timesheets": "Fișe",
   "nav.mobile.week": "Săpt.",
+  "nav.mobile.pay": "Salariu",
   "nav.mobile.more": "Mai mult",
 
   "forms.category.daily_checklist": "Listă zilnică",
@@ -404,6 +405,7 @@ export const PL_STRINGS: Partial<Record<string, string>> = {
   "nav.mobile.clock": "Czas",
   "nav.mobile.timesheets": "Karty",
   "nav.mobile.week": "Tydz.",
+  "nav.mobile.pay": "Wypłata",
   "nav.mobile.more": "Więcej",
 
   "forms.category.daily_checklist": "Lista dzienna",

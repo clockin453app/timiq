@@ -55,7 +55,7 @@ const WEEK_REPORT: NavigationItem = {
   label: "Week Report",
   labelKey: "nav.week_report",
   href: "/week-report",
-  allowedRoles: ["administrator", "admin", "employee"],
+  allowedRoles: ["administrator", "admin"],
 };
 
 const PAY_HISTORY: NavigationItem = {
@@ -295,7 +295,7 @@ const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "emp-time",
     label: "Time",
     groupLabelKey: "nav.group.emp_time",
-    items: [CLOCK, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
+    items: [CLOCK, TIME_RECORDS, TIMESHEETS],
   },
   { id: "emp-pay", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
   { id: "emp-work", label: "Work", groupLabelKey: "nav.group.emp_work", items: [SITE_PROGRESS, FORMS, TOOLBOX_TALKS, RAMS] },

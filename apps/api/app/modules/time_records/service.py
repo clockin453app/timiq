@@ -1071,3 +1071,93 @@ def export_admin_company_week_report_csv(
     )
     fname = safe_export_filename("week-report", str(data.company_id), str(week_start)) + ".csv"
     return buf.getvalue(), fname
+
+
+def export_admin_employee_week_report_csv(
+    db_session: Session,
+    actor: User,
+    *,
+    subject_user_id: uuid.UUID,
+    week_start: date,
+    company_id: uuid.UUID | None,
+) -> tuple[str, str]:
+    subject = get_user_by_id(db_session, subject_user_id)
+    if subject is None:
+        raise ValueError("User not found.")
+    if not can_view_time_record_shift_owner(actor, subject):
+        raise TimeRecordsPermissionError("You cannot export this employee's week report.")
+
+    scope_company_id = company_id
+    if actor.system_role == SystemRole.ADMINISTRATOR:
+        if scope_company_id is None:
+            scope_company_id = subject.company_id
+        if scope_company_id is None:
+            raise ValueError("company_id is required.")
+    resolved = _resolve_timesheet_company_scope(db_session, actor, scope_company_id)
+    if subject.company_id != resolved:
+        raise TimeRecordsPermissionError("User is not in this company.")
+
+    data = week_report_all_employees_for_company(
+        db_session,
+        actor,
+        company_id=scope_company_id if actor.system_role == SystemRole.ADMINISTRATOR else None,
+        week_start=week_start,
+    )
+    emp = next((e for e in data.employees if e.user_id == subject_user_id), None)
+    if emp is None:
+        raise TimeRecordsPermissionError("Employee is not in this company roster.")
+
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(
+        [
+            "week_start",
+            "company_id",
+            "company_timezone",
+            "user_id",
+            "employee_name",
+            "employee_email",
+            "employee_job_title",
+            "completed_shifts_count",
+            "total_clocked_hours",
+            "total_payable_hours",
+            "total_payroll_rounded_hours",
+            "total_break_hours",
+            "locations_worked",
+            "open_shift_in_week",
+        ],
+    )
+    writer.writerow(
+        [
+            str(data.week_start),
+            str(data.company_id),
+            data.company_timezone,
+            str(emp.user_id),
+            emp.employee_name or "",
+            emp.employee_email,
+            emp.employee_job_title or "",
+            emp.completed_shifts_count,
+            seconds_to_hours_csv(emp.clocked_seconds),
+            seconds_to_hours_csv(emp.payable_seconds),
+            seconds_to_hours_csv(emp.payroll_seconds),
+            seconds_to_hours_csv(emp.break_seconds),
+            "; ".join(emp.locations_worked),
+            "yes" if emp.open_shift_in_week else "no",
+        ],
+    )
+
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="timesheet.exported",
+        entity_type="week_report",
+        entity_id=subject_user_id,
+        company_id=data.company_id,
+        details={
+            "export_type": "employee_week_report_csv",
+            "week_start": str(week_start),
+            "subject_user_id": str(subject_user_id),
+        },
+    )
+    fname = safe_export_filename("week-report-employee", str(subject_user_id), str(week_start)) + ".csv"
+    return buf.getvalue(), fname

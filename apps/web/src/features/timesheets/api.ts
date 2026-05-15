@@ -230,6 +230,21 @@ export async function downloadAdminCompanyTimesheetWeekCsv(
   );
 }
 
+export async function downloadAdminEmployeeWeekReportCsv(
+  userId: string,
+  weekStartIsoYmd: string,
+  companyIdForAdministrator: string | null,
+): Promise<void> {
+  const search = new URLSearchParams({ week_start: weekStartIsoYmd });
+  if (companyIdForAdministrator) {
+    search.set("company_id", companyIdForAdministrator);
+  }
+  await downloadCsvFromUrl(
+    `${API_URL}/api/timesheets/admin/week-report/users/${encodeURIComponent(userId)}/export.csv?${search.toString()}`,
+    `week-report-${userId}-${weekStartIsoYmd}.csv`,
+  );
+}
+
 export async function downloadAdminCompanyWeekReportCsv(
   weekStartIsoYmd: string,
   companyIdForAdministrator: string | null,

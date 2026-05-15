@@ -60,6 +60,7 @@ export const EN_STRINGS: Record<string, string> = {
   "nav.mobile.clock": "Clock",
   "nav.mobile.timesheets": "Timesheets",
   "nav.mobile.week": "Week",
+  "nav.mobile.pay": "Pay",
   "nav.mobile.more": "More",
 
   "guide.title": "Help centre",

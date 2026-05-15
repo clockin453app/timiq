@@ -1,29 +1,61 @@
 "use client";
 
 import Link from "next/link";
-import { Calendar, CalendarRange, Clock, LayoutDashboard, UserRound } from "lucide-react";
+import {
+  Banknote,
+  Calendar,
+  CalendarRange,
+  Clock,
+  LayoutDashboard,
+  UserRound,
+} from "lucide-react";
 
+import { canAccessManagement, useCurrentUser } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
 type MobileBottomNavProps = {
   activeHref?: string;
 };
 
-const mobilePrimaryLinks = [
-  { labelKey: "nav.mobile.dashboard" as const, fallback: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
-  { labelKey: "nav.mobile.clock" as const, fallback: "Clock", href: "/clock", Icon: Clock },
-  { labelKey: "nav.mobile.timesheets" as const, fallback: "Timesheets", href: "/timesheets", Icon: Calendar },
-  { labelKey: "nav.mobile.week" as const, fallback: "Week", href: "/week-report", Icon: CalendarRange },
-  { labelKey: "nav.mobile.more" as const, fallback: "More", href: "/profile", Icon: UserRound },
-] as const;
+type MobileNavItem = {
+  labelKey:
+    | "nav.mobile.dashboard"
+    | "nav.mobile.clock"
+    | "nav.mobile.timesheets"
+    | "nav.mobile.week"
+    | "nav.mobile.pay"
+    | "nav.mobile.more";
+  fallback: string;
+  href: string;
+  Icon: typeof LayoutDashboard;
+};
+
+const employeePrimaryLinks: MobileNavItem[] = [
+  { labelKey: "nav.mobile.dashboard", fallback: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
+  { labelKey: "nav.mobile.clock", fallback: "Clock", href: "/clock", Icon: Clock },
+  { labelKey: "nav.mobile.timesheets", fallback: "Timesheets", href: "/timesheets", Icon: Calendar },
+  { labelKey: "nav.mobile.pay", fallback: "Pay", href: "/pay-history", Icon: Banknote },
+  { labelKey: "nav.mobile.more", fallback: "More", href: "/profile", Icon: UserRound },
+];
+
+const managementPrimaryLinks: MobileNavItem[] = [
+  { labelKey: "nav.mobile.dashboard", fallback: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
+  { labelKey: "nav.mobile.clock", fallback: "Clock", href: "/clock", Icon: Clock },
+  { labelKey: "nav.mobile.timesheets", fallback: "Timesheets", href: "/timesheets", Icon: Calendar },
+  { labelKey: "nav.mobile.week", fallback: "Week", href: "/week-report", Icon: CalendarRange },
+  { labelKey: "nav.mobile.more", fallback: "More", href: "/profile", Icon: UserRound },
+];
 
 export function MobileBottomNav({ activeHref = "/dashboard" }: MobileBottomNavProps) {
   const t = useT();
+  const user = useCurrentUser();
+  const links = canAccessManagement(user) ? managementPrimaryLinks : employeePrimaryLinks;
+
   return (
     <nav
       className="timiq-print-hide-chrome fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[var(--color-border-dark)] bg-[var(--color-header)] pb-[env(safe-area-inset-bottom,0px)] text-[11px] leading-tight xl:hidden"
     >
-      {mobilePrimaryLinks.map((item) => {
+      {links.map((item) => {
         const Icon = item.Icon;
         const active = activeHref === item.href;
         return (
