@@ -11,7 +11,7 @@ import { useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { useT } from "../../lib/i18n";
 
-import { groupContainsActiveRoute, navItemMatchesActive } from "./grouped-nav";
+import { navItemMatchesActive } from "./grouped-nav";
 import { NavDropdownPortal, navDropdownMenuContains } from "./nav-dropdown-portal";
 import { NavItemIcon } from "./nav-item-icon";
 
@@ -19,34 +19,38 @@ type DesktopTopNavProps = {
   activeHref: string;
 };
 
-type OpenMenu = { kind: "group"; id: string } | null;
+type OpenMenuState = {
+  id: string;
+  anchor: HTMLButtonElement;
+} | null;
 
-function groupHasActiveItem(group: NavigationGroupDefinition, activeHref: string): boolean {
-  return groupContainsActiveRoute(group, activeHref);
-}
+const directLinkActiveClass =
+  "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)]";
+const directLinkIdleClass =
+  "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] hover:text-[var(--color-text)]";
+
+const dropdownTriggerOpenClass =
+  "border-[var(--color-border)] bg-[var(--color-cell)] text-[var(--color-text)]";
+const dropdownTriggerIdleClass =
+  "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] hover:text-[var(--color-text)]";
 
 function NavGroupTrigger(props: {
   groupId: string;
   groupLabel: string;
-  groupActive: boolean;
   isOpen: boolean;
-  onToggle: () => void;
-  buttonRef: (el: HTMLButtonElement | null) => void;
+  onToggle: (anchor: HTMLButtonElement) => void;
 }) {
   return (
     <button
-      ref={props.buttonRef}
-      aria-expanded={props.isOpen}
       aria-controls={`timiq-nav-menu-${props.groupId}`}
+      aria-expanded={props.isOpen}
       aria-haspopup="menu"
       className={[
         "inline-flex h-9 items-center gap-1 rounded-[var(--radius-md)] border px-2.5 text-sm font-medium whitespace-nowrap",
-        props.groupActive || props.isOpen
-          ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)]"
-          : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] hover:text-[var(--color-text)]",
+        props.isOpen ? dropdownTriggerOpenClass : dropdownTriggerIdleClass,
       ].join(" ")}
       type="button"
-      onClick={props.onToggle}
+      onClick={(event) => props.onToggle(event.currentTarget)}
     >
       <span>{props.groupLabel}</span>
       <ChevronDown
@@ -62,9 +66,7 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
   const t = useT();
   const limited = userHasLimitedAccess(user);
   const navRef = useRef<HTMLElement>(null);
-  const triggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const menuAnchorRef = useRef<HTMLButtonElement | null>(null);
-  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [openMenu, setOpenMenu] = useState<OpenMenuState>(null);
   const [navBadges, setNavBadges] = useState<Record<string, number>>({});
 
   const groups = useMemo(
@@ -86,7 +88,6 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
 
   const closeMenus = useCallback(() => {
     setOpenMenu(null);
-    menuAnchorRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -125,7 +126,7 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
   }
 
   const openGroup =
-    openMenu?.kind === "group" ? groups.find((g) => g.id === openMenu.id) : undefined;
+    openMenu !== null ? groups.find((g) => g.id === openMenu.id) : undefined;
 
   return (
     <>
@@ -141,20 +142,17 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
           }
 
           const groupLabel = t(group.groupLabelKey, group.label);
-          const groupActive = groupHasActiveItem(group, activeHref);
 
           if (visible.length === 1) {
             const only = visible[0];
-            const active = navItemMatchesActive(only.href, activeHref);
+            const isDirectActive = navItemMatchesActive(only.href, activeHref);
             const n = navBadges[only.href] ?? 0;
             return (
               <Link
                 key={group.id}
                 className={[
                   "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-sm font-medium whitespace-nowrap",
-                  active || groupActive
-                    ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)]"
-                    : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] hover:text-[var(--color-text)]",
+                  isDirectActive ? directLinkActiveClass : directLinkIdleClass,
                 ].join(" ")}
                 href={only.href}
               >
@@ -169,27 +167,17 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
             );
           }
 
-          const isOpen = openMenu?.kind === "group" && openMenu.id === group.id;
+          const isOpen = openMenu?.id === group.id;
           return (
             <div key={group.id} className="relative shrink-0">
               <NavGroupTrigger
-                buttonRef={(el) => {
-                  triggerRefs.current[group.id] = el;
-                }}
-                groupActive={groupActive}
                 groupId={group.id}
                 groupLabel={groupLabel}
                 isOpen={isOpen}
-                onToggle={() => {
-                  setOpenMenu((prev) => {
-                    const next =
-                      prev?.kind === "group" && prev.id === group.id
-                        ? null
-                        : { kind: "group" as const, id: group.id };
-                    menuAnchorRef.current =
-                      next !== null ? triggerRefs.current[group.id] ?? null : null;
-                    return next;
-                  });
+                onToggle={(anchor) => {
+                  setOpenMenu((prev) =>
+                    prev?.id === group.id ? null : { id: group.id, anchor },
+                  );
                 }}
               />
             </div>
@@ -197,20 +185,20 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
         })}
       </nav>
 
-      {openGroup && openMenu?.kind === "group" ? (
+      {openGroup && openMenu ? (
         <NavDropdownPortal
-          anchorRef={menuAnchorRef}
+          anchorEl={openMenu.anchor}
           menuId={`timiq-nav-menu-${openGroup.id}`}
           open
         >
           {openGroup.items.map((item) => {
-            const active = navItemMatchesActive(item.href, activeHref);
+            const isChildActive = navItemMatchesActive(item.href, activeHref);
             const n = navBadges[item.href] ?? 0;
             return (
               <Link
                 className={[
                   "flex items-center gap-2 px-3 py-2 text-sm font-medium break-words",
-                  active
+                  isChildActive
                     ? "bg-[var(--color-btn-active-bg)] text-[var(--color-text)]"
                     : "text-[var(--color-text)] hover:bg-[var(--color-cell)]",
                 ].join(" ")}

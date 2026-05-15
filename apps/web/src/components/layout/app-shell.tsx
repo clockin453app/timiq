@@ -4,6 +4,7 @@ import { LimitedAccessRouteGuard } from "../../features/auth/limited-access-rout
 import { DesktopTopBar } from "./desktop-top-bar";
 import { MobileBottomNav } from "./mobile-bottom-nav";
 import { MobileHeader } from "./mobile-header";
+import { PageLocationGuide } from "./page-location-guide";
 
 type AppShellProps = {
   activeHref?: string;
@@ -18,6 +19,7 @@ export function AppShell({ activeHref = "/dashboard", children }: AppShellProps)
 
       <main className="timiq-app-main flex min-h-0 min-w-0 flex-1 flex-col overflow-x-clip">
         <div className="box-border min-h-0 w-full min-w-0 flex-1 overflow-x-clip overflow-y-auto px-3 py-4 pb-[calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad))] sm:px-6 sm:py-5 xl:px-8 xl:py-6 xl:pb-6">
+          <PageLocationGuide activeHref={activeHref} />
           <LimitedAccessRouteGuard>{children}</LimitedAccessRouteGuard>
         </div>
       </main>

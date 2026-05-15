@@ -4,7 +4,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 type NavDropdownPortalProps = {
-  anchorRef: React.RefObject<HTMLElement | null>;
+  anchorEl: HTMLElement | null;
   open: boolean;
   children: ReactNode;
   menuId: string;
@@ -47,15 +47,15 @@ export function NavDropdownPortal(props: NavDropdownPortalProps) {
   }, []);
 
   useLayoutEffect(() => {
-    if (!props.open || !props.anchorRef.current) {
+    if (!props.open || !props.anchorEl) {
       setPosition(null);
       return;
     }
 
+    const anchor = props.anchorEl;
+
     const update = () => {
-      if (props.anchorRef.current) {
-        setPosition(computeMenuPosition(props.anchorRef.current));
-      }
+      setPosition(computeMenuPosition(anchor));
     };
 
     update();
@@ -65,7 +65,7 @@ export function NavDropdownPortal(props: NavDropdownPortalProps) {
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [props.open, props.anchorRef]);
+  }, [props.open, props.anchorEl, props.menuId]);
 
   if (!props.open || !mounted || !position) {
     return null;

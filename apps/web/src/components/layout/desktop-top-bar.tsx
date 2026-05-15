@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { getDefaultLandingPath } from "../../config/navigation";
 import { formatSystemRole, LogoutButton, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { useT } from "../../lib/i18n";
@@ -36,8 +37,8 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
     <header className="timiq-print-hide-chrome sticky top-0 z-40 hidden min-h-[var(--layout-topbar-height)] w-full min-w-0 shrink-0 flex-col overflow-visible border-b border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_0_rgba(15,23,42,0.04)] xl:flex">
       <div className="flex min-h-[var(--layout-topbar-height)] w-full min-w-0 items-center gap-3 px-4">
         <Link
-          className="shrink-0 no-underline"
-          href={limited ? "/pay-history" : "/dashboard"}
+          className="mr-8 min-w-[7.5rem] shrink-0 no-underline xl:mr-10"
+          href={getDefaultLandingPath(user.system_role, { limitedAccess: limited })}
         >
           <p className="text-base font-bold tracking-tight text-[var(--color-text)]">{t("nav.tagline", "TimIQ")}</p>
           <p className="hidden text-[11px] leading-tight text-[var(--color-text-muted)] sm:block">

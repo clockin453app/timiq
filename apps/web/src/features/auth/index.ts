@@ -1,3 +1,4 @@
+export { AdminDashboardRedirect } from "./admin-dashboard-redirect";
 export { AuthGuard } from "./auth-guard";
 export {
   AuthUserProvider,

@@ -1,5 +1,5 @@
 import { AppShell } from "../../components/layout";
-import { AuthGuard } from "../../features/auth";
+import { AdminDashboardRedirect, AuthGuard } from "../../features/auth";
 
 import { DashboardHome } from "./dashboard-client";
 
@@ -7,7 +7,9 @@ export default function DashboardPage() {
   return (
     <AuthGuard>
       <AppShell activeHref="/dashboard">
-        <DashboardHome />
+        <AdminDashboardRedirect>
+          <DashboardHome />
+        </AdminDashboardRedirect>
       </AppShell>
     </AuthGuard>
   );

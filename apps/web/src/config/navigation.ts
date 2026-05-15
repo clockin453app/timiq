@@ -478,7 +478,6 @@ const DESKTOP_TOP_NAV_EMPLOYEE: NavigationGroupDefinition[] = [
 ];
 
 const DESKTOP_TOP_NAV_MANAGEMENT: NavigationGroupDefinition[] = [
-  { id: "desk-dashboard", label: "Dashboard", groupLabelKey: "nav.dashboard", items: [DASHBOARD] },
   { id: "desk-overview", label: "Overview", groupLabelKey: "nav.overview", items: [OVERVIEW] },
   { id: "desk-clock", label: "Clock", groupLabelKey: "nav.clock", items: [CLOCK] },
   {
@@ -525,6 +524,92 @@ const DESKTOP_TOP_NAV_MANAGEMENT: NavigationGroupDefinition[] = [
     items: [AUDIT_LOG, SYSTEM_HEALTH, SETTINGS, HELP_CENTRE],
   },
 ];
+
+/** Post-login and brand-link default route by role. */
+export function getDefaultLandingPath(
+  role: SystemRole,
+  options?: { limitedAccess?: boolean },
+): string {
+  if (options?.limitedAccess && role === "employee") {
+    return "/pay-history";
+  }
+  if (role === "administrator" || role === "admin") {
+    return "/overview";
+  }
+  return "/dashboard";
+}
+
+export type ResolvedNavigationLocation = {
+  groupLabelKey: string;
+  groupLabel: string;
+  pageLabelKey: string;
+  pageLabel: string;
+  showGroup: boolean;
+};
+
+function pathnameMatchesNavItem(itemHref: string, pathname: string): boolean {
+  if (itemHref === "/dashboard") {
+    return pathname === "/dashboard";
+  }
+  return pathname === itemHref || pathname.startsWith(`${itemHref}/`);
+}
+
+/** Breadcrumb labels for the current route from nav config. */
+export function resolveNavigationLocation(
+  role: SystemRole,
+  pathname: string,
+  options?: { limitedAccess?: boolean },
+): ResolvedNavigationLocation | null {
+  const seenGroups = new Set<string>();
+  const groups: NavigationGroupDefinition[] = [];
+
+  for (const g of getEmployeeNavigationGroups(role, options)) {
+    if (!seenGroups.has(g.id)) {
+      seenGroups.add(g.id);
+      groups.push(g);
+    }
+  }
+  for (const g of getManagementNavigationGroups(role)) {
+    if (!seenGroups.has(g.id)) {
+      seenGroups.add(g.id);
+      groups.push(g);
+    }
+  }
+  for (const g of getDesktopTopNavigationGroups(role, options)) {
+    if (!seenGroups.has(g.id)) {
+      seenGroups.add(g.id);
+      groups.push(g);
+    }
+  }
+
+  let best: { group: NavigationGroupDefinition; item: NavigationItem } | null = null;
+  let bestHrefLen = -1;
+
+  for (const group of groups) {
+    for (const item of group.items) {
+      if (!pathnameMatchesNavItem(item.href, pathname)) {
+        continue;
+      }
+      if (item.href.length > bestHrefLen) {
+        best = { group, item };
+        bestHrefLen = item.href.length;
+      }
+    }
+  }
+
+  if (!best) {
+    return null;
+  }
+
+  const showGroup = best.group.items.length > 1;
+  return {
+    groupLabelKey: best.group.groupLabelKey,
+    groupLabel: best.group.label,
+    pageLabelKey: best.item.labelKey,
+    pageLabel: best.item.label,
+    showGroup,
+  };
+}
 
 export function getDesktopTopNavigationGroups(
   role: SystemRole,
