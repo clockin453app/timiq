@@ -771,68 +771,192 @@ export function ClockClient() {
             <p className="mt-1">{t("clock.offline_body")}</p>
           </div>
         ) : null}
-        <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-4 text-sm">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-            Current status
-          </p>
-          {isRefreshing && !clockStatus ? (
-            <p className="mt-2 text-[var(--color-text-muted)]">{t("common.loading", "Loading…")}</p>
-          ) : null}
-          {clockStatus ? (
-            <>
-              <p className="mt-2 text-xl font-semibold text-[var(--color-text)]">
-                {statusCardTitle(flowStatus, t)}
-              </p>
-              {flowStatus === "on_shift" || flowStatus === "open_break" ? (
-                <div className="mt-2 space-y-1 text-[var(--color-text-muted)]">
-                  {clockStatus.open_shift_location_name ? (
-                    <p>
-                      Site:{" "}
-                      <span className="font-medium text-[var(--color-text)]">
-                        {clockStatus.open_shift_location_name}
-                      </span>
-                    </p>
-                  ) : null}
-                  {clockStatus.open_shift_clock_in_at ? (
-                    <>
-                      {flowStatus === "open_break" ? (
-                        <p className="text-[var(--color-text)]">On break · time on shift continues</p>
-                      ) : null}
-                      <p>
-                        <span className="text-[var(--color-text-muted)]">Time on shift: </span>
-                        <span className="font-mono font-medium text-[var(--color-text)]" suppressHydrationWarning>
-                          {currentShiftDurationParts.hms || currentShiftDurationParts.compact || "—"}
-                        </span>
-                        {currentShiftDurationParts.compact && currentShiftDurationParts.hms ? (
-                          <span className="ml-1 text-[var(--color-text-muted)]">
-                            ({currentShiftDurationParts.compact})
-                          </span>
-                        ) : null}
-                      </p>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-              {flowStatus === "completed_today" ? (
-                <p className="mt-2 text-[var(--color-text-muted)]">
-                  A second shift today is not allowed by current policy.
-                </p>
-              ) : null}
-              {flowStatus === "no_assigned_sites" ? (
-                <p className="mt-2 text-[var(--color-text-muted)]">
-                  Ask your administrator to assign you to an active site before you can clock in.
-                </p>
-              ) : null}
-            </>
-          ) : null}
-        </div>
+        {isRefreshing && !clockStatus ? (
+          <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading", "Loading…")}</p>
+        ) : null}
+
+        {clockStatus && flowStatus === "no_assigned_sites" ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 text-sm">
+            <p className="font-semibold text-[var(--color-text)]">{statusCardTitle(flowStatus, t)}</p>
+            <p className="mt-2 text-[var(--color-text-muted)]">
+              Ask your administrator to assign you to an active site before you can clock in.
+            </p>
+          </div>
+        ) : null}
+
+        {clockStatus && flowStatus === "completed_today" ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 text-sm">
+            <p className="font-semibold text-[var(--color-text)]">{statusCardTitle(flowStatus, t)}</p>
+            <p className="mt-2 text-[var(--color-text-muted)]">
+              A second shift today is not allowed by current policy.
+            </p>
+          </div>
+        ) : null}
 
         {clockStatus && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
-          <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-4 text-sm">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              Requirements
-            </p>
-            <ul className="mt-3 space-y-2 text-[var(--color-text)]">
+          <div className="rounded-[var(--radius-md)] border-2 border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 sm:p-5">
+            {flowStatus === "on_shift" || flowStatus === "open_break" ? (
+              <div className="mb-4 space-y-1 border-b border-[var(--color-border)] pb-3 text-sm">
+                {clockStatus.open_shift_location_name ? (
+                  <p className="text-[var(--color-text-muted)]">
+                    Site:{" "}
+                    <span className="font-medium text-[var(--color-text)]">
+                      {clockStatus.open_shift_location_name}
+                    </span>
+                  </p>
+                ) : null}
+                {clockStatus.open_shift_clock_in_at ? (
+                  <p>
+                    <span className="text-[var(--color-text-muted)]">On shift: </span>
+                    <span className="font-mono font-semibold text-[var(--color-text)]" suppressHydrationWarning>
+                      {currentShiftDurationParts.hms || currentShiftDurationParts.compact || "—"}
+                    </span>
+                    {flowStatus === "open_break" ? (
+                      <span className="ml-2 text-[var(--color-warning-700)]">· On break</span>
+                    ) : null}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {flowStatus === "not_clocked_in" ? (
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-[var(--color-text)]">
+                    {t("clock.primary_capture_in", "Capture selfie to clock in")}
+                  </h2>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    {t("clock.primary_gps_hint", "Allow location access and confirm when your selfie is ready.")}
+                  </p>
+                </div>
+                <Button
+                  className="w-full min-h-[3.25rem] text-base"
+                  disabled={isSubmitting || activeSelfiePhase !== null}
+                  onClick={() => openSelfieCapture("clock_in")}
+                  type="button"
+                >
+                  {selfieClockIn
+                    ? t("clock.retake_selfie_in", "Retake clock-in selfie")
+                    : t("clock.primary_capture_in", "Capture selfie to clock in")}
+                </Button>
+                {selfieClockIn && clockInPreviewUrl ? (
+                  <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      alt={t("clock.alt_selfie_in", "Clock-in selfie preview")}
+                      className="mx-auto max-h-36 max-w-full object-contain"
+                      src={clockInPreviewUrl}
+                    />
+                  </div>
+                ) : null}
+                <Button
+                  className="w-full min-h-[3rem] text-base"
+                  disabled={!clockInEnabled}
+                  onClick={handleClockIn}
+                  type="button"
+                  variant="secondary"
+                >
+                  {t("clock.action_clock_in", "Clock in")}
+                </Button>
+                {!clockInEnabled && clockInDisabledReason ? (
+                  <p className="text-xs text-[var(--color-text-muted)]">{clockInDisabledReason}</p>
+                ) : null}
+              </div>
+            ) : null}
+
+            {flowStatus === "open_break" ? (
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold text-[var(--color-text)]">
+                  {t("clock.primary_end_break", "End break to clock out")}
+                </h2>
+                <p className="text-xs text-[var(--color-text-muted)]">{t("clock.end_break_before_out_hint")}</p>
+                <Button
+                  className="w-full min-h-[3rem] text-base"
+                  disabled={!breakEndEnabled}
+                  onClick={handleBreakEnd}
+                  type="button"
+                >
+                  {t("clock.end_break", "End break")}
+                </Button>
+              </div>
+            ) : null}
+
+            {flowStatus === "on_shift" ? (
+              <div className="space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-[var(--color-text)]">
+                    {t("clock.primary_capture_out", "Capture selfie to clock out")}
+                  </h2>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    {t("clock.primary_gps_hint", "Allow location access and confirm when your selfie is ready.")}
+                  </p>
+                </div>
+                <Button
+                  className="w-full min-h-[3.25rem] text-base"
+                  disabled={isSubmitting || activeSelfiePhase !== null}
+                  onClick={() => openSelfieCapture("clock_out")}
+                  type="button"
+                >
+                  {selfieClockOut
+                    ? t("clock.retake_selfie_out", "Retake clock-out selfie")
+                    : t("clock.primary_capture_out", "Capture selfie to clock out")}
+                </Button>
+                {selfieClockOut && clockOutPreviewUrl ? (
+                  <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      alt={t("clock.alt_selfie_out", "Clock-out selfie preview")}
+                      className="mx-auto max-h-36 max-w-full object-contain"
+                      src={clockOutPreviewUrl}
+                    />
+                  </div>
+                ) : null}
+                <Button
+                  className="w-full min-h-[3rem] text-base"
+                  disabled={!clockOutEnabled}
+                  onClick={handleClockOut}
+                  type="button"
+                  variant="secondary"
+                >
+                  {t("clock.action_clock_out", "Clock out")}
+                </Button>
+                {!clockOutEnabled && clockOutDisabledReason ? (
+                  <p className="text-xs text-[var(--color-text-muted)]">{clockOutDisabledReason}</p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {clockStatus && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
+          <div className="min-w-0 rounded border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5 text-sm">
+            <p className="font-medium text-[var(--color-text)]">{gpsStatusLine}</p>
+            {geoCapture ? (
+              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                Accuracy {Math.round(geoCapture.payload.accuracy_meters)}m · Sites{" "}
+                {clockStatus?.active_location_count ?? 0}
+              </p>
+            ) : null}
+            {showGpsRetry ? (
+              <Button
+                className="mt-2"
+                disabled={gpsAcquiring || isSubmitting || activeSelfiePhase !== null}
+                onClick={handleRetryGps}
+                type="button"
+                variant="secondary"
+              >
+                Retry location
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
+        <details className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] text-sm">
+          <summary className="cursor-pointer px-3 py-2.5 font-medium text-[var(--color-text)]">
+            {t("clock.details_gps_checklist", "GPS details & checklist")}
+          </summary>
+          <div className="space-y-3 border-t border-[var(--color-border)] px-3 py-3">
+            <ul className="space-y-2 text-[var(--color-text)]">
               <li className="flex flex-wrap items-start justify-between gap-2">
                 <span>Location access</span>
                 <span className={locationOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"}>
@@ -877,71 +1001,24 @@ export function ClockClient() {
                   </span>
                 </li>
               ) : null}
-              {flowStatus === "open_break" ? (
-                <li className="flex flex-wrap items-start justify-between gap-2">
-                  <span>{t("clock.action_break", "Break")}</span>
-                  <span className="text-[var(--color-warning-700)]">
-                    {t("clock.req_break_end_before_out", "End break before clock out")}
-                  </span>
-                </li>
-              ) : null}
             </ul>
-          </div>
-        ) : null}
-
-        <div className="min-w-0 rounded border border-[var(--color-border)] bg-[var(--color-header)] p-3 text-sm break-words">
-          <p className="font-bold text-[var(--color-text)]">GPS</p>
-          <p className="mt-1 break-words text-[var(--color-text-muted)]">{gpsStatusLine}</p>
-          <p className="mt-1 break-words text-[var(--color-text-muted)]">
-            Active assigned locations: {clockStatus?.active_location_count ?? 0}
-          </p>
-          {geoCapture ? (
-            <p className="mt-1 text-[var(--color-text-muted)]">
-              GPS accuracy: {Math.round(geoCapture.payload.accuracy_meters)}m (must be ≤ {BACKEND_MAX_ACCURACY_M}m)
-            </p>
-          ) : null}
-          {gpsAcquiring || gpsBestAccuracy !== null ? (
-            <p className="mt-1 text-[var(--color-text-muted)]">
-              Best accuracy so far: {gpsBestAccuracy !== null ? `${Math.round(gpsBestAccuracy)}m` : "—"} · Samples:{" "}
-              {gpsSamples}
-            </p>
-          ) : null}
-          {nearestSiteSummary ? (
-            <div className="mt-2 space-y-1 break-words text-[var(--color-text-muted)]">
-              <p className="break-words">
-                Nearest assigned site: <span className="font-semibold">{nearestSiteSummary.site.name}</span> (
-                about {nearestSiteSummary.distanceM}m to center, radius{" "}
-                {nearestSiteSummary.site.geofence_radius_meters}m)
+            {gpsAcquiring || gpsBestAccuracy !== null ? (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Best accuracy: {gpsBestAccuracy !== null ? `${Math.round(gpsBestAccuracy)}m` : "—"} · Samples:{" "}
+                {gpsSamples}
               </p>
-              {nearestSiteSummary.outside ? (
-                <p className="text-[var(--color-danger-700)]">
-                  Your position may be outside that site; the server will confirm the geofence on submit.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-          {!noAssignedSites && geoCapture && geoCapture.payload.accuracy_meters > BACKEND_MAX_ACCURACY_M ? (
-            <div className="mt-2 border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
-              <p className="font-semibold text-[var(--color-text)]">GPS accuracy is too low for secure clocking.</p>
-              <ul className="mt-1 list-disc space-y-0.5 pl-5">
-                <li>Move near open sky or a window and retry.</li>
-                <li>On mobile, enable Precise Location for your browser.</li>
-              </ul>
-            </div>
-          ) : null}
-          {showGpsRetry ? (
-            <div className="mt-2">
-              <Button
-                disabled={gpsAcquiring || isSubmitting || activeSelfiePhase !== null}
-                onClick={handleRetryGps}
-                type="button"
-                variant="secondary"
-              >
-                Retry location
-              </Button>
-            </div>
-          ) : null}
-        </div>
+            ) : null}
+            {nearestSiteSummary ? (
+              <p className="text-xs text-[var(--color-text-muted)]">
+                Nearest site: <span className="font-semibold">{nearestSiteSummary.site.name}</span> (~
+                {nearestSiteSummary.distanceM}m)
+                {nearestSiteSummary.outside ? (
+                  <span className="text-[var(--color-danger-700)]"> · May be outside geofence</span>
+                ) : null}
+              </p>
+            ) : null}
+          </div>
+        </details>
 
         {geoCapture && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
           <div className="min-w-0 rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
@@ -958,8 +1035,7 @@ export function ClockClient() {
                 <div className="flex min-h-[120px] w-full flex-col justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-4 text-center text-sm text-[var(--color-text-muted)]">
                   <p>{CLOCK_MAP_FALLBACK_MESSAGE}</p>
                   <p className="mt-2 text-xs">
-                    Live map is omitted on small screens for stability. Your GPS and nearest site
-                    details stay in the section above.
+                    Live map is omitted on small screens for stability. Your GPS and nearest site details stay above.
                   </p>
                 </div>
               ) : clockMapSessionOff ? (
@@ -990,113 +1066,22 @@ export function ClockClient() {
           </div>
         ) : null}
 
-        {clockStatus && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
-          <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-4 text-sm">
+        {flowStatus === "on_shift" && breakStartEnabled ? (
+          <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3 text-sm">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              {flowStatus === "not_clocked_in"
-                ? t("clock.action_clock_in", "Clock in")
-                : flowStatus === "open_break"
-                  ? t("clock.action_break", "Break")
-                  : t("clock.action_clock_out", "Clock out")}
+              {t("clock.break_optional", "Break (optional)")}
             </p>
-
-            {flowStatus === "not_clocked_in" ? (
-              <div className="mt-3 space-y-4">
-                <p className="text-xs text-[var(--color-text-muted)]">{t("clock.step_clock_in_intro")}</p>
-                <Button
-                  className="w-full min-h-[3rem] text-base sm:w-auto"
-                  disabled={isSubmitting || activeSelfiePhase !== null}
-                  onClick={() => openSelfieCapture("clock_in")}
-                  type="button"
-                >
-                  {selfieClockIn ? t("clock.retake_selfie_in") : t("clock.take_selfie_in")}
-                </Button>
-                {selfieClockIn && clockInPreviewUrl ? (
-                  <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      alt={t("clock.alt_selfie_in", "Clock-in selfie preview")}
-                      className="mx-auto max-h-36 max-w-full object-contain"
-                      src={clockInPreviewUrl}
-                    />
-                  </div>
-                ) : null}
-                <div className="space-y-2">
-                  <Button
-                    className="w-full min-h-[3rem] text-base"
-                    disabled={!clockInEnabled}
-                    onClick={handleClockIn}
-                    type="button"
-                  >
-                    {t("clock.action_clock_in", "Clock in")}
-                  </Button>
-                  {!clockInEnabled && clockInDisabledReason ? (
-                    <p className="text-xs text-[var(--color-text-muted)]">{clockInDisabledReason}</p>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
-
-            {flowStatus === "open_break" ? (
-              <div className="mt-3 space-y-3">
-                <p className="text-xs text-[var(--color-text-muted)]">{t("clock.end_break_before_out_hint")}</p>
-                <Button
-                  className="w-full min-h-[3rem] text-base"
-                  disabled={!breakEndEnabled}
-                  onClick={handleBreakEnd}
-                  type="button"
-                >
-                  {t("clock.end_break", "End break")}
-                </Button>
-                {!breakEndEnabled && isSubmitting ? (
-                  <p className="text-xs text-[var(--color-text-muted)]">{t("clock.working", "Working…")}</p>
-                ) : null}
-              </div>
-            ) : null}
-
-            {flowStatus === "on_shift" ? (
-              <div className="mt-3 space-y-4">
-                <Button
-                  className="w-full min-h-[3rem] text-base sm:w-auto"
-                  disabled={isSubmitting || activeSelfiePhase !== null}
-                  onClick={() => openSelfieCapture("clock_out")}
-                  type="button"
-                >
-                  {selfieClockOut ? t("clock.retake_selfie_out") : t("clock.take_selfie_out")}
-                </Button>
-                {selfieClockOut && clockOutPreviewUrl ? (
-                  <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      alt={t("clock.alt_selfie_out", "Clock-out selfie preview")}
-                      className="mx-auto max-h-36 max-w-full object-contain"
-                      src={clockOutPreviewUrl}
-                    />
-                  </div>
-                ) : null}
-                <div className="space-y-2">
-                  <Button
-                    className="w-full min-h-[3rem] text-base"
-                    disabled={!clockOutEnabled}
-                    onClick={handleClockOut}
-                    type="button"
-                  >
-                    {t("clock.action_clock_out", "Clock out")}
-                  </Button>
-                  {!clockOutEnabled && clockOutDisabledReason ? (
-                    <p className="text-xs text-[var(--color-text-muted)]">{clockOutDisabledReason}</p>
-                  ) : null}
-                </div>
-                {breakStartEnabled ? (
-                  <Button disabled={!breakStartEnabled} onClick={handleBreakStart} type="button" variant="secondary">
-                    {t("clock.start_break", "Start break")}
-                  </Button>
-                ) : null}
-              </div>
-            ) : null}
+            <Button
+              className="mt-2"
+              disabled={!breakStartEnabled}
+              onClick={handleBreakStart}
+              type="button"
+              variant="secondary"
+            >
+              {t("clock.start_break", "Start break")}
+            </Button>
           </div>
         ) : null}
-
         {flowStatus === "on_shift" || flowStatus === "not_clocked_in" ? (
           <p className="text-xs text-[var(--color-text-muted)]">
             {flowStatus === "on_shift"

@@ -62,6 +62,27 @@ function formatTime(iso: string | null): string {
   return d.toLocaleString();
 }
 
+function formatTimeShort(iso: string | null): string {
+  if (!iso) {
+    return "—";
+  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return "—";
+  }
+  return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function outOrDurationLabel(row: LiveAttendanceEmployeeRow): string {
+  if (row.status === "open_shift") {
+    return durationLabelForRow(row);
+  }
+  if (row.clock_out_at) {
+    return formatTimeShort(row.clock_out_at);
+  }
+  return durationLabelForRow(row);
+}
+
 function durationLabelForRow(row: LiveAttendanceEmployeeRow): string {
   if (row.status === "open_shift" && row.clock_in_at) {
     const start = new Date(row.clock_in_at).getTime();
@@ -325,7 +346,18 @@ export function LiveAttendanceClient() {
             ) : null}
           </div>
 
-          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <p className="mb-3 text-sm text-[var(--color-text)] md:hidden">
+            <span className="font-semibold tabular-nums">{snapshot?.employees.length ?? 0}</span> employees
+            {summary ? (
+              <>
+                {" "}
+                · <span className="tabular-nums">{summary.present_today ?? 0}</span> present ·{" "}
+                <span className="tabular-nums">{summary.open_shifts ?? 0}</span> open
+              </>
+            ) : null}
+          </p>
+
+          <div className="mb-4 hidden gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-4">
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
               <div className="text-xs font-bold text-[var(--color-text-muted)]">Present today</div>
               <div className="text-2xl font-semibold tabular-nums">{summary?.present_today ?? "—"}</div>
@@ -355,12 +387,12 @@ export function LiveAttendanceClient() {
             </div>
           ) : null}
 
-          <div className="mb-4 min-w-0 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)]">
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                Search employees
+          <div className="mb-3 min-w-0 border border-[var(--color-border)] bg-[var(--color-cell)] p-2 sm:mb-4 sm:p-3">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] md:gap-3">
+              <label className="block text-[11px] font-bold text-[var(--color-text)] sm:text-xs">
+                Search
                 <Input
-                  className="mt-1"
+                  className="mt-0.5 h-9 text-sm sm:mt-1 sm:h-10"
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
                   placeholder="Name or email"
@@ -371,7 +403,7 @@ export function LiveAttendanceClient() {
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Location filter
                 <select
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                  className="mt-0.5 h-9 w-full border border-[var(--color-border-dark)] text-sm sm:mt-1 sm:h-10 bg-[var(--color-input)] px-2 text-sm"
                   value={locationFilter}
                   onChange={(event) => setLocationFilter(event.target.value)}
                 >
@@ -388,7 +420,7 @@ export function LiveAttendanceClient() {
                 <label className="block text-xs font-bold text-[var(--color-text)]">
                   Company
                   <select
-                    className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    className="mt-0.5 h-9 w-full border border-[var(--color-border-dark)] text-sm sm:mt-1 sm:h-10 bg-[var(--color-input)] px-2 text-sm"
                     value={companyFilter}
                     onChange={(event) => {
                       setCompanyFilter(event.target.value);
@@ -434,30 +466,30 @@ export function LiveAttendanceClient() {
               <TableBody>
                 {isInitialLoad && !snapshot ? (
                   <TableRow>
-                    <TableCell colSpan={10}>Loading attendance…</TableCell>
+                    <TableCell colSpan={8}>Loading attendance…</TableCell>
                   </TableRow>
                 ) : null}
                 {!isInitialLoad && snapshot && snapshot.employees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10}>No employees match the current filters.</TableCell>
+                    <TableCell colSpan={8}>No employees match the current filters.</TableCell>
                   </TableRow>
                 ) : null}
                 {snapshot
                   ? snapshot.employees.map((row) => {
                       void tick;
-                      const durationLabel = durationLabelForRow(row);
-
                       return (
                         <TableRow key={row.user_id}>
-                          <TableCell className="font-medium">{row.display_name || "Employee"}</TableCell>
-                          <TableCell className="max-w-[12rem] truncate text-sm">{row.email ?? "—"}</TableCell>
-                          <TableCell className="text-sm">{row.job_title ?? "—"}</TableCell>
-                          <TableCell className="text-sm">{row.company_name ?? "—"}</TableCell>
-                          <TableCell className="text-sm">{row.location_name ?? "—"}</TableCell>
-                          <TableCell>{statusBadge(row.status)}</TableCell>
-                          <TableCell className="whitespace-nowrap text-sm">{formatTime(row.clock_in_at)}</TableCell>
-                          <TableCell className="whitespace-nowrap text-sm">{formatTime(row.clock_out_at)}</TableCell>
-                          <TableCell className="text-sm tabular-nums">{durationLabel}</TableCell>
+                          <TableCell className="max-w-[8rem] text-sm font-medium sm:max-w-none">
+                            <span className="line-clamp-2">{row.display_name || "Employee"}</span>
+                          </TableCell>
+                          <TableCell className="hidden max-w-[12rem] truncate text-sm md:table-cell">{row.email ?? "—"}</TableCell>
+                          <TableCell className="hidden text-sm lg:table-cell">{row.job_title ?? "—"}</TableCell>
+                          <TableCell className="hidden text-sm lg:table-cell">{row.company_name ?? "—"}</TableCell>
+                          <TableCell className="hidden max-w-[8rem] truncate text-sm md:table-cell">{row.location_name ?? "—"}</TableCell>
+                          <TableCell className="text-xs">{statusBadge(row.status)}</TableCell>
+                          <TableCell className="whitespace-nowrap text-xs tabular-nums sm:text-sm">{formatTimeShort(row.clock_in_at)}</TableCell>
+                          <TableCell className="hidden whitespace-nowrap text-xs tabular-nums sm:table-cell sm:text-sm">{formatTimeShort(row.clock_out_at)}</TableCell>
+                          <TableCell className="text-xs tabular-nums sm:text-sm">{outOrDurationLabel(row)}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex flex-wrap justify-end gap-2">
                               <Button
@@ -503,7 +535,7 @@ export function LiveAttendanceClient() {
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Location
                     <select
-                      className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      className="mt-0.5 h-9 w-full border border-[var(--color-border-dark)] text-sm sm:mt-1 sm:h-10 bg-[var(--color-input)] px-2 text-sm"
                       required
                       value={locationPick}
                       onChange={(event) => setLocationPick(event.target.value)}

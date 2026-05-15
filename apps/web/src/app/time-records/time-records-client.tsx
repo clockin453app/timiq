@@ -22,6 +22,7 @@ import {
   type AuthUser,
 } from "../../features/auth";
 import { listLocations, type Location } from "../../features/locations/api";
+import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
@@ -602,7 +603,7 @@ export function TimeRecordsClient() {
                         : "—"}
                     </TableCell>
                     <TableCell className="text-xs">
-                      {formatDurationSeconds(row.break_seconds)}
+                      <BreakDeductionCell seconds={row.break_seconds} />
                     </TableCell>
                     {adminMode && management ? (
                       <TableCell className="align-top text-xs">

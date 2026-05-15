@@ -23,7 +23,8 @@ import {
   type AuthUser,
 } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
-import { formatDurationSeconds } from "../../features/time-records/format-duration";
+import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
+import { formatBreakDeducted, formatDurationSeconds } from "../../features/time-records/format-duration";
 import {
   downloadAdminCompanyWeekReportCsv,
   downloadAdminTimesheetWeekCsv,
@@ -474,7 +475,7 @@ export function WeekReportClient() {
             <StatCard
               hint="Break minutes applied by company time policy."
               label="Break deducted"
-              value={formatDurationSeconds(sheet.week_break_seconds)}
+              value={formatBreakDeducted(sheet.week_break_seconds)}
             />
           </div>
         ) : null}
@@ -499,7 +500,7 @@ export function WeekReportClient() {
             <StatCard
               hint="Break minutes applied by company time policy."
               label="Break deducted (company)"
-              value={formatDurationSeconds(companyReport.totals.break_seconds)}
+              value={formatBreakDeducted(companyReport.totals.break_seconds)}
             />
           </div>
         ) : null}
@@ -667,7 +668,9 @@ export function WeekReportClient() {
                     <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.clocked_seconds)}</TableCell>
                     <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.payable_seconds)}</TableCell>
                     <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.payroll_seconds)}</TableCell>
-                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.break_seconds)}</TableCell>
+                    <TableCell className="text-xs">
+                      <BreakDeductionCell seconds={row.break_seconds} />
+                    </TableCell>
                     <TableCell className="max-w-[220px] text-xs text-[var(--color-text-muted)]">
                       {row.locations_worked.length > 0 ? row.locations_worked.join(", ") : "—"}
                     </TableCell>
@@ -690,8 +693,8 @@ export function WeekReportClient() {
                   <TableCell className="tabular-nums text-xs font-semibold">
                     {formatDurationSeconds(companyReport.totals.payroll_seconds)}
                   </TableCell>
-                  <TableCell className="tabular-nums text-xs font-semibold">
-                    {formatDurationSeconds(companyReport.totals.break_seconds)}
+                  <TableCell className="text-xs font-semibold">
+                    <BreakDeductionCell seconds={companyReport.totals.break_seconds} />
                   </TableCell>
                   <TableCell />
                   <TableCell className="text-xs font-semibold">

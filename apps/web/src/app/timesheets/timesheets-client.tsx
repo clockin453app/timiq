@@ -24,7 +24,9 @@ import {
 } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
+import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
+import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import {
   downloadAdminCompanyTimesheetWeekCsv,
   downloadAdminTimesheetWeekCsv,
@@ -89,17 +91,49 @@ function employeeCell(name: string | null | undefined, email: string) {
   return email;
 }
 
-function TimesheetSummaryCard(props: { label: string; value: string }) {
+function TimesheetWeekSummaryLine(props: {
+  weekStart: string;
+  timeZone?: string;
+  clocked: number;
+  payable: number;
+  payroll: number;
+  breakSeconds: number;
+}) {
+  const weekLabel = props.timeZone
+    ? formatPayrollWeekUkLabel(props.weekStart, props.timeZone, false)
+    : props.weekStart;
   return (
-    <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-1.5 sm:px-3 sm:py-2">
-        <p className="text-[9px] font-bold uppercase leading-tight tracking-wider text-[var(--color-text-soft)] sm:text-[10px]">
-          {props.label}
-        </p>
-      </div>
-      <div className="px-2 py-2 sm:px-3 sm:py-2.5">
-        <p className="text-base font-semibold tabular-nums text-[var(--color-text)] sm:text-lg">{props.value}</p>
-      </div>
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2.5 text-sm">
+      <p className="font-semibold text-[var(--color-text)]">{weekLabel}</p>
+      <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-[var(--color-text-muted)]">
+        <div>
+          <dt className="inline">Clocked: </dt>
+          <dd className="inline tabular-nums font-semibold text-[var(--color-text)]">
+            {formatDurationSeconds(props.clocked)}
+          </dd>
+        </div>
+        <div>
+          <dt className="inline">Payable: </dt>
+          <dd className="inline tabular-nums font-semibold text-[var(--color-text)]">
+            {formatDurationSeconds(props.payable)}
+          </dd>
+        </div>
+        <div>
+          <dt className="inline">Payroll: </dt>
+          <dd className="inline tabular-nums font-semibold text-[var(--color-text)]">
+            {formatDurationSeconds(props.payroll)}
+          </dd>
+        </div>
+        <div>
+          <dt className="inline">Break deducted: </dt>
+          <dd className="inline">
+            <BreakDeductionCell seconds={props.breakSeconds} />
+          </dd>
+        </div>
+      </dl>
+      <p className="mt-2 text-[11px] leading-relaxed text-[var(--color-text-muted)]">
+        Payable and payroll totals are after automatic break deduction from clocked time (completed shifts only).
+      </p>
     </div>
   );
 }
@@ -526,54 +560,25 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees ? (
-          <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 lg:grid-cols-4">
-            <TimesheetSummaryCard
-              label="Clocked time total (completed)"
-              value={formatDurationSeconds(sheet.week_actual_seconds)}
-            />
-            <TimesheetSummaryCard
-              label="Payable time total (completed)"
-              value={formatDurationSeconds(sheet.week_counted_seconds)}
-            />
-            <TimesheetSummaryCard
-              label="Payroll time total (completed)"
-              value={formatDurationSeconds(sheet.week_rounded_seconds)}
-            />
-            <TimesheetSummaryCard
-              label="Break deducted (completed)"
-              value={formatDurationSeconds(sheet.week_break_seconds)}
-            />
-          </div>
+          <TimesheetWeekSummaryLine
+            breakSeconds={sheet.week_break_seconds}
+            clocked={sheet.week_actual_seconds}
+            payable={sheet.week_counted_seconds}
+            payroll={sheet.week_rounded_seconds}
+            timeZone={sheet.company_timezone}
+            weekStart={sheet.week_start}
+          />
         ) : null}
 
         {!loading && companySheet && viewingAllEmployees ? (
-          <div className="grid grid-cols-2 gap-3 max-[359px]:grid-cols-1 lg:grid-cols-4">
-            <TimesheetSummaryCard
-              label="Clocked time total (completed)"
-              value={formatDurationSeconds(companySheet.week_clocked_seconds)}
-            />
-            <TimesheetSummaryCard
-              label="Payable time total (completed)"
-              value={formatDurationSeconds(companySheet.week_payable_seconds)}
-            />
-            <TimesheetSummaryCard
-              label="Payroll time total (completed)"
-              value={formatDurationSeconds(companySheet.week_payroll_seconds)}
-            />
-            <TimesheetSummaryCard
-              label="Break deducted (completed)"
-              value={formatDurationSeconds(companySheet.week_break_seconds)}
-            />
-          </div>
-        ) : null}
-
-        {!loading && (sheet || companySheet) ? (
-          <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
-            <span className="font-semibold text-[var(--color-text)]">Clocked time</span> = raw clock-in to clock-out.{" "}
-            <span className="font-semibold text-[var(--color-text)]">Payable time</span> = after standard start and
-            break rules. <span className="font-semibold text-[var(--color-text)]">Payroll time</span> = rounded time
-            used by payroll.
-          </p>
+          <TimesheetWeekSummaryLine
+            breakSeconds={companySheet.week_break_seconds}
+            clocked={companySheet.week_clocked_seconds}
+            payable={companySheet.week_payable_seconds}
+            payroll={companySheet.week_payroll_seconds}
+            timeZone={companySheet.company_timezone}
+            weekStart={companySheet.week_start}
+          />
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees && (sheet.week_leave?.length ?? 0) > 0 ? (
@@ -657,8 +662,8 @@ export function TimesheetsClient() {
                   <TableCell className="tabular-nums text-xs">
                     {formatDurationSeconds(day.rounded_seconds)}
                   </TableCell>
-                  <TableCell className="tabular-nums text-xs">
-                    {formatDurationSeconds(day.break_seconds)}
+                  <TableCell className="text-xs">
+                    <BreakDeductionCell seconds={day.break_seconds} />
                   </TableCell>
                 </TableRow>
               ))}
@@ -673,8 +678,8 @@ export function TimesheetsClient() {
                 <TableCell className="tabular-nums text-xs font-semibold">
                   {formatDurationSeconds(sheet.week_rounded_seconds)}
                 </TableCell>
-                <TableCell className="tabular-nums text-xs font-semibold">
-                  {formatDurationSeconds(sheet.week_break_seconds)}
+                <TableCell className="text-xs font-semibold">
+                  <BreakDeductionCell seconds={sheet.week_break_seconds} />
                 </TableCell>
               </TableRow>
             </TableBody>
@@ -709,7 +714,9 @@ export function TimesheetsClient() {
                     <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.clocked_seconds)}</TableCell>
                     <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.payable_seconds)}</TableCell>
                     <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.payroll_seconds)}</TableCell>
-                    <TableCell className="tabular-nums text-xs">{formatDurationSeconds(row.break_seconds)}</TableCell>
+                    <TableCell className="text-xs">
+                      <BreakDeductionCell seconds={row.break_seconds} />
+                    </TableCell>
                     <TableCell className="max-w-[220px] text-xs text-[var(--color-text-muted)]">
                       {row.locations.length > 0 ? row.locations.join(", ") : "—"}
                     </TableCell>
@@ -729,8 +736,8 @@ export function TimesheetsClient() {
                   <TableCell className="tabular-nums text-xs font-semibold">
                     {formatDurationSeconds(companySheet.week_payroll_seconds)}
                   </TableCell>
-                  <TableCell className="tabular-nums text-xs font-semibold">
-                    {formatDurationSeconds(companySheet.week_break_seconds)}
+                  <TableCell className="text-xs font-semibold">
+                    <BreakDeductionCell seconds={companySheet.week_break_seconds} />
                   </TableCell>
                   <TableCell />
                   <TableCell className="tabular-nums text-xs font-semibold">
