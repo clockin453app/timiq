@@ -23,7 +23,6 @@ import {
 import {
   canAccessManagement,
   isAdministrator,
-  LogoutButton,
   useCurrentUser,
   type AuthUser,
 } from "../../features/auth";
@@ -72,11 +71,11 @@ function fieldLabel() {
 }
 
 function inputClass() {
-  return "mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]";
+  return "mt-1.5 h-11 w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-base text-[var(--color-text)] md:h-10 md:text-sm";
 }
 
 function textareaClass() {
-  return "mt-1.5 min-h-[88px] w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 py-2 text-sm text-[var(--color-text)]";
+  return "mt-1.5 min-h-[88px] w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 py-2.5 text-base text-[var(--color-text)] md:text-sm";
 }
 
 function formatTs(iso: string | null): string {
@@ -484,11 +483,10 @@ export function MessagesClient() {
   return (
     <Sheet>
       <PageHeader
-        action={<LogoutButton />}
         description="Company news and internal messages. Conversations refresh automatically while this page is open."
         title="Messages"
       />
-      <SheetBody className="min-w-0 max-w-full space-y-4 overflow-x-hidden md:p-5">
+      <SheetBody className="timiq-mobile-form-pad min-w-0 max-w-full space-y-4 overflow-x-hidden md:p-5">
         <div className="flex flex-wrap gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-1">
           <button
             className={segmentBtnClass(tab === "news")}
@@ -708,7 +706,10 @@ export function MessagesClient() {
                       </div>
                     ))}
                   </div>
-                  <form className="mt-2 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end" onSubmit={sendMessage}>
+                  <form
+                    className="mt-2 flex min-w-0 shrink-0 flex-col gap-2 border-t border-[var(--color-border)] bg-[var(--color-sheet)] pt-2 sm:flex-row sm:items-end"
+                    onSubmit={sendMessage}
+                  >
                     <textarea
                       className={`${textareaClass()} min-h-[72px] flex-1`}
                       maxLength={4000}

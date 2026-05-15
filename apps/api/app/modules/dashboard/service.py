@@ -8,10 +8,11 @@ from decimal import Decimal
 
 from sqlalchemy.orm import Session
 
+from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
 from app.modules.audit.repository import list_audit_events_filtered
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
-from app.modules.companies.repository import get_company_by_id, list_companies
+from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
 from app.modules.live_attendance.service import get_live_attendance_snapshot
@@ -76,31 +77,15 @@ def _display_name(db_session: Session, user_id: uuid.UUID) -> str:
     return user.email or "User"
 
 
-def _resolve_company_targets(
+def _resolve_dashboard_company_id(
     db_session: Session,
     actor: User,
     company_id: uuid.UUID | None,
-) -> tuple[list[uuid.UUID], bool, uuid.UUID | None]:
-    """
-    Returns (company_ids_for_aggregate, aggregated_flag, primary_company_id).
-    primary_company_id is set when a single company drives payroll/trends.
-    """
-    if actor.system_role == SystemRole.ADMIN:
-        if actor.company_id is None:
-            raise DashboardError("Admin user is not assigned to a company.")
-        return [actor.company_id], False, actor.company_id
-
-    assert actor.system_role == SystemRole.ADMINISTRATOR
-    if company_id is not None:
-        if get_company_by_id(db_session, company_id) is None:
-            raise DashboardError("Company not found.")
-        return [company_id], False, company_id
-
-    companies = list_companies(db_session)
-    ids = [c.id for c in companies]
-    if len(ids) == 1:
-        return ids, False, ids[0]
-    return ids, True, None
+) -> uuid.UUID:
+    try:
+        return resolve_operational_company_id(db_session, actor, company_id)
+    except CompanyScopeError as exc:
+        raise DashboardError(str(exc)) from exc
 
 
 def _live_block(
@@ -218,44 +203,27 @@ def build_management_summary(
     assert_administrator_company_filter(actor, company_id)
 
     now_utc = datetime.now(timezone.utc)
-    company_targets, aggregated, primary = _resolve_company_targets(db_session, actor, company_id)
+    scoped_company_id = _resolve_dashboard_company_id(db_session, actor, company_id)
 
     if actor.system_role == SystemRole.ADMIN:
         live = _live_block(db_session, actor, None)
     else:
-        if company_id is not None:
-            admin_live_scope = company_id
-        elif aggregated:
-            admin_live_scope = None
-        else:
-            admin_live_scope = company_targets[0]
-        live = _live_block(db_session, actor, admin_live_scope)
+        live = _live_block(db_session, actor, scoped_company_id)
 
-    if aggregated:
-        emp, loc, wp = dash_repo.aggregate_active_counts(db_session, company_targets)
-        pay_status, pay_gross, pay_secs, pay_ws, pay_we, pay_msg = _aggregate_payroll_current_week(
-            db_session,
-            actor,
-            company_targets,
-            now_utc,
-        )
-        active_employees = emp
-    else:
-        cid = company_targets[0]
-        active_employees = dash_repo.count_active_employees_for_company(db_session, cid)
-        loc = dash_repo.count_active_locations_for_company(db_session, cid)
-        wp = dash_repo.count_active_workplaces_for_company(db_session, cid)
-        pay_status, pay_gross, pay_secs, pay_ws, pay_we, pay_msg = _payroll_block_for_company(
-            db_session,
-            actor,
-            cid,
-            now_utc,
-        )
+    active_employees = dash_repo.count_active_employees_for_company(db_session, scoped_company_id)
+    loc = dash_repo.count_active_locations_for_company(db_session, scoped_company_id)
+    wp = dash_repo.count_active_workplaces_for_company(db_session, scoped_company_id)
+    pay_status, pay_gross, pay_secs, pay_ws, pay_we, pay_msg = _payroll_block_for_company(
+        db_session,
+        actor,
+        scoped_company_id,
+        now_utc,
+    )
 
     return ManagementSummaryResponse(
         generated_at=now_utc,
-        company_id=primary,
-        aggregated_companies=aggregated,
+        company_id=scoped_company_id,
+        aggregated_companies=False,
         active_employee_count=active_employees,
         active_location_count=loc,
         active_workplace_count=wp,
@@ -361,32 +329,11 @@ _WORK_PROGRESS_PENDING_REVIEW_STATUS = "submitted"
 
 def _live_snapshot_company_scope(
     actor: User,
-    company_id: uuid.UUID | None,
-    aggregated: bool,
-    company_targets: list[uuid.UUID],
+    scoped_company_id: uuid.UUID,
 ) -> uuid.UUID | None:
     if actor.system_role == SystemRole.ADMIN:
         return None
-    if company_id is not None:
-        return company_id
-    if aggregated:
-        return None
-    return company_targets[0] if company_targets else None
-
-
-def _review_scope_company_id(
-    actor: User,
-    company_id: uuid.UUID | None,
-    aggregated: bool,
-    primary: uuid.UUID | None,
-) -> uuid.UUID | None:
-    if actor.system_role == SystemRole.ADMIN:
-        return actor.company_id
-    if company_id is not None:
-        return company_id
-    if aggregated:
-        return None
-    return primary
+    return scoped_company_id
 
 
 def _time_policy_looks_configured(db_session: Session, company_id: uuid.UUID) -> bool:
@@ -413,34 +360,27 @@ def _payroll_status_from_totals(total_items: int, pending: int, approved: int, p
     return "mixed"
 
 
-def _collect_payroll_reports_current_week(
+def _collect_payroll_report_current_week(
     db_session: Session,
     actor: User,
-    company_ids: list[uuid.UUID],
+    company_id: uuid.UUID,
     now_utc: datetime,
-) -> list[PayrollReportResponse]:
-    out: list[PayrollReportResponse] = []
-    for cid in company_ids:
-        week_start = dash_repo.current_week_monday_local(db_session, cid, now_utc)
-        try:
-            out.append(
-                get_payroll_report(
-                    db_session,
-                    actor,
-                    company_id=cid,
-                    week_start=week_start,
-                    auto_recalculate_if_safe=False,
-                )
-            )
-        except PayrollError:
-            continue
-    return out
+) -> PayrollReportResponse | None:
+    week_start = dash_repo.current_week_monday_local(db_session, company_id, now_utc)
+    try:
+        return get_payroll_report(
+            db_session,
+            actor,
+            company_id=company_id,
+            week_start=week_start,
+            auto_recalculate_if_safe=False,
+        )
+    except PayrollError:
+        return None
 
 
 def _build_payroll_readiness_panel(
     reports: list[PayrollReportResponse],
-    *,
-    aggregated: bool,
 ) -> PayrollReadinessPanel | None:
     if not reports:
         return None
@@ -471,12 +411,6 @@ def _build_payroll_readiness_panel(
     week_start = min(r.period.week_start for r in reports)
     week_end = max(_week_end(r.period.week_start) for r in reports)
 
-    scope_note = None
-    if aggregated and len(reports) > 1:
-        scope_note = (
-            "Summed across each company’s current payroll week (local week start may differ by company)."
-        )
-
     return PayrollReadinessPanel(
         payroll_status=status,
         week_start=week_start,
@@ -491,7 +425,7 @@ def _build_payroll_readiness_panel(
         open_shifts_started_in_week_count=open_shifts_started_in_week_count,
         total_gross=gross_f,
         total_hours_seconds=total_secs,
-        scope_note=scope_note,
+        scope_note=None,
     )
 
 
@@ -529,7 +463,6 @@ def _build_needs_attention_items(
     onboarding_pending: int,
     work_progress_pending: int,
     employees_without_site_access: int,
-    aggregated: bool,
 ) -> list[NeedsAttentionItem]:
     items: list[NeedsAttentionItem] = []
 
@@ -568,11 +501,7 @@ def _build_needs_attention_items(
             if r.alerts.payroll_period_not_calculated or r.period.total_items == 0
         )
         if gap > 0:
-            label = (
-                "Companies with payroll not calculated this week"
-                if aggregated and gap > 1
-                else "Payroll not calculated for current week"
-            )
+            label = "Payroll not calculated for current week"
             items.append(
                 NeedsAttentionItem(
                     code="payroll_not_calculated",
@@ -649,33 +578,27 @@ def build_overview(
 ) -> OverviewResponse:
     summary = build_management_summary(db_session, actor, company_id=company_id)
     now_utc = summary.generated_at
+    scoped_company_id = summary.company_id
+    assert scoped_company_id is not None
 
-    company_targets, aggregated, primary = _resolve_company_targets(db_session, actor, company_id)
+    raw_att = dash_repo.attendance_trend_last_local_days(
+        db_session,
+        scoped_company_id,
+        days=7,
+        now_utc=now_utc,
+    )
+    attendance_trend = [AttendanceTrendPoint.model_validate(x) for x in raw_att]
+    raw_pay = dash_repo.payroll_trend_recent_weeks(db_session, scoped_company_id, weeks=7)
+    payroll_trend = [PayrollTrendPoint.model_validate(x) for x in raw_pay]
 
-    attendance_trend: list[AttendanceTrendPoint] = []
-    payroll_trend: list[PayrollTrendPoint] = []
     recent: list[ActivityFeedItem] = []
-
-    if primary is not None:
-        raw_att = dash_repo.attendance_trend_last_local_days(
-            db_session,
-            primary,
-            days=7,
-            now_utc=now_utc,
-        )
-        attendance_trend = [AttendanceTrendPoint.model_validate(x) for x in raw_att]
-        raw_pay = dash_repo.payroll_trend_recent_weeks(db_session, primary, weeks=7)
-        payroll_trend = [PayrollTrendPoint.model_validate(x) for x in raw_pay]
-
-        recent.extend(_build_admin_activity(db_session, primary, limit=12))
-
+    recent.extend(_build_admin_activity(db_session, scoped_company_id, limit=12))
     if actor.system_role == SystemRole.ADMINISTRATOR:
-        recent.extend(_build_audit_activity(db_session, actor, company_id=primary, limit=12))
-
+        recent.extend(_build_audit_activity(db_session, actor, company_id=scoped_company_id, limit=12))
     recent.sort(key=lambda r: r.occurred_at, reverse=True)
     recent = recent[:20]
 
-    live_scope = _live_snapshot_company_scope(actor, company_id, aggregated, company_targets)
+    live_scope = _live_snapshot_company_scope(actor, scoped_company_id)
     live_snapshot = get_live_attendance_snapshot(
         db_session,
         actor,
@@ -685,9 +608,16 @@ def build_overview(
     )
     today_live = _build_today_live_rows(live_snapshot)
 
-    payroll_reports = _collect_payroll_reports_current_week(db_session, actor, company_targets, now_utc)
-    payroll_readiness = _build_payroll_readiness_panel(payroll_reports, aggregated=aggregated)
+    payroll_report = _collect_payroll_report_current_week(
+        db_session,
+        actor,
+        scoped_company_id,
+        now_utc,
+    )
+    payroll_reports = [payroll_report] if payroll_report is not None else []
+    payroll_readiness = _build_payroll_readiness_panel(payroll_reports)
 
+    company_targets = [scoped_company_id]
     long_open = dash_repo.count_long_open_shifts_for_companies(
         db_session,
         company_targets,
@@ -696,16 +626,15 @@ def build_overview(
     missing_rate = dash_repo.count_employees_missing_hourly_rate_for_companies(db_session, company_targets)
     no_site = dash_repo.count_employees_without_site_access_for_companies(db_session, company_targets)
 
-    review_company = _review_scope_company_id(actor, company_id, aggregated, primary)
     onboarding_pending = count_reviewable_submissions(
         db_session,
         actor=actor,
         status_filter="submitted",
-        company_id=review_company,
+        company_id=scoped_company_id,
     )
     work_progress_pending = count_review_entries(
         db_session,
-        company_id_filter=review_company,
+        company_id_filter=scoped_company_id,
         status_filter=_WORK_PROGRESS_PENDING_REVIEW_STATUS,
     )
 
@@ -717,32 +646,19 @@ def build_overview(
         onboarding_pending=onboarding_pending,
         work_progress_pending=work_progress_pending,
         employees_without_site_access=no_site,
-        aggregated=aggregated,
     )
 
-    needs_attention_scope_note = None
-    if aggregated and len(company_targets) > 1:
-        needs_attention_scope_note = (
-            "Totals combine all companies you can access. Pick a company above for single-company charts."
-        )
-
-    setup_health: SetupHealthPanel | None = None
-    if company_targets:
-        emp, loc, wp = dash_repo.aggregate_active_counts(db_session, company_targets)
-        tp_configured = any(_time_policy_looks_configured(db_session, cid) for cid in company_targets)
-        setup_scope = None
-        if aggregated and len(company_targets) > 1:
-            setup_scope = "Counts summed across all visible companies."
-        setup_health = SetupHealthPanel(
-            active_employee_count=emp,
-            active_location_count=loc,
-            active_workplace_count=wp,
-            employees_missing_hourly_rate_count=missing_rate,
-            employees_without_site_access_count=no_site,
-            time_policy_row_present=True,
-            time_policy_configured=tp_configured,
-            scope_note=setup_scope,
-        )
+    emp, loc, wp = dash_repo.aggregate_active_counts(db_session, company_targets)
+    setup_health = SetupHealthPanel(
+        active_employee_count=emp,
+        active_location_count=loc,
+        active_workplace_count=wp,
+        employees_missing_hourly_rate_count=missing_rate,
+        employees_without_site_access_count=no_site,
+        time_policy_row_present=True,
+        time_policy_configured=_time_policy_looks_configured(db_session, scoped_company_id),
+        scope_note=None,
+    )
 
     base = summary.model_dump()
     return OverviewResponse(
@@ -752,7 +668,7 @@ def build_overview(
         recent_activity=recent,
         long_open_shift_threshold_hours=dash_repo.LONG_OPEN_SHIFT_THRESHOLD_HOURS,
         needs_attention=needs_attention,
-        needs_attention_scope_note=needs_attention_scope_note,
+        needs_attention_scope_note=None,
         today_live=today_live,
         payroll_readiness=payroll_readiness,
         setup_health=setup_health,

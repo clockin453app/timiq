@@ -89,8 +89,8 @@ function linkClass(active: boolean, variant: GroupedNavVariant, withIcon: boolea
         ? "flex min-w-0 max-w-full items-center gap-2 break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium text-[#1f2937] transition-colors"
         : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium text-[#1f2937] transition-colors"
       : withIcon
-        ? "flex min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]"
-        : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]";
+        ? "flex min-h-[44px] min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-3 py-2.5 text-sm font-medium text-[#1f2937]"
+        : "block min-h-[44px] min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-3 py-2.5 text-sm font-medium text-[#1f2937]";
   if (active) {
     return `${base} border-[var(--color-border-dark)] bg-[#e5e7eb] font-semibold text-[#111827]`;
   }

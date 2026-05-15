@@ -4,7 +4,7 @@ import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { Button, Input, PageHeader, Sheet, SheetBody } from "../../components/ui";
-import { canAccessManagement, LogoutButton, useCurrentUser } from "../../features/auth";
+import { canAccessManagement, useCurrentUser } from "../../features/auth";
 import {
   fetchPrivacyInventory,
   fetchPrivacyMeSummary,
@@ -142,7 +142,6 @@ export function PrivacyClient() {
   return (
     <Sheet>
       <PageHeader
-        action={<LogoutButton />}
         description="Transparency about data TimIQ holds for you, policy acknowledgement, and privacy requests."
         title="Data & privacy"
       />

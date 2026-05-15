@@ -451,3 +451,103 @@ export function filterNavGroupsForMobileQuickNav(
     }))
     .filter((group) => group.items.length > 0);
 }
+
+/** Consolidated desktop top-bar groups (dropdowns). Messages/profile/settings stay in the top bar chrome. */
+const DESKTOP_TOP_NAV_EMPLOYEE: NavigationGroupDefinition[] = [
+  { id: "desk-home", label: "Home", groupLabelKey: "nav.group.desk_home", items: [DASHBOARD] },
+  {
+    id: "desk-time",
+    label: "Time",
+    groupLabelKey: "nav.group.emp_time",
+    items: [CLOCK, TIME_RECORDS, TIMESHEETS],
+  },
+  { id: "desk-pay", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
+  {
+    id: "desk-work",
+    label: "Work",
+    groupLabelKey: "nav.group.emp_work",
+    items: [SITE_PROGRESS, FORMS, TOOLBOX_TALKS, RAMS],
+  },
+  {
+    id: "desk-more",
+    label: "More",
+    groupLabelKey: "nav.group.desk_more",
+    items: [STARTER_FORM, LEAVE, HELP_CENTRE, PRIVACY_PORTAL],
+  },
+];
+
+const DESKTOP_TOP_NAV_MANAGEMENT: NavigationGroupDefinition[] = [
+  {
+    id: "desk-home",
+    label: "Home",
+    groupLabelKey: "nav.group.desk_home",
+    items: [DASHBOARD, OVERVIEW],
+  },
+  {
+    id: "desk-work",
+    label: "Work",
+    groupLabelKey: "nav.group.desk_work",
+    items: [CLOCK, TIME_RECORDS, SITE_PROGRESS, WORK_PROGRESS_REVIEW],
+  },
+  {
+    id: "desk-people",
+    label: "People",
+    groupLabelKey: "nav.group.mgmt_people",
+    items: [EMPLOYEES, LEAVE_MANAGE, ONBOARDING_REVIEW, CLOCK_SELFIES, PRIVACY_REQUESTS],
+  },
+  {
+    id: "desk-sites",
+    label: "Sites",
+    groupLabelKey: "nav.group.mgmt_sites",
+    items: [COMPANIES, LOCATIONS, SITE_ACCESS],
+  },
+  {
+    id: "desk-attendance",
+    label: "Attendance",
+    groupLabelKey: "nav.group.desk_attendance",
+    items: [LIVE_ATTENDANCE, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
+  },
+  {
+    id: "desk-payroll",
+    label: "Payroll",
+    groupLabelKey: "nav.group.desk_payroll",
+    items: [PAYROLL_REPORT, CIS_WORKPLACES, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
+  },
+  {
+    id: "desk-system",
+    label: "System",
+    groupLabelKey: "nav.group.desk_system",
+    items: [
+      AUDIT_LOG,
+      SYSTEM_HEALTH,
+      SETTINGS,
+      HELP_CENTRE,
+      FORMS_MANAGE,
+      FORMS_REVIEW,
+      TOOLBOX_TALKS_MANAGE,
+      RAMS_MANAGE,
+    ],
+  },
+];
+
+export function getDesktopTopNavigationGroups(
+  role: SystemRole,
+  options?: { limitedAccess?: boolean },
+): NavigationGroupDefinition[] {
+  if (options?.limitedAccess && role === "employee") {
+    return LIMITED_ACCESS_NAV_GROUP_DEFS.map((group) => filterGroup(role, group)).filter(
+      (g): g is NavigationGroupDefinition => g !== null,
+    );
+  }
+  if (role === "employee") {
+    return DESKTOP_TOP_NAV_EMPLOYEE.map((group) => filterGroup(role, group)).filter(
+      (g): g is NavigationGroupDefinition => g !== null,
+    );
+  }
+  if (role === "admin" || role === "administrator") {
+    return DESKTOP_TOP_NAV_MANAGEMENT.map((group) => filterGroup(role, group)).filter(
+      (g): g is NavigationGroupDefinition => g !== null,
+    );
+  }
+  return [];
+}

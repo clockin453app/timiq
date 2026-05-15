@@ -4,9 +4,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
-import { isAdministrator, LogoutButton, useCurrentUser } from "../../features/auth";
+import { isAdministrator, useCurrentUser } from "../../features/auth";
 import { fetchManagementOverview, type OverviewData } from "../../features/dashboard/api";
+import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import { formatMoneyGBP } from "../../features/payroll/format";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 
@@ -142,7 +144,7 @@ export function OverviewClient() {
   const user = useCurrentUser();
   const adminAll = isAdministrator(user);
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyFilter, setCompanyFilter] = useState("");
+  const companyScope = useAdministratorCompanyScope(user, companies);
   const [data, setData] = useState<OverviewData | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -152,8 +154,8 @@ export function OverviewClient() {
     if (!adminAll) {
       return null;
     }
-    return companyFilter || null;
-  }, [adminAll, companyFilter]);
+    return companyScope.companyId;
+  }, [adminAll, companyScope.companyId]);
 
   useEffect(() => {
     if (!adminAll) {
@@ -179,6 +181,13 @@ export function OverviewClient() {
 
   const load = useCallback(
     async (silent: boolean) => {
+      if (adminAll && !companyQuery) {
+        setData(null);
+        setError("");
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
       if (!silent) {
         setLoading(true);
       } else {
@@ -198,7 +207,7 @@ export function OverviewClient() {
         setRefreshing(false);
       }
     },
-    [companyQuery],
+    [adminAll, companyQuery],
   );
 
   useEffect(() => {
@@ -247,22 +256,12 @@ export function OverviewClient() {
       <PageHeader
         action={
           <div className="flex flex-wrap items-center gap-2">
-            {adminAll && companies.length > 1 ? (
-              <label className="flex items-center gap-2 text-xs text-[var(--color-text-muted)]">
-                <span className="hidden sm:inline">Company</span>
-                <select
-                  className="max-w-[10rem] rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-2 py-1 text-xs text-[var(--color-text)] sm:max-w-[14rem]"
-                  value={companyFilter}
-                  onChange={(e) => setCompanyFilter(e.target.value)}
-                >
-                  <option value="">All companies</option>
-                  {companies.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            {adminAll && companyScope.companies.length > 0 ? (
+              <CompanySelector
+                companies={companyScope.companies}
+                onChange={companyScope.setCompanyId}
+                value={companyScope.companyId}
+              />
             ) : null}
             <Button
               disabled={refreshing || loading}
@@ -272,7 +271,6 @@ export function OverviewClient() {
             >
               {refreshing ? "Refreshing…" : "Refresh"}
             </Button>
-            <LogoutButton />
           </div>
         }
         description="Operational snapshot for your organisation. Data refreshes automatically while this tab is visible."
@@ -280,17 +278,20 @@ export function OverviewClient() {
       />
 
       <SheetBody className="min-w-0 space-y-5 lg:p-6">
+        {companyScope.scopeLabel ? (
+          <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
+        ) : null}
         {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading overview…</p> : null}
         {error ? <p className="text-sm text-[var(--color-danger-700)]">{error}</p> : null}
 
+        {adminAll && companyScope.needsCompanySelection && !loading ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
+            Select a company to view its dashboard.
+          </div>
+        ) : null}
+
         {data && !loading ? (
           <>
-            {data.aggregated_companies ? (
-              <p className="text-xs text-[var(--color-text-muted)]">
-                Figures combine all companies. Choose a company above to scope attendance charts, payroll trends, and
-                activity to a single company.
-              </p>
-            ) : null}
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <OverviewCard

@@ -1,5 +1,8 @@
 import uuid
 
+from sqlalchemy.orm import Session
+
+from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.service import can_manage_user
 
@@ -16,8 +19,23 @@ def assert_target_is_manageable_employee(actor: User, target: User) -> None:
         raise LiveAttendancePermissionError("You cannot manage this employee.")
 
 
-def assert_administrator_company_scope(actor: User, company_id: uuid.UUID | None) -> None:
-    if company_id is None:
-        return
-    if actor.system_role != SystemRole.ADMINISTRATOR:
-        raise LiveAttendancePermissionError("Only an administrator may filter by company.")
+def resolve_live_attendance_company_id(
+    db_session: Session,
+    actor: User,
+    company_id: uuid.UUID | None,
+) -> uuid.UUID | None:
+    """
+    Company admin: implicit own company (company_id query ignored).
+    Administrator: company_id required.
+    """
+    if actor.system_role == SystemRole.ADMIN:
+        if actor.company_id is None:
+            raise LiveAttendancePermissionError("Admin user is not assigned to a company.")
+        if company_id is not None and company_id != actor.company_id:
+            raise LiveAttendancePermissionError("You cannot access another company's data.")
+        return None
+
+    try:
+        return resolve_operational_company_id(db_session, actor, company_id)
+    except CompanyScopeError as exc:
+        raise LiveAttendancePermissionError(str(exc)) from exc

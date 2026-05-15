@@ -17,7 +17,9 @@ import {
   TableRow,
 } from "../../components/ui";
 import { isAdministrator, RoleGuard, useCurrentUser } from "../../features/auth";
+import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import {
   fetchLiveAttendance,
   postManualClockIn,
@@ -105,10 +107,10 @@ export function LiveAttendanceClient() {
 
   const [snapshot, setSnapshot] = useState<LiveAttendanceResponse | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
+  const companyScope = useAdministratorCompanyScope(currentUser, companies);
   const [locations, setLocations] = useState<Location[]>([]);
   const [siteAccess, setSiteAccess] = useState<SiteAccessRecord[]>([]);
 
-  const [companyFilter, setCompanyFilter] = useState("");
   const [locationFilter, setLocationFilter] = useState("");
   const [searchInput, setSearchInput] = useState("");
   const [searchDebounced, setSearchDebounced] = useState("");
@@ -141,8 +143,12 @@ export function LiveAttendanceClient() {
   }, []);
 
   const loadCommonData = useCallback(async () => {
+    const locationCompanyId = adminAllCompanies ? companyScope.companyId : currentUser?.company_id ?? null;
     try {
-      const [locData, accessData] = await Promise.all([listLocations(), listSiteAccessRecords()]);
+      const [locData, accessData] = await Promise.all([
+        listLocations(locationCompanyId),
+        listSiteAccessRecords(),
+      ]);
       setLocations(locData);
       setSiteAccess(accessData);
     } catch {
@@ -158,15 +164,28 @@ export function LiveAttendanceClient() {
         setCompanies([]);
       }
     }
-  }, [adminAllCompanies]);
+  }, [adminAllCompanies, companyScope.companyId, currentUser?.company_id]);
 
   useEffect(() => {
     void loadCommonData();
   }, [loadCommonData]);
 
+  useEffect(() => {
+    if (adminAllCompanies) {
+      setLocationFilter("");
+    }
+  }, [adminAllCompanies, companyScope.companyId]);
+
   const loadSnapshot = useCallback(
     async (opts?: { silent?: boolean }) => {
       const silent = Boolean(opts?.silent);
+      if (adminAllCompanies && !companyScope.companyId) {
+        setSnapshot(null);
+        setLoadError("");
+        setIsInitialLoad(false);
+        setIsRefreshing(false);
+        return;
+      }
       if (!silent) {
         setIsInitialLoad(true);
       } else {
@@ -175,7 +194,7 @@ export function LiveAttendanceClient() {
       setLoadError("");
       try {
         const data = await fetchLiveAttendance({
-          companyId: adminAllCompanies && companyFilter ? companyFilter : undefined,
+          companyId: adminAllCompanies ? companyScope.companyId ?? undefined : undefined,
           locationId: locationFilter || undefined,
           search: searchDebounced || undefined,
         });
@@ -190,7 +209,7 @@ export function LiveAttendanceClient() {
         setIsRefreshing(false);
       }
     },
-    [adminAllCompanies, companyFilter, locationFilter, searchDebounced],
+    [adminAllCompanies, companyScope.companyId, locationFilter, searchDebounced],
   );
 
   useEffect(() => {
@@ -221,17 +240,14 @@ export function LiveAttendanceClient() {
   }, [locations]);
 
   const locationFilterOptions = useMemo(() => {
-    if (adminAllCompanies && companyFilter) {
-      return filteredLocationOptions.filter((loc) => loc.company_id === companyFilter);
+    if (adminAllCompanies && companyScope.companyId) {
+      return filteredLocationOptions.filter((loc) => loc.company_id === companyScope.companyId);
     }
     if (!adminAllCompanies && currentUser?.company_id) {
       return filteredLocationOptions.filter((loc) => loc.company_id === currentUser.company_id);
     }
-    if (adminAllCompanies && !companyFilter) {
-      return filteredLocationOptions;
-    }
     return filteredLocationOptions;
-  }, [adminAllCompanies, companyFilter, currentUser?.company_id, filteredLocationOptions]);
+  }, [adminAllCompanies, companyScope.companyId, currentUser?.company_id, filteredLocationOptions]);
 
   const assignableLocationsForUser = useMemo(() => {
     if (!modalInUser?.company_id) {
@@ -419,19 +435,19 @@ export function LiveAttendanceClient() {
                 </select>
               </label>
 
-              {adminAllCompanies ? (
+              {adminAllCompanies && companyScope.companies.length > 0 ? (
                 <label className="block text-xs font-bold text-[var(--color-text)]">
                   Company
                   <select
                     className="mt-0.5 h-9 w-full border border-[var(--color-border-dark)] text-sm sm:mt-1 sm:h-10 bg-[var(--color-input)] px-2 text-sm"
-                    value={companyFilter}
+                    value={companyScope.companyId ?? ""}
                     onChange={(event) => {
-                      setCompanyFilter(event.target.value);
+                      companyScope.setCompanyId(event.target.value);
                       setLocationFilter("");
                     }}
                   >
-                    <option value="">All companies</option>
-                    {companies.map((co) => (
+                    <option value="">Select a company…</option>
+                    {companyScope.companies.map((co) => (
                       <option key={co.id} value={co.id}>
                         {co.name}
                       </option>
@@ -443,6 +459,16 @@ export function LiveAttendanceClient() {
               )}
             </div>
           </div>
+
+          {companyScope.scopeLabel ? (
+            <p className="mb-3 text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
+          ) : null}
+
+          {adminAllCompanies && companyScope.needsCompanySelection && !isInitialLoad ? (
+            <div className="mb-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+              Select a company to view live attendance.
+            </div>
+          ) : null}
 
           {loadError ? (
             <div className="mb-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">

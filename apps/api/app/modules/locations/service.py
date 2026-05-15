@@ -39,14 +39,22 @@ class LocationCompanyNotFoundError(LocationError):
 def list_locations_visible_to_user(
     db_session: Session,
     actor: User,
+    *,
+    company_id: uuid.UUID | None = None,
 ) -> list[Location]:
-    if actor.system_role == SystemRole.ADMINISTRATOR:
-        return list_locations(db_session)
+    if actor.system_role == SystemRole.EMPLOYEE:
+        if actor.company_id is None:
+            return []
+        return list_locations_by_company(db_session, actor.company_id)
 
-    if actor.company_id is None:
-        return []
+    from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
 
-    return list_locations_by_company(db_session, actor.company_id)
+    try:
+        scoped = resolve_operational_company_id(db_session, actor, company_id)
+    except CompanyScopeError as exc:
+        raise LocationError(str(exc)) from exc
+
+    return list_locations_by_company(db_session, scoped)
 
 
 def resolve_location_company_id(

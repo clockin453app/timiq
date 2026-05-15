@@ -24,8 +24,12 @@ import {
   type AuthUser,
   type SystemRole,
 } from "../../features/auth";
+import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 
+import { employeeRoleLabel, genericStatusLabel } from "../../lib/i18n/display-labels";
+import { useT } from "../../lib/i18n";
 import { EmployeeDetailPanel } from "./employee-detail-panel";
 
 function formatEmployeeDisplayName(user: AuthUser): string {
@@ -37,9 +41,6 @@ function formatEmployeeDisplayName(user: AuthUser): string {
   return "—";
 }
 
-function formatRole(role: string) {
-  return role.charAt(0).toUpperCase() + role.slice(1);
-}
 
 function getRoleOptions(currentUser: AuthUser): SystemRole[] {
   if (isAdministrator(currentUser)) {
@@ -50,6 +51,7 @@ function getRoleOptions(currentUser: AuthUser): SystemRole[] {
 }
 
 export function EmployeesClient() {
+  const t = useT();
   const currentUser = useCurrentUser();
 
   const [users, setUsers] = useState<AuthUser[]>([]);
@@ -77,6 +79,8 @@ export function EmployeesClient() {
 
   const roleOptions = getRoleOptions(currentUser);
 
+  const adminView = isAdministrator(currentUser);
+  const companyScope = useAdministratorCompanyScope(currentUser, companies);
   const showCompanySelector =
     isAdministrator(currentUser) && systemRole !== "administrator";
 
@@ -107,14 +111,18 @@ export function EmployeesClient() {
     });
   }, [employeeSearch, users]);
 
-  async function loadUsers() {
+  async function loadUsers(viewCompanyId: string | null) {
     setIsLoading(true);
 
     try {
-      const loadedUsers = await listManagedUsers();
+      if (adminView && !viewCompanyId) {
+        setUsers([]);
+        return;
+      }
+      const loadedUsers = await listManagedUsers(adminView ? viewCompanyId : undefined);
       setUsers(loadedUsers);
     } catch {
-      setErrorMessage("Could not load users.");
+      setErrorMessage(t("employees.load_error", "Could not load employees."));
     } finally {
       setIsLoading(false);
     }
@@ -124,21 +132,25 @@ export function EmployeesClient() {
     try {
       const loadedCompanies = await listCompanies();
       setCompanies(loadedCompanies);
-
-      const firstActiveCompany = loadedCompanies.find((company) => company.is_active);
-
-      if (firstActiveCompany) {
-        setCompanyId((currentValue) => currentValue || firstActiveCompany.id);
-      }
     } catch {
       // Company list is only required for administrator company selection.
     }
   }
 
   useEffect(() => {
-    loadUsers();
-    loadCompaniesForPage();
+    void loadCompaniesForPage();
   }, []);
+
+  useEffect(() => {
+    const viewId = adminView ? companyScope.companyId : null;
+    void loadUsers(viewId);
+  }, [adminView, companyScope.companyId]);
+
+  useEffect(() => {
+    if (companyScope.companyId) {
+      setCompanyId(companyScope.companyId);
+    }
+  }, [companyScope.companyId]);
 
   async function handleInviteUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -153,7 +165,7 @@ export function EmployeesClient() {
     const selectedCompanyId = showCompanySelector ? companyId : undefined;
 
     if (showCompanySelector && !selectedCompanyId) {
-      setInviteError("Select a company for this user.");
+      setInviteError(t("employees.select_company_required", "Select a company for this user."));
       setIsInviting(false);
       return;
     }
@@ -168,15 +180,17 @@ export function EmployeesClient() {
         personal_message: invitePersonalMessage.trim() || null,
       });
 
-      setInviteSuccess(`Invitation sent to ${res.user.email}.`);
+      setInviteSuccess(
+        t("employees.invited_success", "Invitation sent to {{email}}.", { email: res.user.email }),
+      );
       setInviteDevLink(res.dev_invite_link ?? null);
       setInviteEmail("");
       setInviteFirstName("");
       setInviteLastName("");
       setInvitePersonalMessage("");
-      await loadUsers();
+      await loadUsers(adminView ? companyScope.companyId : null);
     } catch (error) {
-      setInviteError(error instanceof Error ? error.message : "Could not send invite.");
+      setInviteError(error instanceof Error ? error.message : t("employees.invite_error", "Could not send invite."));
     } finally {
       setIsInviting(false);
     }
@@ -195,7 +209,7 @@ export function EmployeesClient() {
     const selectedCompanyId = showCompanySelector ? companyId : undefined;
 
     if (showCompanySelector && !selectedCompanyId) {
-      setErrorMessage("Select a company for this user.");
+      setErrorMessage(t("employees.select_company_required", "Select a company for this user."));
       setIsCreating(false);
       return;
     }
@@ -209,7 +223,9 @@ export function EmployeesClient() {
         company_id: selectedCompanyId,
       });
 
-      setSuccessMessage(`Created ${createdUser.email}`);
+      setSuccessMessage(
+        t("employees.created_success", "Created {{email}}", { email: createdUser.email }),
+      );
       setEmail("");
       setPassword("Employee12345");
       setSystemRole("employee");
@@ -220,10 +236,10 @@ export function EmployeesClient() {
         setCompanyId(firstActiveCompany.id);
       }
 
-      await loadUsers();
+      await loadUsers(adminView ? companyScope.companyId : null);
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Could not create user.",
+        error instanceof Error ? error.message : t("employees.create_user_error", "Could not create user."),
       );
     } finally {
       setIsCreating(false);
@@ -233,8 +249,11 @@ export function EmployeesClient() {
   return (
     <Sheet>
       <PageHeader
-        title="Employees"
-        description="Create, review, edit, activate, deactivate, and reset user accounts."
+        title={t("employees.title", "Employees")}
+        description={t(
+          "employees.description",
+          "Create, review, edit, activate, deactivate, and reset user accounts.",
+        )}
       />
 
       <SheetBody className="min-w-0">
@@ -242,15 +261,32 @@ export function EmployeesClient() {
           allowedRoles={["administrator", "admin"]}
           fallback={
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2 text-sm">
-              You do not have permission to manage users.
+              {t("employees.permission_denied", "You do not have permission to manage users.")}
             </div>
           }
         >
-          <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
-            {isAdministrator(currentUser)
-              ? "You can create users for any company."
-              : "You can create Employee accounts for your company only."}
-          </div>
+          {adminView && companyScope.companies.length > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <CompanySelector
+                companies={companyScope.companies}
+                onChange={companyScope.setCompanyId}
+                value={companyScope.companyId}
+              />
+              {companyScope.scopeLabel ? (
+                <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
+              {t("employees.scope_company", "You can create Employee accounts for your company only.")}
+            </div>
+          )}
+
+          {adminView && companyScope.needsCompanySelection ? (
+            <div className="mb-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+              Select a company to view its people.
+            </div>
+          ) : null}
 
           <form
             className="mb-4 w-full max-w-[min(48rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
@@ -258,7 +294,7 @@ export function EmployeesClient() {
           >
             <div className={formGridClassName}>
               <label className="block text-xs font-bold text-[var(--color-text)]">
-                Email
+                {t("employees.email", "Email")}
                 <input
                   autoComplete="email"
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
@@ -271,7 +307,7 @@ export function EmployeesClient() {
               </label>
 
               <label className="block text-xs font-bold text-[var(--color-text)]">
-                Temporary password
+                {t("employees.temp_password", "Temporary password")}
                 <input
                   autoComplete="new-password"
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
@@ -284,7 +320,7 @@ export function EmployeesClient() {
               </label>
 
               <label className="block text-xs font-bold text-[var(--color-text)]">
-                Role
+                {t("employees.role", "Role")}
                 <select
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   onChange={(event) => setSystemRole(event.target.value as SystemRole)}
@@ -292,7 +328,7 @@ export function EmployeesClient() {
                 >
                   {roleOptions.map((role) => (
                     <option key={role} value={role}>
-                      {formatRole(role)}
+                      {employeeRoleLabel(t, role)}
                     </option>
                   ))}
                 </select>
@@ -300,7 +336,7 @@ export function EmployeesClient() {
 
               {showCompanySelector ? (
                 <label className="block text-xs font-bold text-[var(--color-text)]">
-                  Company
+                  {t("employees.company", "Company")}
                   <select
                     className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     onChange={(event) => setCompanyId(event.target.value)}
@@ -321,7 +357,9 @@ export function EmployeesClient() {
               <div className="flex flex-col">
                 <span className="mb-1 text-xs font-bold opacity-0">Action</span>
                 <Button className="h-10" disabled={isCreating} type="submit">
-                  {isCreating ? "Creating..." : "Create user"}
+                  {isCreating
+                    ? t("employees.creating", "Creating…")
+                    : t("employees.create_user", "Create user")}
                 </Button>
               </div>
             </div>
@@ -332,15 +370,17 @@ export function EmployeesClient() {
             onSubmit={handleInviteUser}
           >
             <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-              Invite by email
+              {t("employees.invite_section", "Invite by email")}
             </p>
             <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-              Sends an invitation link. The person sets their own password to activate the account. In local
-              development without SMTP, an invite link is shown below after you submit.
+              {t(
+                "employees.invite_help",
+                "Sends an invitation link. The person sets their own password to activate the account. In local development without SMTP, an invite link is shown below after you submit.",
+              )}
             </p>
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <label className="block text-xs font-bold text-[var(--color-text)]">
-                Email
+                {t("employees.email", "Email")}
                 <input
                   autoComplete="email"
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
@@ -352,7 +392,7 @@ export function EmployeesClient() {
                 />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
-                First name (optional)
+                {t("employees.first_name_optional", "First name (optional)")}
                 <input
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   name="invite_fn"
@@ -362,7 +402,7 @@ export function EmployeesClient() {
                 />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
-                Last name (optional)
+                {t("employees.last_name_optional", "Last name (optional)")}
                 <input
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   name="invite_ln"
@@ -372,7 +412,7 @@ export function EmployeesClient() {
                 />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)] md:col-span-2">
-                Personal message (optional, included in invite email)
+                {t("employees.invite_message_long", "Personal message (optional, included in invite email)")}
                 <input
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   name="invite_pm"
@@ -383,11 +423,13 @@ export function EmployeesClient() {
               </label>
             </div>
             <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-              Uses the same role and company selection as &quot;Create user&quot; above.
+              {t("employees.invite_same_selection", "Uses the same role and company selection as \"Create user\" above.")}
             </p>
             <div className="mt-3">
               <Button disabled={isInviting} type="submit">
-                {isInviting ? "Sending invite…" : "Send invitation"}
+                {isInviting
+                  ? t("employees.sending_invite", "Sending invite…")
+                  : t("employees.send_invitation", "Send invitation")}
               </Button>
             </div>
             {inviteError ? (
@@ -402,18 +444,20 @@ export function EmployeesClient() {
             ) : null}
             {inviteDevLink ? (
               <div className="mt-3 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-xs">
-                <p className="font-bold text-[var(--color-text)]">Development invite link</p>
+                <p className="font-bold text-[var(--color-text)]">
+                  {t("employees.dev_invite_link", "Development invite link")}
+                </p>
                 <p className="mt-1 break-all text-[var(--color-text-muted)]">{inviteDevLink}</p>
               </div>
             ) : null}
           </form>
 
           <label className="mb-3 block text-xs font-bold text-[var(--color-text)]">
-            Search employees
+            {t("employees.search", "Search employees")}
             <input
               className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm md:max-w-md"
               onChange={(event) => setEmployeeSearch(event.target.value)}
-              placeholder="Filter by name or email"
+              placeholder={t("employees.search_filter_placeholder", "Filter by name or email")}
               type="search"
               value={employeeSearch}
             />
@@ -435,33 +479,35 @@ export function EmployeesClient() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead className="w-[min(11rem,28vw)] max-w-[11rem]">Email</TableHead>
-                <TableHead className="w-[min(9rem,24vw)]">Job title</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>{t("employees.col_name", "Name")}</TableHead>
+                <TableHead className="w-[min(11rem,28vw)] max-w-[11rem]">
+                  {t("employees.col_email", "Email")}
+                </TableHead>
+                <TableHead className="w-[min(9rem,24vw)]">{t("employees.col_job_title", "Job title")}</TableHead>
+                <TableHead>{t("employees.col_role", "Role")}</TableHead>
+                <TableHead>{t("employees.col_status", "Status")}</TableHead>
+                <TableHead>{t("employees.col_company", "Company")}</TableHead>
+                <TableHead>{t("employees.col_created", "Created")}</TableHead>
+                <TableHead>{t("employees.col_actions", "Actions")}</TableHead>
               </TableRow>
             </TableHeader>
 
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={8}>Loading users...</TableCell>
+                  <TableCell colSpan={8}>{t("employees.loading_users", "Loading users…")}</TableCell>
                 </TableRow>
               ) : null}
 
               {!isLoading && users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8}>No users found.</TableCell>
+                  <TableCell colSpan={8}>{t("employees.no_users", "No users found.")}</TableCell>
                 </TableRow>
               ) : null}
 
               {!isLoading && users.length > 0 && filteredUsers.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8}>No users match this filter.</TableCell>
+                  <TableCell colSpan={8}>{t("employees.no_filter_match", "No users match this filter.")}</TableCell>
                 </TableRow>
               ) : null}
 
@@ -478,11 +524,17 @@ export function EmployeesClient() {
                         <TableCell className="max-w-[10rem] truncate text-sm text-[var(--color-text)]">
                           {(userItem.profile_job_title ?? "").trim() || "—"}
                         </TableCell>
-                        <TableCell>{formatRole(userItem.system_role)}</TableCell>
-                        <TableCell>{userItem.is_active ? "Active" : "Inactive"}</TableCell>
+                        <TableCell>{employeeRoleLabel(t, userItem.system_role)}</TableCell>
+                        <TableCell>
+                          {userItem.is_active
+                            ? genericStatusLabel(t, "active")
+                            : genericStatusLabel(t, "inactive")}
+                        </TableCell>
                         <TableCell>
                           {company?.name ??
-                            (userItem.company_id ? "Assigned company" : "Global")}
+                            (userItem.company_id
+                              ? t("employees.assigned_company", "Assigned company")
+                              : t("employees.global_scope", "Global"))}
                         </TableCell>
                         <TableCell>
                           {new Date(userItem.created_at).toLocaleDateString()}
@@ -497,7 +549,7 @@ export function EmployeesClient() {
                             }}
                             type="button"
                           >
-                            Edit
+                            {t("employees.edit", "Edit")}
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -513,7 +565,7 @@ export function EmployeesClient() {
               companies={companies}
               currentUser={currentUser}
               onClose={() => setPanelUserId(null)}
-              onRefresh={loadUsers}
+              onRefresh={() => loadUsers(adminView ? companyScope.companyId : null)}
               user={panelUser}
             />
           ) : null}

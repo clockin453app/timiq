@@ -26,6 +26,7 @@ import {
   updateCompanyStatus,
   type Company,
 } from "../../features/companies/api";
+import { useT } from "../../lib/i18n";
 
 import { CompanyPayrollTaxModal } from "./company-payroll-tax-modal";
 import { CompanyTimePolicyModal } from "./company-time-policy-modal";
@@ -36,6 +37,7 @@ type EditingCompanyState = {
 };
 
 export function CompaniesClient() {
+  const t = useT();
   const currentUser = useCurrentUser();
 
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -164,8 +166,8 @@ export function CompaniesClient() {
     <>
     <Sheet>
       <PageHeader
-        title="Companies"
-        description="Create, review, edit, activate, and deactivate company accounts."
+        title={t("companies.title", "Companies")}
+        description={t("companies.description", "Create, review, edit, activate, and deactivate company accounts.")}
       />
 
       <SheetBody className="min-w-0">
@@ -228,8 +230,8 @@ export function CompaniesClient() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{t("companies.name", "Name")}</TableHead>
+                <TableHead>{t("companies.status", "Status")}</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead>Default CIS %</TableHead>
                 <TableHead>Actions</TableHead>

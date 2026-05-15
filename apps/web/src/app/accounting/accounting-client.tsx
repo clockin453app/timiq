@@ -20,7 +20,7 @@ import {
   type AccountingSettings,
   type AccountingSettingsUpsert,
 } from "../../features/accounting/api";
-import { isAdministrator, LogoutButton, useCurrentUser, type AuthUser } from "../../features/auth";
+import { isAdministrator, useCurrentUser, type AuthUser } from "../../features/auth";
 import { listBudgetProjects, type BudgetProjectSummary } from "../../features/budgets/api";
 import { listCompanies, type Company } from "../../features/companies/api";
 
@@ -374,7 +374,6 @@ export function AccountingClient() {
   return (
     <Sheet>
       <PageHeader
-        action={<LogoutButton />}
         description="Export-ready CSV for payroll and saved budget costs. No live OAuth sync yet — files are generated on demand and export activity is logged."
         title="Accounting exports"
       />

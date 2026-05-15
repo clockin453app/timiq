@@ -1,4 +1,6 @@
-﻿from sqlalchemy import select
+﻿import uuid
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
@@ -39,6 +41,8 @@ def list_users_visible_to_user(db_session: Session, actor: User) -> list[User]:
 def list_users_visible_to_user_with_profile_names(
     db_session: Session,
     actor: User,
+    *,
+    company_id: uuid.UUID | None = None,
 ) -> list[tuple[User, str | None, str | None, str | None]]:
     ep = EmployeeProfile
     if actor.system_role == SystemRole.ADMINISTRATOR:
@@ -47,6 +51,8 @@ def list_users_visible_to_user_with_profile_names(
             .outerjoin(ep, ep.user_id == User.id)
             .order_by(User.created_at.desc())
         )
+        if company_id is not None:
+            statement = statement.where(User.company_id == company_id)
     elif actor.company_id is None:
         return []
     else:

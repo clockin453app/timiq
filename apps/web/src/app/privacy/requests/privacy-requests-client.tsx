@@ -3,7 +3,7 @@
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { Button, PageHeader, Sheet, SheetBody } from "../../../components/ui";
-import { isAdministrator, LogoutButton, useCurrentUser } from "../../../features/auth";
+import { isAdministrator, useCurrentUser } from "../../../features/auth";
 import {
   fetchPrivacyAdminRequestDetail,
   fetchPrivacyAdminRequests,
@@ -150,7 +150,6 @@ export function PrivacyRequestsClient() {
   return (
     <Sheet>
       <PageHeader
-        action={<LogoutButton />}
         description="Review privacy and data subject requests from employees in scope."
         title="Privacy requests"
       />

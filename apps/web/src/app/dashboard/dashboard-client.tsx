@@ -9,27 +9,9 @@ import { fetchManagementSummary, type ManagementSummary } from "../../features/d
 import { getClockStatus, type ClockStatus } from "../../features/time-clock/api";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
+import { payrollStatusLabel } from "../../lib/i18n/display-labels";
+import { useT } from "../../lib/i18n";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
-
-function describeShift(clock: ClockStatus): string {
-  if (!clock.has_open_shift) {
-    return "No open shift — clock in when your shift starts.";
-  }
-  if (clock.current_break_open) {
-    return "On shift — currently on break.";
-  }
-  return "On shift — working.";
-}
-
-function formatClockLine(status: ClockStatus): string {
-  if (status.status === "clocked_in") {
-    return "Clocked in";
-  }
-  if (status.status === "clocked_out") {
-    return "Clocked out";
-  }
-  return status.status.replace(/_/g, " ");
-}
 
 function StatusBadge(props: { tone: "success" | "warning" | "muted"; children: string }) {
   const toneClass =
@@ -67,11 +49,11 @@ function ManagementMetricLinkCard(props: {
       href={props.href}
     >
       <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+        <p className="min-w-0 truncate text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
           {props.label}
         </p>
         <span
-          className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${toneClass}`}
+          className={`inline-flex shrink-0 items-center rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${toneClass}`}
         >
           {props.badge}
         </span>
@@ -86,15 +68,6 @@ function ManagementMetricLinkCard(props: {
   );
 }
 
-const PAYROLL_HOME_LABEL: Record<string, string> = {
-  not_calculated: "Not calculated",
-  pending: "Pending",
-  pending_approval: "Pending approval",
-  approved: "Approved",
-  paid: "Paid",
-  mixed: "Mixed",
-};
-
 function payrollHomeTone(status: string): "success" | "warning" | "muted" {
   if (status === "paid" || status === "approved") {
     return "success";
@@ -106,6 +79,7 @@ function payrollHomeTone(status: string): "success" | "warning" | "muted" {
 }
 
 function EmployeeDashboard() {
+  const t = useT();
   const user = useCurrentUser();
   const [clockStatus, setClockStatus] = useState<ClockStatus | null>(null);
   const [clockError, setClockError] = useState("");
@@ -130,7 +104,7 @@ function EmployeeDashboard() {
       } catch {
         if (!cancelled) {
           setClockStatus(null);
-          setClockError("Could not load clock status.");
+          setClockError(t("dashboard.clock_error", "Could not load clock status."));
         }
       } finally {
         if (!cancelled) {
@@ -143,111 +117,141 @@ function EmployeeDashboard() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
-  const quickLinks: { label: string; href: string | null; note?: string }[] = [
-    { label: "Clock In / Out", href: "/clock" },
-    { label: "Time Records", href: "/time-records" },
-    { label: "Timesheets", href: "/timesheets" },
-    { label: "Pay History", href: "/pay-history" },
-    { label: "Starter Form", href: "/starter-form" },
-    { label: "Site Progress", href: "/site-progress" },
-    { label: "Profile", href: "/profile" },
+  const quickLinks: { labelKey: string; fallback: string; href: string }[] = [
+    { labelKey: "nav.clock", fallback: "Clock In / Out", href: "/clock" },
+    { labelKey: "nav.time_records", fallback: "Time Records", href: "/time-records" },
+    { labelKey: "nav.timesheets", fallback: "Timesheets", href: "/timesheets" },
+    { labelKey: "nav.pay_history", fallback: "Pay History", href: "/pay-history" },
+    { labelKey: "nav.starter_form", fallback: "Starter Form", href: "/starter-form" },
+    { labelKey: "nav.site_progress", fallback: "Site Progress", href: "/site-progress" },
+    { labelKey: "nav.profile", fallback: "Profile", href: "/profile" },
   ];
+
+  function describeShift(clock: ClockStatus): string {
+    if (!clock.has_open_shift) {
+      return t("dashboard.no_open_shift", "No open shift — clock in when your shift starts.");
+    }
+    if (clock.current_break_open) {
+      return t("dashboard.on_break", "On shift — currently on break.");
+    }
+    return t("dashboard.on_shift", "On shift — working.");
+  }
+
+  function formatClockLine(status: ClockStatus): string {
+    if (status.status === "clocked_in") {
+      return t("dashboard.clocked_in", "Clocked in");
+    }
+    if (status.status === "clocked_out") {
+      return t("dashboard.clocked_out", "Clocked out");
+    }
+    return status.status.replace(/_/g, " ");
+  }
 
   return (
     <Sheet>
-      <PageHeader description={`Signed in as ${user.email}`} title="Dashboard" />
+      <PageHeader
+        description={t("dashboard.signed_in_as", "Signed in as {{email}}", { email: user.email })}
+        title={t("dashboard.emp_title", "Dashboard")}
+      />
 
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
           <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              Clock & shift
+              {t("dashboard.clock_shift_section", "Clock & shift")}
             </p>
             {clockStatus && clockStatus.has_open_shift ? (
-              <StatusBadge tone="success">On shift</StatusBadge>
+              <StatusBadge tone="success">{t("dashboard.on_shift_badge", "On shift")}</StatusBadge>
             ) : clockStatus ? (
-              <StatusBadge tone="muted">Off shift</StatusBadge>
+              <StatusBadge tone="muted">{t("dashboard.off_shift_badge", "Off shift")}</StatusBadge>
             ) : null}
           </div>
 
           <div className="p-4">
-          {clockLoading ? (
-            <p className="text-sm text-[var(--color-text-muted)]">Loading clock status…</p>
-          ) : null}
+            {clockLoading ? (
+              <p className="text-sm text-[var(--color-text-muted)]">
+                {t("dashboard.loading_clock", "Loading clock status…")}
+              </p>
+            ) : null}
 
-          {!clockLoading && clockError ? (
-            <p className="text-sm text-[var(--color-danger-700)]">{clockError}</p>
-          ) : null}
+            {!clockLoading && clockError ? (
+              <p className="text-sm text-[var(--color-danger-700)]">{clockError}</p>
+            ) : null}
 
-          {!clockLoading && clockStatus ? (
-            <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
-              <div className="flex flex-col gap-1">
-                <dt className="text-xs text-[var(--color-text-muted)]">Current clock status</dt>
-                <dd className="font-semibold text-[var(--color-text)]">{formatClockLine(clockStatus)}</dd>
-              </div>
-              <div className="flex flex-col gap-1">
-                <dt className="text-xs text-[var(--color-text-muted)]">Today hours</dt>
-                <dd className="font-semibold text-[var(--color-text)]">Calculated after clock-out</dd>
-              </div>
-              {clockStatus.has_open_shift && clockStatus.open_shift_clock_in_at ? (
-                <div className="flex flex-col gap-1 sm:col-span-2">
-                  <dt className="text-xs text-[var(--color-text-muted)]">Live shift time</dt>
-                  <dd className="font-semibold text-[var(--color-text)]" suppressHydrationWarning>
-                    On shift for{" "}
-                    <span className="font-mono">
-                      {onShiftDurationParts.hms || onShiftDurationParts.compact || "—"}
-                    </span>
-                    {onShiftDurationParts.compact && onShiftDurationParts.hms ? (
-                      <span className="font-normal text-[var(--color-text-muted)]">
-                        {" "}
-                        ({onShiftDurationParts.compact})
-                      </span>
-                    ) : null}
+            {!clockLoading && clockStatus ? (
+              <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
+                <div className="flex min-w-0 flex-col gap-1">
+                  <dt className="text-xs text-[var(--color-text-muted)]">
+                    {t("dashboard.current_clock_status", "Current clock status")}
+                  </dt>
+                  <dd className="font-semibold text-[var(--color-text)]">{formatClockLine(clockStatus)}</dd>
+                </div>
+                <div className="flex min-w-0 flex-col gap-1">
+                  <dt className="text-xs text-[var(--color-text-muted)]">
+                    {t("dashboard.today_hours", "Today hours")}
+                  </dt>
+                  <dd className="font-semibold text-[var(--color-text)]">
+                    {t("dashboard.today_hours_hint", "Calculated after clock-out")}
                   </dd>
                 </div>
-              ) : null}
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <dt className="text-xs text-[var(--color-text-muted)]">Shift status</dt>
-                <dd className="font-semibold text-[var(--color-text)]">{describeShift(clockStatus)}</dd>
-              </div>
-              <div className="flex flex-col gap-1 sm:col-span-2">
-                <dt className="text-xs text-[var(--color-text-muted)]">Assigned active locations</dt>
-                <dd className="font-semibold tabular-nums text-[var(--color-text)]">
-                  {clockStatus.active_location_count}
-                </dd>
-              </div>
-            </dl>
-          ) : null}
+                {clockStatus.has_open_shift && clockStatus.open_shift_clock_in_at ? (
+                  <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
+                    <dt className="text-xs text-[var(--color-text-muted)]">
+                      {t("dashboard.live_shift_time", "Live shift time")}
+                    </dt>
+                    <dd className="font-semibold text-[var(--color-text)]" suppressHydrationWarning>
+                      {t("dashboard.on_shift_for", "On shift for")}{" "}
+                      <span className="font-mono">
+                        {onShiftDurationParts.hms || onShiftDurationParts.compact || "—"}
+                      </span>
+                      {onShiftDurationParts.compact && onShiftDurationParts.hms ? (
+                        <span className="font-normal text-[var(--color-text-muted)]">
+                          {" "}
+                          ({onShiftDurationParts.compact})
+                        </span>
+                      ) : null}
+                    </dd>
+                  </div>
+                ) : null}
+                <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
+                  <dt className="text-xs text-[var(--color-text-muted)]">
+                    {t("dashboard.shift_status", "Shift status")}
+                  </dt>
+                  <dd className="font-semibold text-[var(--color-text)]">{describeShift(clockStatus)}</dd>
+                </div>
+                <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
+                  <dt className="text-xs text-[var(--color-text-muted)]">
+                    {t("dashboard.assigned_locations", "Assigned active locations")}
+                  </dt>
+                  <dd className="font-semibold tabular-nums text-[var(--color-text)]">
+                    {clockStatus.active_location_count}
+                  </dd>
+                </div>
+              </dl>
+            ) : null}
           </div>
         </div>
 
         <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
           <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              Quick links
+              {t("dashboard.quick_links", "Quick links")}
             </p>
           </div>
           <ul className="divide-y divide-[var(--color-border)]">
             {quickLinks.map((item) => (
-              <li key={item.label}>
-                {item.href ? (
-                  <Link
-                    className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
-                    href={item.href}
-                  >
-                    <span>{item.label}</span>
-                    <span aria-hidden className="text-[var(--color-text-soft)]">
-                      →
-                    </span>
-                  </Link>
-                ) : (
-                  <div className="flex flex-wrap items-baseline justify-between gap-2 px-4 py-2.5 text-sm">
-                    <span className="font-medium text-[var(--color-text)]">{item.label}</span>
-                    <span className="text-xs text-[var(--color-text-muted)]">{item.note}</span>
-                  </div>
-                )}
+              <li key={item.href}>
+                <Link
+                  className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+                  href={item.href}
+                >
+                  <span className="min-w-0 truncate">{t(item.labelKey, item.fallback)}</span>
+                  <span aria-hidden className="shrink-0 text-[var(--color-text-soft)]">
+                    →
+                  </span>
+                </Link>
               </li>
             ))}
           </ul>
@@ -258,27 +262,33 @@ function EmployeeDashboard() {
 }
 
 function ManagementDashboard() {
+  const t = useT();
   const [summary, setSummary] = useState<ManagementSummary | null>(null);
   const [loadError, setLoadError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async (silent: boolean) => {
-    if (!silent) {
-      setLoading(true);
-    }
-    setLoadError("");
-    try {
-      const data = await fetchManagementSummary(null);
-      setSummary(data);
-    } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not load dashboard summary.");
+  const load = useCallback(
+    async (silent: boolean) => {
       if (!silent) {
-        setSummary(null);
+        setLoading(true);
       }
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      setLoadError("");
+      try {
+        const data = await fetchManagementSummary(null);
+        setSummary(data);
+      } catch (e) {
+        setLoadError(
+          e instanceof Error ? e.message : t("dashboard.summary_error", "Could not load dashboard summary."),
+        );
+        if (!silent) {
+          setSummary(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    },
+    [t],
+  );
 
   useEffect(() => {
     void load(false);
@@ -300,38 +310,53 @@ function ManagementDashboard() {
 
   return (
     <Sheet>
-      <PageHeader description="Workforce summary and payroll activity." title="Dashboard" />
+      <PageHeader
+        description={t("dashboard.mgmt_description", "Workforce summary and payroll activity.")}
+        title={t("dashboard.mgmt_title", "Dashboard")}
+      />
 
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         <p className="text-sm text-[var(--color-text-muted)]">
-          For charts and deeper operational context, open the{" "}
+          {t("dashboard.overview_hint", "For charts and deeper operational context, open the")}{" "}
           <Link className="font-medium text-[var(--color-link)] underline" href="/overview">
-            Overview
+            {t("dashboard.overview_link", "Overview")}
           </Link>{" "}
-          page.
+          {t("dashboard.page", "page.")}
         </p>
 
-        {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading summary…</p> : null}
+        {loading ? (
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {t("dashboard.loading_summary", "Loading summary…")}
+          </p>
+        ) : null}
         {loadError ? <p className="text-sm text-[var(--color-danger-700)]">{loadError}</p> : null}
 
         {summary && !loading ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <ManagementMetricLinkCard
-              badge={`${rateLabel} today`}
+              badge={t("dashboard.metric_present_today", "{{rate}} today", { rate: rateLabel })}
               badgeTone="success"
               href="/live-attendance"
-              label="Employees clocked in (open shifts)"
-              subline={`${summary.live_present_today} present today of ${summary.live_total_employees} employees in scope`}
+              label={t("dashboard.metric_live_attendance", "Employees clocked in (open shifts)")}
+              subline={t(
+                "dashboard.metric_live_subline",
+                "{{present}} present today of {{total}} employees in scope",
+                {
+                  present: summary.live_present_today,
+                  total: summary.live_total_employees,
+                },
+              )}
               value={String(summary.live_open_shifts)}
             />
             <ManagementMetricLinkCard
-              badge={PAYROLL_HOME_LABEL[summary.payroll_status] ?? summary.payroll_status}
+              badge={payrollStatusLabel(t, summary.payroll_status)}
               badgeTone={payrollHomeTone(summary.payroll_status)}
               href="/payroll-report"
-              label="Weekly payroll period"
+              label={t("dashboard.metric_payroll_week", "Weekly payroll period")}
               subline={
                 summary.payroll_status === "not_calculated"
-                  ? summary.payroll_message ?? "Payroll has not been calculated for this week."
+                  ? (summary.payroll_message ??
+                    t("dashboard.metric_payroll_not_calc", "Payroll has not been calculated for this week."))
                   : summary.payroll_week_start
                     ? formatPayrollWeekUkLabel(summary.payroll_week_start, browserDefaultTimeZone(), false)
                     : undefined
@@ -347,11 +372,13 @@ function ManagementDashboard() {
               }
             />
             <ManagementMetricLinkCard
-              badge="Active"
+              badge={t("dashboard.badge_active", "Active")}
               badgeTone="muted"
               href="/workplaces"
-              label="Workplaces configured"
-              subline={`${summary.active_location_count} active locations`}
+              label={t("dashboard.metric_workplaces", "Workplaces configured")}
+              subline={t("dashboard.metric_active_locations", "{{count}} active locations", {
+                count: summary.active_location_count,
+              })}
               value={String(summary.active_workplace_count)}
             />
           </div>

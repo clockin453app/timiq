@@ -11,6 +11,10 @@ import esPatch from "./locale-patches/es.mjs";
 import plMissing from "./locale-patches/pl-missing.mjs";
 import roMissing from "./locale-patches/ro-missing.mjs";
 import ruPatch from "./locale-patches/ru.mjs";
+import wiring2Es from "./locale-patches/wiring-2-es.mjs";
+import wiring2Pl from "./locale-patches/wiring-2-pl.mjs";
+import wiring2Ro from "./locale-patches/wiring-2-ro.mjs";
+import wiring2Ru from "./locale-patches/wiring-2-ru.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const i18nDir = path.join(__dirname, "..", "src", "lib", "i18n");
@@ -61,13 +65,17 @@ function mergeFull(en, partial, patch) {
 
 const en = loadTsConst(path.join(i18nDir, "en.ts"), "EN_STRINGS");
 const legacyPath = path.join(__dirname, "overrides.legacy.ts");
-const roPartial = loadTsConst(legacyPath, "RO_STRINGS");
-const plPartial = loadTsConst(legacyPath, "PL_STRINGS");
+let roPartial = {};
+let plPartial = {};
+if (fs.existsSync(legacyPath)) {
+  roPartial = loadTsConst(legacyPath, "RO_STRINGS");
+  plPartial = loadTsConst(legacyPath, "PL_STRINGS");
+}
 
-const ro = mergeFull(en, roPartial, roMissing);
-const pl = mergeFull(en, plPartial, plMissing);
-const es = mergeFull(en, {}, esPatch);
-const ru = mergeFull(en, {}, ruPatch);
+const ro = mergeFull(en, roPartial, { ...roMissing, ...wiring2Ro });
+const pl = mergeFull(en, plPartial, { ...plMissing, ...wiring2Pl });
+const es = mergeFull(en, {}, { ...esPatch, ...wiring2Es });
+const ru = mergeFull(en, {}, { ...ruPatch, ...wiring2Ru });
 
 writeLocaleTs(path.join(i18nDir, "ro.ts"), "RO_STRINGS", ro);
 writeLocaleTs(path.join(i18nDir, "pl.ts"), "PL_STRINGS", pl);

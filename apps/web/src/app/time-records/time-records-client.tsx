@@ -21,6 +21,9 @@ import {
   useCurrentUser,
   type AuthUser,
 } from "../../features/auth";
+import { listCompanies, type Company } from "../../features/companies/api";
+import { CompanySelector } from "../../features/companies/company-selector";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import { listLocations, type Location } from "../../features/locations/api";
 import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
@@ -112,7 +115,8 @@ export function TimeRecordsClient() {
   const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [filterUserId, setFilterUserId] = useState("");
-  const [filterCompanyId, setFilterCompanyId] = useState("");
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const companyScope = useAdministratorCompanyScope(user, companies);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
@@ -162,11 +166,16 @@ export function TimeRecordsClient() {
         params.end_date = endDate.trim();
       }
       if (adminMode && management) {
+        if (isAdministrator(user) && !companyScope.companyId) {
+          setRows([]);
+          setLoadError("Select a company to load time records.");
+          return;
+        }
         if (filterUserId.trim()) {
           params.user_id = filterUserId.trim();
         }
-        if (isAdministrator(user) && filterCompanyId.trim()) {
-          params.company_id = filterCompanyId.trim();
+        if (isAdministrator(user) && companyScope.companyId) {
+          params.company_id = companyScope.companyId;
         }
         const data = await listAdminTimeRecords(params);
         setRows(data);
@@ -189,7 +198,9 @@ export function TimeRecordsClient() {
     let cancelled = false;
     (async () => {
       try {
-        const users = await listManagedUsers();
+        const users = await listManagedUsers(
+          isAdministrator(user) ? companyScope.companyId : undefined,
+        );
         if (!cancelled) {
           setManagedUsers(users);
         }
@@ -202,7 +213,29 @@ export function TimeRecordsClient() {
     return () => {
       cancelled = true;
     };
-  }, [management, adminMode]);
+  }, [management, adminMode, user, companyScope.companyId]);
+
+  useEffect(() => {
+    if (!isAdministrator(user)) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await listCompanies();
+        if (!cancelled) {
+          setCompanies(rows.filter((c) => c.is_active));
+        }
+      } catch {
+        if (!cancelled) {
+          setCompanies([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     if (!management || !adminMode) {
@@ -211,7 +244,16 @@ export function TimeRecordsClient() {
     let cancelled = false;
     (async () => {
       try {
-        const locs = await listLocations();
+        const locCompanyId = isAdministrator(user)
+          ? companyScope.companyId
+          : user.company_id ?? null;
+        if (isAdministrator(user) && !locCompanyId) {
+          if (!cancelled) {
+            setLocations([]);
+          }
+          return;
+        }
+        const locs = await listLocations(locCompanyId);
         if (!cancelled) {
           setLocations(locs);
         }
@@ -224,7 +266,7 @@ export function TimeRecordsClient() {
     return () => {
       cancelled = true;
     };
-  }, [management, adminMode]);
+  }, [management, adminMode, user, companyScope.companyId]);
 
   useEffect(() => {
     loadRecords();
@@ -492,17 +534,15 @@ export function TimeRecordsClient() {
                   ))}
                 </select>
               </label>
-              {isAdministrator(user) ? (
-                <label className="block min-w-0 w-full flex-1 text-xs font-bold text-[var(--color-text)]">
-                  Company ID (optional)
-                  <input
-                    className="mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 font-mono text-xs"
-                    onChange={(event) => setFilterCompanyId(event.target.value)}
-                    placeholder="UUID"
-                    type="text"
-                    value={filterCompanyId}
+              {isAdministrator(user) && companyScope.companies.length > 0 ? (
+                <div className="flex min-w-0 flex-1 flex-col justify-end">
+                  <CompanySelector
+                    companies={companyScope.companies}
+                    label="Company"
+                    onChange={companyScope.setCompanyId}
+                    value={companyScope.companyId}
                   />
-                </label>
+                </div>
               ) : null}
             </div>
           ) : null}

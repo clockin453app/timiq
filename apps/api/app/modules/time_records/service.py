@@ -303,8 +303,11 @@ def list_time_records_admin(
         if not can_view_time_record_shift_owner(actor, target):
             raise TimeRecordsPermissionError("You cannot view this user's time records.")
 
-    filter_company = company_id if actor.system_role == SystemRole.ADMINISTRATOR else None
-    if actor.system_role == SystemRole.ADMIN:
+    if actor.system_role == SystemRole.ADMINISTRATOR:
+        filter_company = _resolve_timesheet_company_scope(db_session, actor, company_id)
+    elif actor.system_role == SystemRole.ADMIN:
+        filter_company = None
+    else:
         filter_company = None
 
     rows = list_time_shifts_for_records(
@@ -493,19 +496,14 @@ def _resolve_timesheet_company_scope(
     actor: User,
     company_id: uuid.UUID | None,
 ) -> uuid.UUID:
-    if actor.system_role == SystemRole.ADMIN:
-        if actor.company_id is None:
-            raise TimeRecordsPermissionError("Admin user is not assigned to a company.")
-        if company_id is not None and company_id != actor.company_id:
-            raise TimeRecordsPermissionError("You cannot view another company.")
-        return actor.company_id
-    if actor.system_role == SystemRole.ADMINISTRATOR:
-        if company_id is None:
-            raise ValueError("company_id is required.")
-        if get_company_by_id(db_session, company_id) is None:
-            raise ValueError("Company not found.")
-        return company_id
-    raise TimeRecordsPermissionError("You cannot view this resource.")
+    from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
+
+    try:
+        return resolve_operational_company_id(db_session, actor, company_id)
+    except CompanyScopeError as exc:
+        if actor.system_role in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+            raise TimeRecordsPermissionError(str(exc)) from exc
+        raise TimeRecordsPermissionError("You cannot view this resource.") from exc
 
 
 class _TimesheetDayAgg:

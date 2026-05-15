@@ -8,7 +8,6 @@ import {
   useLayoutEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from "react";
 
 import { Badge, Button, Input, PageHeader, SheetBody } from "../../components/ui";
@@ -74,11 +73,7 @@ function sectionVisibleForUserRole(section: GuideSection, role: "administrator" 
   return section.audience.includes("employee");
 }
 
-type HelpCentreClientProps = {
-  logoutAction: ReactNode;
-};
-
-export function HelpCentreClient({ logoutAction }: HelpCentreClientProps) {
+export function HelpCentreClient() {
   const { t } = useI18n();
   const user = useCurrentUser();
 
@@ -190,11 +185,7 @@ export function HelpCentreClient({ logoutAction }: HelpCentreClientProps) {
 
   return (
     <>
-      <PageHeader
-        action={logoutAction}
-        description={t("guide.subtitle")}
-        title={t("guide.title")}
-      />
+      <PageHeader description={t("guide.subtitle")} title={t("guide.title")} />
 
       <div className="timiq-help-print-toolbar border-b border-[var(--color-border)] bg-[var(--color-sheet)] px-3 py-3 sm:px-4 md:px-5">
         <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">

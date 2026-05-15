@@ -33,8 +33,13 @@ export type UpdateLocationRequest = {
   is_active: boolean;
 };
 
-export async function listLocations(): Promise<Location[]> {
-  const response = await fetch(`${API_URL}/api/locations`, {
+export async function listLocations(companyId?: string | null): Promise<Location[]> {
+  const params = new URLSearchParams();
+  if (companyId?.trim()) {
+    params.set("company_id", companyId.trim());
+  }
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/locations${qs ? `?${qs}` : ""}`, {
     method: "GET",
     credentials: "include",
   });

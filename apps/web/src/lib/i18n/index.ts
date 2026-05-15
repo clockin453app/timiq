@@ -3,3 +3,4 @@ export { I18nProvider, useI18n, useT } from "./context";
 export { normalizeAppLocale } from "./locales";
 export type { AppLocale } from "./types";
 export { APP_LOCALES } from "./types";
+export { employeeRoleLabel, genericStatusLabel, payrollStatusLabel } from "./display-labels";

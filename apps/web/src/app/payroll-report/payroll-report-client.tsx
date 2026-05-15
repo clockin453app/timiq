@@ -17,6 +17,7 @@ import {
 } from "../../components/ui";
 import { isAdministrator, listManagedUsers, useCurrentUser, type AuthUser } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import {
   approveAllPending,
   approvePayrollItem,
@@ -49,6 +50,8 @@ import {
   browserDefaultTimeZone,
   mondayWeekStartIso,
 } from "../../features/timesheets/week-utils";
+import { payrollStatusLabel } from "../../lib/i18n/display-labels";
+import { useT } from "../../lib/i18n";
 
 function resolveCompanyId(user: AuthUser, override: string | null): string | null {
   if (isAdministrator(user)) {
@@ -57,11 +60,11 @@ function resolveCompanyId(user: AuthUser, override: string | null): string | nul
   return user.company_id ?? null;
 }
 
-function statusBadgeLabel(status: string): string {
-  if (status === "pending") {
-    return "Pending";
-  }
-  return status.charAt(0).toUpperCase() + status.slice(1);
+function statusBadgeLabel(
+  t: (key: string, fallback?: string) => string,
+  status: string,
+): string {
+  return payrollStatusLabel(t, status);
 }
 
 function lateUnpaidBlockForUser(
@@ -169,9 +172,10 @@ function PayrollEmployeeIdentity(props: {
 }
 
 export function PayrollReportClient() {
+  const t = useT();
   const user = useCurrentUser();
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyOverride, setCompanyOverride] = useState<string | null>(null);
+  const companyScope = useAdministratorCompanyScope(user, companies);
   const [weekStart, setWeekStart] = useState(() =>
     mondayWeekStartIso(new Date(), browserDefaultTimeZone()),
   );
@@ -204,8 +208,8 @@ export function PayrollReportClient() {
   const expandedUserIdRef = useRef<string | null>(null);
 
   const activeCompanyId = useMemo(
-    () => resolveCompanyId(user, companyOverride),
-    [user, companyOverride],
+    () => resolveCompanyId(user, companyScope.companyId),
+    [user, companyScope.companyId],
   );
 
   useEffect(() => {
@@ -271,10 +275,16 @@ export function PayrollReportClient() {
   }, [user]);
 
   useEffect(() => {
+    if (isAdministrator(user) && !activeCompanyId) {
+      setManagedUsers([]);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        const list = await listManagedUsers();
+        const list = await listManagedUsers(
+          isAdministrator(user) ? activeCompanyId : undefined,
+        );
         if (!cancelled) {
           setManagedUsers(list);
         }
@@ -287,7 +297,7 @@ export function PayrollReportClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [user, activeCompanyId]);
 
   useEffect(() => {
     editOpenRef.current = editRow !== null;
@@ -305,7 +315,7 @@ export function PayrollReportClient() {
     const silent = Boolean(options?.silent);
     if (!activeCompanyId) {
       if (!silent) {
-        setError("Select a company to load payroll.");
+        setError(t("payroll.report.select_company_load", "Select a company to load payroll."));
         setReport(null);
       }
       return;
@@ -320,7 +330,7 @@ export function PayrollReportClient() {
       });
       setReport(data);
       if (!silent && data.payroll_auto_recalculated) {
-        setPayrollSaveMessage("Payroll refreshed from latest time records.");
+        setPayrollSaveMessage(t("payroll.report.refreshed", "Payroll refreshed from latest time records."));
       }
       if (!silent) {
         setError("");
@@ -328,7 +338,7 @@ export function PayrollReportClient() {
     } catch (err) {
       if (!silent) {
         setReport(null);
-        setError(err instanceof Error ? err.message : "Could not load payroll.");
+        setError(err instanceof Error ? err.message : t("payroll.report.load_error", "Could not load payroll."));
       }
     } finally {
       if (!silent) {
@@ -428,8 +438,8 @@ export function PayrollReportClient() {
     if (!payrollSaveMessage) {
       return;
     }
-    const t = window.setTimeout(() => setPayrollSaveMessage(""), 5000);
-    return () => window.clearTimeout(t);
+    const saveMsgTimerId = window.setTimeout(() => setPayrollSaveMessage(""), 5000);
+    return () => window.clearTimeout(saveMsgTimerId);
   }, [payrollSaveMessage]);
 
   function openEdit(row: PayrollItemRow) {
@@ -466,10 +476,10 @@ export function PayrollReportClient() {
         });
       }
       setEditRow(null);
-      setPayrollSaveMessage("Payroll row saved.");
+      setPayrollSaveMessage(t("payroll.report.row_saved", "Payroll row saved."));
       await loadReport();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save payroll row.");
+      setError(err instanceof Error ? err.message : t("payroll.report.save_error", "Could not save payroll row."));
     } finally {
       setBusyId(null);
     }
@@ -482,11 +492,13 @@ export function PayrollReportClient() {
     const paid = report?.period.paid_count ?? 0;
     const approved = report?.period.approved_count ?? 0;
     if (paid > 0) {
-      setError("Paid payroll rows are locked and cannot be rebuilt.");
+      setError(t("payroll.report.paid_locked", "Paid payroll rows are locked and cannot be rebuilt."));
       return;
     }
     if (approved > 0) {
-      setError("Some payroll rows are approved. Unlock them before recalculating.");
+      setError(
+        t("payroll.report.approved_unlock_first", "Some payroll rows are approved. Unlock them before recalculating."),
+      );
       return;
     }
     setLoading(true);
@@ -494,16 +506,16 @@ export function PayrollReportClient() {
     try {
       const data = await recalculatePayroll(activeCompanyId, weekStart);
       setReport(data);
-      setPayrollSaveMessage("Payroll refreshed from latest time records.");
+      setPayrollSaveMessage(t("payroll.report.refreshed", "Payroll refreshed from latest time records."));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Recalculate failed.");
+      setError(err instanceof Error ? err.message : t("payroll.report.recalc_failed", "Recalculate failed."));
     } finally {
       setLoading(false);
     }
   }
 
   async function runApproveAll() {
-    if (!activeCompanyId || !confirm("Approve all pending rows for this period?")) {
+    if (!activeCompanyId || !confirm(t("payroll.report.approve_all_confirm", "Approve all pending rows for this period?"))) {
       return;
     }
     setLoading(true);
@@ -512,7 +524,7 @@ export function PayrollReportClient() {
       const data = await approveAllPending(activeCompanyId, weekStart);
       setReport(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Approve all failed.");
+      setError(err instanceof Error ? err.message : t("payroll.report.approve_all_failed", "Approve all failed."));
     } finally {
       setLoading(false);
     }
@@ -531,7 +543,7 @@ export function PayrollReportClient() {
       }
       await loadReport();
     } catch {
-      setError("Action failed.");
+      setError(t("payroll.report.action_failed", "Action failed."));
     } finally {
       setBusyId(null);
     }
@@ -542,10 +554,12 @@ export function PayrollReportClient() {
     setError("");
     try {
       await createPayrollLateShiftAdjustment(paidItemId, { confirm: true });
-      setPayrollSaveMessage("Pending adjustment row created for late shifts.");
+      setPayrollSaveMessage(
+        t("payroll.report.adjustment_created", "Pending adjustment row created for late shifts."),
+      );
       await loadReport();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not create adjustment.");
+      setError(err instanceof Error ? err.message : t("payroll.report.adjustment_failed", "Could not create adjustment."));
     } finally {
       setBusyId(null);
     }
@@ -557,11 +571,13 @@ export function PayrollReportClient() {
     }
     const reason = undoPaidReason.trim();
     if (!reason) {
-      setError("A reason is required to undo paid.");
+      setError(t("payroll.report.undo_reason_required", "A reason is required to undo paid."));
       return;
     }
     if (report?.accounting_payroll_export_overlaps && !undoPaidAckExport) {
-      setError("Confirm the accounting export acknowledgment, or refresh the report.");
+      setError(
+        t("payroll.report.export_ack_required", "Confirm the accounting export acknowledgment, or refresh the report."),
+      );
       return;
     }
     setBusyId(undoPaidRow.id);
@@ -575,10 +591,10 @@ export function PayrollReportClient() {
       setUndoPaidRow(null);
       setUndoPaidReason("");
       setUndoPaidAckExport(false);
-      setPayrollSaveMessage("Payroll row moved back to Approved.");
+      setPayrollSaveMessage(t("payroll.report.undo_paid_success", "Payroll row moved back to Approved."));
       await loadReport();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Undo paid failed.");
+      setError(err instanceof Error ? err.message : t("payroll.report.undo_paid_failed", "Undo paid failed."));
     } finally {
       setBusyId(null);
     }
@@ -591,7 +607,7 @@ export function PayrollReportClient() {
     try {
       await downloadPayrollCsv(activeCompanyId, weekStart);
     } catch {
-      setError("CSV export failed.");
+      setError(t("payroll.report.csv_export_failed", "CSV export failed."));
     }
   }
 
@@ -652,8 +668,11 @@ export function PayrollReportClient() {
   return (
     <Sheet>
       <PageHeader
-        title="Payroll report"
-        description="Weekly payroll, approvals, and exports. Week is defined by the company time policy timezone."
+        title={t("payroll.report.title", "Payroll report")}
+        description={t(
+          "payroll.report.subtitle",
+          "Weekly payroll, approvals, and exports. Week is defined by the company time policy timezone.",
+        )}
         titleClassName="text-xl font-bold tracking-tight text-[#111827] md:text-2xl"
       />
       <SheetBody className="min-w-0 space-y-5">
@@ -661,13 +680,15 @@ export function PayrollReportClient() {
           <div className="space-y-4">
             {isAdministrator(user) ? (
               <div>
-                <label className="block text-xs font-bold text-[#111827]">Company</label>
+                <label className="block text-xs font-bold text-[#111827]">
+                  {t("payroll.report.company", "Company")}
+                </label>
                 <select
                   className="timiq-select mt-1.5 h-10 w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] pl-3 text-sm font-medium text-[#111827]"
-                  onChange={(event) => setCompanyOverride(event.target.value || null)}
-                  value={companyOverride ?? ""}
+                  onChange={(event) => companyScope.setCompanyId(event.target.value)}
+                  value={companyScope.companyId ?? ""}
                 >
-                  <option value="">Select company…</option>
+                  <option value="">{t("payroll.report.select_company", "Select company…")}</option>
                   {companies.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -677,7 +698,7 @@ export function PayrollReportClient() {
               </div>
             ) : (
               <p className="text-sm text-[var(--color-text-muted)]">
-                Company scope: your assigned company only.
+                {t("payroll.report.company_scope_admin", "Company scope: your assigned company only.")}
               </p>
             )}
 
@@ -693,7 +714,7 @@ export function PayrollReportClient() {
               </div>
               <div className="flex shrink-0 flex-col justify-center rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-3 py-2.5 text-xs lg:max-w-[16rem]">
                 <span className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
-                  Date range
+                  {t("payroll.report.date_range", "Date range")}
                 </span>
                 <span className="mt-1 leading-snug font-medium text-[#111827]">{weekRangeLabel}</span>
               </div>
@@ -701,14 +722,14 @@ export function PayrollReportClient() {
 
             <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
               <label className="block w-full min-w-0 flex-1 text-xs font-bold text-[#111827] sm:min-w-[12rem]">
-                Employee
+                {t("payroll.report.employee_label", "Employee")}
                 <select
                   className="timiq-select mt-1.5 h-10 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] pl-3 text-sm font-medium text-[#111827]"
                   disabled={!activeCompanyId}
                   onChange={(event) => setDraftEmployeeId(event.target.value)}
                   value={draftEmployeeId}
                 >
-                  <option value="">All employees</option>
+                  <option value="">{t("payroll.report.all_employees", "All employees")}</option>
                   {employeeOptions.map((u) => (
                     <option key={u.id} value={u.id}>
                       {u.email}
@@ -723,25 +744,29 @@ export function PayrollReportClient() {
                   type="button"
                   variant="secondary"
                 >
-                  Apply filter
+                  {t("payroll.report.apply_filter", "Apply filter")}
                 </Button>
                 <Button disabled={loading || !activeCompanyId} onClick={() => loadReport()} type="button">
-                  Refresh
+                  {t("payroll.report.refresh", "Refresh")}
                 </Button>
               </div>
             </div>
 
             <div className="border-t border-[var(--color-border-dark)] pt-3">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[#374151]">Actions</p>
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[#374151]">
+                {t("payroll.report.actions", "Actions")}
+              </p>
               <div className="flex flex-wrap gap-2">
                 <Button disabled={loading || !activeCompanyId} onClick={runRecalculate} type="button">
-                  {payrollPeriodNotCalculated ? "Calculate payroll" : "Recalculate"}
+                  {payrollPeriodNotCalculated
+                    ? t("payroll.report.calculate", "Calculate payroll")
+                    : t("payroll.report.recalculate", "Recalculate")}
                 </Button>
                 <Button disabled={loading || !activeCompanyId} onClick={runApproveAll} type="button">
-                  Approve all pending
+                  {t("payroll.report.approve_all_pending", "Approve all pending")}
                 </Button>
                 <Button disabled={loading || !activeCompanyId} onClick={handleCsv} type="button" variant="secondary">
-                  Export CSV
+                  {t("payroll.report.export_csv", "Export CSV")}
                 </Button>
                 <Button
                   disabled={loading || !activeCompanyId}
@@ -749,7 +774,7 @@ export function PayrollReportClient() {
                   type="button"
                   variant="secondary"
                 >
-                  Print report
+                  {t("payroll.report.print_report", "Print report")}
                 </Button>
                 <Button
                   disabled={loading || !activeCompanyId || !singleReportPayslipItemId}
@@ -761,12 +786,15 @@ export function PayrollReportClient() {
                   title={
                     singleReportPayslipItemId
                       ? undefined
-                      : "Shown when the report lists exactly one employee for this week (filter to one employee if needed)."
+                      : t(
+                          "payroll.report.payslip_title_hint",
+                          "Shown when the report lists exactly one employee for this week (filter to one employee if needed).",
+                        )
                   }
                   type="button"
                   variant="secondary"
                 >
-                  Open payslip
+                  {t("payroll.report.open_payslip_btn", "Open payslip")}
                 </Button>
               </div>
             </div>
@@ -778,7 +806,7 @@ export function PayrollReportClient() {
             className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-4 py-3 text-sm font-medium text-[#1f2937]"
             role="status"
           >
-            Select a company to load payroll.
+            {t("payroll.report.select_company_banner", "Select a company to load payroll.")}
           </div>
         ) : null}
 
@@ -802,7 +830,9 @@ export function PayrollReportClient() {
             className="rounded-[var(--radius-md)] border border-amber-800/30 bg-amber-50 px-4 py-3 text-sm text-amber-950"
             role="status"
           >
-            <p className="font-semibold">Late completed shifts after payroll was paid</p>
+            <p className="font-semibold">
+              {t("payroll.report.late_shifts_title", "Late completed shifts after payroll was paid")}
+            </p>
             <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
               {canAdjustLateShiftsGlobally ? (
                 <>
@@ -832,10 +862,14 @@ export function PayrollReportClient() {
             className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-3 text-sm text-[#1f2937]"
             role="region"
           >
-            <p className="font-semibold text-[#111827]">Payroll not calculated for this week yet</p>
+            <p className="font-semibold text-[#111827]">
+              {t("payroll.report.not_calculated_title", "Payroll not calculated for this week yet")}
+            </p>
             <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
-              Rows are built on the server from time records. Use <span className="font-medium">Calculate payroll</span>{" "}
-              or <span className="font-medium">Refresh</span> if this message persists.
+              {t(
+                "payroll.report.not_calculated_body",
+                "Rows are built on the server from time records. Use Calculate payroll or Refresh if this message persists.",
+              )}
             </p>
             <div className="mt-3">
               <Button disabled={loading} onClick={runRecalculate} type="button">
@@ -850,7 +884,7 @@ export function PayrollReportClient() {
             className="rounded-[var(--radius-md)] border border-slate-600/25 bg-slate-100 px-4 py-3 text-sm text-slate-950"
             role="status"
           >
-            <p className="font-semibold">Payroll locked</p>
+            <p className="font-semibold">{t("payroll.report.locked_title", "Payroll locked")}</p>
             <p className="mt-1 text-xs leading-relaxed text-slate-800/90">
               Paid payroll rows are locked and cannot be rebuilt.
             </p>
@@ -866,7 +900,9 @@ export function PayrollReportClient() {
             className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-4 py-3 text-sm text-amber-950"
             role="status"
           >
-            <p className="font-semibold">Recalculation blocked</p>
+            <p className="font-semibold">
+              {t("payroll.report.recalc_blocked_title", "Recalculation blocked")}
+            </p>
             <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
               Some payroll rows are approved. Unlock them before recalculating.
             </p>
@@ -882,10 +918,14 @@ export function PayrollReportClient() {
             className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-4 py-3 text-sm text-amber-950"
             role="status"
           >
-            <p className="font-semibold">Needs recalculation</p>
+            <p className="font-semibold">
+              {t("payroll.report.needs_recalc_title", "Needs recalculation")}
+            </p>
             <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
-              Time records in this week changed after the last payroll run. Use <span className="font-medium">Refresh</span>{" "}
-              or <span className="font-medium">Recalculate</span> to update pending rows.
+              {t(
+                "payroll.report.needs_recalc_body",
+                "Time records in this week changed after the last payroll run. Use Refresh or Recalculate to update pending rows.",
+              )}
             </p>
           </div>
         ) : null}
@@ -894,25 +934,33 @@ export function PayrollReportClient() {
           <div className="min-w-0 w-full flex-1 space-y-5 xl:min-w-0">
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">Total hours</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
+                  {t("payroll.report.total_hours", "Total hours")}
+                </p>
                 <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
                   {showMetricFigures ? formatHoursFromSeconds(totalHoursSeconds) : "—"}
                 </p>
               </div>
               <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">Gross pay</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
+                  {t("payroll.report.gross_pay", "Gross pay")}
+                </p>
                 <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
                   {showMetricFigures ? formatMoneyGBP(report?.period.total_gross) : "—"}
                 </p>
               </div>
               <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">CIS tax</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
+                  {t("payroll.report.cis_tax", "CIS tax")}
+                </p>
                 <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
                   {showMetricFigures ? formatMoneyGBP(report?.period.total_tax) : "—"}
                 </p>
               </div>
               <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">Net pay</p>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
+                  {t("payroll.report.net_pay", "Net pay")}
+                </p>
                 <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
                   {showMetricFigures ? formatMoneyGBP(report?.period.total_net) : "—"}
                 </p>
@@ -1014,31 +1062,31 @@ export function PayrollReportClient() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-8" />
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Hours</TableHead>
-                    <TableHead>OT hours</TableHead>
-                    <TableHead>Gross</TableHead>
-                    <TableHead>CIS tax</TableHead>
-                    <TableHead>Net pay</TableHead>
-                    <TableHead>Other ded.</TableHead>
-                    <TableHead>Notes</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>{t("payroll.report.col_employee", "Employee")}</TableHead>
+                    <TableHead>{t("employees.col_role", "Role")}</TableHead>
+                    <TableHead>{t("payroll.report.col_hours", "Hours")}</TableHead>
+                    <TableHead>{t("payroll.report.col_ot_hours", "OT hours")}</TableHead>
+                    <TableHead>{t("payroll.report.col_gross", "Gross")}</TableHead>
+                    <TableHead>{t("payroll.report.col_cis", "CIS tax")}</TableHead>
+                    <TableHead>{t("payroll.report.col_net", "Net pay")}</TableHead>
+                    <TableHead>{t("payroll.report.col_other_ded", "Other ded.")}</TableHead>
+                    <TableHead>{t("payroll.report.col_notes", "Notes")}</TableHead>
+                    <TableHead>{t("payroll.report.col_status", "Status")}</TableHead>
+                    <TableHead>{t("payroll.report.col_actions", "Actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {loading ? (
                     <TableRow>
                       <TableCell className="py-8 text-center text-sm text-[var(--color-text-muted)]" colSpan={12}>
-                        Loading…
+                        {t("payroll.report.loading_table", "Loading…")}
                       </TableCell>
                     </TableRow>
                   ) : null}
                   {!loading && !hasCompany ? (
                     <TableRow>
                       <TableCell className="py-8 text-center text-sm text-[#374151]" colSpan={12}>
-                        Choose a company in the toolbar to load this table.
+                        {t("payroll.report.choose_company_table", "Choose a company in the toolbar to load this table.")}
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -1046,10 +1094,16 @@ export function PayrollReportClient() {
                     <TableRow>
                       <TableCell className="py-8 text-center text-sm text-[#374151]" colSpan={12}>
                         {payrollPeriodNotCalculated
-                          ? "No payroll rows yet. Use Calculate payroll in Actions (or the banner above)."
+                          ? t(
+                              "payroll.report.empty_not_calc",
+                              "No payroll rows yet. Use Calculate payroll in Actions (or the banner above).",
+                            )
                           : appliedEmployeeId
-                            ? "No payroll rows for this employee filter."
-                            : "No payroll rows for this week. Use Recalculate if employees should appear."}
+                            ? t("payroll.report.empty_filtered", "No payroll rows for this employee filter.")
+                            : t(
+                                "payroll.report.empty_week",
+                                "No payroll rows for this week. Use Recalculate if employees should appear.",
+                              )}
                       </TableCell>
                     </TableRow>
                   ) : null}
@@ -1085,7 +1139,9 @@ export function PayrollReportClient() {
                               {formatHoursFromSeconds(row.overtime_seconds)}
                             </TableCell>
                             <TableCell className="align-top text-xs">
-                              {row.rate_missing ? "Rate not set" : formatMoneyGBP(row.gross_amount)}
+                              {row.rate_missing
+                                ? t("payroll.report.rate_not_set", "Rate not set")
+                                : formatMoneyGBP(row.gross_amount)}
                             </TableCell>
                             <TableCell className="align-top text-xs">
                               {formatMoneyGBP(
@@ -1109,8 +1165,8 @@ export function PayrollReportClient() {
                               <span
                                 className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadgeClass(row.status)}`}
                               >
-                                {statusBadgeLabel(row.status)}
-                                {row.status === "paid" ? " · Locked" : ""}
+                                {statusBadgeLabel(t, row.status)}
+                                {row.status === "paid" ? t("payroll.report.locked_suffix", " · Locked") : ""}
                               </span>
                             </TableCell>
                             <TableCell className="align-top">
@@ -1121,7 +1177,9 @@ export function PayrollReportClient() {
                                   onClick={() => openEdit(row)}
                                   type="button"
                                 >
-                                  {row.status === "paid" ? "Edit notes" : "Edit"}
+                                  {row.status === "paid"
+                                    ? t("payroll.report.edit_notes", "Edit notes")
+                                    : t("payroll.report.edit", "Edit")}
                                 </Button>
                                 {row.status === "paid" ? (
                                   <>
@@ -1132,7 +1190,7 @@ export function PayrollReportClient() {
                                       type="button"
                                       variant="secondary"
                                     >
-                                      Payslip
+                                      {t("payroll.report.payslip", "Payslip")}
                                     </Button>
                                     <Button
                                       className="min-h-8 px-2 py-1 text-xs"
@@ -1145,7 +1203,7 @@ export function PayrollReportClient() {
                                       type="button"
                                       variant="secondary"
                                     >
-                                      Undo paid
+                                      {t("payroll.report.undo_paid", "Undo paid")}
                                     </Button>
                                     {canShowLateAdjustmentForPaidRow(row, lateBlock, report) ? (
                                       <Button
@@ -1155,7 +1213,7 @@ export function PayrollReportClient() {
                                         type="button"
                                         variant="secondary"
                                       >
-                                        Adjustment
+                                        {t("payroll.report.adjustment", "Adjustment")}
                                       </Button>
                                     ) : null}
                                   </>
@@ -1167,7 +1225,7 @@ export function PayrollReportClient() {
                                     onClick={() => rowAction(row.id, "approve")}
                                     type="button"
                                   >
-                                    Approve
+                                    {t("payroll.report.approve", "Approve")}
                                   </Button>
                                 ) : null}
                                 {row.status === "approved" ? (
@@ -1178,7 +1236,7 @@ export function PayrollReportClient() {
                                       onClick={() => rowAction(row.id, "unlock")}
                                       type="button"
                                     >
-                                      Unlock
+                                      {t("payroll.report.unlock", "Unlock")}
                                     </Button>
                                     <Button
                                       className="min-h-8 px-2 py-1 text-xs"
@@ -1186,7 +1244,7 @@ export function PayrollReportClient() {
                                       onClick={() => rowAction(row.id, "paid")}
                                       type="button"
                                     >
-                                      Mark paid
+                                      {t("payroll.report.mark_paid", "Mark paid")}
                                     </Button>
                                   </>
                                 ) : null}

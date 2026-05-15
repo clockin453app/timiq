@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -31,10 +31,16 @@ router = APIRouter(prefix="/api/locations", tags=["locations"])
 
 @router.get("", response_model=list[LocationResponse])
 def get_locations(
+    company_id: uuid.UUID | None = Query(default=None),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> list[LocationResponse]:
-    locations = list_locations_visible_to_user(db_session, current_user)
+    from app.modules.locations.service import LocationError
+
+    try:
+        locations = list_locations_visible_to_user(db_session, current_user, company_id=company_id)
+    except LocationError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return [LocationResponse.model_validate(location) for location in locations]
 
 

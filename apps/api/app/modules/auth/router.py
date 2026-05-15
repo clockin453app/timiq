@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -12,7 +12,7 @@ from app.modules.auth.dependencies import (
     require_authenticated_employee_self_service,
     require_administrator,
 )
-from app.modules.auth.models import User
+from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import list_users_visible_to_user_with_profile_names
 from app.modules.auth.schemas import (
     AcceptInviteRequest,
@@ -258,10 +258,23 @@ def logout(response: Response) -> dict[str, str]:
 
 @router.get("/users", response_model=list[UserResponse])
 def get_users(
+    company_id: uuid.UUID | None = Query(default=None),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
 ) -> list[UserResponse]:
-    rows = list_users_visible_to_user_with_profile_names(db_session, current_user)
+    from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
+
+    try:
+        scoped_company_id = resolve_operational_company_id(db_session, current_user, company_id)
+    except CompanyScopeError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    filter_company_id = scoped_company_id if current_user.system_role == SystemRole.ADMINISTRATOR else None
+    rows = list_users_visible_to_user_with_profile_names(
+        db_session,
+        current_user,
+        company_id=filter_company_id,
+    )
     return [
         UserResponse.model_validate(user).model_copy(
             update={

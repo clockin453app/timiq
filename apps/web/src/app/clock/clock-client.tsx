@@ -105,7 +105,7 @@ export function ClockClient() {
     "idle" | "searching" | "improving" | "captured" | "too_low" | "denied" | "failed" | "unsupported"
   >("idle");
 
-  /** unknown = before first client measure â€” do not mount Leaflet yet. */
+  /** unknown = before first client measure - do not mount Leaflet yet. */
   const [viewportClockMapMode, setViewportClockMapMode] = useState<"unknown" | "narrow" | "wide">(
     "unknown",
   );
@@ -442,7 +442,7 @@ export function ClockClient() {
     setSuccessMessage("");
     if (!geoCapture || !isGpsClientSubmittable(geoCapture)) {
       setGpsAcquisitionKey((key) => key + 1);
-      setErrorMessage("Getting a reliable GPS fixâ€¦ please wait, then try again.");
+      setErrorMessage("Getting a reliable GPS fix… please wait, then try again.");
       return;
     }
     if (!selfieClockIn) {
@@ -473,7 +473,7 @@ export function ClockClient() {
     setSuccessMessage("");
     if (!geoCapture || !isGpsClientSubmittable(geoCapture)) {
       setGpsAcquisitionKey((key) => key + 1);
-      setErrorMessage("Getting a reliable GPS fixâ€¦ please wait, then try again.");
+      setErrorMessage("Getting a reliable GPS fix… please wait, then try again.");
       return;
     }
     if (!selfieClockOut) {
@@ -561,7 +561,7 @@ export function ClockClient() {
 
   const clockInDisabledReason = useMemo(() => {
     if (!clockStatus) {
-      return "Loading statusâ€¦";
+      return "Loading status…";
     }
     if (!canClockInServer) {
       return (
@@ -585,7 +585,7 @@ export function ClockClient() {
       if (geoCapture) {
         return "Waiting for accurate GPS.";
       }
-      return "Waiting for locationâ€¦";
+      return "Waiting for location…";
     }
     if (nearestSiteSummary?.outside) {
       return "You may be outside the nearest assigned site; the server will confirm on submit.";
@@ -611,7 +611,7 @@ export function ClockClient() {
 
   const clockOutDisabledReason = useMemo(() => {
     if (!clockStatus) {
-      return "Loading statusâ€¦";
+      return "Loading status…";
     }
     if (!canClockOutServer) {
       return (
@@ -635,7 +635,7 @@ export function ClockClient() {
       if (geoCapture) {
         return "Waiting for accurate GPS.";
       }
-      return "Waiting for locationâ€¦";
+      return "Waiting for location…";
     }
     if (!selfieClockOut) {
       return "Take a clock-out selfie.";
@@ -681,15 +681,15 @@ export function ClockClient() {
   } else if (gpsFailure === "failed") {
     gpsStatusLine = "Could not get a reliable GPS fix in time.";
   } else if (gpsAcquiring && gpsPhaseText === "searching") {
-    gpsStatusLine = "Searching for locationâ€¦";
+    gpsStatusLine = "Searching for location…";
   } else if (gpsAcquiring && gpsPhaseText === "improving") {
-    gpsStatusLine = "Improving GPS accuracyâ€¦";
+    gpsStatusLine = "Improving GPS accuracy…";
   } else if (gpsAcceptable) {
     gpsStatusLine = "Location captured.";
   } else if (geoCapture && !gpsAcquiring) {
     gpsStatusLine = "GPS accuracy too low for secure clocking.";
   } else {
-    gpsStatusLine = "Preparing locationâ€¦";
+    gpsStatusLine = "Preparing location…";
   }
 
   const locationOk = !noAssignedSites && gpsFailure !== "denied" && gpsFailure !== "unsupported";
@@ -707,7 +707,7 @@ export function ClockClient() {
           "GPS and a live camera selfie are required for each clock-in and clock-out.",
         )}
       />
-      <SheetBody className="min-w-0 space-y-4 pb-6 sm:pb-8">
+      <SheetBody className="timiq-mobile-form-pad min-w-0 space-y-4 pb-[max(1.5rem,calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad)))] sm:pb-8 xl:pb-6">
         {!networkOnline ? (
           <div className="rounded border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] p-3 text-sm text-[var(--color-warning-700)]">
             <p className="font-semibold">{t("clock.offline_title")}</p>
@@ -734,7 +734,7 @@ export function ClockClient() {
           </div>
         ) : null}
         {isRefreshing && !clockStatus ? (
-          <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading", "Loadingâ€¦")}</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading", "Loading…")}</p>
         ) : null}
 
         {clockStatus && flowStatus === "no_assigned_sites" ? (
@@ -771,10 +771,10 @@ export function ClockClient() {
                   <p>
                     <span className="text-[var(--color-text-muted)]">On shift: </span>
                     <span className="font-mono font-semibold text-[var(--color-text)]" suppressHydrationWarning>
-                      {currentShiftDurationParts.hms || currentShiftDurationParts.compact || "â€”"}
+                      {currentShiftDurationParts.hms || currentShiftDurationParts.compact || "—"}
                     </span>
                     {flowStatus === "open_break" ? (
-                      <span className="ml-2 text-[var(--color-warning-700)]">Â· On break</span>
+                      <span className="ml-2 text-[var(--color-warning-700)]">· On break</span>
                     ) : null}
                   </p>
                 ) : null}
@@ -915,7 +915,7 @@ export function ClockClient() {
             <p className="font-medium text-[var(--color-text)]">{gpsStatusLine}</p>
             {geoCapture ? (
               <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                Accuracy {Math.round(geoCapture.payload.accuracy_meters)}m Â· Sites{" "}
+                Accuracy {Math.round(geoCapture.payload.accuracy_meters)}m · Sites{" "}
                 {clockStatus?.active_location_count ?? 0}
               </p>
             ) : null}
@@ -942,7 +942,7 @@ export function ClockClient() {
               <li className="flex flex-wrap items-start justify-between gap-2">
                 <span>Location access</span>
                 <span className={locationOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"}>
-                  {gpsFailure === "denied" ? "Permission needed" : locationOk ? "OK" : "â€”"}
+                  {gpsFailure === "denied" ? "Permission needed" : locationOk ? "OK" : "—"}
                 </span>
               </li>
               <li className="flex flex-wrap items-start justify-between gap-2">
@@ -954,9 +954,13 @@ export function ClockClient() {
                 </span>
               </li>
               <li className="flex flex-wrap items-start justify-between gap-2">
-                <span>GPS accuracy (â‰¤{BACKEND_MAX_ACCURACY_M}m)</span>
+                <span>
+                  {t("clock.gps_accuracy_within", "GPS accuracy (≤{{meters}}m)", {
+                    meters: BACKEND_MAX_ACCURACY_M,
+                  })}
+                </span>
                 <span className={gpsAccuracyOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"}>
-                  {gpsAccuracyOk ? "OK" : gpsAcquiring ? "Improvingâ€¦" : geoCapture ? "Too low" : "â€”"}
+                  {gpsAccuracyOk ? "OK" : gpsAcquiring ? "Improving…" : geoCapture ? "Too low" : "—"}
                 </span>
               </li>
               {flowStatus === "not_clocked_in" ? (
@@ -986,16 +990,20 @@ export function ClockClient() {
             </ul>
             {gpsAcquiring || gpsBestAccuracy !== null ? (
               <p className="text-xs text-[var(--color-text-muted)]">
-                Best accuracy: {gpsBestAccuracy !== null ? `${Math.round(gpsBestAccuracy)}m` : "â€”"} Â· Samples:{" "}
+                Best accuracy: {gpsBestAccuracy !== null ? `${Math.round(gpsBestAccuracy)}m` : "—"} · Samples:{" "}
                 {gpsSamples}
               </p>
             ) : null}
             {nearestSiteSummary ? (
               <p className="text-xs text-[var(--color-text-muted)]">
-                Nearest site: <span className="font-semibold">{nearestSiteSummary.site.name}</span> (~
+                {t("clock.nearest_site", "Nearest site")}:{" "}
+                <span className="font-semibold">{nearestSiteSummary.site.name}</span> (~
                 {nearestSiteSummary.distanceM}m)
                 {nearestSiteSummary.outside ? (
-                  <span className="text-[var(--color-danger-700)]"> Â· May be outside geofence</span>
+                  <span className="text-[var(--color-danger-700)]">
+                    {" "}
+                    · {t("clock.may_be_outside_geofence", "May be outside geofence")}
+                  </span>
                 ) : null}
               </p>
             ) : null}
@@ -1009,7 +1017,7 @@ export function ClockClient() {
               <p className="mt-1 text-[var(--color-text-muted)]">No map data.</p>
             ) : (
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Supporting view only â€” GPS validation still runs on the server.
+                Supporting view only - GPS validation still runs on the server.
               </p>
             )}
             <div className="mt-2 w-full min-w-0 max-w-full overflow-x-hidden">
@@ -1027,8 +1035,8 @@ export function ClockClient() {
               ) : !mapMountDeferred ? (
                 <div className="flex min-h-[80px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-3 text-center text-xs text-[var(--color-text-muted)]">
                   {isSubmitting || isRefreshing
-                    ? "Map paused while the clock status updatesâ€¦"
-                    : "Preparing mapâ€¦"}
+                    ? "Map paused while the clock status updates…"
+                    : "Preparing map…"}
                 </div>
               ) : Number.isFinite(geoCapture.payload.latitude) &&
                 Number.isFinite(geoCapture.payload.longitude) ? (

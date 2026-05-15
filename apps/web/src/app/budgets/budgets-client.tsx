@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 import { PageHeader, Sheet, SheetBody } from "../../components/ui";
-import { LogoutButton } from "../../features/auth";
 import { segmentBtnClass } from "./budget-ui";
 import { BudgetQuickCalculatorTab } from "./budgets-calculator-tab";
 import { BudgetsSavedTab } from "./budgets-saved-tab";
@@ -16,7 +15,6 @@ export function BudgetsClient() {
   return (
     <Sheet>
       <PageHeader
-        action={<LogoutButton />}
         description="Saved job budgets track planned spend, labour from payroll rules, and purchases. Use the quick calculator for ad-hoc labour estimates without saving a project."
         title="Budgets"
       />

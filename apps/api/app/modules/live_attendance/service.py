@@ -22,8 +22,8 @@ from app.modules.time_clock.repository import (
 
 from .permissions import (
     LiveAttendancePermissionError,
-    assert_administrator_company_scope,
     assert_target_is_manageable_employee,
+    resolve_live_attendance_company_id,
 )
 from .repository import (
     employee_has_location_access,
@@ -91,15 +91,12 @@ def get_live_attendance_snapshot(
     location_id: uuid.UUID | None,
     search: str | None,
 ) -> dict:
-    assert_administrator_company_scope(actor, company_id)
-    if company_id is not None and actor.system_role == SystemRole.ADMINISTRATOR:
-        if get_company_by_id(db_session, company_id) is None:
-            raise LiveAttendanceError("Company not found.")
+    scoped_company_id = resolve_live_attendance_company_id(db_session, actor, company_id)
 
     rows = list_manageable_employees(
         db_session,
         actor=actor,
-        company_id=company_id,
+        company_id=scoped_company_id,
         location_id=location_id,
         search=search,
     )

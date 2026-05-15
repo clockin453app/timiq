@@ -27,8 +27,13 @@ export type UpdateManagedUserRequest = {
   company_id?: string | null;
 };
 
-export async function listManagedUsers(): Promise<AuthUser[]> {
-  const response = await fetch(`${API_URL}/api/auth/users`, {
+export async function listManagedUsers(companyId?: string | null): Promise<AuthUser[]> {
+  const params = new URLSearchParams();
+  if (companyId?.trim()) {
+    params.set("company_id", companyId.trim());
+  }
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/auth/users${qs ? `?${qs}` : ""}`, {
     method: "GET",
     credentials: "include",
   });

@@ -11,6 +11,8 @@ import {
   formatMoneyGBP,
   formatPayrollWeekRangeLabel,
 } from "../../features/payroll/format";
+import { payrollStatusLabel } from "../../lib/i18n/display-labels";
+import { useT } from "../../lib/i18n";
 
 function formatWhen(iso: string | null) {
   if (!iso) {
@@ -57,18 +59,13 @@ function hoursSummary(row: PayHistoryEntry): string {
   return `${reg} / ${ot} h (rounded ${tot} h)`;
 }
 
-function statusLabel(status: string): string {
-  if (status === "pending") {
-    return "Pending";
-  }
-  return status.charAt(0).toUpperCase() + status.slice(1);
-}
 
 function payslipAllowed(row: PayHistoryEntry): boolean {
   return row.can_open_payslip !== false;
 }
 
 export function PayHistoryClient() {
+  const t = useT();
   const [rows, setRows] = useState<PayHistoryEntry[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -81,7 +78,7 @@ export function PayHistoryClient() {
       setRows(data);
     } catch {
       setRows([]);
-      setError("Could not load pay history.");
+      setError(t("pay_history.load_error", "Could not load pay history."));
     } finally {
       setLoading(false);
     }
@@ -101,8 +98,11 @@ export function PayHistoryClient() {
   return (
     <Sheet>
       <PageHeader
-        title="Pay history"
-        description="Approved and paid payroll only. Figures come from the server. Payslips open in a new tab using your signed-in session."
+        title={t("pay_history.title", "Pay history")}
+        description={t(
+          "pay_history.page_description",
+          "Approved and paid payroll only. Figures come from the server. Payslips open in a new tab using your signed-in session.",
+        )}
       />
       <SheetBody className="space-y-4">
         {error ? (
@@ -112,7 +112,7 @@ export function PayHistoryClient() {
         ) : null}
 
         {loading ? (
-          <p className="text-sm text-[var(--color-text-muted)]">Loading…</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading", "Loading…")}</p>
         ) : null}
 
         {!loading && rows.length === 0 ? (
@@ -120,10 +120,14 @@ export function PayHistoryClient() {
             className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]"
             role="status"
           >
-            <p className="font-medium text-[var(--color-text)]">No pay history yet</p>
+            <p className="font-medium text-[var(--color-text)]">
+              {t("pay_history.empty_title", "No pay history yet")}
+            </p>
             <p className="mt-2 leading-relaxed">
-              When payroll for you is approved or marked paid, it will show here. You can open a week for details and
-              print a payslip.
+              {t(
+                "pay_history.empty_body",
+                "When payroll for you is approved or marked paid, it will show here. You can open a week for details and print a payslip.",
+              )}
             </p>
           </div>
         ) : null}
@@ -148,19 +152,25 @@ export function PayHistoryClient() {
                     <span className="block">Net: {formatMoneyGBP(netForRow(row))}</span>
                   </p>
                   <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                    <span className="font-medium text-[var(--color-text)]">{statusLabel(row.status)}</span>
-                    {row.approved_at ? ` · Approved ${formatWhen(row.approved_at)}` : ""}
-                    {row.paid_at ? ` · Paid ${formatWhen(row.paid_at)}` : ""}
+                    <span className="font-medium text-[var(--color-text)]">
+                      {payrollStatusLabel(t, row.status)}
+                    </span>
+                    {row.approved_at
+                      ? ` · ${t("pay_history.approved_at", "Approved")} ${formatWhen(row.approved_at)}`
+                      : ""}
+                    {row.paid_at ? ` · ${t("pay_history.paid_at", "Paid")} ${formatWhen(row.paid_at)}` : ""}
                   </p>
                   {row.rate_missing ? (
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">Rate was not set on calculation.</p>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      {t("pay_history.rate_missing", "Rate was not set on calculation.")}
+                    </p>
                   ) : null}
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Link
                       className="inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text)] hover:bg-[var(--color-cell)]"
                       href={`/pay-history/${encodeURIComponent(row.id)}`}
                     >
-                      View week
+                      {t("pay_history.view_week", "View week")}
                     </Link>
                     <Button
                       disabled={!payslipAllowed(row)}
@@ -168,7 +178,7 @@ export function PayHistoryClient() {
                       type="button"
                       variant="secondary"
                     >
-                      Payslip
+                      {t("payroll.payslip", "Payslip")}
                     </Button>
                   </div>
                 </div>
@@ -180,15 +190,33 @@ export function PayHistoryClient() {
           <table className="w-full min-w-[56rem] border-collapse border border-[var(--color-border-dark)] text-sm">
             <thead>
               <tr className="bg-[var(--color-header)]">
-                <th className="border border-[var(--color-border)] px-2 py-2 text-left">Period</th>
-                <th className="border border-[var(--color-border)] px-2 py-2 text-left">Company</th>
-                <th className="border border-[var(--color-border)] px-2 py-2 text-left">Hours</th>
-                <th className="border border-[var(--color-border)] px-2 py-2 text-left">Gross</th>
-                <th className="border border-[var(--color-border)] px-2 py-2 text-left">CIS tax</th>
-                <th className="border border-[var(--color-border)] px-2 py-2 text-left">Net</th>
-                <th className="border border-[var(--color-border)] px-2 py-2 text-left">Status</th>
-                <th className="border border-[var(--color-border)] px-2 py-2 text-left">View</th>
-                <th className="border border-[var(--color-border)] px-2 py-2 text-left">Payslip</th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("pay_history.col_period", "Period")}
+                </th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("pay_history.col_company", "Company")}
+                </th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("pay_history.col_hours", "Hours")}
+                </th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("pay_history.col_gross", "Gross pay")}
+                </th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("payroll.cis_tax", "CIS tax")}
+                </th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("pay_history.col_net", "Net pay")}
+                </th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("pay_history.col_status", "Status")}
+                </th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("pay_history.col_view", "View")}
+                </th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("payroll.payslip", "Payslip")}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -212,14 +240,14 @@ export function PayHistoryClient() {
                         {formatMoneyGBP(netForRow(row))}
                       </td>
                       <td className="border border-[var(--color-border)] px-2 py-2 text-xs">
-                        {statusLabel(row.status)}
+                        {payrollStatusLabel(t, row.status)}
                       </td>
                       <td className="border border-[var(--color-border)] px-2 py-2">
                         <Link
                           className="text-xs font-semibold text-[var(--color-text)] underline decoration-[var(--color-border-dark)] underline-offset-2 hover:text-[var(--color-text-muted)]"
                           href={`/pay-history/${encodeURIComponent(row.id)}`}
                         >
-                          View
+                          {t("pay_history.view_details", "View")}
                         </Link>
                       </td>
                       <td className="border border-[var(--color-border)] px-2 py-2">
@@ -229,7 +257,7 @@ export function PayHistoryClient() {
                           onClick={() => openPayslip(row)}
                           type="button"
                         >
-                          Open
+                          {t("pay_history.open_payslip", "Open")}
                         </button>
                       </td>
                     </tr>

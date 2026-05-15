@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui";
-import { isAdministrator, LogoutButton, RoleGuard, useCurrentUser } from "../../features/auth";
+import { isAdministrator, RoleGuard, useCurrentUser } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
 import {
   acknowledgeWorkProgress,
@@ -695,7 +695,6 @@ export function WorkProgressReviewClient() {
   return (
     <Sheet>
       <PageHeader
-        action={<LogoutButton />}
         description="Review site progress from employees you manage. Files open in a protected session."
         title="Work progress review"
       />

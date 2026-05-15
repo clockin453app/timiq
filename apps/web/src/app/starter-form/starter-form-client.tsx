@@ -9,7 +9,7 @@ import {
   Sheet,
   SheetBody,
 } from "../../components/ui";
-import { LogoutButton, useCurrentUser } from "../../features/auth";
+import { useCurrentUser } from "../../features/auth";
 import {
   clearStarterFormLocalDraft,
   isLikelyNetworkFailure,
@@ -471,7 +471,6 @@ export function StarterFormClient() {
       <PageHeader
         title="Starter form"
         description="Complete your onboarding information, upload required documents, and sign."
-        action={<LogoutButton />}
       />
       <SheetBody className="space-y-6">
         {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading…</p> : null}

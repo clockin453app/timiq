@@ -7,7 +7,6 @@ import {
   canAccessManagement,
   changeMyPassword,
   isAdministrator,
-  LogoutButton,
   useCurrentUser,
 } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
@@ -225,7 +224,6 @@ export function SettingsClient() {
   return (
     <Sheet>
       <PageHeader
-        action={<LogoutButton />}
         description={t(
           "settings.page_description",
           "Personal display preferences, notification choices, and (for admins) company defaults. Delivery channels are not wired yet.",

@@ -46,7 +46,7 @@ def test_admin_cannot_view_other_company() -> None:
 def test_administrator_requires_company_id() -> None:
     db = MagicMock()
     admin = _user(SystemRole.ADMINISTRATOR, None)
-    with pytest.raises(ValueError, match="company_id is required"):
+    with pytest.raises(TimeRecordsPermissionError, match="company_id is required"):
         _resolve_timesheet_company_scope(db, admin, None)
 
 

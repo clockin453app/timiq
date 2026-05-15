@@ -60,9 +60,11 @@
 
   --layout-sidebar-width: 15.5rem;
   --layout-sidebar-collapsed: 4.25rem;
-  --layout-topbar-height: 3.25rem;
+  --layout-topbar-height: 4rem;
   /* Bottom bar + iOS home indicator / safe area (used by app shell padding) */
   --layout-mobile-bottom-nav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  /* Extra scroll room above bottom nav when the virtual keyboard is open */
+  --layout-mobile-keyboard-pad: 1rem;
 
   --focus-ring: 0 0 0 2px rgba(47, 111, 174, 0.35);
 }

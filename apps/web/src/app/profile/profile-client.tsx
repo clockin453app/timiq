@@ -357,7 +357,7 @@ export function ProfileClient() {
         title={t("profile.page_title", "Profile")}
         description={t("profile.page_description", "Your TimIQ account and employee profile.")}
       />
-      <SheetBody>
+      <SheetBody className="timiq-mobile-form-pad min-w-0 space-y-4 pb-[max(1rem,var(--layout-mobile-keyboard-pad))] md:pb-0">
         <div className="space-y-3">
           {isEmployee(user) ? (
             <div className="flex items-center gap-4 border border-[var(--color-border)] bg-[var(--color-cell)] p-4">
@@ -629,7 +629,7 @@ export function ProfileClient() {
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     First name
                     <input
-                      className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      className="mt-1 h-11 w-full max-w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-base md:h-10 md:text-sm"
                       onChange={(event) => setFirstName(event.target.value)}
                       type="text"
                       value={firstName}
@@ -638,7 +638,7 @@ export function ProfileClient() {
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Last name
                     <input
-                      className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      className="mt-1 h-11 w-full max-w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-base md:h-10 md:text-sm"
                       onChange={(event) => setLastName(event.target.value)}
                       type="text"
                       value={lastName}
@@ -647,7 +647,7 @@ export function ProfileClient() {
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Phone
                     <input
-                      className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      className="mt-1 h-11 w-full max-w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-base md:h-10 md:text-sm"
                       onChange={(event) => setPhone(event.target.value)}
                       type="text"
                       value={phone}
@@ -656,7 +656,7 @@ export function ProfileClient() {
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Job title
                     <input
-                      className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      className="mt-1 h-11 w-full max-w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-base md:h-10 md:text-sm"
                       onChange={(event) => setJobTitle(event.target.value)}
                       type="text"
                       value={jobTitle}
@@ -665,7 +665,7 @@ export function ProfileClient() {
                   <label className="block text-xs font-bold text-[var(--color-text)] md:col-span-2">
                     Emergency contact name
                     <input
-                      className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      className="mt-1 h-11 w-full max-w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-base md:h-10 md:text-sm"
                       onChange={(event) => setEmergencyContactName(event.target.value)}
                       type="text"
                       value={emergencyContactName}
@@ -674,7 +674,7 @@ export function ProfileClient() {
                   <label className="block text-xs font-bold text-[var(--color-text)] md:col-span-2">
                     Emergency contact phone
                     <input
-                      className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      className="mt-1 h-11 w-full max-w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-base md:h-10 md:text-sm"
                       onChange={(event) => setEmergencyContactPhone(event.target.value)}
                       type="text"
                       value={emergencyContactPhone}

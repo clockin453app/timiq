@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui";
-import { isAdministrator, LogoutButton, RoleGuard, useCurrentUser } from "../../features/auth";
+import { isAdministrator, RoleGuard, useCurrentUser } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
 import {
   approveOnboarding,
@@ -508,7 +508,6 @@ export function OnboardingReviewClient() {
       <PageHeader
         title="Onboarding review"
         description="Review submitted starter forms, download documents, approve or reject with a reason."
-        action={<LogoutButton />}
       />
       <SheetBody className="min-w-0 space-y-6">
         <RoleGuard

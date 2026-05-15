@@ -20,7 +20,9 @@ import {
   RoleGuard,
   useCurrentUser,
 } from "../../features/auth";
+import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import {
   createLocation,
   listLocations,
@@ -29,6 +31,7 @@ import {
   type Location,
 } from "../../features/locations/api";
 import { searchNominatim, type NominatimSearchHit } from "../../features/locations/nominatim";
+import { useT } from "../../lib/i18n";
 
 const DEFAULT_LAT = 51.507351;
 const DEFAULT_LNG = -0.127758;
@@ -52,6 +55,7 @@ function parseRadius(value: string): number {
 }
 
 export function LocationsClient() {
+  const t = useT();
   const currentUser = useCurrentUser();
 
   const [locations, setLocations] = useState<Location[]>([]);
@@ -75,6 +79,7 @@ export function LocationsClient() {
   const [addressSearchError, setAddressSearchError] = useState("");
 
   const showCompanySelector = isAdministrator(currentUser);
+  const companyScope = useAdministratorCompanyScope(currentUser, companies);
 
   const mapLatitude = parseLatitude(latitude);
   const mapLongitude = parseLongitude(longitude);
@@ -116,11 +121,17 @@ export function LocationsClient() {
     }
   }
 
-  async function loadLocations() {
+  async function loadLocations(viewCompanyId: string | null) {
     setIsLoading(true);
 
     try {
-      const loadedLocations = await listLocations();
+      if (showCompanySelector && !viewCompanyId) {
+        setLocations([]);
+        return;
+      }
+      const loadedLocations = await listLocations(
+        showCompanySelector ? viewCompanyId : currentUser?.company_id ?? null,
+      );
       setLocations(loadedLocations);
     } catch {
       setErrorMessage("Could not load locations.");
@@ -133,21 +144,25 @@ export function LocationsClient() {
     try {
       const loadedCompanies = await listCompanies();
       setCompanies(loadedCompanies);
-
-      const firstActiveCompany = loadedCompanies.find((company) => company.is_active);
-
-      if (firstActiveCompany) {
-        setCompanyId((currentValue) => currentValue || firstActiveCompany.id);
-      }
     } catch {
       setErrorMessage("Could not load companies.");
     }
   }
 
   useEffect(() => {
-    loadLocations();
-    loadCompanies();
+    void loadCompanies();
   }, []);
+
+  useEffect(() => {
+    const viewId = showCompanySelector ? companyScope.companyId : currentUser?.company_id ?? null;
+    void loadLocations(viewId);
+  }, [showCompanySelector, companyScope.companyId, currentUser?.company_id]);
+
+  useEffect(() => {
+    if (companyScope.companyId) {
+      setCompanyId(companyScope.companyId);
+    }
+  }, [companyScope.companyId]);
 
   function resetCreateFormFields() {
     setEditingLocation(null);
@@ -256,7 +271,7 @@ export function LocationsClient() {
         setGeofenceRadiusMeters("100");
       }
 
-      await loadLocations();
+      await loadLocations(showCompanySelector ? companyScope.companyId : currentUser?.company_id ?? null);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not save location.",
@@ -278,7 +293,7 @@ export function LocationsClient() {
         `${updatedLocation.name} is now ${updatedLocation.is_active ? "active" : "inactive"}`,
       );
 
-      await loadLocations();
+      await loadLocations(showCompanySelector ? companyScope.companyId : currentUser?.company_id ?? null);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : "Could not update location.",
@@ -291,11 +306,16 @@ export function LocationsClient() {
   return (
     <Sheet>
       <PageHeader
-        title="Sites"
+        title={t("locations.title", "Sites")}
         description={
           editingLocation
-            ? `Editing ${editingLocation.name}. Adjust map, fields, then save.`
-            : "Operational sites for clock-in, GPS geofence, site access, and site payroll rules."
+            ? t("locations.editing", "Editing {{name}}. Adjust map, fields, then save.", {
+                name: editingLocation.name,
+              })
+            : t(
+                "locations.description",
+                "Operational sites for clock-in, GPS geofence, site access, and site payroll rules.",
+              )
         }
       />
 
@@ -308,11 +328,28 @@ export function LocationsClient() {
             </div>
           }
         >
-          <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
-            {isAdministrator(currentUser)
-              ? "You can create geofenced locations for any company."
-              : "You can create geofenced locations for your company only."}
-          </div>
+          {showCompanySelector && companyScope.companies.length > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <CompanySelector
+                companies={companyScope.companies}
+                onChange={companyScope.setCompanyId}
+                value={companyScope.companyId}
+              />
+              {companyScope.scopeLabel ? (
+                <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
+              You can create geofenced locations for your company only.
+            </div>
+          )}
+
+          {showCompanySelector && companyScope.needsCompanySelection ? (
+            <div className="mb-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+              Select a company to view its sites.
+            </div>
+          ) : null}
 
           <form
             className="mb-4 w-full max-w-[min(48rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
