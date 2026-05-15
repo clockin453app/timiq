@@ -47,3 +47,7 @@ export function genericStatusLabel(t: TranslateFn, status: string): string {
   const fallback = status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, " ");
   return t(key, fallback);
 }
+
+export function shiftStatusLabel(t: TranslateFn, status: string): string {
+  return genericStatusLabel(t, status);
+}

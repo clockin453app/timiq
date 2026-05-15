@@ -7,10 +7,10 @@ import { Button, PageHeader } from "../../../../components/ui";
 import { useCurrentUser } from "../../../../features/auth";
 import { createSmartFormSubmission, getSmartFormTemplate, type SmartFormTemplate } from "../../../../features/smart-forms/api";
 import { fetchWorkProgressMeOptions, type WorkProgressLocationOption } from "../../../../features/work-progress/api";
-import { useI18n } from "../../../../lib/i18n";
+import { useT } from "../../../../lib/i18n";
 
 export function FormStartClient({ templateId }: { templateId: string }) {
-  const { t } = useI18n();
+  const t = useT();
   const router = useRouter();
   const user = useCurrentUser();
   const [template, setTemplate] = useState<SmartFormTemplate | null>(null);

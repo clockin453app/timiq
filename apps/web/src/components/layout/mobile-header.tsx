@@ -4,23 +4,29 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 
-import {
-  filterNavGroupsForMobileQuickNav,
-  getEmployeeNavigationGroups,
-  getManagementNavigationGroups,
-} from "../../config/navigation";
-import { canAccessManagement, LogoutButton, useCurrentUser } from "../../features/auth";
+import { getMobileMoreMenuItems } from "../../config/navigation";
+import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { employeeRoleLabel } from "../../lib/i18n/display-labels";
 import { useT } from "../../lib/i18n";
 
-import { findDefaultAccordionGroupId, GroupedNavBlock } from "./grouped-nav";
+import { navItemMatchesActive } from "./grouped-nav";
 import { MessagesHeaderButton } from "./messages-header-button";
+import { NavItemIcon } from "./nav-item-icon";
 import { NotificationBell } from "./notification-bell";
 
 type MobileHeaderProps = {
   activeHref?: string;
 };
+
+function mobileDrawerLinkClass(active: boolean): string {
+  const base =
+    "flex min-h-[44px] min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-3 py-2.5 text-sm font-medium text-[#1f2937]";
+  if (active) {
+    return `${base} border-[var(--color-border-dark)] bg-[#e5e7eb] font-semibold text-[#111827]`;
+  }
+  return `${base} border-transparent hover:border-[var(--color-border)] hover:bg-[#e5e7eb] hover:text-[#111827]`;
+}
 
 export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const user = useCurrentUser();
@@ -28,28 +34,14 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   const limited = userHasLimitedAccess(user);
-  const isMgmt = canAccessManagement(user);
 
   const closeMenu = useCallback(() => setMenuOpen(false), []);
   const toggleMenu = useCallback(() => setMenuOpen((open) => !open), []);
 
-  const employeeGroups = useMemo(() => {
-    const groups = getEmployeeNavigationGroups(user.system_role, { limitedAccess: limited });
-    return isMgmt ? filterNavGroupsForMobileQuickNav(groups) : groups;
-  }, [user.system_role, limited, isMgmt]);
-
-  const managementGroups = useMemo(() => {
-    if (limited || !isMgmt) {
-      return [];
-    }
-    return filterNavGroupsForMobileQuickNav(getManagementNavigationGroups(user.system_role));
-  }, [user.system_role, limited, isMgmt]);
-
-  const [accordionOpenGroupId, setAccordionOpenGroupId] = useState<string | null>(null);
-
-  useEffect(() => {
-    setAccordionOpenGroupId(findDefaultAccordionGroupId(employeeGroups, managementGroups, activeHref));
-  }, [activeHref, employeeGroups, managementGroups]);
+  const moreItems = useMemo(
+    () => getMobileMoreMenuItems(user.system_role, { limitedAccess: limited }),
+    [user.system_role, limited],
+  );
 
   useEffect(() => {
     closeMenu();
@@ -107,20 +99,20 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
         <>
           <button
             aria-label={t("nav.close_menu", "Close menu")}
-            className="fixed inset-0 z-50 bg-black/40"
+            className="fixed inset-0 z-50 bg-black/30"
             type="button"
             onClick={closeMenu}
           />
           <div
-            className="fixed inset-y-0 right-0 z-[60] flex h-dvh w-full max-w-[100vw] flex-col overflow-hidden border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_4px_24px_rgba(15,23,42,0.18)]"
+            className="fixed bottom-0 right-0 top-0 z-[60] flex w-[min(100vw-1.5rem,19rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_4px_24px_rgba(15,23,42,0.12)]"
             id="timiq-mobile-menu"
             role="dialog"
             aria-modal="true"
             aria-label={t("shell.drawer_nav", "More navigation")}
           >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
               <div className="min-w-0">
-                <p className="truncate text-lg font-bold tracking-tight text-[var(--color-text)]">
+                <p className="truncate text-base font-bold tracking-tight text-[var(--color-text)]">
                   {t("nav.tagline", "TimIQ")}
                 </p>
                 <p className="truncate text-xs text-[var(--color-text-muted)]">{roleLabel}</p>
@@ -137,47 +129,34 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
 
             <nav
               aria-label={t("shell.drawer_nav", "More navigation")}
-              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-3 text-sm [-webkit-overflow-scrolling:touch]"
+              className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-2 text-sm [-webkit-overflow-scrolling:touch]"
             >
-              {employeeGroups.length > 0 ? (
-                <GroupedNavBlock
-                  accordionOpenGroupId={accordionOpenGroupId}
-                  activeHref={activeHref}
-                  groups={employeeGroups}
-                  onAccordionOpenGroupChange={setAccordionOpenGroupId}
-                  onNavigate={closeMenu}
-                  role={user.system_role}
-                  showIcons
-                  storageScope="drawer-mobile-primary"
-                  variant="drawer"
-                />
+              {moreItems.length > 0 ? (
+                <ul className="space-y-0.5">
+                  {moreItems.map((item) => {
+                    const active = navItemMatchesActive(item.href, activeHref);
+                    return (
+                      <li key={item.href}>
+                        <Link
+                          className={mobileDrawerLinkClass(active)}
+                          href={item.href}
+                          onClick={closeMenu}
+                        >
+                          <NavItemIcon className="h-4 w-4 shrink-0" labelKey={item.labelKey} />
+                          <span className="min-w-0 flex-1">{t(item.labelKey, item.label)}</span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
               ) : (
                 <p className="px-2 py-2 text-xs text-[var(--color-text-muted)]">
                   {t("nav.drawer_hint_primary", "All primary pages are on the bottom bar.")}
                 </p>
               )}
-
-              {managementGroups.length > 0 ? (
-                <div className="mt-4 border-t border-[var(--color-border)] pt-4">
-                  <p className="mb-2 px-2 text-xs font-medium tracking-normal text-[#374151]">
-                    {t("nav.management", "Management")}
-                  </p>
-                  <GroupedNavBlock
-                    accordionOpenGroupId={accordionOpenGroupId}
-                    activeHref={activeHref}
-                    groups={managementGroups}
-                    onAccordionOpenGroupChange={setAccordionOpenGroupId}
-                    onNavigate={closeMenu}
-                    role={user.system_role}
-                    showIcons
-                    storageScope="drawer-mobile-management"
-                    variant="drawer"
-                  />
-                </div>
-              ) : null}
             </nav>
 
-            <div className="shrink-0 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]">
+            <div className="shrink-0 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2 pb-[max(0.75rem,calc(var(--layout-mobile-bottom-nav-height)+env(safe-area-inset-bottom,0px)))]">
               <Link
                 className="block min-h-[44px] rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
                 href="/profile"

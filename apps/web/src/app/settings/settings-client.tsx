@@ -126,7 +126,7 @@ export function SettingsClient() {
         }
       }
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not load settings.");
+      setLoadError(e instanceof Error ? e.message : t("settings.load_error", "Could not load settings."));
     }
   }, [adminCompanyId, platformAdmin, showCompany]);
 
@@ -429,7 +429,7 @@ export function SettingsClient() {
             e.preventDefault();
             setPwMessage("");
             if (pwNew !== pwConfirm) {
-              setPwMessage("New password and confirmation do not match.");
+              setPwMessage(t("settings.pw_mismatch", "New password and confirmation do not match."));
               return;
             }
             if (pwNew.length < 12) {
@@ -439,12 +439,14 @@ export function SettingsClient() {
             setPwSaving(true);
             try {
               await changeMyPassword(pwCurrent, pwNew);
-              setPwMessage("Password updated.");
+              setPwMessage(t("settings.pw_updated", "Password updated."));
               setPwCurrent("");
               setPwNew("");
               setPwConfirm("");
             } catch (err) {
-              setPwMessage(err instanceof Error ? err.message : "Could not change password.");
+              setPwMessage(
+                err instanceof Error ? err.message : t("settings.pw_change_failed", "Could not change password."),
+              );
             } finally {
               setPwSaving(false);
             }
@@ -514,7 +516,7 @@ export function SettingsClient() {
               <>
                 <div>
                   <label className={labelClass()} htmlFor="co-name">
-                    Company display name
+                    {t("settings.co_display_name", "Company display name")}
                   </label>
                   <input
                     id="co-name"
@@ -526,12 +528,12 @@ export function SettingsClient() {
                 </div>
                 <div>
                   <label className={labelClass()} htmlFor="co-tz">
-                    Default timezone
+                    {t("settings.co_timezone", "Default timezone")}
                   </label>
                   <input
                     id="co-tz"
                     className={fieldClass()}
-                    placeholder="Europe/London"
+                    placeholder={t("settings.co_timezone_placeholder", "Europe/London")}
                     maxLength={64}
                     value={coTimezone}
                     onChange={(ev) => setCoTimezone(ev.target.value)}
@@ -540,7 +542,7 @@ export function SettingsClient() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className={labelClass()} htmlFor="co-week">
-                      Week starts on
+                      {t("settings.co_week_starts", "Week starts on")}
                     </label>
                     <select
                       id="co-week"
@@ -548,13 +550,13 @@ export function SettingsClient() {
                       value={coWeekStart}
                       onChange={(ev) => setCoWeekStart(ev.target.value)}
                     >
-                      <option value="monday">Monday</option>
-                      <option value="sunday">Sunday</option>
+                      <option value="monday">{t("settings.co_week_monday", "Monday")}</option>
+                      <option value="sunday">{t("settings.co_week_sunday", "Sunday")}</option>
                     </select>
                   </div>
                   <div>
                     <label className={labelClass()} htmlFor="co-cur">
-                      Currency
+                      {t("settings.co_currency", "Currency")}
                     </label>
                     <select
                       id="co-cur"
@@ -571,7 +573,7 @@ export function SettingsClient() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label className={labelClass()} htmlFor="co-df">
-                      Default date format
+                      {t("settings.co_date_format", "Default date format")}
                     </label>
                     <select
                       id="co-df"
@@ -588,7 +590,7 @@ export function SettingsClient() {
                   </div>
                   <div>
                     <label className={labelClass()} htmlFor="co-tf">
-                      Default time format
+                      {t("settings.co_time_format", "Default time format")}
                     </label>
                     <select
                       id="co-tf"
@@ -606,14 +608,16 @@ export function SettingsClient() {
                 </div>
 
                 <div className="border-t border-[var(--color-border-dark)] pt-3 space-y-2">
-                  <h3 className="text-sm font-semibold text-[var(--color-text)]">Company notification defaults</h3>
+                  <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                    {t("settings.co_notif_title", "Company notification defaults")}
+                  </h3>
                   <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
                     <input
                       type="checkbox"
                       checked={coNotifMaster}
                       onChange={(ev) => setCoNotifMaster(ev.target.checked)}
                     />
-                    Notifications enabled (master)
+                    {t("settings.co_notif_master", "Notifications enabled (master)")}
                   </label>
                   <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
                     <input
@@ -621,7 +625,7 @@ export function SettingsClient() {
                       checked={coNotifEmail}
                       onChange={(ev) => setCoNotifEmail(ev.target.checked)}
                     />
-                    Allow email channel at company level
+                    {t("settings.co_notif_email", "Allow email channel at company level")}
                   </label>
                   <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
                     <input
@@ -629,23 +633,28 @@ export function SettingsClient() {
                       checked={coNotifPush}
                       onChange={(ev) => setCoNotifPush(ev.target.checked)}
                     />
-                    Allow push channel at company level (not implemented)
+                    {t("settings.co_notif_push", "Allow push channel at company level (not implemented)")}
                   </label>
                 </div>
 
                 <div className="border-t border-[var(--color-border-dark)] pt-3 space-y-2">
-                  <h3 className="text-sm font-semibold text-[var(--color-text)]">Branding</h3>
+                  <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                    {t("settings.co_branding_title", "Branding")}
+                  </h3>
                   <p className="text-sm text-[var(--color-text-muted)]">
-                    Logo upload is not available in this release. Only a primary brand colour is stored.
+                    {t(
+                      "settings.co_branding_hint",
+                      "Logo upload is not available in this release. Only a primary brand colour is stored.",
+                    )}
                   </p>
                   <div>
                     <label className={labelClass()} htmlFor="co-color">
-                      Brand primary colour (#RRGGBB)
+                      {t("settings.co_brand_color", "Brand primary colour (#RRGGBB)")}
                     </label>
                     <input
                       id="co-color"
                       className={fieldClass()}
-                      placeholder="#1e40af"
+                      placeholder={t("settings.co_brand_placeholder", "#1e40af")}
                       maxLength={9}
                       value={coBrandColor}
                       onChange={(ev) => setCoBrandColor(ev.target.value)}
@@ -655,8 +664,12 @@ export function SettingsClient() {
                     className="max-w-md rounded-[var(--radius-md)] border border-[var(--color-border-dark)] p-4 text-white shadow-sm"
                     style={{ backgroundColor: brandPreview }}
                   >
-                    <p className="text-sm font-medium">Preview card</p>
-                    <p className="text-xs opacity-90">Company display: {coDisplayName || "Your company"}</p>
+                    <p className="text-sm font-medium">{t("settings.co_preview_card", "Preview card")}</p>
+                    <p className="text-xs opacity-90">
+                      {t("settings.co_preview_company", "Company display: {{name}}", {
+                        name: coDisplayName || t("settings.co_preview_fallback", "Your company"),
+                      })}
+                    </p>
                   </div>
                 </div>
 

@@ -452,6 +452,42 @@ export function filterNavGroupsForMobileQuickNav(
     .filter((group) => group.items.length > 0);
 }
 
+/** Flat “More” drawer links — not desktop top-nav groups or management accordions. */
+const MOBILE_MORE_LIMITED: NavigationItem[] = [TIMESHEETS, PAY_HISTORY];
+
+const MOBILE_MORE_EMPLOYEE: NavigationItem[] = [MESSAGES, TIME_RECORDS];
+
+const MOBILE_MORE_ADMIN: NavigationItem[] = [
+  MESSAGES,
+  OVERVIEW,
+  TIME_RECORDS,
+  LIVE_ATTENDANCE,
+  EMPLOYEES,
+  LOCATIONS,
+  PAYROLL_REPORT,
+];
+
+/**
+ * Mobile header drawer: compact flat list. Excludes items already on the bottom bar.
+ * Profile, Settings, and Logout stay in the drawer footer.
+ */
+export function getMobileMoreMenuItems(
+  role: SystemRole,
+  options?: { limitedAccess?: boolean },
+): NavigationItem[] {
+  let items: NavigationItem[];
+  if (options?.limitedAccess && role === "employee") {
+    items = MOBILE_MORE_LIMITED;
+  } else if (role === "administrator" || role === "admin") {
+    items = MOBILE_MORE_ADMIN;
+  } else {
+    items = MOBILE_MORE_EMPLOYEE;
+  }
+  return items
+    .filter((item) => itemVisibleForRole(item, role))
+    .filter((item) => !MOBILE_QUICK_NAV_HREFS.has(item.href));
+}
+
 /** Desktop top bar: single-item groups render as direct links; multi-item groups use dropdowns. */
 const DESKTOP_TOP_NAV_LIMITED: NavigationGroupDefinition[] = [
   { id: "desk-timesheets", label: "Timesheets", groupLabelKey: "nav.timesheets", items: [TIMESHEETS] },

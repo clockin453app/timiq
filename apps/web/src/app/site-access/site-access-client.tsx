@@ -29,16 +29,18 @@ import {
   listSiteAccessRecords,
   type SiteAccessRecord,
 } from "../../features/site-access/api";
+import { employeeRoleLabel, useT } from "../../lib/i18n";
 
-function userLabel(user: AuthUser | undefined) {
+function userLabel(user: AuthUser | undefined, t: (key: string, fallback?: string, vars?: Record<string, string | number>) => string) {
   if (!user) {
-    return "Unknown user";
+    return t("site_access.unknown_user");
   }
 
-  return `${user.email} (${user.system_role})`;
+  return `${user.email} (${employeeRoleLabel(t, user.system_role)})`;
 }
 
 export function SiteAccessClient() {
+  const t = useT();
   const currentUser = useCurrentUser();
 
   const [users, setUsers] = useState<AuthUser[]>([]);
@@ -114,7 +116,7 @@ export function SiteAccessClient() {
         setCompanyId((currentValue) => currentValue || firstActiveCompany.id);
       }
     } catch {
-      setErrorMessage("Could not load site access data.");
+      setErrorMessage(t("site_access.load_error"));
     } finally {
       setIsLoading(false);
     }
@@ -140,19 +142,19 @@ export function SiteAccessClient() {
     setIsCreating(true);
 
     if (!selectedCompanyId) {
-      setErrorMessage("Select a company first.");
+      setErrorMessage(t("site_access.select_company"));
       setIsCreating(false);
       return;
     }
 
     if (!userId) {
-      setErrorMessage("This company has no active employees/admins to assign.");
+      setErrorMessage(t("site_access.empty_users"));
       setIsCreating(false);
       return;
     }
 
     if (!locationId) {
-      setErrorMessage("This company has no active locations. Activate or create a location first.");
+      setErrorMessage(t("site_access.empty_locations"));
       setIsCreating(false);
       return;
     }
@@ -163,11 +165,11 @@ export function SiteAccessClient() {
         location_id: locationId,
       });
 
-      setSuccessMessage("Location access assigned.");
+      setSuccessMessage(t("site_access.success"));
       await loadPageData();
     } catch (error) {
       setErrorMessage(
-        error instanceof Error ? error.message : "Could not assign location.",
+        error instanceof Error ? error.message : t("site_access.assign_failed"),
       );
     } finally {
       setIsCreating(false);
@@ -185,13 +187,13 @@ export function SiteAccessClient() {
         location_id: record.location_id,
       });
 
-      setSuccessMessage("Location access removed.");
+      setSuccessMessage(t("site_access.removed"));
       await loadPageData();
     } catch (error) {
       setErrorMessage(
         error instanceof Error
           ? error.message
-          : "Could not remove location access.",
+          : t("site_access.remove_failed"),
       );
     } finally {
       setDeletingKey(null);
@@ -200,24 +202,19 @@ export function SiteAccessClient() {
 
   return (
     <Sheet>
-      <PageHeader
-        title="Site Access"
-        description="Assign employees to geofenced work locations."
-      />
+      <PageHeader title={t("site_access.page_title")} description={t("site_access.page_description")} />
 
       <SheetBody>
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2 text-sm">
-              You do not have permission to manage site access.
+              {t("site_access.permission_denied")}
             </div>
           }
         >
           <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
-            {showCompanySelector
-              ? "Select a company, then assign its users to its active geofenced locations."
-              : "Assign your company users to your company active geofenced locations."}
+            {showCompanySelector ? t("site_access.select_company_hint") : t("site_access.scope_hint")}
           </div>
 
           <form
@@ -233,7 +230,7 @@ export function SiteAccessClient() {
             >
               {showCompanySelector ? (
                 <label className="block text-xs font-bold text-[var(--color-text)]">
-                  Company
+                  {t("common.company")}
                   <select
                     className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     onChange={(event) => setCompanyId(event.target.value)}
@@ -250,7 +247,7 @@ export function SiteAccessClient() {
               ) : null}
 
               <label className="block text-xs font-bold text-[var(--color-text)]">
-                User
+                {t("site_access.select_user")}
                 <select
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   disabled={assignableUsers.length === 0}
@@ -259,19 +256,19 @@ export function SiteAccessClient() {
                   value={userId}
                 >
                   {assignableUsers.length === 0 ? (
-                    <option value="">No active users for this company</option>
+                    <option value="">{t("site_access.no_users_option")}</option>
                   ) : null}
 
                   {assignableUsers.map((user) => (
                     <option key={user.id} value={user.id}>
-                      {user.email} — {user.system_role}
+                      {user.email} — {employeeRoleLabel(t, user.system_role)}
                     </option>
                   ))}
                 </select>
               </label>
 
               <label className="block text-xs font-bold text-[var(--color-text)]">
-                Location
+                {t("site_access.select_location")}
                 <select
                   className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   disabled={assignableLocations.length === 0}
@@ -280,7 +277,7 @@ export function SiteAccessClient() {
                   value={locationId}
                 >
                   {assignableLocations.length === 0 ? (
-                    <option value="">No active locations for this company</option>
+                    <option value="">{t("site_access.no_locations_option")}</option>
                   ) : null}
 
                   {assignableLocations.map((location) => (
@@ -292,9 +289,9 @@ export function SiteAccessClient() {
               </label>
 
               <div className="flex flex-col">
-                <span className="mb-1 text-xs font-bold opacity-0">Action</span>
+                <span className="mb-1 text-xs font-bold opacity-0">{t("site_access.action_column")}</span>
                 <Button className="h-10" disabled={isCreating} type="submit">
-                  {isCreating ? "Assigning..." : "Assign location"}
+                  {isCreating ? t("site_access.assigning") : t("site_access.assign")}
                 </Button>
               </div>
             </div>
@@ -315,24 +312,24 @@ export function SiteAccessClient() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Location</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Assigned</TableHead>
-                <TableHead>Actions</TableHead>
+                <TableHead>{t("site_access.col_user")}</TableHead>
+                <TableHead>{t("site_access.col_location")}</TableHead>
+                <TableHead>{t("site_access.col_company")}</TableHead>
+                <TableHead>{t("site_access.col_assigned")}</TableHead>
+                <TableHead>{t("common.actions")}</TableHead>
               </TableRow>
             </TableHeader>
 
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5}>Loading site access...</TableCell>
+                  <TableCell colSpan={5}>{t("site_access.loading")}</TableCell>
                 </TableRow>
               ) : null}
 
               {!isLoading && visibleRecords.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5}>No site access assigned.</TableCell>
+                  <TableCell colSpan={5}>{t("site_access.empty_table")}</TableCell>
                 </TableRow>
               ) : null}
 
@@ -348,12 +345,12 @@ export function SiteAccessClient() {
 
                     return (
                       <TableRow key={record.id}>
-                        <TableCell>{userLabel(user)}</TableCell>
+                        <TableCell>{userLabel(user, t)}</TableCell>
                         <TableCell>
-                          {location?.name ?? "Unknown location"}
+                          {location?.name ?? t("site_access.unknown_location")}
                         </TableCell>
                         <TableCell>
-                          {company?.name ?? "Assigned company"}
+                          {company?.name ?? t("site_access.assigned_company_fallback")}
                         </TableCell>
                         <TableCell>
                           {new Date(record.created_at).toLocaleDateString()}
@@ -364,7 +361,7 @@ export function SiteAccessClient() {
                             onClick={() => handleRemoveSiteAccess(record)}
                             type="button"
                           >
-                            {deletingKey === record.id ? "Removing..." : "Remove"}
+                            {deletingKey === record.id ? t("site_access.removing") : t("site_access.remove")}
                           </Button>
                         </TableCell>
                       </TableRow>

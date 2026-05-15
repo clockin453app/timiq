@@ -33,6 +33,7 @@ import {
   type WorkProgressReviewGalleryItem,
   type WorkProgressReviewListItem,
 } from "../../features/work-progress/api";
+import { useT } from "../../lib/i18n";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -692,18 +693,22 @@ function ReviewAdminBody() {
 }
 
 export function WorkProgressReviewClient() {
+  const t = useT();
   return (
     <Sheet>
       <PageHeader
-        description="Review site progress from employees you manage. Files open in a protected session."
-        title="Work progress review"
+        description={t(
+          "work_progress.page_description_full",
+          "Review site progress from employees you manage. Files open in a protected session.",
+        )}
+        title={t("work_progress.page_title", "Work progress review")}
       />
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2 text-sm text-[var(--color-text)]">
-              You do not have permission to review work progress.
+              {t("work_progress.permission_denied", "You do not have permission to review work progress.")}
             </div>
           }
         >

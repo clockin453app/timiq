@@ -21,13 +21,17 @@ import {
   listClockSelfiesForReview,
   type ClockSelfieReviewItem,
 } from "../../features/time-clock/selfies-api";
+import { useT } from "../../lib/i18n";
 
-function formatPhase(phase: string) {
+function formatPhase(
+  phase: string,
+  t: (key: string, fallback?: string, vars?: Record<string, string | number>) => string,
+): string {
   if (phase === "clock_in") {
-    return "Clock in";
+    return t("clock_selfie_review.phase_clock_in", "Clock in");
   }
   if (phase === "clock_out") {
-    return "Clock out";
+    return t("clock_selfie_review.phase_clock_out", "Clock out");
   }
   return phase.replaceAll("_", " ");
 }
@@ -41,6 +45,7 @@ function formatWhen(iso: string) {
 }
 
 export function ClockSelfieReviewClient() {
+  const t = useT();
   const [items, setItems] = useState<ClockSelfieReviewItem[]>([]);
   const [loadError, setLoadError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
@@ -63,7 +68,9 @@ export function ClockSelfieReviewClient() {
         }
       } catch (error) {
         if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : "Could not load review list.");
+          setLoadError(
+            error instanceof Error ? error.message : t("clock_selfie_review.load_list_error"),
+          );
         }
       } finally {
         if (!cancelled) {
@@ -77,7 +84,7 @@ export function ClockSelfieReviewClient() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (previewId === null) {
@@ -112,7 +119,9 @@ export function ClockSelfieReviewClient() {
         });
       } catch (error) {
         if (!cancelled) {
-          setPreviewError(error instanceof Error ? error.message : "Could not open selfie preview.");
+          setPreviewError(
+            error instanceof Error ? error.message : t("clock_selfie_review.preview_error"),
+          );
         }
       } finally {
         if (!cancelled) {
@@ -126,7 +135,7 @@ export function ClockSelfieReviewClient() {
     return () => {
       cancelled = true;
     };
-  }, [previewId]);
+  }, [previewId, t]);
 
   useEffect(() => {
     return () => {
@@ -145,13 +154,16 @@ export function ClockSelfieReviewClient() {
 
   const fallback = (
     <Sheet>
-      <PageHeader title="Clock selfie review" description="Management access only." />
+      <PageHeader
+        title={t("clock_selfie_review.permission_title")}
+        description={t("clock_selfie_review.fallback_description")}
+      />
       <SheetBody>
         <div className="border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-4 text-sm text-[var(--color-text-muted)]">
-          You do not have permission to open the clock selfie review page.
+          {t("clock_selfie_review.fallback_hint")}
           <div className="mt-3">
             <Link className="font-semibold text-[var(--color-text)] underline" href="/dashboard">
-              Back to dashboard
+              {t("clock_selfie_review.back_dashboard")}
             </Link>
           </div>
         </div>
@@ -163,12 +175,12 @@ export function ClockSelfieReviewClient() {
     <RoleGuard allowedRoles={["administrator", "admin"]} fallback={fallback}>
       <Sheet>
         <PageHeader
-          title="Clock selfie review"
-          description="Clock-in and clock-out selfies for employees you can manage. Administrators see all companies."
+          title={t("clock_selfie_review.page_title")}
+          description={t("clock_selfie_review.default_description")}
         />
         <SheetBody>
           {isLoading ? (
-            <p className="text-sm text-[var(--color-text-muted)]">Loading selfies...</p>
+            <p className="text-sm text-[var(--color-text-muted)]">{t("clock_selfie_review.loading_list")}</p>
           ) : null}
 
           {loadError ? (
@@ -179,7 +191,7 @@ export function ClockSelfieReviewClient() {
 
           {!isLoading && !loadError && items.length === 0 ? (
             <div className="border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-4 text-sm text-[var(--color-text-muted)]">
-              No clock selfies to review yet for your scope.
+              {t("clock_selfie_review.no_items_scope")}
             </div>
           ) : null}
 
@@ -187,14 +199,14 @@ export function ClockSelfieReviewClient() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Employee</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Company</TableHead>
-                  <TableHead>Phase</TableHead>
-                  <TableHead>Captured</TableHead>
-                  <TableHead>Shift started</TableHead>
-                  <TableHead>Shift ended</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>{t("clock_selfie_review.col_employee")}</TableHead>
+                  <TableHead>{t("clock_selfie_review.col_email")}</TableHead>
+                  <TableHead>{t("clock_selfie_review.col_company")}</TableHead>
+                  <TableHead>{t("clock_selfie_review.col_phase")}</TableHead>
+                  <TableHead>{t("clock_selfie_review.col_captured")}</TableHead>
+                  <TableHead>{t("clock_selfie_review.col_shift_start")}</TableHead>
+                  <TableHead>{t("clock_selfie_review.col_shift_end")}</TableHead>
+                  <TableHead className="text-right">{t("common.actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -203,13 +215,13 @@ export function ClockSelfieReviewClient() {
                     <TableCell>{item.employee_name ?? "—"}</TableCell>
                     <TableCell>{item.user_email}</TableCell>
                     <TableCell>{item.company_name ?? "—"}</TableCell>
-                    <TableCell>{formatPhase(item.phase)}</TableCell>
+                    <TableCell>{formatPhase(item.phase, t)}</TableCell>
                     <TableCell>{formatWhen(item.captured_at)}</TableCell>
                     <TableCell>{formatWhen(item.clock_in_at)}</TableCell>
                     <TableCell>{item.clock_out_at ? formatWhen(item.clock_out_at) : "—"}</TableCell>
                     <TableCell className="text-right">
                       <Button onClick={() => setPreviewId(item.id)} type="button">
-                        Preview
+                        {t("clock_selfie_review.preview_button")}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -225,13 +237,13 @@ export function ClockSelfieReviewClient() {
               role="dialog"
             >
               <div className="mx-auto w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md sm:max-w-[min(36rem,calc(100vw-3rem))]">
-                <p className="text-sm font-bold text-[var(--color-text)]">Selfie preview</p>
-                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  Loaded through a protected server request using your session.
-                </p>
+                <p className="text-sm font-bold text-[var(--color-text)]">{t("clock_selfie_review.dialog_title")}</p>
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">{t("clock_selfie_review.dialog_hint")}</p>
 
                 {previewLoading ? (
-                  <p className="mt-3 text-sm text-[var(--color-text-muted)]">Opening image...</p>
+                  <p className="mt-3 text-sm text-[var(--color-text-muted)]">
+                    {t("clock_selfie_review.opening_image")}
+                  </p>
                 ) : null}
 
                 {previewError ? (
@@ -243,13 +255,17 @@ export function ClockSelfieReviewClient() {
                 {!previewLoading && previewUrl ? (
                   <div className="mt-3 rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img alt="Clock selfie preview" className="mx-auto max-h-80 w-full object-contain" src={previewUrl} />
+                    <img
+                      alt={t("clock_selfie_review.gallery_alt")}
+                      className="mx-auto max-h-80 w-full object-contain"
+                      src={previewUrl}
+                    />
                   </div>
                 ) : null}
 
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button onClick={closePreview} type="button">
-                    Close
+                    {t("common.close")}
                   </Button>
                 </div>
               </div>

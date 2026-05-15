@@ -15,6 +15,10 @@ import wiring2Es from "./locale-patches/wiring-2-es.mjs";
 import wiring2Pl from "./locale-patches/wiring-2-pl.mjs";
 import wiring2Ro from "./locale-patches/wiring-2-ro.mjs";
 import wiring2Ru from "./locale-patches/wiring-2-ru.mjs";
+import wiring3Ro from "./locale-patches/wiring-3-ro.mjs";
+import wiring3Pl from "./locale-patches/wiring-3-pl.mjs";
+import wiring3Es from "./locale-patches/wiring-3-es.mjs";
+import wiring3Ru from "./locale-patches/wiring-3-ru.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const i18nDir = path.join(__dirname, "..", "src", "lib", "i18n");
@@ -72,10 +76,10 @@ if (fs.existsSync(legacyPath)) {
   plPartial = loadTsConst(legacyPath, "PL_STRINGS");
 }
 
-const ro = mergeFull(en, roPartial, { ...roMissing, ...wiring2Ro });
-const pl = mergeFull(en, plPartial, { ...plMissing, ...wiring2Pl });
-const es = mergeFull(en, {}, { ...esPatch, ...wiring2Es });
-const ru = mergeFull(en, {}, { ...ruPatch, ...wiring2Ru });
+const ro = mergeFull(en, roPartial, { ...roMissing, ...wiring2Ro, ...wiring3Ro });
+const pl = mergeFull(en, plPartial, { ...plMissing, ...wiring2Pl, ...wiring3Pl });
+const es = mergeFull(en, {}, { ...esPatch, ...wiring2Es, ...wiring3Es });
+const ru = mergeFull(en, {}, { ...ruPatch, ...wiring2Ru, ...wiring3Ru });
 
 writeLocaleTs(path.join(i18nDir, "ro.ts"), "RO_STRINGS", ro);
 writeLocaleTs(path.join(i18nDir, "pl.ts"), "PL_STRINGS", pl);

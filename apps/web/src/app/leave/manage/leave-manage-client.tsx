@@ -31,6 +31,7 @@ import {
   type LeaveType,
 } from "../../../features/leave/api";
 import { leaveStatusLabel, leaveTypeLabel } from "../../../features/leave/labels";
+import { genericStatusLabel, useT } from "../../../lib/i18n";
 
 function statusBadgeClass(status: string) {
   switch (status) {
@@ -46,6 +47,7 @@ function statusBadgeClass(status: string) {
 }
 
 export function LeaveManageClient() {
+  const t = useT();
   const user = useCurrentUser();
   const management = canAccessManagement(user);
 
@@ -129,7 +131,7 @@ export function LeaveManageClient() {
       setRequests(req);
       setAdjustments(adj);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Load failed.");
+      setError(e instanceof Error ? e.message : t("leave.manage_load_failed"));
     }
   }, [companyId, filterStatus, filterUser]);
 
@@ -209,9 +211,9 @@ export function LeaveManageClient() {
         sick_leave_requires_note: polSickNote,
       });
       setPolicy(p);
-      setPolicySaved("Policy saved.");
+      setPolicySaved(t("leave.manage_policy_saved"));
     } catch (err) {
-      setPolicySaved(err instanceof Error ? err.message : "Save failed.");
+      setPolicySaved(err instanceof Error ? err.message : t("leave.manage_save_failed"));
     }
   }
 
@@ -219,7 +221,7 @@ export function LeaveManageClient() {
     e.preventDefault();
     setAdjMsg("");
     if (!companyId || !adjUser || !adjYear || !adjDays || !adjReason.trim()) {
-      setAdjMsg("Fill user, leave year, days, and reason.");
+      setAdjMsg(t("leave.manage_adj_fill"));
       return;
     }
     try {
@@ -229,12 +231,12 @@ export function LeaveManageClient() {
         adjustment_days: adjDays.trim(),
         reason: adjReason.trim(),
       });
-      setAdjMsg("Adjustment saved.");
+      setAdjMsg(t("leave.manage_adj_saved"));
       setAdjDays("");
       setAdjReason("");
       await loadAll();
     } catch (err) {
-      setAdjMsg(err instanceof Error ? err.message : "Failed.");
+      setAdjMsg(err instanceof Error ? err.message : t("leave.manage_failed_generic"));
     }
   }
 
@@ -242,7 +244,7 @@ export function LeaveManageClient() {
     e.preventDefault();
     setBMsg("");
     if (!companyId || !behalfUser || !bFrom || !bTo) {
-      setBMsg("Select employee and dates.");
+      setBMsg(t("leave.manage_select_dates"));
       return;
     }
     try {
@@ -253,10 +255,10 @@ export function LeaveManageClient() {
         date_to: bTo,
         force_overlap: bForceOverlap,
       });
-      setBMsg("Leave created.");
+      setBMsg(t("leave.manage_created"));
       await loadAll();
     } catch (err) {
-      setBMsg(err instanceof Error ? err.message : "Failed.");
+      setBMsg(err instanceof Error ? err.message : t("leave.manage_failed_generic"));
     }
   }
 
@@ -267,7 +269,7 @@ export function LeaveManageClient() {
       await loadAll();
       setSelected(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Approve failed.");
+      setError(e instanceof Error ? e.message : t("leave.manage_approve_failed"));
     } finally {
       setBusy(null);
     }
@@ -281,7 +283,7 @@ export function LeaveManageClient() {
       setSelected(null);
       setRejectNote("");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Reject failed.");
+      setError(e instanceof Error ? e.message : t("leave.manage_reject_failed"));
     } finally {
       setBusy(null);
     }
@@ -294,7 +296,7 @@ export function LeaveManageClient() {
       await loadAll();
       setSelected(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Cancel failed.");
+      setError(e instanceof Error ? e.message : t("leave.manage_cancel_failed"));
     } finally {
       setBusy(null);
     }
@@ -317,9 +319,9 @@ export function LeaveManageClient() {
   if (!management) {
     return (
       <Sheet>
-        <PageHeader description="Approve leave and edit company leave policy." title="Leave management" />
+        <PageHeader description={t("leave.manage_page_description_short")} title={t("leave.manage_page_title")} />
         <SheetBody>
-          <p className="text-sm text-[var(--color-text-muted)]">You do not have access to this page.</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{t("leave.manage_no_access")}</p>
         </SheetBody>
       </Sheet>
     );
@@ -328,19 +330,19 @@ export function LeaveManageClient() {
   return (
     <Sheet>
       <PageHeader
-        description="Review requests, adjust balances, and configure leave policy for your company."
-        title="Leave management"
+        description={t("leave.manage_page_description")}
+        title={t("leave.manage_page_title")}
       />
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         {isAdministrator(user) ? (
           <label className="block max-w-md text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-            <span className="text-[var(--color-text)]">Company</span>
+            <span className="text-[var(--color-text)]">{t("leave.manage_company_pick")}</span>
             <select
               className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
               onChange={(ev) => setCompanyId(ev.target.value)}
               value={companyId}
             >
-              <option value="">Choose company…</option>
+              <option value="">{t("leave.manage_choose_company")}</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -356,14 +358,14 @@ export function LeaveManageClient() {
           </div>
         ) : null}
 
-        {loading && companyId ? <p className="text-sm text-[var(--color-text-muted)]">Loading…</p> : null}
+        {loading && companyId ? <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading")}</p> : null}
 
         {adminSummary && companyId ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {[
-              { label: "Pending", value: String(adminSummary.pending_count) },
-              { label: "Approved (all time)", value: String(adminSummary.approved_count) },
-              { label: "Rejected (all time)", value: String(adminSummary.rejected_count) },
+              { label: t("leave.manage_metric_pending"), value: String(adminSummary.pending_count) },
+              { label: t("leave.manage_metric_approved"), value: String(adminSummary.approved_count) },
+              { label: t("leave.manage_metric_rejected"), value: String(adminSummary.rejected_count) },
             ].map((c) => (
               <div
                 className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]"
@@ -386,12 +388,12 @@ export function LeaveManageClient() {
           <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
             <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                Leave policy
+                {t("leave.manage_section_leave_policy")}
               </p>
             </div>
             <form className="grid max-w-2xl grid-cols-1 gap-3 p-3 text-sm md:grid-cols-2" onSubmit={savePolicy}>
               <label className="text-xs font-bold text-[var(--color-text-soft)]">
-                Year starts (month)
+                {t("leave.manage_year_start_month")}
                 <input
                   className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   max={12}
@@ -402,7 +404,7 @@ export function LeaveManageClient() {
                 />
               </label>
               <label className="text-xs font-bold text-[var(--color-text-soft)]">
-                Year starts (day)
+                {t("leave.manage_year_start_day")}
                 <input
                   className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   max={31}
@@ -413,7 +415,7 @@ export function LeaveManageClient() {
                 />
               </label>
               <label className="text-xs font-bold text-[var(--color-text-soft)] md:col-span-2">
-                Default annual allowance (days, blank = none)
+                {t("leave.manage_default_allowance")}
                 <input
                   className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   onChange={(ev) => setPolAllow(ev.target.value)}
@@ -423,22 +425,22 @@ export function LeaveManageClient() {
               </label>
               <label className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
                 <input checked={polHalf} onChange={(ev) => setPolHalf(ev.target.checked)} type="checkbox" />
-                Allow half days
+                {t("leave.manage_allow_half_days")}
               </label>
               <label className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
                 <input checked={polPaidA} onChange={(ev) => setPolPaidA(ev.target.checked)} type="checkbox" />
-                Paid annual leave (informational in reports this batch)
+                {t("leave.manage_paid_annual")}
               </label>
               <label className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
                 <input checked={polPaidS} onChange={(ev) => setPolPaidS(ev.target.checked)} type="checkbox" />
-                Paid sick leave (not auto-calculated in payroll yet)
+                {t("leave.manage_paid_sick")}
               </label>
               <label className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
                 <input checked={polSickNote} onChange={(ev) => setPolSickNote(ev.target.checked)} type="checkbox" />
-                Sick leave requires a note
+                {t("leave.manage_sick_requires_note")}
               </label>
               <div className="md:col-span-2">
-                <Button type="submit">Save policy</Button>
+                <Button type="submit">{t("leave.manage_save_policy")}</Button>
                 {policySaved ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">{policySaved}</p> : null}
               </div>
             </form>
@@ -449,12 +451,12 @@ export function LeaveManageClient() {
           <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
             <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                Balance adjustments
+                {t("leave.manage_section_adjustments")}
               </p>
             </div>
             <form className="flex flex-wrap items-end gap-2 p-3 text-xs" onSubmit={submitAdjustment}>
               <label className="font-bold text-[var(--color-text-soft)]">
-                Employee
+                {t("leave.manage_adj_user")}
                 <select
                   className="mt-1 block h-9 min-w-[12rem] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   onChange={(e) => setAdjUser(e.target.value)}
@@ -469,7 +471,7 @@ export function LeaveManageClient() {
                 </select>
               </label>
               <label className="font-bold text-[var(--color-text-soft)]">
-                Leave year
+                {t("leave.manage_adj_year")}
                 <input
                   className="mt-1 block h-9 w-24 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   onChange={(e) => setAdjYear(e.target.value)}
@@ -478,7 +480,7 @@ export function LeaveManageClient() {
                 />
               </label>
               <label className="font-bold text-[var(--color-text-soft)]">
-                Days (+/−)
+                {t("leave.manage_adj_days")}
                 <input
                   className="mt-1 block h-9 w-24 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   onChange={(e) => setAdjDays(e.target.value)}
@@ -486,12 +488,7 @@ export function LeaveManageClient() {
                 />
               </label>
               <label className="min-w-[10rem] flex-1 font-bold text-[var(--color-text-soft)]">
-                Reason
-                <input
-                  className="mt-1 block h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
-                  onChange={(e) => setAdjReason(e.target.value)}
-                  value={adjReason}
-                />
+                {t("leave.manage_adj_reason")}
               </label>
               <Button type="submit">Add adjustment</Button>
             </form>
@@ -500,17 +497,17 @@ export function LeaveManageClient() {
               <Table className="text-xs">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>User</TableHead>
-                    <TableHead>Year</TableHead>
-                    <TableHead>Days</TableHead>
-                    <TableHead>Reason</TableHead>
+                    <TableHead>{t("leave.manage_adj_user")}</TableHead>
+                    <TableHead>{t("leave.manage_adj_year")}</TableHead>
+                    <TableHead>{t("leave.manage_adj_days")}</TableHead>
+                    <TableHead>{t("leave.manage_adj_reason")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {adjustments.length === 0 ? (
                     <TableRow>
                       <TableCell className="text-[var(--color-text-muted)]" colSpan={4}>
-                        No adjustments yet.
+                        {t("leave.manage_adj_empty")}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -535,12 +532,12 @@ export function LeaveManageClient() {
           <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
             <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                Create on behalf
+                {t("leave.manage_section_behalf")}
               </p>
             </div>
             <form className="flex flex-wrap items-end gap-2 p-3 text-xs" onSubmit={submitBehalf}>
               <label className="font-bold text-[var(--color-text-soft)]">
-                Employee
+                {t("leave.manage_employee_pick")}
                 <select
                   className="mt-1 block h-9 min-w-[12rem] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   onChange={(e) => setBehalfUser(e.target.value)}
@@ -555,20 +552,20 @@ export function LeaveManageClient() {
                 </select>
               </label>
               <label className="font-bold text-[var(--color-text-soft)]">
-                Type
+                {t("leave.manage_leave_type_label")}
                 <select
                   className="mt-1 block h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   onChange={(e) => setBType(e.target.value as LeaveType)}
                   value={bType}
                 >
-                  <option value="annual_leave">Annual</option>
-                  <option value="sick_leave">Sick</option>
-                  <option value="unpaid_leave">Unpaid</option>
-                  <option value="other">Other</option>
+                  <option value="annual_leave">{t("leave.manage_type_annual_short")}</option>
+                  <option value="sick_leave">{t("leave.manage_type_sick_short")}</option>
+                  <option value="unpaid_leave">{t("leave.manage_type_unpaid_short")}</option>
+                  <option value="other">{t("leave.manage_type_other_short")}</option>
                 </select>
               </label>
               <label className="font-bold text-[var(--color-text-soft)]">
-                From
+                {t("leave.label_from")}
                 <input
                   className="mt-1 block h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   onChange={(e) => setBFrom(e.target.value)}
@@ -577,7 +574,7 @@ export function LeaveManageClient() {
                 />
               </label>
               <label className="font-bold text-[var(--color-text-soft)]">
-                To
+                {t("leave.label_to")}
                 <input
                   className="mt-1 block h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                   onChange={(e) => setBTo(e.target.value)}
@@ -587,9 +584,9 @@ export function LeaveManageClient() {
               </label>
               <label className="flex items-center gap-2 font-bold text-[var(--color-text)]">
                 <input checked={bForceOverlap} onChange={(e) => setBForceOverlap(e.target.checked)} type="checkbox" />
-                Allow overlap
+                {t("leave.manage_overlap")}
               </label>
-              <Button type="submit">Create</Button>
+              <Button type="submit">{t("leave.manage_create_leave")}</Button>
             </form>
             {bMsg ? <p className="px-3 pb-2 text-xs text-[var(--color-text-muted)]">{bMsg}</p> : null}
           </div>
@@ -598,27 +595,27 @@ export function LeaveManageClient() {
         {companyId ? (
           <div className="flex flex-wrap gap-2 text-xs">
             <label className="font-bold text-[var(--color-text-soft)]">
-              Status
+              {t("leave.manage_filter_status")}
               <select
                 className="mt-1 block h-9 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                 onChange={(e) => setFilterStatus(e.target.value)}
                 value={filterStatus}
               >
-                <option value="">All</option>
-                <option value="pending">Pending</option>
-                <option value="approved">Approved</option>
-                <option value="rejected">Rejected</option>
-                <option value="cancelled">Cancelled</option>
+                <option value="">{t("leave.manage_all_statuses")}</option>
+                <option value="pending">{genericStatusLabel(t, "pending")}</option>
+                <option value="approved">{genericStatusLabel(t, "approved")}</option>
+                <option value="rejected">{genericStatusLabel(t, "rejected")}</option>
+                <option value="cancelled">{genericStatusLabel(t, "cancelled")}</option>
               </select>
             </label>
             <label className="font-bold text-[var(--color-text-soft)]">
-              Employee
+              {t("leave.manage_filter_employee")}
               <select
                 className="mt-1 block h-9 min-w-[12rem] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2"
                 onChange={(e) => setFilterUser(e.target.value)}
                 value={filterUser}
               >
-                <option value="">All</option>
+                <option value="">{t("leave.manage_all_employees")}</option>
                 {employeesInCompany.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.email}
@@ -632,7 +629,7 @@ export function LeaveManageClient() {
               type="button"
               variant="secondary"
             >
-              Apply filters
+              {t("leave.manage_apply_filters_btn")}
             </Button>
           </div>
         ) : null}
@@ -643,11 +640,11 @@ export function LeaveManageClient() {
               <Table className="min-w-[800px] text-xs">
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Dates</TableHead>
-                    <TableHead>Days</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>{t("leave.manage_table_employee")}</TableHead>
+                    <TableHead>{t("leave.col_type")}</TableHead>
+                    <TableHead>{t("leave.manage_table_dates")}</TableHead>
+                    <TableHead>{t("leave.manage_table_days")}</TableHead>
+                    <TableHead>{t("leave.manage_table_status")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -660,7 +657,7 @@ export function LeaveManageClient() {
                       <TableCell className="max-w-[200px] truncate text-xs">
                         {emailByUserId.get(r.user_id) ?? r.user_id}
                       </TableCell>
-                      <TableCell>{leaveTypeLabel(r.leave_type)}</TableCell>
+                      <TableCell>{leaveTypeLabel(r.leave_type, t)}</TableCell>
                       <TableCell className="tabular-nums">
                         {r.date_from} → {r.date_to}
                       </TableCell>
@@ -669,7 +666,7 @@ export function LeaveManageClient() {
                         <span
                           className={`inline-block rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadgeClass(r.status)}`}
                         >
-                          {leaveStatusLabel(r.status)}
+                          {leaveStatusLabel(r.status, t)}
                         </span>
                       </TableCell>
                     </TableRow>
@@ -679,22 +676,22 @@ export function LeaveManageClient() {
             </div>
 
             <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3 text-sm">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">Detail</p>
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">{t("leave.manage_detail_title")}</p>
               {!selected ? (
-                <p className="mt-2 text-xs text-[var(--color-text-muted)]">Select a row.</p>
+                <p className="mt-2 text-xs text-[var(--color-text-muted)]">{t("leave.manage_select_row")}</p>
               ) : (
                 <div className="mt-2 space-y-2 text-xs">
                   <p>
-                    <span className="font-semibold">Type:</span> {leaveTypeLabel(selected.leave_type)}
+                    <span className="font-semibold">{t("leave.manage_lbl_type")}</span> {leaveTypeLabel(selected.leave_type, t)}
                   </p>
                   <p className="tabular-nums">
-                    <span className="font-semibold">Dates:</span> {selected.date_from} → {selected.date_to}
+                    <span className="font-semibold">{t("leave.manage_lbl_dates")}</span> {selected.date_from} → {selected.date_to}
                   </p>
                   <p>
-                    <span className="font-semibold">Days:</span> {selected.total_days}
+                    <span className="font-semibold">{t("leave.manage_lbl_days")}</span> {selected.total_days}
                   </p>
                   <p>
-                    <span className="font-semibold">Status:</span> {leaveStatusLabel(selected.status)}
+                    <span className="font-semibold">{t("leave.manage_lbl_status")}</span> {leaveStatusLabel(selected.status, t)}
                   </p>
                   {selected.warnings?.length ? (
                     <ul className="list-inside list-disc text-amber-900">
@@ -706,10 +703,10 @@ export function LeaveManageClient() {
                   {selected.status === "pending" ? (
                     <div className="space-y-2 border-t border-[var(--color-border-dark)] pt-2">
                       <Button disabled={busy === selected.id} onClick={() => void doApprove(selected.id)} type="button">
-                        Approve
+                        {t("leave.manage_approve")}
                       </Button>
                       <label className="block font-bold text-[var(--color-text-soft)]">
-                        Reject note
+                        {t("leave.manage_reject_note_label")}
                         <textarea
                           className="mt-1 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1"
                           onChange={(e) => setRejectNote(e.target.value)}
@@ -722,7 +719,7 @@ export function LeaveManageClient() {
                         type="button"
                         variant="secondary"
                       >
-                        Reject
+                        {t("leave.manage_reject")}
                       </Button>
                       <Button
                         disabled={busy === selected.id}
@@ -730,7 +727,7 @@ export function LeaveManageClient() {
                         type="button"
                         variant="secondary"
                       >
-                        Cancel (admin)
+                        {t("leave.manage_cancel_admin")}
                       </Button>
                     </div>
                   ) : null}
@@ -739,7 +736,7 @@ export function LeaveManageClient() {
             </div>
           </div>
         ) : (
-          <p className="text-sm text-[var(--color-text-muted)]">Select a company to manage leave.</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{t("leave.manage_pick_company")}</p>
         )}
       </SheetBody>
     </Sheet>

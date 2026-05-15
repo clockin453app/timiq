@@ -13,6 +13,7 @@ import {
   type LeaveType,
 } from "../../features/leave/api";
 import { leaveStatusLabel, leaveTypeLabel } from "../../features/leave/labels";
+import { useT } from "../../lib/i18n";
 
 function statusBadgeClass(status: string) {
   switch (status) {
@@ -30,6 +31,7 @@ function statusBadgeClass(status: string) {
 }
 
 export function LeaveClient() {
+  const t = useT();
   const user = useCurrentUser();
   const [summary, setSummary] = useState<Awaited<ReturnType<typeof fetchMyLeaveSummary>> | null>(null);
   const [rows, setRows] = useState<LeaveRequestResponse[]>([]);
@@ -55,11 +57,11 @@ export function LeaveClient() {
     } catch (e) {
       setSummary(null);
       setRows([]);
-      setError(e instanceof Error ? e.message : "Could not load leave.");
+      setError(e instanceof Error ? e.message : t("leave.load_error"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -69,7 +71,7 @@ export function LeaveClient() {
     e.preventDefault();
     setFormMsg("");
     if (!dateFrom || !dateTo) {
-      setFormMsg("Choose start and end dates.");
+      setFormMsg(t("leave.choose_dates"));
       return;
     }
     try {
@@ -87,12 +89,12 @@ export function LeaveClient() {
           : {}),
       };
       await createMyLeaveRequest(body);
-      setFormMsg("Request submitted.");
+      setFormMsg(t("leave.request_submitted"));
       setReason("");
       setEmployeeNote("");
       await load();
     } catch (err) {
-      setFormMsg(err instanceof Error ? err.message : "Request failed.");
+      setFormMsg(err instanceof Error ? err.message : t("leave.request_failed"));
     }
   }
 
@@ -102,7 +104,7 @@ export function LeaveClient() {
       await cancelMyLeaveRequest(id);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Cancel failed.");
+      setError(e instanceof Error ? e.message : t("leave.cancel_failed"));
     } finally {
       setBusyId(null);
     }
@@ -111,9 +113,9 @@ export function LeaveClient() {
   if (!user.company_id) {
     return (
       <Sheet>
-        <PageHeader description="Request and track annual leave, sick leave, and other absence." title="Leave" />
+        <PageHeader description={t("leave.page_description_mgmt")} title={t("leave.page_title")} />
         <SheetBody>
-          <p className="text-sm text-[var(--color-text-muted)]">Your account is not linked to a company.</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{t("leave.no_company_linked")}</p>
         </SheetBody>
       </Sheet>
     );
@@ -121,12 +123,9 @@ export function LeaveClient() {
 
   return (
     <Sheet>
-      <PageHeader
-        description="Request leave and view status. Approved leave also appears on your week report and timesheet context."
-        title="Leave"
-      />
+      <PageHeader description={t("leave.page_description")} title={t("leave.page_title")} />
       <SheetBody className="min-w-0 space-y-4 md:p-5">
-        {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading…</p> : null}
+        {loading ? <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading")}</p> : null}
         {error ? (
           <div className="rounded-[var(--radius-md)] border border-red-800/30 bg-red-50 px-3 py-2 text-sm text-red-900">
             {error}
@@ -136,10 +135,10 @@ export function LeaveClient() {
         {summary ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
-              { label: "Annual allowance (days)", value: summary.allowance_days ?? "—" },
-              { label: "Used (approved annual)", value: summary.used_annual_days },
-              { label: "Pending (annual)", value: summary.pending_annual_days },
-              { label: "Remaining", value: summary.remaining_days ?? "—" },
+              { label: t("leave.allowance"), value: summary.allowance_days ?? "—" },
+              { label: t("leave.used_annual"), value: summary.used_annual_days },
+              { label: t("leave.pending_annual"), value: summary.pending_annual_days },
+              { label: t("leave.remaining"), value: summary.remaining_days ?? "—" },
             ].map((c) => (
               <div
                 className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]"
@@ -152,7 +151,9 @@ export function LeaveClient() {
                 </div>
                 <div className="px-3 py-3">
                   <p className="text-xl font-semibold tabular-nums text-[var(--color-text)]">{c.value}</p>
-                  <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">Leave year {summary.leave_year}</p>
+                  <p className="mt-1 text-[10px] text-[var(--color-text-muted)]">
+                    {t("leave.leave_year", "Leave year {{year}}", { year: summary.leave_year })}
+                  </p>
                 </div>
               </div>
             ))}
@@ -162,26 +163,26 @@ export function LeaveClient() {
         <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
           <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              New request
+              {t("leave.new_request")}
             </p>
           </div>
           <form className="space-y-3 p-3 text-sm" onSubmit={onSubmit}>
             <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-              Type
+              {t("leave.type")}
               <select
                 className="mt-1 h-10 w-full max-w-md rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-[var(--color-text)]"
                 onChange={(ev) => setLeaveType(ev.target.value as LeaveType)}
                 value={leaveType}
               >
-                <option value="annual_leave">Annual leave</option>
-                <option value="sick_leave">Sick leave</option>
-                <option value="unpaid_leave">Unpaid leave</option>
-                <option value="other">Other authorised absence</option>
+                <option value="annual_leave">{leaveTypeLabel("annual_leave", t)}</option>
+                <option value="sick_leave">{leaveTypeLabel("sick_leave", t)}</option>
+                <option value="unpaid_leave">{leaveTypeLabel("unpaid_leave", t)}</option>
+                <option value="other">{leaveTypeLabel("other", t)}</option>
               </select>
             </label>
             <div className="flex flex-wrap gap-3">
               <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-                From
+                {t("leave.label_from")}
                 <input
                   className="mt-1 block h-10 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-[var(--color-text)]"
                   onChange={(ev) => setDateFrom(ev.target.value)}
@@ -190,7 +191,7 @@ export function LeaveClient() {
                 />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-                To
+                {t("leave.label_to")}
                 <input
                   className="mt-1 block h-10 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-[var(--color-text)]"
                   onChange={(ev) => setDateTo(ev.target.value)}
@@ -202,33 +203,33 @@ export function LeaveClient() {
             {summary?.allow_half_days ? (
               <div className="flex flex-wrap gap-3">
                 <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-                  First day (half)
+                  {t("leave.first_half")}
                   <select
                     className="mt-1 block h-10 min-w-[10rem] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-[var(--color-text)]"
                     onChange={(ev) => setStartHalf(ev.target.value as typeof startHalf)}
                     value={startHalf}
                   >
-                    <option value="">Full day default</option>
-                    <option value="morning">Morning</option>
-                    <option value="afternoon">Afternoon</option>
+                    <option value="">{t("leave.option_full_day_default")}</option>
+                    <option value="morning">{t("leave.option_morning")}</option>
+                    <option value="afternoon">{t("leave.option_afternoon")}</option>
                   </select>
                 </label>
                 <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-                  Last day (half)
+                  {t("leave.last_half")}
                   <select
                     className="mt-1 block h-10 min-w-[10rem] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-[var(--color-text)]"
                     onChange={(ev) => setEndHalf(ev.target.value as typeof endHalf)}
                     value={endHalf}
                   >
-                    <option value="">Full day default</option>
-                    <option value="morning">Morning</option>
-                    <option value="afternoon">Afternoon</option>
+                    <option value="">{t("leave.option_full_day_default")}</option>
+                    <option value="morning">{t("leave.option_morning")}</option>
+                    <option value="afternoon">{t("leave.option_afternoon")}</option>
                   </select>
                 </label>
               </div>
             ) : null}
             <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-              Reason / context (optional)
+              {t("leave.reason_context")}
               <textarea
                 className="mt-1 min-h-[4rem] w-full max-w-xl rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1.5 text-[var(--color-text)]"
                 onChange={(ev) => setReason(ev.target.value)}
@@ -236,7 +237,7 @@ export function LeaveClient() {
               />
             </label>
             <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-              Note to employer (optional)
+              {t("leave.note_employer")}
               <textarea
                 className="mt-1 min-h-[3rem] w-full max-w-xl rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1.5 text-[var(--color-text)]"
                 onChange={(ev) => setEmployeeNote(ev.target.value)}
@@ -244,29 +245,27 @@ export function LeaveClient() {
               />
             </label>
             {summary?.sick_leave_requires_note && leaveType === "sick_leave" ? (
-              <p className="text-xs text-amber-900">
-                Company policy requires a brief note for sick leave (use reason or note to employer).
-              </p>
+              <p className="text-xs text-amber-900">{t("leave.sick_note_required")}</p>
             ) : null}
             {formMsg ? <p className="text-xs text-[var(--color-text-muted)]">{formMsg}</p> : null}
-            <Button type="submit">Submit request</Button>
+            <Button type="submit">{t("leave.submit_request")}</Button>
           </form>
         </div>
 
         <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
           <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              My requests
+              {t("leave.my_requests_section")}
             </p>
           </div>
           <div className="overflow-x-auto p-2">
             <Table className="min-w-[720px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Dates</TableHead>
-                  <TableHead>Days</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("leave.col_type")}</TableHead>
+                  <TableHead>{t("leave.col_dates")}</TableHead>
+                  <TableHead>{t("leave.table_days")}</TableHead>
+                  <TableHead>{t("leave.col_status")}</TableHead>
                   <TableHead />
                 </TableRow>
               </TableHeader>
@@ -274,13 +273,13 @@ export function LeaveClient() {
                 {rows.length === 0 ? (
                   <TableRow>
                     <TableCell className="text-sm text-[var(--color-text-muted)]" colSpan={5}>
-                      No requests yet.
+                      {t("leave.empty")}
                     </TableCell>
                   </TableRow>
                 ) : (
                   rows.map((r) => (
                     <TableRow key={r.id}>
-                      <TableCell className="text-sm">{leaveTypeLabel(r.leave_type)}</TableCell>
+                      <TableCell className="text-sm">{leaveTypeLabel(r.leave_type, t)}</TableCell>
                       <TableCell className="text-xs tabular-nums text-[var(--color-text-muted)]">
                         {r.date_from} → {r.date_to}
                       </TableCell>
@@ -289,7 +288,7 @@ export function LeaveClient() {
                         <span
                           className={`inline-block rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadgeClass(r.status)}`}
                         >
-                          {leaveStatusLabel(r.status)}
+                          {leaveStatusLabel(r.status, t)}
                         </span>
                       </TableCell>
                       <TableCell className="text-right">
@@ -300,7 +299,7 @@ export function LeaveClient() {
                             type="button"
                             variant="secondary"
                           >
-                            {busyId === r.id ? "…" : "Cancel"}
+                            {busyId === r.id ? "…" : t("leave.cancel")}
                           </Button>
                         ) : null}
                       </TableCell>

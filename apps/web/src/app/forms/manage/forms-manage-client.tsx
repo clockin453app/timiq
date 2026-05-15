@@ -37,7 +37,7 @@ import {
   smartFormCategoryLabel,
   type SmartFormCategoryValue,
 } from "../../../features/smart-forms/form-categories";
-import { useI18n } from "../../../lib/i18n";
+import { useT } from "../../../lib/i18n";
 
 const FIELD_TYPES = ["text", "textarea", "yes_no", "number", "date", "select", "checkbox"] as const;
 
@@ -293,7 +293,7 @@ function statusBadgeClass(status: string): string {
 }
 
 export function FormsManageClient() {
-  const { t } = useI18n();
+  const t = useT();
   const user = useCurrentUser();
   const [items, setItems] = useState<SmartFormTemplate[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);

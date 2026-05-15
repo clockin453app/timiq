@@ -11,15 +11,7 @@ import { listCompanies, type Company } from "../../features/companies/api";
 import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import { formatMoneyGBP } from "../../features/payroll/format";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
-
-const PAYROLL_STATUS_LABEL: Record<string, string> = {
-  not_calculated: "Not calculated",
-  pending: "Pending",
-  pending_approval: "Pending approval",
-  approved: "Approved",
-  paid: "Paid",
-  mixed: "Mixed status",
-};
+import { payrollStatusLabel, useT } from "../../lib/i18n";
 
 function toneForPayrollStatus(status: string): "success" | "warning" | "muted" {
   if (status === "paid") {
@@ -141,6 +133,7 @@ function OverviewCard(props: {
 }
 
 export function OverviewClient() {
+  const t = useT();
   const user = useCurrentUser();
   const adminAll = isAdministrator(user);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -198,7 +191,7 @@ export function OverviewClient() {
         const payload = await fetchManagementOverview(companyQuery);
         setData(payload);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not load overview.");
+        setError(e instanceof Error ? e.message : t("overview.load_error", "Could not load overview."));
         if (!silent) {
           setData(null);
         }
@@ -207,7 +200,22 @@ export function OverviewClient() {
         setRefreshing(false);
       }
     },
-    [adminAll, companyQuery],
+    [adminAll, companyQuery, t],
+  );
+
+  const payrollTrendLabelFn = useCallback(
+    (weekStart: string) => t("overview.week_label", "Week {{date}}", { date: weekStart }),
+    [t],
+  );
+
+  const attendanceTrendDisplayFn = useCallback(
+    (present: number, total: number, rate: string) =>
+      t("overview.attendance_bar_display", "{{present}}/{{total}} ({{rate}})", {
+        present: String(present),
+        total: String(total),
+        rate,
+      }),
+    [t],
   );
 
   useEffect(() => {
@@ -232,10 +240,10 @@ export function OverviewClient() {
       key: d.date,
       label: d.date,
       value: d.present_count,
-      display: `${d.present_count}/${d.total_employees} (${formatPercent(d.attendance_rate)})`,
+      display: attendanceTrendDisplayFn(d.present_count, d.total_employees, formatPercent(d.attendance_rate)),
       max: maxPresent,
     }));
-  }, [data]);
+  }, [data, attendanceTrendDisplayFn]);
 
   const payrollRows = useMemo(() => {
     if (!data?.payroll_trend.length) {
@@ -244,12 +252,12 @@ export function OverviewClient() {
     const maxGross = Math.max(1, ...data.payroll_trend.map((d) => d.total_gross));
     return data.payroll_trend.map((d) => ({
       key: d.week_start,
-      label: `Week ${d.week_start}`,
+      label: payrollTrendLabelFn(d.week_start),
       value: d.total_gross,
       display: `${formatMoneyGBP(String(d.total_gross))} · ${formatDurationSeconds(d.total_hours_seconds)}`,
       max: maxGross,
     }));
-  }, [data]);
+  }, [data, payrollTrendLabelFn]);
 
   return (
     <Sheet>
@@ -269,24 +277,26 @@ export function OverviewClient() {
               type="button"
               variant="secondary"
             >
-              {refreshing ? "Refreshing…" : "Refresh"}
+              {refreshing ? t("common.refreshing", "Refreshing…") : t("common.refresh", "Refresh")}
             </Button>
           </div>
         }
-        description="Operational snapshot for your organisation. Data refreshes automatically while this tab is visible."
-        title="Overview"
+        description={t("overview.page_description")}
+        title={t("overview.page_title")}
       />
 
       <SheetBody className="min-w-0 space-y-5 lg:p-6">
         {companyScope.scopeLabel ? (
           <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
         ) : null}
-        {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading overview…</p> : null}
+        {loading ? (
+          <p className="text-sm text-[var(--color-text-muted)]">{t("overview.loading", "Loading overview…")}</p>
+        ) : null}
         {error ? <p className="text-sm text-[var(--color-danger-700)]">{error}</p> : null}
 
         {adminAll && companyScope.needsCompanySelection && !loading ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-            Select a company to view its dashboard.
+            {t("overview.select_company_dashboard", "Select a company to view its dashboard.")}
           </div>
         ) : null}
 
@@ -295,31 +305,35 @@ export function OverviewClient() {
 
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <OverviewCard
-                badge="Active"
+                badge={t("overview.badge_active", "Active")}
                 badgeTone="muted"
                 href="/employees"
                 primary={String(data.active_employee_count)}
-                secondary="Employees in your scope"
-                title="Employees"
+                secondary={t("overview.employees_subline")}
+                title={t("overview.employees", "Employees")}
               />
               <OverviewCard
-                badge="Sites"
+                badge={t("overview.badge_sites", "Sites")}
                 badgeTone="muted"
                 href="/locations"
                 primary={String(data.active_location_count)}
-                secondary={`${data.active_workplace_count} active workplaces`}
-                title="Active locations"
+                secondary={t("overview.locations_workplaces_sub", "{{count}} active workplaces", {
+                  count: data.active_workplace_count,
+                })}
+                title={t("overview.active_locations", "Active locations")}
               />
               <OverviewCard
                 badge={formatPercent(data.live_attendance_rate)}
                 badgeTone="success"
                 href="/live-attendance"
                 primary={`${data.live_present_today} / ${data.live_total_employees}`}
-                secondary={`${data.live_open_shifts} open shift(s) now · attendance today`}
-                title="Attendance today"
+                secondary={t("overview.attendance_now_sub", "{{open}} open shift(s) now · attendance today", {
+                  open: data.live_open_shifts,
+                })}
+                title={t("overview.attendance_today", "Attendance today")}
               />
               <OverviewCard
-                badge={PAYROLL_STATUS_LABEL[data.payroll_status] ?? data.payroll_status}
+                badge={payrollStatusLabel(t, data.payroll_status)}
                 badgeTone={toneForPayrollStatus(data.payroll_status)}
                 href="/payroll-report"
                 primary={
@@ -327,21 +341,23 @@ export function OverviewClient() {
                 }
                 secondary={
                   data.payroll_status === "not_calculated"
-                    ? data.payroll_message ?? "Payroll has not been calculated for this week."
-                    : `${formatDurationSeconds(data.payroll_total_hours_seconds)} recorded this week`
+                    ? data.payroll_message ?? t("overview.payroll_not_calc")
+                    : t("overview.payroll_recorded_week", "{{hours}} recorded this week", {
+                        hours: formatDurationSeconds(data.payroll_total_hours_seconds),
+                      })
                 }
-                title="Payroll this week"
+                title={t("overview.payroll_this_week")}
               />
             </div>
 
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <PanelFrame title="Needs attention">
+              <PanelFrame title={t("overview.needs_attention", "Needs attention")}>
                 <div className="p-3">
                   {data.needs_attention_scope_note ? (
                     <p className="mb-3 text-[11px] text-[var(--color-text-muted)]">{data.needs_attention_scope_note}</p>
                   ) : null}
                   {data.needs_attention.length === 0 ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">No urgent items.</p>
+                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.empty_attention")}</p>
                   ) : (
                     <ul className="divide-y divide-[var(--color-border)]">
                       {data.needs_attention.map((item) => (
@@ -365,14 +381,14 @@ export function OverviewClient() {
               <PanelFrame
                 headerRight={
                   <Link className="text-xs font-medium text-[var(--color-link)] underline" href="/live-attendance">
-                    View all
+                    {t("common.view_all", "View all")}
                   </Link>
                 }
-                title="Today live"
+                title={t("overview.today_live", "Today live")}
               >
                 <div className="p-3">
                   {data.today_live.length === 0 ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">No open shifts right now.</p>
+                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_open_shifts")}</p>
                   ) : (
                     <ul className="divide-y divide-[var(--color-border)]">
                       {data.today_live.map((row, idx) => (
@@ -403,10 +419,12 @@ export function OverviewClient() {
                 </div>
               </PanelFrame>
 
-              <PanelFrame title="Payroll readiness">
+              <PanelFrame title={t("overview.payroll_readiness", "Payroll readiness")}>
                 <div className="space-y-3 p-3">
                   {!data.payroll_readiness ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">Payroll readiness is unavailable.</p>
+                    <p className="text-sm text-[var(--color-text-muted)]">
+                      {t("overview.payroll_readiness_unavailable")}
+                    </p>
                   ) : (
                     <>
                       {data.payroll_readiness.scope_note ? (
@@ -422,67 +440,80 @@ export function OverviewClient() {
                                 : "border-[var(--color-warning-700)] bg-[var(--color-warning-50)] text-[var(--color-warning-700)]"
                           }`}
                         >
-                          {PAYROLL_STATUS_LABEL[data.payroll_readiness.payroll_status] ??
-                            data.payroll_readiness.payroll_status}
+                          {payrollStatusLabel(t, data.payroll_readiness.payroll_status)}
                         </span>
                         <Link
                           className="text-xs font-medium text-[var(--color-link)] underline"
                           href={data.payroll_readiness.href}
                         >
-                          Open payroll report →
+                          {t("overview.open_payroll_report")}
                         </Link>
                       </div>
                       <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3">
                         <div>
-                          <dt className="text-[var(--color-text-soft)]">Items</dt>
+                          <dt className="text-[var(--color-text-soft)]">{t("overview.readiness_items", "Items")}</dt>
                           <dd className="tabular-nums font-medium text-[var(--color-text)]">
                             {data.payroll_readiness.total_items}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-[var(--color-text-soft)]">Pending</dt>
+                          <dt className="text-[var(--color-text-soft)]">{t("overview.readiness_pending", "Pending")}</dt>
                           <dd className="tabular-nums font-medium text-[var(--color-text)]">
                             {data.payroll_readiness.pending_count}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-[var(--color-text-soft)]">Approved</dt>
+                          <dt className="text-[var(--color-text-soft)]">{t("overview.readiness_approved", "Approved")}</dt>
                           <dd className="tabular-nums font-medium text-[var(--color-text)]">
                             {data.payroll_readiness.approved_count}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-[var(--color-text-soft)]">Paid</dt>
+                          <dt className="text-[var(--color-text-soft)]">{t("overview.readiness_paid", "Paid")}</dt>
                           <dd className="tabular-nums font-medium text-[var(--color-text)]">
                             {data.payroll_readiness.paid_count}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-[var(--color-text-soft)]">Rate missing</dt>
+                          <dt className="text-[var(--color-text-soft)]">
+                            {t("overview.readiness_rate_missing", "Rate missing")}
+                          </dt>
                           <dd className="tabular-nums font-medium text-[var(--color-text)]">
                             {data.payroll_readiness.rate_missing_count}
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-[var(--color-text-soft)]">Open shifts (week)</dt>
+                          <dt className="text-[var(--color-text-soft)]">
+                            {t("overview.readiness_open_shifts_week", "Open shifts (week)")}
+                          </dt>
                           <dd className="tabular-nums font-medium text-[var(--color-text)]">
                             {data.payroll_readiness.open_shifts_started_in_week_count}
                           </dd>
                         </div>
                         <div className="col-span-2 sm:col-span-3">
-                          <dt className="text-[var(--color-text-soft)]">Not calculated</dt>
+                          <dt className="text-[var(--color-text-soft)]">
+                            {t("overview.readiness_not_calculated", "Not calculated")}
+                          </dt>
                           <dd className="font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.payroll_period_not_calculated ? "Yes" : "No"}
+                            {data.payroll_readiness.payroll_period_not_calculated
+                              ? t("common.yes", "Yes")
+                              : t("common.no", "No")}
                           </dd>
                         </div>
                         <div className="col-span-2 sm:col-span-3">
-                          <dt className="text-[var(--color-text-soft)]">Needs recalc</dt>
+                          <dt className="text-[var(--color-text-soft)]">
+                            {t("overview.readiness_needs_recalc", "Needs recalc")}
+                          </dt>
                           <dd className="font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.payroll_needs_recalculation ? "Yes" : "No"}
+                            {data.payroll_readiness.payroll_needs_recalculation
+                              ? t("common.yes", "Yes")
+                              : t("common.no", "No")}
                           </dd>
                         </div>
                         <div className="col-span-2 sm:col-span-3">
-                          <dt className="text-[var(--color-text-soft)]">Gross / hours</dt>
+                          <dt className="text-[var(--color-text-soft)]">
+                            {t("overview.readiness_gross_hours", "Gross / hours")}
+                          </dt>
                           <dd className="font-medium text-[var(--color-text)]">
                             {data.payroll_readiness.total_gross != null
                               ? formatMoneyGBP(String(data.payroll_readiness.total_gross))
@@ -496,10 +527,10 @@ export function OverviewClient() {
                 </div>
               </PanelFrame>
 
-              <PanelFrame title="Setup health">
+              <PanelFrame title={t("overview.setup_health", "Setup health")}>
                 <div className="p-3">
                   {!data.setup_health ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">No company scope.</p>
+                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_company_scope")}</p>
                   ) : (
                     <>
                       {data.setup_health.scope_note ? (
@@ -507,43 +538,52 @@ export function OverviewClient() {
                       ) : null}
                       <ul className="space-y-1.5 text-xs text-[var(--color-text)]">
                         <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">Active employees</span>
+                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_active_employees")}</span>
                           <span className="tabular-nums font-medium">{data.setup_health.active_employee_count}</span>
                         </li>
                         <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">Active locations</span>
+                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_active_locations")}</span>
                           <span className="tabular-nums font-medium">{data.setup_health.active_location_count}</span>
                         </li>
                         <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">Active workplaces</span>
+                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_active_workplaces")}</span>
                           <span className="tabular-nums font-medium">{data.setup_health.active_workplace_count}</span>
                         </li>
                         <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">Missing hourly rate</span>
+                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_missing_hourly_rate")}</span>
                           <Link className="font-medium text-[var(--color-link)] underline" href="/employees">
                             {data.setup_health.employees_missing_hourly_rate_count}
                           </Link>
                         </li>
                         <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">No site access</span>
+                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_no_site_access")}</span>
                           <Link className="font-medium text-[var(--color-link)] underline" href="/site-access">
                             {data.setup_health.employees_without_site_access_count}
                           </Link>
                         </li>
                         <li className="flex justify-between gap-2 border-t border-[var(--color-border)] pt-2">
-                          <span className="text-[var(--color-text-muted)]">Time policy row</span>
-                          <span className="font-medium">{data.setup_health.time_policy_row_present ? "Present" : "—"}</span>
+                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_time_policy")}</span>
+                          <span className="font-medium">
+                            {data.setup_health.time_policy_row_present
+                              ? t("overview.legend_present", "Present")
+                              : "—"}
+                          </span>
                         </li>
                         <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">Time policy customised</span>
+                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_time_policy_config")}</span>
                           <span className="font-medium">
-                            {data.setup_health.time_policy_configured ? "Likely yes" : "Default-like"}
+                            {data.setup_health.time_policy_configured
+                              ? t("overview.legend_policy", "Likely yes")
+                              : t("overview.legend_default", "Default-like")}
                           </span>
                         </li>
                       </ul>
                       <p className="mt-2 text-[10px] text-[var(--color-text-soft)]">
-                        Long-open shift threshold on this page: {data.long_open_shift_threshold_hours}h UTC since
-                        clock-in.
+                        {t(
+                          "overview.long_open_shift_note",
+                          "Long-open shift threshold on this page: {{hours}}h UTC since clock-in.",
+                          { hours: data.long_open_shift_threshold_hours },
+                        )}
                       </p>
                     </>
                   )}
@@ -553,18 +593,18 @@ export function OverviewClient() {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <BarChartBlock
-                emptyHint="No attendance trend for the selected scope."
+                emptyHint={t("overview.trend_attendance_empty")}
                 rows={attendanceRows}
-                title="Weekly attendance trend (7 days)"
+                title={t("overview.trend_attendance")}
               />
               <BarChartBlock
                 emptyHint={
                   data.payroll_status === "not_calculated"
-                    ? "Payroll has not been calculated for recent weeks."
-                    : "No payroll history rows found yet."
+                    ? t("overview.payroll_not_calc_weeks")
+                    : t("overview.trend_payroll_empty_no_history")
                 }
                 rows={payrollRows}
-                title="Payroll by week (stored totals)"
+                title={t("overview.trend_payroll")}
               />
             </div>
 
@@ -572,19 +612,19 @@ export function OverviewClient() {
               <div className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] lg:col-span-2">
                 <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                    Recent activity
+                    {t("overview.recent_activity")}
                   </p>
                   {user.system_role === "administrator" ? (
                     <Link className="text-xs font-medium text-[var(--color-link)] underline" href="/system/audit-log">
-                      View all activity
+                      {t("overview.view_all_activity")}
                     </Link>
                   ) : (
-                    <span className="text-xs text-[var(--color-text-muted)]">Company-scoped events</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">{t("overview.company_scoped_events")}</span>
                   )}
                 </div>
                 <ul className="max-h-80 divide-y divide-[var(--color-border)] overflow-y-auto">
                   {data.recent_activity.length === 0 ? (
-                    <li className="px-4 py-6 text-sm text-[var(--color-text-muted)]">No recent events.</li>
+                    <li className="px-4 py-6 text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</li>
                   ) : (
                     data.recent_activity.map((row, idx) => (
                       <li className="px-4 py-3 text-sm" key={`${row.occurred_at}-${idx}`}>
@@ -604,19 +644,19 @@ export function OverviewClient() {
               <div className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
                 <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                    Quick actions
+                    {t("overview.quick_actions")}
                   </p>
                 </div>
                 <ul className="divide-y divide-[var(--color-border)]">
                   {[
-                    { label: "Add employee", href: "/employees" },
-                    { label: "Add location", href: "/locations" },
-                    { label: "View live attendance", href: "/live-attendance" },
-                    { label: "Run payroll", href: "/payroll-report" },
-                    { label: "Week report", href: "/week-report" },
-                    { label: "Site progress review", href: "/work-progress-review" },
+                    { key: "emp", label: t("overview.quick_add_employee"), href: "/employees" },
+                    { key: "loc", label: t("overview.quick_add_location"), href: "/locations" },
+                    { key: "live", label: t("overview.link_live_attendance"), href: "/live-attendance" },
+                    { key: "pay", label: t("overview.quick_run_payroll"), href: "/payroll-report" },
+                    { key: "week", label: t("overview.link_week_report"), href: "/week-report" },
+                    { key: "site", label: t("overview.link_site_progress"), href: "/work-progress-review" },
                   ].map((item) => (
-                    <li key={item.href}>
+                    <li key={item.key}>
                       <Link
                         className="flex items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
                         href={item.href}

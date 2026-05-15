@@ -1,3 +1,4 @@
+import { useT } from "../../lib/i18n";
 import { FaceCheckBadge } from "./face-check-badge";
 import { asFaceCheckStatus, faceCheckStatusLabel, type FaceCheckStatus } from "./labels";
 
@@ -12,6 +13,7 @@ export function FaceCheckCell({
   status: FaceCheckStatus | string | null | undefined;
   confidence?: number | null;
 }) {
+  const t = useT();
   const normalized = typeof status === "string" ? asFaceCheckStatus(status) : status;
   if (!normalized) {
     return <span className="text-[var(--color-text-muted)]">—</span>;
@@ -27,7 +29,7 @@ export function FaceCheckCell({
       <div className="flex flex-col gap-0.5">
         <FaceCheckBadge status={normalized} />
         <span className="text-[10px] font-medium text-[var(--color-danger-700)]">
-          {pct} · {faceCheckStatusLabel(normalized)}
+          {pct} · {faceCheckStatusLabel(normalized, t)}
         </span>
       </div>
     );

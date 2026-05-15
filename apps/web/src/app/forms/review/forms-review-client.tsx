@@ -16,10 +16,10 @@ import {
   type SmartFormSubmissionWithTemplate,
 } from "../../../features/smart-forms/api";
 import { smartFormCategoryLabel } from "../../../features/smart-forms/form-categories";
-import { useI18n } from "../../../lib/i18n";
+import { useT } from "../../../lib/i18n";
 
 export function FormsReviewClient() {
-  const { t } = useI18n();
+  const t = useT();
   const [items, setItems] = useState<SmartFormReviewQueueItem[]>([]);
   const [selectedRow, setSelectedRow] = useState<SmartFormReviewQueueItem | null>(null);
   const [selected, setSelected] = useState<SmartFormSubmissionWithTemplate | null>(null);

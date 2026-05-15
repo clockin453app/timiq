@@ -10,6 +10,7 @@ import {
   SheetBody,
 } from "../../components/ui";
 import { useCurrentUser } from "../../features/auth";
+import { useT } from "../../lib/i18n";
 import {
   clearStarterFormLocalDraft,
   isLikelyNetworkFailure,
@@ -74,6 +75,7 @@ function statusMessage(status: string): string {
 }
 
 export function StarterFormClient() {
+  const t = useT();
   const currentUser = useCurrentUser();
   const [detail, setDetail] = useState<OnboardingSubmissionDetail | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
@@ -469,11 +471,14 @@ export function StarterFormClient() {
   return (
     <Sheet>
       <PageHeader
-        title="Starter form"
-        description="Complete your onboarding information, upload required documents, and sign."
+        description={t(
+          "starter_form.page_description",
+          "Complete your onboarding information, upload required documents, and sign.",
+        )}
+        title={t("starter_form.page_title", "Starter form")}
       />
       <SheetBody className="space-y-6">
-        {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading…</p> : null}
+        {loading ? <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading", "Loading…")}</p> : null}
         {error ? (
           <p className="rounded border border-[var(--color-danger-700)] bg-[var(--color-cell)] p-2 text-sm text-[var(--color-danger-700)]">
             {error}

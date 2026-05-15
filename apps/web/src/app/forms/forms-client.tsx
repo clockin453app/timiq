@@ -7,7 +7,7 @@ import { Button, PageHeader, Table, TableBody, TableCell, TableHead, TableHeader
 import { isAdministrator, isAdmin, useCurrentUser } from "../../features/auth";
 import { listMySmartFormSubmissions, listSmartFormTemplates, type SmartFormSubmissionWithTemplate, type SmartFormTemplate } from "../../features/smart-forms/api";
 import { smartFormCategoryLabel } from "../../features/smart-forms/form-categories";
-import { useI18n } from "../../lib/i18n";
+import { useT } from "../../lib/i18n";
 
 function formatWhen(iso: string | null) {
   if (!iso) {
@@ -36,7 +36,7 @@ function submissionStatusClass(status: string): string {
 }
 
 export function FormsClient() {
-  const { t } = useI18n();
+  const t = useT();
   const user = useCurrentUser();
   const [templates, setTemplates] = useState<SmartFormTemplate[]>([]);
   const [submissions, setSubmissions] = useState<SmartFormSubmissionWithTemplate[]>([]);

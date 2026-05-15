@@ -36,6 +36,7 @@ import {
   ONBOARDING_REVIEW_SECTIONS,
   onboardingReviewFieldLabel,
 } from "../../features/onboarding/review-form-sections";
+import { genericStatusLabel, useT } from "../../lib/i18n";
 
 const REQUIRED_DOC_TYPE_SET = new Set(ONBOARDING_REQUIRED_DOC_SLOTS.map((s) => s.docType));
 
@@ -43,7 +44,9 @@ function findDocForType(docs: OnboardingDocumentMeta[], docType: string) {
   return docs.find((d) => d.doc_type === docType);
 }
 
+
 function OnboardingReviewAdminBody() {
+  const t = useT();
   const user = useCurrentUser();
   const adminAllCompanies = isAdministrator(user);
 
@@ -93,7 +96,7 @@ function OnboardingReviewAdminBody() {
       setItems(data.items);
       setTotal(data.total);
     } catch (err) {
-      setListError(err instanceof Error ? err.message : "Could not load list.");
+      setListError(err instanceof Error ? err.message : t("onboarding.list_error"));
       setItems([]);
       setTotal(0);
     } finally {
@@ -165,7 +168,7 @@ function OnboardingReviewAdminBody() {
       const data = await getOnboardingReviewDetail(submissionId);
       setDetail(data);
     } catch (err) {
-      setDetailError(err instanceof Error ? err.message : "Could not load detail.");
+      setDetailError(err instanceof Error ? err.message : t("onboarding.load_detail_error"));
     } finally {
       setDetailLoading(false);
     }
@@ -181,7 +184,7 @@ function OnboardingReviewAdminBody() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (err) {
-      setDetailError(err instanceof Error ? err.message : "Download failed.");
+      setDetailError(err instanceof Error ? err.message : t("onboarding.download_failed"));
     }
   }
 
@@ -192,7 +195,7 @@ function OnboardingReviewAdminBody() {
       window.open(url, "_blank", "noopener,noreferrer");
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
-      setDetailError(err instanceof Error ? err.message : "Could not open signature.");
+      setDetailError(err instanceof Error ? err.message : t("onboarding.signature_error"));
     }
   }
 
@@ -209,7 +212,7 @@ function OnboardingReviewAdminBody() {
     }
     const trimmed = reasonText.trim();
     if (trimmed.length < 3) {
-      setActionError("Enter at least 3 characters.");
+      setActionError(t("onboarding.reason_min"));
       return;
     }
     setActionBusy(true);
@@ -225,7 +228,7 @@ function OnboardingReviewAdminBody() {
       setReasonOpen(null);
       await loadList();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Action failed.");
+      setActionError(err instanceof Error ? err.message : t("onboarding.action_failed"));
     } finally {
       setActionBusy(false);
     }
@@ -243,54 +246,49 @@ function OnboardingReviewAdminBody() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <label className="flex min-w-0 w-full flex-col gap-1 text-sm md:w-auto">
-          <span className="text-[var(--color-text-muted)]">Status filter</span>
+          <span className="text-[var(--color-text-muted)]">{t("onboarding.filter_status")}</span>
           <select
             className="h-9 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2 text-sm text-[var(--color-text)]"
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
           >
-            <option value="">All</option>
-            <option value="submitted">Submitted</option>
-            <option value="approved">Approved</option>
-            <option value="rejected">Rejected</option>
-            <option value="draft">Draft</option>
+            <option value="">{t("onboarding.status_all")}</option>
+            <option value="submitted">{genericStatusLabel(t, "submitted")}</option>
+            <option value="approved">{genericStatusLabel(t, "approved")}</option>
+            <option value="rejected">{genericStatusLabel(t, "rejected")}</option>
+            <option value="draft">{genericStatusLabel(t, "draft")}</option>
           </select>
         </label>
         {adminAllCompanies ? (
           <label className="flex min-w-0 w-full flex-col gap-1 text-sm md:w-auto">
-            <span className="text-[var(--color-text-muted)]">Company</span>
+            <span className="text-[var(--color-text-muted)]">{t("onboarding.filter_company")}</span>
             <select
               className="h-9 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2 text-sm text-[var(--color-text)] sm:min-w-[12rem]"
               value={companyFilter}
               onChange={(e) => setCompanyFilter(e.target.value)}
             >
-              <option value="">All companies</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
+              <option value="">{t("privacy.requests_all_companies")}</option>
             </select>
           </label>
         ) : null}
       </div>
 
       {listError ? <p className="text-sm text-[var(--color-danger-700)]">{listError}</p> : null}
-      {listLoading ? <p className="text-sm text-[var(--color-text-muted)]">Loading submissions…</p> : null}
+      {listLoading ? <p className="text-sm text-[var(--color-text-muted)]">{t("onboarding.loading_list")}</p> : null}
 
       {!listLoading ? (
         <p className="text-xs text-[var(--color-text-muted)]">
-          Showing {items.length} of {total}
+          {t("onboarding.showing_count", undefined, { shown: items.length, total })}
         </p>
       ) : null}
 
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Employee</TableHead>
-            <TableHead>Company</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Submitted</TableHead>
+            <TableHead>{t("onboarding.col_employee")}</TableHead>
+            <TableHead>{t("onboarding.col_company")}</TableHead>
+            <TableHead>{t("onboarding.col_status")}</TableHead>
+            <TableHead>{t("onboarding.col_submitted")}</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
@@ -306,11 +304,11 @@ function OnboardingReviewAdminBody() {
                 </div>
               </TableCell>
               <TableCell>{row.company_name ?? "—"}</TableCell>
-              <TableCell className="capitalize">{row.status.replace("_", " ")}</TableCell>
+              <TableCell className="capitalize">{genericStatusLabel(t, row.status)}</TableCell>
               <TableCell>{row.submitted_at ? new Date(row.submitted_at).toLocaleString() : "—"}</TableCell>
               <TableCell>
                 <Button type="button" size="sm" variant="secondary" onClick={() => void openDetail(row.id)}>
-                  Open
+                  {t("onboarding.open_detail")}
                 </Button>
               </TableCell>
             </TableRow>
@@ -321,9 +319,9 @@ function OnboardingReviewAdminBody() {
       {selectedId ? (
         <div className="space-y-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-4">
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-            Selected submission
+            {t("onboarding.selected_heading")}
           </p>
-          {detailLoading ? <p className="text-sm text-[var(--color-text-muted)]">Loading detail…</p> : null}
+          {detailLoading ? <p className="text-sm text-[var(--color-text-muted)]">{t("onboarding.loading_detail")}</p> : null}
           {detailError ? <p className="text-sm text-[var(--color-danger-700)]">{detailError}</p> : null}
           {detail ? (
             <div className="space-y-3 text-sm text-[var(--color-text)]">
@@ -332,7 +330,7 @@ function OnboardingReviewAdminBody() {
                   <div className="shrink-0 overflow-hidden rounded-lg border border-[var(--color-border-dark)]">
                     <img
                       src={detailPhotoUrl}
-                      alt="Employee profile photo"
+                      alt={t("onboarding.profile_photo_alt")}
                       className="h-28 w-28 object-cover sm:h-32 sm:w-32"
                     />
                   </div>
@@ -342,15 +340,16 @@ function OnboardingReviewAdminBody() {
                 </div>
               </div>
               <p className="text-[var(--color-text-muted)]">
-                Status: <span className="capitalize text-[var(--color-text)]">{detail.status}</span>
+                {t("onboarding.col_status")}{" "}
+                <span className="capitalize text-[var(--color-text)]">{genericStatusLabel(t, detail.status)}</span>
               </p>
               <div className="flex flex-wrap gap-2">
                 <Button type="button" variant="secondary" onClick={() => openOnboardingSubmissionPrintWindow(detail.id)}>
-                  Print / export
+                  {t("onboarding.print_export")}
                 </Button>
               </div>
               <p className="text-xs text-[var(--color-text-muted)]">
-                Account email: <span className="text-[var(--color-text)]">{detail.account_email}</span>
+                {t("onboarding.account_email", undefined, { email: detail.account_email })}
               </p>
               <div className="space-y-4">
                 {ONBOARDING_REVIEW_SECTIONS.map((section) => (
@@ -373,14 +372,14 @@ function OnboardingReviewAdminBody() {
                 ))}
               </div>
               <details className="text-xs text-[var(--color-text-muted)]">
-                <summary className="cursor-pointer text-[var(--color-text-soft)]">Raw submitted fields (JSON)</summary>
+                <summary className="cursor-pointer text-[var(--color-text-soft)]">{t("onboarding.raw_json")}</summary>
                 <pre className="mt-2 max-h-64 overflow-auto rounded border border-[var(--color-border)] bg-[var(--color-sheet)] p-2 text-[11px] text-[var(--color-text)]">
                   {JSON.stringify(detail.form_payload, null, 2)}
                 </pre>
               </details>
               {detail.signature_mode === "typed" && detail.signature_typed_text ? (
                 <p>
-                  <span className="text-[var(--color-text-muted)]">Typed signature: </span>
+                  <span className="text-[var(--color-text-muted)]">{t("onboarding.typed_signature")}</span>
                   {detail.signature_typed_text}
                 </p>
               ) : null}
@@ -391,12 +390,12 @@ function OnboardingReviewAdminBody() {
                   variant="secondary"
                   onClick={() => void viewSignature(detail.id)}
                 >
-                  View drawn signature
+                  {t("onboarding.view_drawn_signature")}
                 </Button>
               ) : null}
               <div className="space-y-2">
                 <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">
-                  Required document slots
+                  {t("onboarding.required_documents")}
                 </p>
                 <ul className="space-y-3">
                   {ONBOARDING_REQUIRED_DOC_SLOTS.map(({ docType, label }) => {
@@ -411,11 +410,13 @@ function OnboardingReviewAdminBody() {
                           <p className="text-xs text-[var(--color-text-muted)]">
                             {doc ? (
                               <>
-                                Uploaded — {doc.original_filename} (
-                                {Math.round(doc.file_size_bytes / 1024)} KB)
+                                {t("onboarding.uploaded_kb", undefined, {
+                                  filename: doc.original_filename,
+                                  kb: Math.round(doc.file_size_bytes / 1024),
+                                })}
                               </>
                             ) : (
-                              <span className="text-[var(--color-danger-700)]">Missing</span>
+                              <span className="text-[var(--color-danger-700)]">{t("onboarding.missing_document")}</span>
                             )}
                           </p>
                         </div>
@@ -426,7 +427,7 @@ function OnboardingReviewAdminBody() {
                             variant="secondary"
                             onClick={() => void downloadDocument(doc.id, doc.original_filename)}
                           >
-                            Download
+                            {t("onboarding.download")}
                           </Button>
                         ) : null}
                       </li>
@@ -436,7 +437,7 @@ function OnboardingReviewAdminBody() {
                 {detail.documents.some((d) => !REQUIRED_DOC_TYPE_SET.has(d.doc_type)) ? (
                   <div className="space-y-2 pt-2">
                     <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">
-                      Other files on record
+                      {t("onboarding.other_files")}
                     </p>
                     <ul className="space-y-2">
                       {detail.documents
@@ -452,7 +453,7 @@ function OnboardingReviewAdminBody() {
                               variant="secondary"
                               onClick={() => void downloadDocument(doc.id, doc.original_filename)}
                             >
-                              Download
+                              {t("onboarding.download")}
                             </Button>
                           </li>
                         ))}
@@ -460,13 +461,13 @@ function OnboardingReviewAdminBody() {
                   </div>
                 ) : null}
               </div>
-              {detail.status === "submitted" ? (
+                    {detail.status === "submitted" ? (
                 <div className="flex flex-wrap gap-2 pt-2">
                   <Button type="button" variant="primary" onClick={() => openReason("approve")}>
-                    Approve
+                    {t("onboarding.approve_button")}
                   </Button>
                   <Button type="button" variant="danger" onClick={() => openReason("reject")}>
-                    Reject
+                    {t("onboarding.reject_button")}
                   </Button>
                 </div>
               ) : null}
@@ -481,19 +482,19 @@ function OnboardingReviewAdminBody() {
           onSubmit={(e) => void submitReason(e)}
         >
           <p className="text-sm font-medium text-[var(--color-text)]">
-            {reasonOpen === "approve" ? "Approve with reason" : "Reject with reason"}
+            {reasonOpen === "approve" ? t("onboarding.approve_reason") : t("onboarding.reject_reason")}
           </p>
           <label className="flex flex-col gap-1 text-sm">
-            <span className="text-[var(--color-text-muted)]">Reason (required, 3–2000 characters)</span>
+            <span className="text-[var(--color-text-muted)]">{t("onboarding.reason_length_hint")}</span>
             <Input value={reasonText} onChange={(e) => setReasonText(e.target.value)} required minLength={3} />
           </label>
           {actionError ? <p className="text-sm text-[var(--color-danger-700)]">{actionError}</p> : null}
           <div className="flex gap-2">
             <Button type="submit" disabled={actionBusy}>
-              Confirm
+              {t("common.confirm")}
             </Button>
             <Button type="button" variant="secondary" disabled={actionBusy} onClick={() => setReasonOpen(null)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
           </div>
         </form>
@@ -503,18 +504,16 @@ function OnboardingReviewAdminBody() {
 }
 
 export function OnboardingReviewClient() {
+  const t = useT();
   return (
     <Sheet>
-      <PageHeader
-        title="Onboarding review"
-        description="Review submitted starter forms, download documents, approve or reject with a reason."
-      />
+      <PageHeader title={t("onboarding.page_title")} description={t("onboarding.page_description")} />
       <SheetBody className="min-w-0 space-y-6">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2 text-sm text-[var(--color-text)]">
-              You do not have permission to review onboarding submissions.
+              {t("onboarding.permission_denied")}
             </div>
           }
         >

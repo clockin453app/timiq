@@ -33,6 +33,7 @@ import {
   type SitePayrollPolicyEffectiveResponse,
   type SitePayrollPolicyListItem,
 } from "../../features/payroll-policies/api";
+import { useT } from "../../lib/i18n";
 
 function formatFallbackBlock(label: string, f: CompanyTimePolicyFields) {
   return (
@@ -73,6 +74,7 @@ function overrideLabel(row: SitePayrollPolicyListItem): string {
 }
 
 export function SitePayrollRulesClient() {
+  const t = useT();
   const currentUser = useCurrentUser();
   const showCompanySelector = isAdministrator(currentUser);
 
@@ -308,14 +310,17 @@ export function SitePayrollRulesClient() {
       allowedRoles={["administrator", "admin"]}
       fallback={
         <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-neutral-700">
-          You do not have permission to manage site payroll rules.
+          {t("site_payroll_rules.permission_denied", "You do not have permission to manage site payroll rules.")}
         </div>
       }
     >
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:px-6">
         <PageHeader
-          title="Site payroll rules"
-          description="Per-location time rounding, breaks, standard start, and early clock-in behaviour. Company policy is the default when fields are left blank."
+          description={t(
+            "site_payroll_rules.page_description_full",
+            "Per-location time rounding, breaks, standard start, and early clock-in behaviour. Company policy is the default when fields are left blank.",
+          )}
+          title={t("site_payroll_rules.page_title", "Site payroll rules")}
         />
 
         {showCompanySelector ? (

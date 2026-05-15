@@ -22,7 +22,7 @@ import {
   type SmartFormTemplate,
 } from "../../../../features/smart-forms/api";
 import { fetchWorkProgressMeOptions, type WorkProgressLocationOption } from "../../../../features/work-progress/api";
-import { useI18n } from "../../../../lib/i18n";
+import { useT } from "../../../../lib/i18n";
 
 function FieldEditor({
   field,
@@ -193,7 +193,7 @@ function FieldReadonly({ field, value }: { field: SmartFormFieldDef; value: unkn
 }
 
 export function FormSubmissionClient({ submissionId }: { submissionId: string }) {
-  const { t } = useI18n();
+  const t = useT();
   const user = useCurrentUser();
   const [submission, setSubmission] = useState<SmartFormSubmissionWithTemplate | null>(null);
   const [template, setTemplate] = useState<SmartFormTemplate | null>(null);

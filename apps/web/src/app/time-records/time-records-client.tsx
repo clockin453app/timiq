@@ -29,7 +29,7 @@ import { BreakDeductionCell } from "../../features/time-records/break-deduction-
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
-import { useT } from "../../lib/i18n";
+import { shiftStatusLabel, useT } from "../../lib/i18n";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import { FaceCheckCell } from "../../features/face-check/face-check-cell";
 import {
@@ -53,7 +53,13 @@ function formatDateTime(iso: string) {
   });
 }
 
-function ShiftDurationCell({ row }: { row: TimeRecordShiftRow }) {
+function ShiftDurationCell({
+  row,
+  runningLabel,
+}: {
+  row: TimeRecordShiftRow;
+  runningLabel: string;
+}) {
   const isOpen = !row.clock_out_at;
   const parts = useLiveShiftDurationParts(row.clock_in_at, isOpen);
   if (row.actual_seconds !== null) {
@@ -63,14 +69,15 @@ function ShiftDurationCell({ row }: { row: TimeRecordShiftRow }) {
     return (
       <span className="tabular-nums" suppressHydrationWarning>
         {parts.hms || parts.compact || "—"}{" "}
-        <span className="text-[var(--color-text-muted)]">(running)</span>
+        <span className="text-[var(--color-text-muted)]">{runningLabel}</span>
       </span>
     );
   }
   if (row.running_actual_seconds !== null) {
     return (
       <span className="tabular-nums">
-        {formatDurationSeconds(row.running_actual_seconds)} <span className="text-[var(--color-text-muted)]">(running)</span>
+        {formatDurationSeconds(row.running_actual_seconds)}{" "}
+        <span className="text-[var(--color-text-muted)]">{runningLabel}</span>
       </span>
     );
   }
@@ -94,16 +101,25 @@ function fromDatetimeLocalToIso(localValue: string): string {
   return d.toISOString();
 }
 
-function payrollRecalcMessage(weekStart: string | null): string {
+function payrollRecalcMessage(
+  t: ReturnType<typeof useT>,
+  weekStart: string | null,
+): string {
   if (!weekStart) {
-    return "Time adjusted. Recalculate payroll for the affected week when ready.";
+    return t(
+      "time_records.payroll_recalc_generic",
+      "Time adjusted. Recalculate payroll for the affected week when ready.",
+    );
   }
   const label = formatPayrollWeekUkLabel(weekStart, browserDefaultTimeZone(), false);
-  return `Time adjusted. Recalculate payroll for ${label}.`;
+  return t("time_records.payroll_recalc", "Time adjusted. Recalculate payroll for {{week}}.", {
+    week: label,
+  });
 }
 
 export function TimeRecordsClient() {
   const t = useT();
+  const runningLabel = t("status.running", "(running)");
   const user = useCurrentUser();
   const management = canAccessManagement(user);
 
@@ -168,7 +184,7 @@ export function TimeRecordsClient() {
       if (adminMode && management) {
         if (isAdministrator(user) && !companyScope.companyId) {
           setRows([]);
-          setLoadError("Select a company to load time records.");
+          setLoadError(t("time_records.select_company", "Select a company to load time records."));
           return;
         }
         if (filterUserId.trim()) {
@@ -185,7 +201,7 @@ export function TimeRecordsClient() {
       }
     } catch {
       setRows([]);
-      setLoadError("Could not load time records.");
+      setLoadError(t("time_records.load_error", "Could not load time records."));
     } finally {
       setIsLoading(false);
     }
@@ -326,16 +342,18 @@ export function TimeRecordsClient() {
     const cin = fromDatetimeLocalToIso(formClockInLocal);
     const cout = fromDatetimeLocalToIso(formClockOutLocal);
     if (!formUserId || !formLocationId || !cin || !cout) {
-      setModalError("Employee, location, clock-in, and clock-out are required.");
+      setModalError(
+        t("time_records.err_required_fields", "Employee, location, clock-in, and clock-out are required."),
+      );
       return;
     }
     const brk = Number(formBreakMinutes);
     if (Number.isNaN(brk) || brk < 0) {
-      setModalError("Break minutes must be a non-negative number.");
+      setModalError(t("time_records.err_break_invalid", "Break minutes must be a non-negative number."));
       return;
     }
     if (!formReason.trim()) {
-      setModalError("Reason is required.");
+      setModalError(t("time_records.err_reason_required", "Reason is required."));
       return;
     }
     setModalBusy(true);
@@ -350,13 +368,13 @@ export function TimeRecordsClient() {
       });
       setActionBanner(
         res.payroll_recalculation_required
-          ? payrollRecalcMessage(res.affected_week_start)
-          : "Shift created.",
+          ? payrollRecalcMessage(t, res.affected_week_start)
+          : t("time_records.shift_created", "Shift created."),
       );
       closeModals();
       await loadRecords();
     } catch (e) {
-      setModalError(e instanceof Error ? e.message : "Request failed.");
+      setModalError(e instanceof Error ? e.message : t("time_records.request_failed", "Request failed."));
     } finally {
       setModalBusy(false);
     }
@@ -372,16 +390,16 @@ export function TimeRecordsClient() {
     const cin = fromDatetimeLocalToIso(formClockInLocal);
     const cout = fromDatetimeLocalToIso(formClockOutLocal);
     if (!cin || !cout) {
-      setModalError("Clock-in and clock-out are required.");
+      setModalError(t("time_records.err_clock_required", "Clock-in and clock-out are required."));
       return;
     }
     const brk = Number(formBreakMinutes);
     if (Number.isNaN(brk) || brk < 0) {
-      setModalError("Break minutes must be a non-negative number.");
+      setModalError(t("time_records.err_break_invalid", "Break minutes must be a non-negative number."));
       return;
     }
     if (!formReason.trim()) {
-      setModalError("Reason is required.");
+      setModalError(t("time_records.err_reason_required", "Reason is required."));
       return;
     }
     setModalBusy(true);
@@ -395,13 +413,13 @@ export function TimeRecordsClient() {
       });
       setActionBanner(
         res.payroll_recalculation_required
-          ? payrollRecalcMessage(res.affected_week_start)
-          : "Shift updated.",
+          ? payrollRecalcMessage(t, res.affected_week_start)
+          : t("time_records.shift_updated", "Shift updated."),
       );
       closeModals();
       await loadRecords();
     } catch (e) {
-      setModalError(e instanceof Error ? e.message : "Request failed.");
+      setModalError(e instanceof Error ? e.message : t("time_records.request_failed", "Request failed."));
     } finally {
       setModalBusy(false);
     }
@@ -416,19 +434,19 @@ export function TimeRecordsClient() {
     setActionBanner("");
     const cout = fromDatetimeLocalToIso(formClockOutLocal);
     if (!cout) {
-      setModalError("Clock-out is required.");
+      setModalError(t("time_records.err_clock_out_required", "Clock-out is required."));
       return;
     }
     const brkRaw = formBreakMinutes.trim();
     if (brkRaw !== "") {
       const brk = Number(brkRaw);
       if (Number.isNaN(brk) || brk < 0) {
-        setModalError("Break minutes must be a non-negative number.");
+        setModalError(t("time_records.err_break_invalid", "Break minutes must be a non-negative number."));
         return;
       }
     }
     if (!formReason.trim()) {
-      setModalError("Reason is required.");
+      setModalError(t("time_records.err_reason_required", "Reason is required."));
       return;
     }
     setModalBusy(true);
@@ -443,13 +461,13 @@ export function TimeRecordsClient() {
       const res = await adminForceClockOut(forceRow.shift_id, body);
       setActionBanner(
         res.payroll_recalculation_required
-          ? payrollRecalcMessage(res.affected_week_start)
-          : "Shift closed.",
+          ? payrollRecalcMessage(t, res.affected_week_start)
+          : t("time_records.shift_closed", "Shift closed."),
       );
       closeModals();
       await loadRecords();
     } catch (e) {
-      setModalError(e instanceof Error ? e.message : "Request failed.");
+      setModalError(e instanceof Error ? e.message : t("time_records.request_failed", "Request failed."));
     } finally {
       setModalBusy(false);
     }
@@ -460,8 +478,11 @@ export function TimeRecordsClient() {
   return (
     <Sheet>
       <PageHeader
-        title="Time records"
-        description="Stored clock times are unchanged; payable and payroll durations follow company time policy."
+        description={t(
+          "time_records.description",
+          "Stored clock times are unchanged; payable and payroll durations follow company time policy.",
+        )}
+        title={t("time_records.title", "Time records")}
       />
       <SheetBody className="min-w-0 space-y-3">
         {management ? (
@@ -473,7 +494,7 @@ export function TimeRecordsClient() {
                 onChange={() => setAdminMode(false)}
                 type="radio"
               />
-              My records
+              {t("time_records.my_records", "My records")}
             </label>
             <label className="flex items-center gap-2 font-semibold text-[var(--color-text)]">
               <input
@@ -482,11 +503,11 @@ export function TimeRecordsClient() {
                 onChange={() => setAdminMode(true)}
                 type="radio"
               />
-              Admin view
+              {t("time_records.admin_view", "Admin view")}
             </label>
             {adminMode ? (
               <Button className="ml-auto" onClick={openAddModal} type="button" variant="secondary">
-                Add completed shift
+                {t("time_records.add_shift", "Add completed shift")}
               </Button>
             ) : null}
           </div>
@@ -498,7 +519,7 @@ export function TimeRecordsClient() {
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <label className="block min-w-0 flex-1 text-xs font-bold text-[var(--color-text)] sm:max-w-[12rem]">
-              Start date
+              {t("time_records.start_date", "Start date")}
               <input
                 className="mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
                 onChange={(event) => setStartDate(event.target.value)}
@@ -507,7 +528,7 @@ export function TimeRecordsClient() {
               />
             </label>
             <label className="block min-w-0 flex-1 text-xs font-bold text-[var(--color-text)] sm:max-w-[12rem]">
-              End date (exclusive)
+              {t("time_records.end_date_exclusive", "End date (exclusive)")}
               <input
                 className="mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
                 onChange={(event) => setEndDate(event.target.value)}
@@ -520,13 +541,13 @@ export function TimeRecordsClient() {
           {adminMode && management ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
               <label className="block min-w-0 w-full flex-1 text-xs font-bold text-[var(--color-text)] sm:min-w-[12rem]">
-                Employee
+                {t("common.employee", "Employee")}
                 <select
                   className="timiq-select mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   onChange={(event) => setFilterUserId(event.target.value)}
                   value={filterUserId}
                 >
-                  <option value="">All visible employees</option>
+                  <option value="">{t("time_records.all_employees", "All visible employees")}</option>
                   {employeeOptions.map((option) => (
                     <option key={option.id} value={option.id}>
                       {option.email}
@@ -538,7 +559,7 @@ export function TimeRecordsClient() {
                 <div className="flex min-w-0 flex-1 flex-col justify-end">
                   <CompanySelector
                     companies={companyScope.companies}
-                    label="Company"
+                    label={t("common.company", "Company")}
                     onChange={companyScope.setCompanyId}
                     value={companyScope.companyId}
                   />
@@ -547,9 +568,14 @@ export function TimeRecordsClient() {
             </div>
           ) : null}
 
-          <Button type="submit">{isLoading ? "Loading…" : "Apply filters"}</Button>
+          <Button type="submit">
+            {isLoading ? t("common.loading", "Loading…") : t("time_records.apply_filters", "Apply filters")}
+          </Button>
           <p className="text-xs text-[var(--color-text-muted)]">
-            Leaving dates blank loads the last 28 days (company timezone on the server).
+            {t(
+              "time_records.filters_hint",
+              "Leaving dates blank loads the last 28 days (company timezone on the server).",
+            )}
           </p>
         </form>
 
@@ -569,16 +595,19 @@ export function TimeRecordsClient() {
         ) : null}
 
         <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
-          <span className="font-semibold text-[var(--color-text)]">Clocked time</span> = raw clock-in to
-          clock-out. <span className="font-semibold text-[var(--color-text)]">Payable time</span> = after standard
-          start and break rules. <span className="font-semibold text-[var(--color-text)]">Payroll time</span> =
-          rounded time used by payroll.
+          {t("time_records.legend_intro", "{{clocked}} = raw clock-in to clock-out. {{payable}} = after standard start and break rules. {{payroll}} = rounded time used by payroll.", {
+            clocked: t("time_records.legend_clocked", "Clocked time"),
+            payable: t("time_records.legend_payable", "Payable time"),
+            payroll: t("time_records.legend_payroll", "Payroll time"),
+          })}
         </p>
 
         {adminMode && management ? (
           <p className="text-xs text-[var(--color-text-muted)]">
-            Manual corrections are audited and marked as admin entries. They do not use employee GPS/selfie
-            checks.
+            {t(
+              "time_records.admin_audit_note",
+              "Manual corrections are audited and marked as admin entries. They do not use employee GPS/selfie checks.",
+            )}
           </p>
         ) : null}
 
@@ -587,27 +616,29 @@ export function TimeRecordsClient() {
           <TableHeader>
             <TableRow>
               {adminMode ? <TableHead>{t("timesheets.col_employee", "Employee")}</TableHead> : null}
-              <TableHead>Location</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Clock in</TableHead>
-              <TableHead>Clock out</TableHead>
+              <TableHead>{t("time_records.col_location", "Location")}</TableHead>
+              <TableHead>{t("time_records.col_status", "Status")}</TableHead>
+              <TableHead>{t("time_records.col_clock_in", "Clock in")}</TableHead>
+              <TableHead>{t("time_records.col_clock_out", "Clock out")}</TableHead>
               <TableHead>{t("timesheets.col_clocked", "Clocked time")}</TableHead>
-              <TableHead>Payable time</TableHead>
-              <TableHead>Payroll time</TableHead>
-              <TableHead>Break deducted</TableHead>
+              <TableHead>{t("time_records.col_payable", "Payable time")}</TableHead>
+              <TableHead>{t("time_records.col_payroll", "Payroll time")}</TableHead>
+              <TableHead>{t("time_records.col_break_deducted", "Break deducted")}</TableHead>
               <TableHead>{t("face_check.table_header", "Face check")}</TableHead>
-              {adminMode && management ? <TableHead className="w-[9rem]">Actions</TableHead> : null}
+              {adminMode && management ? (
+                <TableHead className="w-[9rem]">{t("time_records.actions", "Actions")}</TableHead>
+              ) : null}
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={adminCols}>Loading…</TableCell>
+                <TableCell colSpan={adminCols}>{t("common.loading", "Loading…")}</TableCell>
               </TableRow>
             ) : null}
             {!isLoading && rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={adminCols}>No shifts in range.</TableCell>
+                <TableCell colSpan={adminCols}>{t("time_records.empty", "No shifts in range.")}</TableCell>
               </TableRow>
             ) : null}
             {!isLoading
@@ -616,7 +647,7 @@ export function TimeRecordsClient() {
                     {adminMode ? (
                       <TableCell className="max-w-[14rem] text-xs">
                         <span className="font-medium text-[var(--color-text)]">
-                          {row.employee_name ?? row.employee_email ?? "Employee"}
+                          {row.employee_name ?? row.employee_email ?? t("common.employee", "Employee")}
                         </span>
                         {row.employee_job_title ? (
                           <span className="mt-0.5 block truncate text-[var(--color-text-muted)]">
@@ -626,7 +657,7 @@ export function TimeRecordsClient() {
                       </TableCell>
                     ) : null}
                     <TableCell>{row.location_name}</TableCell>
-                    <TableCell>{row.status}</TableCell>
+                    <TableCell>{shiftStatusLabel(t, row.status)}</TableCell>
                     <TableCell className="whitespace-nowrap text-xs">
                       {formatDateTime(row.clock_in_at)}
                     </TableCell>
@@ -634,7 +665,7 @@ export function TimeRecordsClient() {
                       {row.clock_out_at ? formatDateTime(row.clock_out_at) : "—"}
                     </TableCell>
                     <TableCell className="text-xs">
-                      <ShiftDurationCell row={row} />
+                      <ShiftDurationCell row={row} runningLabel={runningLabel} />
                     </TableCell>
                     <TableCell className="text-xs">
                       {row.counted_seconds !== null
@@ -667,7 +698,7 @@ export function TimeRecordsClient() {
                               type="button"
                               variant="secondary"
                             >
-                              Edit
+                              {t("time_records.edit", "Edit")}
                             </Button>
                           ) : null}
                           {row.status === "open" ? (
@@ -677,7 +708,7 @@ export function TimeRecordsClient() {
                               type="button"
                               variant="secondary"
                             >
-                              Force clock-out
+                              {t("time_records.force_clock_out", "Force clock-out")}
                             </Button>
                           ) : null}
                         </div>
@@ -698,9 +729,11 @@ export function TimeRecordsClient() {
           >
             <div className="timiq-sheet my-4 w-full max-w-lg border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
               <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-2">
-                <p className="text-sm font-bold text-[var(--color-text)]">Add completed shift</p>
+                <p className="text-sm font-bold text-[var(--color-text)]">
+                  {t("time_records.modal_add_title", "Add completed shift")}
+                </p>
                 <Button onClick={closeModals} type="button" variant="secondary">
-                  Close
+                  {t("common.close", "Close")}
                 </Button>
               </div>
               <form className="mt-3 space-y-2 text-sm" onSubmit={submitAdd}>
@@ -710,7 +743,7 @@ export function TimeRecordsClient() {
                   </p>
                 ) : null}
                 <label className="block text-xs font-bold">
-                  Employee
+                  {t("common.employee", "Employee")}
                   <select
                     className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     onChange={(event) => {
@@ -720,7 +753,7 @@ export function TimeRecordsClient() {
                     required
                     value={formUserId}
                   >
-                    <option value="">Select…</option>
+                    <option value="">{t("common.select", "Select…")}</option>
                     {employeeOptions.map((e) => (
                       <option key={e.id} value={e.id}>
                         {e.email}
@@ -729,7 +762,7 @@ export function TimeRecordsClient() {
                   </select>
                 </label>
                 <label className="block text-xs font-bold">
-                  Location
+                  {t("time_records.col_location", "Location")}
                   <select
                     className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     disabled={!formUserId}
@@ -737,7 +770,7 @@ export function TimeRecordsClient() {
                     required
                     value={formLocationId}
                   >
-                    <option value="">Select…</option>
+                    <option value="">{t("common.select", "Select…")}</option>
                     {locationOptions.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.name}
@@ -746,7 +779,7 @@ export function TimeRecordsClient() {
                   </select>
                 </label>
                 <label className="block text-xs font-bold">
-                  Clock in (local)
+                  {t("time_records.clock_in_local", "Clock in (local)")}
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     onChange={(event) => setFormClockInLocal(event.target.value)}
@@ -756,7 +789,7 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <label className="block text-xs font-bold">
-                  Clock out (local)
+                  {t("time_records.clock_out_local", "Clock out (local)")}
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     onChange={(event) => setFormClockOutLocal(event.target.value)}
@@ -766,7 +799,7 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <label className="block text-xs font-bold">
-                  Break (minutes)
+                  {t("time_records.break_minutes", "Break (minutes)")}
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     inputMode="numeric"
@@ -777,7 +810,7 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <label className="block text-xs font-bold">
-                  Reason (required)
+                  {t("time_records.reason_required", "Reason (required)")}
                   <textarea
                     className="mt-1 min-h-[4rem] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1 text-sm"
                     onChange={(event) => setFormReason(event.target.value)}
@@ -786,7 +819,7 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <Button disabled={modalBusy} type="submit">
-                  {modalBusy ? "Saving…" : "Create shift"}
+                  {modalBusy ? t("common.saving", "Saving…") : t("time_records.create_shift", "Create shift")}
                 </Button>
               </form>
             </div>
@@ -801,9 +834,11 @@ export function TimeRecordsClient() {
           >
             <div className="timiq-sheet my-4 w-full max-w-lg border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
               <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-2">
-                <p className="text-sm font-bold text-[var(--color-text)]">Edit completed shift</p>
+                <p className="text-sm font-bold text-[var(--color-text)]">
+                  {t("time_records.edit_title", "Edit completed shift")}
+                </p>
                 <Button onClick={closeModals} type="button" variant="secondary">
-                  Close
+                  {t("common.close", "Close")}
                 </Button>
               </div>
               <form className="mt-3 space-y-2 text-sm" onSubmit={submitEdit}>
@@ -813,10 +848,12 @@ export function TimeRecordsClient() {
                   </p>
                 ) : null}
                 <p className="text-xs text-[var(--color-text-muted)]">
-                  Employee: {editRow.employee_name ?? editRow.employee_email ?? editRow.user_id}
+                  {t("time_records.employee_row", "Employee: {{name}}", {
+                    name: editRow.employee_name ?? editRow.employee_email ?? editRow.user_id,
+                  })}
                 </p>
                 <label className="block text-xs font-bold">
-                  Location
+                  {t("time_records.col_location", "Location")}
                   <select
                     className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     onChange={(event) => setFormLocationId(event.target.value)}
@@ -830,7 +867,7 @@ export function TimeRecordsClient() {
                   </select>
                 </label>
                 <label className="block text-xs font-bold">
-                  Clock in (local)
+                  {t("time_records.clock_in_local", "Clock in (local)")}
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     onChange={(event) => setFormClockInLocal(event.target.value)}
@@ -840,7 +877,7 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <label className="block text-xs font-bold">
-                  Clock out (local)
+                  {t("time_records.clock_out_local", "Clock out (local)")}
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     onChange={(event) => setFormClockOutLocal(event.target.value)}
@@ -850,7 +887,7 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <label className="block text-xs font-bold">
-                  Break (minutes)
+                  {t("time_records.break_minutes", "Break (minutes)")}
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     inputMode="numeric"
@@ -861,7 +898,7 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <label className="block text-xs font-bold">
-                  Reason (required)
+                  {t("time_records.reason_required", "Reason (required)")}
                   <textarea
                     className="mt-1 min-h-[4rem] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1 text-sm"
                     onChange={(event) => setFormReason(event.target.value)}
@@ -870,7 +907,7 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <Button disabled={modalBusy} type="submit">
-                  {modalBusy ? "Saving…" : "Save changes"}
+                  {modalBusy ? t("common.saving", "Saving…") : t("time_records.save_changes", "Save changes")}
                 </Button>
               </form>
             </div>
@@ -885,9 +922,11 @@ export function TimeRecordsClient() {
           >
             <div className="timiq-sheet my-4 w-full max-w-lg border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
               <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-2">
-                <p className="text-sm font-bold text-[var(--color-text)]">Force clock-out</p>
+                <p className="text-sm font-bold text-[var(--color-text)]">
+                  {t("time_records.force_title", "Force clock-out")}
+                </p>
                 <Button onClick={closeModals} type="button" variant="secondary">
-                  Close
+                  {t("common.close", "Close")}
                 </Button>
               </div>
               <form className="mt-3 space-y-2 text-sm" onSubmit={submitForce}>
@@ -897,10 +936,13 @@ export function TimeRecordsClient() {
                   </p>
                 ) : null}
                 <p className="text-xs text-[var(--color-text-muted)]">
-                  Open shift at {formatDateTime(forceRow.clock_in_at)} · {forceRow.location_name}
+                  {t("time_records.open_shift_at", "Open shift at {{time}} · {{location}}", {
+                    time: formatDateTime(forceRow.clock_in_at),
+                    location: forceRow.location_name,
+                  })}
                 </p>
                 <label className="block text-xs font-bold">
-                  Clock out (local)
+                  {t("time_records.clock_out_local", "Clock out (local)")}
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     onChange={(event) => setFormClockOutLocal(event.target.value)}
@@ -910,22 +952,28 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <label className="block text-xs font-bold">
-                  Break total override (minutes, optional)
+                  {t("time_records.break_override", "Break total override (minutes, optional)")}
                   <input
                     className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                     inputMode="numeric"
                     min={0}
                     onChange={(event) => setFormBreakMinutes(event.target.value)}
-                    placeholder="Leave blank to use timed breaks"
+                    placeholder={t(
+                      "time_records.break_override_placeholder",
+                      "Leave blank to use timed breaks",
+                    )}
                     type="number"
                     value={formBreakMinutes}
                   />
                 </label>
                 <p className="text-[10px] text-[var(--color-text-muted)]">
-                  Omit break override to use summed timed breaks after any open break is closed at clock-out.
+                  {t(
+                    "time_records.break_override_hint",
+                    "Omit break override to use summed timed breaks after any open break is closed at clock-out.",
+                  )}
                 </p>
                 <label className="block text-xs font-bold">
-                  Reason (required)
+                  {t("time_records.reason_required", "Reason (required)")}
                   <textarea
                     className="mt-1 min-h-[4rem] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1 text-sm"
                     onChange={(event) => setFormReason(event.target.value)}
@@ -934,7 +982,7 @@ export function TimeRecordsClient() {
                   />
                 </label>
                 <Button disabled={modalBusy} type="submit">
-                  {modalBusy ? "Saving…" : "Force clock-out"}
+                  {modalBusy ? t("common.saving", "Saving…") : t("time_records.force_clock_out", "Force clock-out")}
                 </Button>
               </form>
             </div>

@@ -13,6 +13,7 @@ import {
   type PrivacyAdminRequestListItem,
 } from "../../../features/privacy/api";
 import { listCompanies, type Company } from "../../../features/companies/api";
+import { genericStatusLabel, useT } from "../../../lib/i18n";
 
 const STATUSES = ["submitted", "in_review", "completed", "rejected", "cancelled"] as const;
 
@@ -21,7 +22,21 @@ function formatDt(iso: string): string {
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
 }
 
+function privacyRequestTypeLabel(t: ReturnType<typeof useT>, code: string): string {
+  const map: Record<string, string> = {
+    data_access: "privacy.data_access",
+    correction: "privacy.type_correction",
+    deletion: "privacy.type_deletion",
+    gps_tracking_info: "privacy.gps_info",
+    document_copy: "privacy.document_copy",
+    other: "privacy.other",
+  };
+  const key = map[code];
+  return key ? t(key) : code.replace(/_/g, " ");
+}
+
 export function PrivacyRequestsClient() {
+  const t = useT();
   const user = useCurrentUser();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyFilter, setCompanyFilter] = useState<string | null>(null);
@@ -65,11 +80,11 @@ export function PrivacyRequestsClient() {
       const data = await fetchPrivacyAdminRequests(q);
       setRows(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load.");
+      setError(e instanceof Error ? e.message : t("privacy.load_error"));
     } finally {
       setLoading(false);
     }
-  }, [user, companyFilter]);
+  }, [user, companyFilter, t]);
 
   useEffect(() => {
     void loadList();
@@ -84,12 +99,12 @@ export function PrivacyRequestsClient() {
       setStatusEdit(d.status);
       setResponseEdit(d.admin_response ?? "");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load detail.");
+      setError(e instanceof Error ? e.message : t("privacy.requests_load_detail_failed"));
       setDetail(null);
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (selectedId) {
@@ -123,7 +138,7 @@ export function PrivacyRequestsClient() {
       setDetail(d);
       await loadList();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed.");
+      setError(e instanceof Error ? e.message : t("privacy.requests_save_failed"));
     } finally {
       setSaving(false);
     }
@@ -141,7 +156,7 @@ export function PrivacyRequestsClient() {
       setStatusEdit(d.status);
       await loadList();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Close failed.");
+      setError(e instanceof Error ? e.message : t("privacy.requests_close_failed"));
     } finally {
       setSaving(false);
     }
@@ -149,10 +164,7 @@ export function PrivacyRequestsClient() {
 
   return (
     <Sheet>
-      <PageHeader
-        description="Review privacy and data subject requests from employees in scope."
-        title="Privacy requests"
-      />
+      <PageHeader description={t("privacy.requests_page_description_full")} title={t("privacy.requests_page_title")} />
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         {error ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
@@ -163,7 +175,7 @@ export function PrivacyRequestsClient() {
         {isAdministrator(user) ? (
           <div className="max-w-md">
             <label className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]" htmlFor="co">
-              Filter by company
+              {t("privacy.requests_filter_company")}
             </label>
             <select
               className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm"
@@ -171,7 +183,7 @@ export function PrivacyRequestsClient() {
               value={companyFilter ?? ""}
               onChange={(e) => setCompanyFilter(e.target.value || null)}
             >
-              <option value="">All companies</option>
+              <option value="">{t("privacy.requests_all_companies")}</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -183,20 +195,20 @@ export function PrivacyRequestsClient() {
 
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="secondary" onClick={() => void loadList()}>
-            Refresh list
+            {t("privacy.requests_refresh")}
           </Button>
         </div>
 
         <div className="flex min-h-[360px] min-w-0 flex-col gap-4 lg:flex-row">
           <div className="min-w-0 flex-1 overflow-x-auto">
-            {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading…</p> : null}
+            {loading ? <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading")}</p> : null}
             <table className="min-w-[720px] w-full border-collapse text-left text-sm">
               <thead>
                 <tr className="border-b border-[var(--color-border-dark)] text-[var(--color-text-soft)]">
-                  <th className="py-2 pr-2">Employee</th>
-                  <th className="py-2 pr-2">Type</th>
-                  <th className="py-2 pr-2">Status</th>
-                  <th className="py-2 pr-2">Submitted</th>
+                  <th className="py-2 pr-2">{t("common.employee")}</th>
+                  <th className="py-2 pr-2">{t("privacy.col_type")}</th>
+                  <th className="py-2 pr-2">{t("privacy.col_status")}</th>
+                  <th className="py-2 pr-2">{t("privacy.col_submitted")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -209,38 +221,38 @@ export function PrivacyRequestsClient() {
                     onClick={() => setSelectedId(r.id)}
                   >
                     <td className="py-2 pr-2">{r.requester_display}</td>
-                    <td className="py-2 pr-2">{r.request_type}</td>
-                    <td className="py-2 pr-2">{r.status}</td>
+                    <td className="py-2 pr-2">{privacyRequestTypeLabel(t, r.request_type)}</td>
+                    <td className="py-2 pr-2">{genericStatusLabel(t, r.status)}</td>
                     <td className="py-2 pr-2 text-[var(--color-text-muted)]">{formatDt(r.submitted_at)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {!loading && rows.length === 0 ? (
-              <p className="mt-2 text-sm text-[var(--color-text-muted)]">No requests in this scope.</p>
+              <p className="mt-2 text-sm text-[var(--color-text-muted)]">{t("privacy.requests_scope_empty")}</p>
             ) : null}
           </div>
 
           <div className="w-full shrink-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 lg:max-w-md">
             {!selectedId ? (
-              <p className="text-sm text-[var(--color-text-muted)]">Select a request.</p>
+              <p className="text-sm text-[var(--color-text-muted)]">{t("privacy.requests_select")}</p>
             ) : detailLoading ? (
-              <p className="text-sm text-[var(--color-text-muted)]">Loading…</p>
+              <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading")}</p>
             ) : detail ? (
               <div className="space-y-3 text-sm">
                 <div>
-                  <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">Employee</p>
+                  <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">{t("common.employee")}</p>
                   <p className="text-[var(--color-text)]">{detail.requester_display}</p>
                   <p className="text-xs text-[var(--color-text-muted)]">{detail.user_email}</p>
                 </div>
                 <div>
-                  <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">Message</p>
+                  <p className="text-xs font-bold uppercase text-[var(--color-text-soft)]">{t("privacy.requests_message_block")}</p>
                   <p className="mt-1 whitespace-pre-wrap break-words text-[var(--color-text)]">{detail.message}</p>
                 </div>
                 <form className="space-y-3 border-t border-[var(--color-border-dark)] pt-3" onSubmit={onSave}>
                   <div>
                     <label className="text-xs font-bold uppercase text-[var(--color-text-soft)]" htmlFor="st">
-                      Status
+                      {t("privacy.requests_status_label")}
                     </label>
                     <select
                       className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm"
@@ -255,14 +267,14 @@ export function PrivacyRequestsClient() {
                     >
                       {STATUSES.map((s) => (
                         <option key={s} value={s}>
-                          {s}
+                          {genericStatusLabel(t, s)}
                         </option>
                       ))}
                     </select>
                   </div>
                   <div>
                     <label className="text-xs font-bold uppercase text-[var(--color-text-soft)]" htmlFor="resp">
-                      Admin response
+                      {t("privacy.requests_response_label")}
                     </label>
                     <textarea
                       className="mt-1.5 min-h-[80px] w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 py-2 text-sm"
@@ -275,7 +287,7 @@ export function PrivacyRequestsClient() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Button disabled={saving || detail.status === "cancelled"} type="submit">
-                      {saving ? "Saving…" : "Save"}
+                      {saving ? t("common.saving") : t("common.save")}
                     </Button>
                     <Button
                       disabled={saving || detail.status === "cancelled" || detail.status === "completed" || detail.status === "rejected"}
@@ -283,7 +295,7 @@ export function PrivacyRequestsClient() {
                       variant="secondary"
                       onClick={() => void onClose()}
                     >
-                      Mark completed (close)
+                      {t("privacy.requests_mark_completed")}
                     </Button>
                   </div>
                 </form>

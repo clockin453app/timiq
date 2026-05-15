@@ -23,6 +23,7 @@ import {
 import { isAdministrator, useCurrentUser, type AuthUser } from "../../features/auth";
 import { listBudgetProjects, type BudgetProjectSummary } from "../../features/budgets/api";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useT } from "../../lib/i18n";
 
 type TabId = "payroll" | "budget" | "mapping";
 
@@ -77,6 +78,7 @@ const TAB_ACTIVE = "bg-[var(--color-text)] text-[var(--color-bg)]";
 const TAB_IDLE = "bg-[var(--color-cell)] text-[var(--color-text)] hover:bg-[var(--color-border-light)]";
 
 export function AccountingClient() {
+  const t = useT();
   const user = useCurrentUser();
   const [tab, setTab] = useState<TabId>("payroll");
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -159,7 +161,10 @@ export function AccountingClient() {
       } catch {
         if (!cancelled) {
           setDisclaimer(
-            "CSV export foundation only. Direct OAuth sync with Xero, QuickBooks, or Sage is not implemented in this version.",
+            t(
+              "accounting.csv_foundation_note",
+              "CSV export foundation only. Direct OAuth sync with Xero, QuickBooks, or Sage is not implemented in this version.",
+            ),
           );
         }
       }
@@ -175,7 +180,7 @@ export function AccountingClient() {
       setProviderKey("none");
       setNotes("");
       setLoading(false);
-      setLoadError(isAdministrator(user) ? "Select a company to continue." : null);
+      setLoadError(isAdministrator(user) ? t("accounting.select_company") : null);
       return;
     }
     setLoading(true);
@@ -186,12 +191,12 @@ export function AccountingClient() {
       setProviderKey(s.provider_key);
       setNotes(s.notes ?? "");
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Could not load settings.");
+      setLoadError(e instanceof Error ? e.message : t("accounting.load_error"));
       setSettings(null);
     } finally {
       setLoading(false);
     }
-  }, [effectiveCompanyId, user]);
+  }, [effectiveCompanyId, user, t]);
 
   useEffect(() => {
     void loadSettings();
@@ -207,9 +212,9 @@ export function AccountingClient() {
       const rows = await listAccountingExportRuns(isAdministrator(user) ? effectiveCompanyId : null, 50);
       setExportRuns(rows);
     } catch (e) {
-      setRunsErr(e instanceof Error ? e.message : "Could not load export history.");
+      setRunsErr(e instanceof Error ? e.message : t("accounting.runs_load_error"));
     }
-  }, [effectiveCompanyId, user]);
+  }, [effectiveCompanyId, user, t]);
 
   useEffect(() => {
     void loadRuns();
@@ -259,9 +264,9 @@ export function AccountingClient() {
       setNominalSub(m.nominal_code_subcontractor ?? "");
       setTaxCode(m.tax_code ?? "");
     } catch (e) {
-      setMappingLoadErr(e instanceof Error ? e.message : "Could not load mapping.");
+      setMappingLoadErr(e instanceof Error ? e.message : t("accounting.mapping_load_error"));
     }
-  }, [effectiveCompanyId, user, mappingProvider]);
+  }, [effectiveCompanyId, user, mappingProvider, t]);
 
   useEffect(() => {
     if (tab === "mapping" && effectiveCompanyId) {
@@ -287,7 +292,7 @@ export function AccountingClient() {
       setProviderKey(s.provider_key);
       setNotes(s.notes ?? "");
     } catch (e) {
-      setSaveError(e instanceof Error ? e.message : "Save failed.");
+      setSaveError(e instanceof Error ? e.message : t("accounting.save_failed"));
     } finally {
       setSaving(false);
     }
@@ -298,7 +303,7 @@ export function AccountingClient() {
       return;
     }
     if (!includeApproved && !includePaid && !includePending) {
-      setPayrollErr("Select at least one of approved, paid, or pending.");
+      setPayrollErr(t("accounting.export_statuses_required"));
       return;
     }
     setPayrollErr(null);
@@ -320,7 +325,7 @@ export function AccountingClient() {
       );
       await loadRuns();
     } catch (e) {
-      setPayrollErr(e instanceof Error ? e.message : "Export failed.");
+      setPayrollErr(e instanceof Error ? e.message : t("accounting.export_failed"));
     } finally {
       setPayrollBusy(false);
     }
@@ -328,7 +333,7 @@ export function AccountingClient() {
 
   async function onBudgetDownload() {
     if (!budgetId) {
-      setBudgetErr("Select a budget.");
+      setBudgetErr(t("accounting.select_budget"));
       return;
     }
     setBudgetErr(null);
@@ -337,7 +342,7 @@ export function AccountingClient() {
       await downloadBudgetAccountingCsv(budgetId, budgetProvider, `timiq-budget-${budgetId}.csv`);
       await loadRuns();
     } catch (e) {
-      setBudgetErr(e instanceof Error ? e.message : "Export failed.");
+      setBudgetErr(e instanceof Error ? e.message : t("accounting.export_failed"));
     } finally {
       setBudgetBusy(false);
     }
@@ -365,7 +370,7 @@ export function AccountingClient() {
       await patchExportMapping(body);
       await loadMapping();
     } catch (e) {
-      setMappingSaveErr(e instanceof Error ? e.message : "Save failed.");
+      setMappingSaveErr(e instanceof Error ? e.message : t("accounting.save_failed"));
     } finally {
       setMappingSaving(false);
     }
@@ -373,24 +378,18 @@ export function AccountingClient() {
 
   return (
     <Sheet>
-      <PageHeader
-        description="Export-ready CSV for payroll and saved budget costs. No live OAuth sync yet — files are generated on demand and export activity is logged."
-        title="Accounting exports"
-      />
+      <PageHeader description={t("accounting.page_description")} title={t("accounting.page_title")} />
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         <div className="rounded-[var(--radius-md)] border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          <p className="font-semibold">Foundation only</p>
+          <p className="font-semibold">{t("accounting.foundation_title")}</p>
           <p className="mt-1 text-amber-900">{disclaimer}</p>
-          <p className="mt-1 text-amber-900">
-            Direct OAuth sync is not implemented yet. TimIQ does not send data to Xero, QuickBooks, or Sage
-            automatically and does not store third-party tokens.
-          </p>
+          <p className="mt-1 text-amber-900">{t("accounting.oauth_disclaimer_extra")}</p>
         </div>
 
         {isAdministrator(user) ? (
           <div>
             <label className={fieldLabelClass()} htmlFor="acct-company">
-              Company
+              {t("common.company")}
             </label>
             <select
               className={selectClass()}
@@ -398,7 +397,7 @@ export function AccountingClient() {
               value={companyOverride ?? ""}
               onChange={(ev) => setCompanyOverride(ev.target.value || null)}
             >
-              <option value="">Select company…</option>
+              <option value="">{t("accounting.select_company_placeholder")}</option>
               {companies.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
@@ -414,21 +413,21 @@ export function AccountingClient() {
             className={`${TAB_BTN} ${tab === "payroll" ? TAB_ACTIVE : TAB_IDLE}`}
             onClick={() => setTab("payroll")}
           >
-            Payroll exports
+            {t("accounting.tab_payroll_exports")}
           </button>
           <button
             type="button"
             className={`${TAB_BTN} ${tab === "budget" ? TAB_ACTIVE : TAB_IDLE}`}
             onClick={() => setTab("budget")}
           >
-            Budget exports
+            {t("accounting.tab_budget_exports")}
           </button>
           <button
             type="button"
             className={`${TAB_BTN} ${tab === "mapping" ? TAB_ACTIVE : TAB_IDLE}`}
             onClick={() => setTab("mapping")}
           >
-            Mapping &amp; notes
+            {t("accounting.tab_mapping_notes")}
           </button>
         </div>
 
@@ -443,7 +442,7 @@ export function AccountingClient() {
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className={fieldLabelClass()} htmlFor="pay-prov">
-                  Export format (provider style)
+                  {t("accounting.label_export_format")}
                 </label>
                 <select
                   className={selectClass()}
@@ -453,14 +452,14 @@ export function AccountingClient() {
                 >
                   {EXPORT_CSV_PROVIDERS.map((p) => (
                     <option key={p} value={p}>
-                      {p === "generic_csv" ? "Generic CSV (TimIQ)" : p}
+                      {p === "generic_csv" ? t("accounting.generic_csv") : p}
                     </option>
                   ))}
                 </select>
               </div>
               <div>
                 <label className={fieldLabelClass()} htmlFor="pay-ex-type">
-                  Export type
+                  {t("accounting.label_export_type")}
                 </label>
                 <select
                   className={selectClass()}
@@ -468,19 +467,19 @@ export function AccountingClient() {
                   value={exportType}
                   onChange={(ev) => setExportType(ev.target.value as "payroll_items" | "payroll_summary")}
                 >
-                  <option value="payroll_items">Payroll line items</option>
-                  <option value="payroll_summary">Payroll week summary</option>
+                  <option value="payroll_items">{t("accounting.export_type_items")}</option>
+                  <option value="payroll_summary">{t("accounting.export_type_summary")}</option>
                 </select>
               </div>
               <div>
                 <label className={fieldLabelClass()} htmlFor="df">
-                  Date from
+                  {t("accounting.date_from")}
                 </label>
                 <input className={inputClass()} id="df" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
               </div>
               <div>
                 <label className={fieldLabelClass()} htmlFor="dt">
-                  Date to
+                  {t("accounting.date_to")}
                 </label>
                 <input className={inputClass()} id="dt" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
               </div>
@@ -488,23 +487,23 @@ export function AccountingClient() {
             <div className="space-y-2 text-sm">
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={includeApproved} onChange={(e) => setIncludeApproved(e.target.checked)} />
-                Include approved rows
+                {t("accounting.include_approved")}
               </label>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={includePaid} onChange={(e) => setIncludePaid(e.target.checked)} />
-                Include paid rows
+                {t("accounting.include_paid")}
               </label>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={includeEmail} onChange={(e) => setIncludeEmail(e.target.checked)} />
-                Include employee email (internal reference)
+                {t("accounting.include_email")}
               </label>
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={includePending} onChange={(e) => setIncludePending(e.target.checked)} />
-                Include pending rows (labelled in CSV)
+                {t("accounting.include_pending")}
               </label>
               {includePending ? (
                 <div className="rounded-[var(--radius-md)] border border-amber-300 bg-amber-50 px-3 py-2 text-amber-950">
-                  Pending rows are not final payroll. Only enable this when you intentionally need a draft view.
+                  {t("accounting.pending_warning")}
                 </div>
               ) : null}
             </div>
@@ -514,21 +513,23 @@ export function AccountingClient() {
               </div>
             ) : null}
             <Button disabled={payrollBusy} type="button" onClick={() => void onPayrollDownload()}>
-              {payrollBusy ? "Preparing…" : "Download payroll CSV"}
+              {payrollBusy ? t("accounting.preparing") : t("accounting.download_payroll_csv")}
             </Button>
 
             <div>
-              <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text-soft)]">Recent exports</h3>
+              <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                {t("accounting.recent_exports")}
+              </h3>
               {runsErr ? <p className="mt-1 text-sm text-red-700">{runsErr}</p> : null}
               <div className="mt-2 overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)]">
                 <table className="min-w-full text-left text-sm">
                   <thead className="bg-[var(--color-cell)] text-xs uppercase text-[var(--color-text-soft)]">
                     <tr>
-                      <th className="px-2 py-2">When</th>
-                      <th className="px-2 py-2">Type</th>
-                      <th className="px-2 py-2">Provider</th>
-                      <th className="px-2 py-2">Rows</th>
-                      <th className="px-2 py-2">Total gross</th>
+                      <th className="px-2 py-2">{t("accounting.col_when")}</th>
+                      <th className="px-2 py-2">{t("accounting.col_type")}</th>
+                      <th className="px-2 py-2">{t("accounting.provider")}</th>
+                      <th className="px-2 py-2">{t("accounting.col_rows")}</th>
+                      <th className="px-2 py-2">{t("accounting.col_total_gross")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -544,7 +545,7 @@ export function AccountingClient() {
                     {exportRuns.length === 0 ? (
                       <tr>
                         <td className="px-2 py-3 text-[var(--color-text-soft)]" colSpan={5}>
-                          No exports logged yet for this company.
+                          {t("accounting.no_exports_company")}
                         </td>
                       </tr>
                     ) : null}
@@ -559,7 +560,7 @@ export function AccountingClient() {
           <div className="max-w-xl space-y-4">
             <div>
               <label className={fieldLabelClass()} htmlFor="bud-id">
-                Budget / project
+                {t("accounting.label_budget_project")}
               </label>
               <select
                 className={selectClass()}
@@ -567,7 +568,7 @@ export function AccountingClient() {
                 value={budgetId}
                 onChange={(ev) => setBudgetId(ev.target.value)}
               >
-                <option value="">Select budget…</option>
+                <option value="">{t("accounting.select_budget_placeholder")}</option>
                 {budgets.map((b) => (
                   <option key={b.id} value={b.id}>
                     {b.name}
@@ -577,7 +578,7 @@ export function AccountingClient() {
             </div>
             <div>
               <label className={fieldLabelClass()} htmlFor="bud-prov">
-                Export format
+                {t("accounting.label_export_format_short")}
               </label>
               <select
                 className={selectClass()}
@@ -587,7 +588,7 @@ export function AccountingClient() {
               >
                 {EXPORT_CSV_PROVIDERS.map((p) => (
                   <option key={p} value={p}>
-                    {p === "generic_csv" ? "Generic CSV (TimIQ)" : p}
+                    {p === "generic_csv" ? t("accounting.generic_csv") : p}
                   </option>
                 ))}
               </select>
@@ -598,11 +599,9 @@ export function AccountingClient() {
               </div>
             ) : null}
             <Button disabled={budgetBusy || !budgetId} type="button" onClick={() => void onBudgetDownload()}>
-              {budgetBusy ? "Preparing…" : "Download budget costs CSV"}
+              {budgetBusy ? t("accounting.preparing") : t("accounting.download_budget_csv")}
             </Button>
-            <p className="text-xs text-[var(--color-text-soft)]">
-              Uses saved budget expenses only. Labour appears as aggregate summary columns — not per-employee identifiers.
-            </p>
+            <p className="text-xs text-[var(--color-text-soft)]">{t("accounting.budget_footer_note")}</p>
           </div>
         ) : null}
 
@@ -610,7 +609,7 @@ export function AccountingClient() {
           <div className="space-y-6">
             <div>
               <label className={fieldLabelClass()} htmlFor="map-prov">
-                Mapping profile (per provider)
+                {t("accounting.mapping_profile_label")}
               </label>
               <select
                 className={selectClass()}
@@ -620,35 +619,32 @@ export function AccountingClient() {
               >
                 {EXPORT_CSV_PROVIDERS.map((p) => (
                   <option key={p} value={p}>
-                    {p === "generic_csv" ? "Generic CSV (TimIQ)" : p}
+                    {p === "generic_csv" ? t("accounting.generic_csv") : p}
                   </option>
                 ))}
               </select>
               {mappingLoadErr ? (
                 <p className="mt-2 text-sm text-red-700">{mappingLoadErr}</p>
               ) : (
-                <p className="mt-1 text-xs text-[var(--color-text-soft)]">
-                  Nominal / tax hints are embedded into export-ready CSV columns where applicable. They are not sent to
-                  any external system from this screen.
-                </p>
+                <p className="mt-1 text-xs text-[var(--color-text-soft)]">{t("accounting.mapping_hint_embedded")}</p>
               )}
             </div>
             <form className="grid max-w-2xl gap-3 md:grid-cols-2" onSubmit={onMappingSave}>
               <div>
                 <label className={fieldLabelClass()} htmlFor="n-w">
-                  Nominal — wages
+                  {t("accounting.nominal_wages")}
                 </label>
                 <input className={inputClass()} id="n-w" value={nominalWages} onChange={(e) => setNominalWages(e.target.value)} />
               </div>
               <div>
                 <label className={fieldLabelClass()} htmlFor="n-c">
-                  Nominal — CIS
+                  {t("accounting.nominal_cis")}
                 </label>
                 <input className={inputClass()} id="n-c" value={nominalCis} onChange={(e) => setNominalCis(e.target.value)} />
               </div>
               <div>
                 <label className={fieldLabelClass()} htmlFor="n-m">
-                  Nominal — materials
+                  {t("accounting.nominal_materials")}
                 </label>
                 <input
                   className={inputClass()}
@@ -659,13 +655,13 @@ export function AccountingClient() {
               </div>
               <div>
                 <label className={fieldLabelClass()} htmlFor="n-tl">
-                  Nominal — tools
+                  {t("accounting.nominal_tools")}
                 </label>
                 <input className={inputClass()} id="n-tl" value={nominalTools} onChange={(e) => setNominalTools(e.target.value)} />
               </div>
               <div>
                 <label className={fieldLabelClass()} htmlFor="n-eq">
-                  Nominal — equipment
+                  {t("accounting.nominal_equipment")}
                 </label>
                 <input
                   className={inputClass()}
@@ -676,13 +672,13 @@ export function AccountingClient() {
               </div>
               <div>
                 <label className={fieldLabelClass()} htmlFor="n-sc">
-                  Nominal — subcontractor
+                  {t("accounting.nominal_subcontractor")}
                 </label>
                 <input className={inputClass()} id="n-sc" value={nominalSub} onChange={(e) => setNominalSub(e.target.value)} />
               </div>
               <div className="md:col-span-2">
                 <label className={fieldLabelClass()} htmlFor="tax-c">
-                  Tax / VAT code hint (optional)
+                  {t("accounting.tax_vat_hint")}
                 </label>
                 <input className={inputClass()} id="tax-c" value={taxCode} onChange={(e) => setTaxCode(e.target.value)} />
               </div>
@@ -693,24 +689,22 @@ export function AccountingClient() {
               ) : null}
               <div className="md:col-span-2">
                 <Button disabled={mappingSaving} type="submit">
-                  {mappingSaving ? "Saving…" : "Save mapping"}
+                  {mappingSaving ? t("accounting.saving") : t("accounting.save_mapping")}
                 </Button>
               </div>
             </form>
 
             <div className="border-t border-[var(--color-border-dark)] pt-4">
               <h3 className="text-sm font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                Internal link &amp; notes
+                {t("accounting.section_internal_notes")}
               </h3>
-              <p className="mt-1 text-xs text-[var(--color-text-soft)]">
-                Record which accounting system you target and internal notes. Never store passwords or bank details here.
-              </p>
-              {loading ? <p className="mt-2 text-sm text-[var(--color-text-soft)]">Loading…</p> : null}
+              <p className="mt-1 text-xs text-[var(--color-text-soft)]">{t("accounting.section_internal_intro")}</p>
+              {loading ? <p className="mt-2 text-sm text-[var(--color-text-soft)]">{t("common.loading")}</p> : null}
               {!loading ? (
                 <form className="mt-3 max-w-xl space-y-4" onSubmit={onSubmitNotes}>
                   <div>
                     <label className={fieldLabelClass()} htmlFor="acct-provider">
-                      Target system (internal)
+                      {t("accounting.label_target_system")}
                     </label>
                     <select
                       className={selectClass()}
@@ -727,23 +721,28 @@ export function AccountingClient() {
                   </div>
                   <div>
                     <label className={fieldLabelClass()} htmlFor="acct-notes">
-                      Notes (optional)
+                      {t("leave.notes_optional")}
                     </label>
                     <textarea
                       className={textareaClass()}
                       id="acct-notes"
                       maxLength={4000}
-                      placeholder="e.g. finance contact, export cadence — never passwords or account numbers"
+                      placeholder={t(
+                        "accounting.placeholder_notes_example",
+                        "e.g. finance contact, export cadence — never passwords or account numbers",
+                      )}
                       value={notes}
                       onChange={(ev) => setNotes(ev.target.value)}
                     />
                   </div>
                   {settings?.updated_at ? (
                     <p className="text-xs text-[var(--color-text-soft)]">
-                      Last updated {formatUpdated(settings.updated_at) ?? settings.updated_at}
+                      {t("accounting.last_updated", "Last updated {{when}}", {
+                        when: formatUpdated(settings.updated_at) ?? settings.updated_at,
+                      })}
                     </p>
                   ) : (
-                    <p className="text-xs text-[var(--color-text-soft)]">No notes saved yet for this company.</p>
+                    <p className="text-xs text-[var(--color-text-soft)]">{t("accounting.no_notes_yet")}</p>
                   )}
                   {saveError ? (
                     <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2 text-sm text-red-700">
@@ -751,7 +750,7 @@ export function AccountingClient() {
                     </div>
                   ) : null}
                   <Button disabled={saving} type="submit">
-                    {saving ? "Saving…" : "Save notes"}
+                    {saving ? t("accounting.saving") : t("accounting.save_notes")}
                   </Button>
                 </form>
               ) : null}
@@ -760,7 +759,7 @@ export function AccountingClient() {
         ) : null}
 
         {!effectiveCompanyId && !loadError ? (
-          <p className="text-sm text-[var(--color-text-soft)]">Select a company to use accounting exports.</p>
+          <p className="text-sm text-[var(--color-text-soft)]">{t("accounting.pick_company_exports")}</p>
         ) : null}
       </SheetBody>
     </Sheet>

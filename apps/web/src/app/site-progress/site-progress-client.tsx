@@ -47,6 +47,7 @@ import {
   yieldToBrowser,
   type PreparedSiteProgressUpload,
 } from "../../features/work-progress/image-compression";
+import { genericStatusLabel, useT } from "../../lib/i18n";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -95,6 +96,7 @@ function AttachmentThumb({ att }: { att: WorkProgressAttachmentMeta }) {
 }
 
 export function SiteProgressClient() {
+  const t = useT();
   const currentUser = useCurrentUser();
   const [options, setOptions] = useState<WorkProgressLocationOption[]>([]);
   const [optionsError, setOptionsError] = useState("");
@@ -139,10 +141,12 @@ export function SiteProgressClient() {
       setMaxAttachments(data.max_attachments_per_entry ?? WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS);
       setMaxOriginalBytes(data.max_original_image_bytes ?? WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES);
     } catch (err) {
-      setOptionsError(err instanceof Error ? err.message : "Could not load allowed sites.");
+      setOptionsError(
+        err instanceof Error ? err.message : t("site_progress.options_load_failed", "Could not load allowed sites."),
+      );
       setOptions([]);
     }
-  }, []);
+  }, [t]);
 
   const loadList = useCallback(async () => {
     setListLoading(true);
@@ -152,13 +156,15 @@ export function SiteProgressClient() {
       setItems(data.items);
       setTotal(data.total);
     } catch (err) {
-      setListError(err instanceof Error ? err.message : "Could not load history.");
+      setListError(
+        err instanceof Error ? err.message : t("site_progress.history_load_failed", "Could not load history."),
+      );
       setItems([]);
       setTotal(0);
     } finally {
       setListLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void loadOptions();
@@ -496,8 +502,11 @@ export function SiteProgressClient() {
   return (
     <Sheet>
       <PageHeader
-        description="Log site work with photos. Only locations you are assigned to appear below. Photos are resized in your browser before upload, then validated and optimised again on the server (JPEG, PNG, or WebP)."
-        title="Site progress"
+        description={t(
+          "site_progress.page_description_detail",
+          "Log site work with photos. Only locations you are assigned to appear below. Photos are resized in your browser before upload, then validated and optimised again on the server (JPEG, PNG, or WebP).",
+        )}
+        title={t("site_progress.page_title", "Site progress")}
       />
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         {optionsError ? (
@@ -515,13 +524,13 @@ export function SiteProgressClient() {
         <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
           <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              New update
+              {t("site_progress.section_new", "New update")}
             </p>
           </div>
           <form className="space-y-3 p-4" onSubmit={handleSubmit}>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
-                <span className="text-[var(--color-text)]">Work date</span>
+                <span className="text-[var(--color-text)]">{t("site_progress.lbl_work_date", "Work date")}</span>
                 <Input
                   className="mt-1"
                   onChange={(e) => setWorkDate(e.target.value)}
@@ -531,14 +540,14 @@ export function SiteProgressClient() {
                 />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-                <span className="text-[var(--color-text)]">Site / location</span>
+                <span className="text-[var(--color-text)]">{t("site_progress.lbl_site_location", "Site / location")}</span>
                 <select
                   className="mt-1 h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   onChange={(e) => setLocationId(e.target.value)}
                   required
                   value={locationId}
                 >
-                  <option value="">Select…</option>
+                  <option value="">{t("common.select", "Select…")}</option>
                   {options.map((loc) => (
                     <option key={loc.id} value={loc.id}>
                       {loc.name}
@@ -548,12 +557,14 @@ export function SiteProgressClient() {
               </label>
             </div>
             <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-              <span className="text-[var(--color-text)]">Title / summary</span>
+              <span className="text-[var(--color-text)]">{t("site_progress.lbl_title", "Title / summary")}</span>
               <Input className="mt-1" onChange={(e) => setTitle(e.target.value)} required value={title} />
             </label>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
-                <span className="text-[var(--color-text)]">Progress status</span>
+                <span className="text-[var(--color-text)]">
+                  {t("site_progress.lbl_progress_status", "Progress status")}
+                </span>
                 <select
                   className="mt-1 h-9 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                   onChange={(e) => setProgressStatus(e.target.value)}
@@ -561,27 +572,29 @@ export function SiteProgressClient() {
                 >
                   {WORK_PROGRESS_STATUS_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>
-                      {o.label}
+                      {genericStatusLabel(t, o.value)}
                     </option>
                   ))}
                 </select>
               </label>
               <label className="block min-w-0 text-xs font-bold text-[var(--color-text-soft)]">
-                <span className="text-[var(--color-text)]">Percent complete (optional)</span>
+                <span className="text-[var(--color-text)]">
+                  {t("site_progress.lbl_percent_optional", "Percent complete (optional)")}
+                </span>
                 <Input
                   className="mt-1"
                   inputMode="numeric"
                   max={100}
                   min={0}
                   onChange={(e) => setPercent(e.target.value)}
-                  placeholder="0–100"
+                  placeholder={t("site_progress.placeholder_percent", "0–100")}
                   type="number"
                   value={percent}
                 />
               </label>
             </div>
             <label className="block text-xs font-bold text-[var(--color-text-soft)]">
-              <span className="text-[var(--color-text)]">Notes / details</span>
+              <span className="text-[var(--color-text)]">{t("site_progress.lbl_notes", "Notes / details")}</span>
               <textarea
                 className="mt-1 min-h-[5rem] w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1.5 text-sm"
                 onChange={(e) => setNotes(e.target.value)}
@@ -592,7 +605,9 @@ export function SiteProgressClient() {
               <p className="text-sm text-[var(--color-danger-700)]">{formError}</p>
             ) : null}
             <Button disabled={formBusy || options.length === 0} type="submit" variant="primary">
-              {formBusy ? "Saving…" : "Submit progress"}
+              {formBusy
+                ? t("site_progress.submitting", "Saving…")
+                : t("site_progress.submit_progress", "Submit progress")}
             </Button>
           </form>
         </div>
