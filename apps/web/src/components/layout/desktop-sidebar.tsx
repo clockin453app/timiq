@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronsLeft, ChevronsRight, LayoutDashboard } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, LayoutDashboard, Settings, UserRound } from "lucide-react";
 
 import {
   getAllNavLinksForRole,
@@ -81,12 +81,15 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
 
   const sidebarWidth = collapsed ? "var(--layout-sidebar-collapsed)" : "var(--layout-sidebar-width)";
 
+  const collapsedIconLink =
+    "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border transition-colors";
+
   return (
     <aside
-      className="timiq-print-hide-chrome hidden min-w-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm transition-[width] duration-200 ease-out xl:flex xl:h-full xl:max-h-full xl:min-h-0 xl:shrink-0 xl:overflow-hidden"
+      className="timiq-print-hide-chrome timiq-desktop-sidebar hidden min-w-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm transition-[width] duration-200 ease-out xl:flex xl:h-dvh xl:max-h-dvh xl:min-h-0 xl:shrink-0 xl:overflow-hidden"
       style={{ width: hydrated ? sidebarWidth : "var(--layout-sidebar-width)" }}
     >
-      <div className="flex shrink-0 items-start justify-between gap-1 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-3">
+      <div className="flex shrink-0 items-start justify-between gap-1 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-2">
         {collapsed ? (
           <Link
             aria-label={t("nav.dashboard", "Dashboard")}
@@ -98,19 +101,18 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
           </Link>
         ) : (
           <div className="min-w-0 flex-1 px-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
               {t("shell.sidebar_section", "Navigation")}
             </p>
-            <p className="mt-0.5 text-base font-bold tracking-tight text-[var(--color-text)]">{t("nav.tagline", "TimIQ")}</p>
-            <p className="mt-0.5 text-xs leading-snug text-[var(--color-text-muted)]">
-              {t("nav.tagline_sub", "Payroll & workforce")}
+            <p className="text-base font-bold leading-tight tracking-tight text-[var(--color-text)]">
+              {t("nav.tagline", "TimIQ")}
             </p>
           </div>
         )}
         <button
           aria-expanded={!collapsed}
           aria-label={collapsed ? t("shell.expand_nav", "Expand navigation") : t("shell.collapse_nav", "Collapse navigation")}
-          className="timiq-touch-target flex shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]"
+          className="timiq-touch-target flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]"
           type="button"
           onClick={() => setCollapsedPersist(!collapsed)}
         >
@@ -124,7 +126,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
 
       {collapsed ? (
         <nav
-          className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto overflow-x-hidden px-1 py-3"
+          className="flex min-h-0 flex-1 flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden overscroll-y-contain px-1 py-2 [-webkit-overflow-scrolling:touch]"
           aria-label={t("shell.sidebar_section", "Navigation")}
         >
           {flatNav.map((item) => {
@@ -138,7 +140,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
               <Link
                 aria-label={label}
                 className={[
-                  "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border transition-colors",
+                  collapsedIconLink,
                   active
                     ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)]"
                     : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] hover:text-[var(--color-text)]",
@@ -147,16 +149,19 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
                 key={item.href}
                 title={label}
               >
-                <NavItemIcon labelKey={item.labelKey} className="h-5 w-5 shrink-0" />
+                <NavItemIcon labelKey={item.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" />
                 {n > 0 ? (
-                  <span className="absolute right-0 top-0 h-2 w-2 rounded-full bg-red-600 ring-2 ring-[var(--color-sidebar-bg)]" />
+                  <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-600 ring-2 ring-[var(--color-sidebar-bg)]" />
                 ) : null}
               </Link>
             );
           })}
         </nav>
       ) : (
-        <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden px-2.5 py-4">
+        <nav
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain px-2 py-2 [-webkit-overflow-scrolling:touch]"
+          aria-label={t("shell.sidebar_section", "Navigation")}
+        >
           <GroupedNavBlock
             accordionOpenGroupId={accordionOpenGroupId}
             activeHref={activeHref}
@@ -170,8 +175,8 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
           />
 
           {managementGroups.length > 0 ? (
-            <div className="mt-5 border-t border-[var(--color-border)] pt-4">
-              <p className="mb-2 px-2 text-xs font-medium tracking-normal text-[var(--color-text-muted)]">
+            <div className="mt-3 border-t border-[var(--color-border)] pt-2">
+              <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
                 {t("nav.management", "Management")}
               </p>
               <GroupedNavBlock
@@ -191,22 +196,28 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
       )}
 
       {collapsed ? (
-        <div className="mt-auto shrink-0 space-y-2 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2">
+        <div className="flex shrink-0 flex-col items-center gap-1 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] px-1.5 py-2">
           <Link
             aria-label={t("nav.profile", "Profile")}
-            className="mx-auto flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]"
+            className={`${collapsedIconLink} border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]`}
             href="/profile"
             title={t("nav.profile", "Profile")}
           >
-            <NavItemIcon labelKey="nav.profile" className="h-5 w-5 shrink-0" />
+            <UserRound aria-hidden className="h-4 w-4" />
           </Link>
-          <div className="px-0.5" title={t("common.logout", "Logout")}>
-            <LogoutButton className="w-full text-[10px] leading-tight" />
-          </div>
+          <Link
+            aria-label={t("nav.settings", "Settings")}
+            className={`${collapsedIconLink} border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]`}
+            href="/settings"
+            title={t("nav.settings", "Settings")}
+          >
+            <Settings aria-hidden className="h-4 w-4" />
+          </Link>
+          <LogoutButton iconOnly />
         </div>
       ) : (
         <div className="shrink-0">
-          <UserAccountSummary />
+          <UserAccountSummary layout="compact" />
         </div>
       )}
     </aside>

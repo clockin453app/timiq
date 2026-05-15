@@ -86,8 +86,8 @@ function linkClass(active: boolean, variant: GroupedNavVariant, withIcon: boolea
   const base =
     variant === "sidebar"
       ? withIcon
-        ? "flex min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937] transition-colors"
-        : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937] transition-colors"
+        ? "flex min-w-0 max-w-full items-center gap-2 break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium text-[#1f2937] transition-colors"
+        : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium text-[#1f2937] transition-colors"
       : withIcon
         ? "flex min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]"
         : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-sm font-medium text-[#1f2937]";
@@ -173,7 +173,7 @@ export function GroupedNavBlock({
     return null;
   }
 
-  const outerSpacing = variant === "sidebar" ? "space-y-2" : "space-y-1.5";
+  const outerSpacing = variant === "sidebar" ? "space-y-1" : "space-y-1.5";
 
   return (
     <div className={outerSpacing}>
@@ -208,7 +208,7 @@ export function GroupedNavBlock({
             <button
               aria-expanded={isOpen}
               className={[
-                "flex w-full min-w-0 items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2.5 py-2 text-left text-sm font-medium text-[#1f2937]",
+                "flex w-full min-w-0 items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2 py-1.5 text-left text-sm font-medium text-[#1f2937]",
                 isOpen
                   ? "border-[var(--color-border-dark)] bg-[#e5e7eb] text-[#111827]"
                   : "border-transparent text-[#1f2937] hover:border-[var(--color-border)] hover:bg-[#e5e7eb]/80",

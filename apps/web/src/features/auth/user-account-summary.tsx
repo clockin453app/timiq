@@ -13,9 +13,47 @@ function formatRole(role: string) {
     .join(" ");
 }
 
-export function UserAccountSummary() {
+type UserAccountSummaryProps = {
+  /** Compact row layout for desktop sidebar footer. */
+  layout?: "default" | "compact";
+};
+
+const footerLinkClass =
+  "inline-flex min-h-8 items-center rounded-[var(--radius-md)] px-2 text-xs font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]";
+
+export function UserAccountSummary({ layout = "default" }: UserAccountSummaryProps) {
   const user = useCurrentUser();
   const t = useT();
+
+  if (layout === "compact") {
+    return (
+      <div className="border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2.5 py-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <p className="min-w-0 flex-1 truncate text-[11px] font-medium text-[var(--color-text)]" title={user.email}>
+            {user.email}
+          </p>
+          <span className="shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-header)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+            {formatRole(user.system_role)}
+          </span>
+        </div>
+        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1">
+          <Link className={footerLinkClass} href="/profile">
+            {t("nav.profile", "Profile")}
+          </Link>
+          <span aria-hidden className="text-[var(--color-text-soft)]">
+            ·
+          </span>
+          <Link className={footerLinkClass} href="/settings">
+            {t("nav.settings", "Settings")}
+          </Link>
+          <span aria-hidden className="text-[var(--color-text-soft)]">
+            ·
+          </span>
+          <LogoutButton className="!h-8 !min-h-8 shrink-0 px-2.5 text-xs" size="sm" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] px-4 py-4 text-xs">

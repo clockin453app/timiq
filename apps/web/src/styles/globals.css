@@ -33,6 +33,19 @@ body {
   max-width: 100%;
 }
 
+.timiq-desktop-sidebar nav {
+  scrollbar-gutter: stable;
+}
+
+.timiq-desktop-sidebar nav::-webkit-scrollbar {
+  width: 6px;
+}
+
+.timiq-desktop-sidebar nav::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: var(--color-border-dark);
+}
+
 img,
 video,
 canvas,
