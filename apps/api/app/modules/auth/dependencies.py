@@ -2,6 +2,7 @@ from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
+from app.modules.auth.limited_access import has_limited_access
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.auth.session_tokens import (
@@ -10,11 +11,14 @@ from app.modules.auth.session_tokens import (
     read_session_token,
 )
 
+_DEACTIVATED_DETAIL = "Your account is deactivated."
 
-def get_current_user(
+
+def get_authenticated_user(
     request: Request,
     db_session: Session = Depends(get_db_session),
 ) -> User:
+    """Valid session; includes deactivated employees with limited access."""
     token = request.cookies.get(SESSION_COOKIE_NAME)
 
     if not token:
@@ -33,17 +37,47 @@ def get_current_user(
 
     user = get_user_by_id(db_session, user_id)
 
-    if user is None or not user.is_active:
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="User is not active.",
+            detail="Not authenticated.",
         )
 
     return user
 
 
+def require_active_user(
+    current_user: User = Depends(get_authenticated_user),
+) -> User:
+    """Normal protected actions — active accounts only."""
+    if not current_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=_DEACTIVATED_DETAIL,
+        )
+    return current_user
+
+
+def require_authenticated_employee_self_service(
+    current_user: User = Depends(get_authenticated_user),
+) -> User:
+    """Own timesheets / pay history / profile for active or limited-access employees."""
+    if current_user.is_active:
+        return current_user
+    if has_limited_access(current_user):
+        return current_user
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail=_DEACTIVATED_DETAIL,
+    )
+
+
+# Backward-compatible alias used across routers.
+get_current_user = require_active_user
+
+
 def require_roles(*allowed_roles: SystemRole):
-    def role_dependency(current_user: User = Depends(get_current_user)) -> User:
+    def role_dependency(current_user: User = Depends(require_active_user)) -> User:
         if current_user.system_role not in allowed_roles:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

@@ -16,6 +16,7 @@ from app.modules.auth.schemas import (
     UserUpdateRequest,
 )
 from app.modules.auth.security import hash_password, verify_password
+from app.modules.auth.limited_access import may_login_while_inactive
 from app.modules.companies.repository import get_company_by_id
 
 
@@ -49,7 +50,7 @@ def authenticate_user(
     if user is None:
         return None
 
-    if not user.is_active:
+    if not user.is_active and not may_login_while_inactive(user):
         return None
 
     if not verify_password(password, user.password_hash):

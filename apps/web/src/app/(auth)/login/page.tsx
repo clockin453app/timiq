@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { AuthShell } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
 import { loginWithEmailPassword } from "../../../features/auth/api";
+import { defaultLimitedAccessPath, userHasLimitedAccess } from "../../../features/auth/limited-access";
 import { useT } from "../../../lib/i18n";
 
 export default function LoginPage() {
@@ -25,8 +26,10 @@ export default function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      await loginWithEmailPassword(email, password);
-      router.replace("/dashboard");
+      const session = await loginWithEmailPassword(email, password);
+      router.replace(
+        userHasLimitedAccess(session.user) ? defaultLimitedAccessPath() : "/dashboard",
+      );
     } catch {
       setErrorMessage(t("auth.login.error_invalid", "Invalid email or password."));
     } finally {

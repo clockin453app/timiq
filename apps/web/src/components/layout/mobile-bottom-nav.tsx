@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { canAccessManagement, useCurrentUser } from "../../features/auth";
+import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { useT } from "../../lib/i18n";
 
 type MobileBottomNavProps = {
@@ -38,6 +39,12 @@ const employeePrimaryLinks: MobileNavItem[] = [
   { labelKey: "nav.mobile.more", fallback: "More", href: "/profile", Icon: UserRound },
 ];
 
+const limitedAccessPrimaryLinks: MobileNavItem[] = [
+  { labelKey: "nav.mobile.timesheets", fallback: "Timesheets", href: "/timesheets", Icon: Calendar },
+  { labelKey: "nav.mobile.pay", fallback: "Pay", href: "/pay-history", Icon: Banknote },
+  { labelKey: "nav.mobile.more", fallback: "Profile", href: "/profile", Icon: UserRound },
+];
+
 const managementPrimaryLinks: MobileNavItem[] = [
   { labelKey: "nav.mobile.dashboard", fallback: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
   { labelKey: "nav.mobile.clock", fallback: "Clock", href: "/clock", Icon: Clock },
@@ -49,11 +56,18 @@ const managementPrimaryLinks: MobileNavItem[] = [
 export function MobileBottomNav({ activeHref = "/dashboard" }: MobileBottomNavProps) {
   const t = useT();
   const user = useCurrentUser();
-  const links = canAccessManagement(user) ? managementPrimaryLinks : employeePrimaryLinks;
+  const limited = userHasLimitedAccess(user);
+  const links = limited
+    ? limitedAccessPrimaryLinks
+    : canAccessManagement(user)
+      ? managementPrimaryLinks
+      : employeePrimaryLinks;
+  const colClass =
+    links.length === 3 ? "grid-cols-3" : links.length === 4 ? "grid-cols-4" : "grid-cols-5";
 
   return (
     <nav
-      className="timiq-print-hide-chrome fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-[var(--color-border-dark)] bg-[var(--color-header)] pb-[env(safe-area-inset-bottom,0px)] text-[11px] leading-tight xl:hidden"
+      className={`timiq-print-hide-chrome fixed inset-x-0 bottom-0 z-30 grid ${colClass} border-t border-[var(--color-border-dark)] bg-[var(--color-header)] pb-[env(safe-area-inset-bottom,0px)] text-[11px] leading-tight xl:hidden`}
     >
       {links.map((item) => {
         const Icon = item.Icon;

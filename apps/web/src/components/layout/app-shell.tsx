@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { LimitedAccessRouteGuard } from "../../features/auth/limited-access-route-guard";
 import { DesktopSidebar } from "./desktop-sidebar";
 import { DesktopTopBar } from "./desktop-top-bar";
 import { MobileBottomNav } from "./mobile-bottom-nav";
@@ -20,7 +21,7 @@ export function AppShell({ activeHref = "/dashboard", children }: AppShellProps)
         <MobileHeader activeHref={activeHref} />
 
         <div className="box-border w-full min-w-0 flex-1 overflow-x-clip px-3 py-4 sm:px-6 sm:py-5 xl:px-8 xl:py-6">
-          {children}
+          <LimitedAccessRouteGuard>{children}</LimitedAccessRouteGuard>
         </div>
       </main>
 

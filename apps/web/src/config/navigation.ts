@@ -149,6 +149,22 @@ const PROFILE: NavigationItem = {
   allowedRoles: ["administrator", "admin", "employee"],
 };
 
+/** Deactivated employees: timesheets, pay history, profile only. */
+const LIMITED_ACCESS_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
+  {
+    id: "limited-records",
+    label: "Records",
+    groupLabelKey: "nav.group.limited_records",
+    items: [TIMESHEETS, PAY_HISTORY],
+  },
+  {
+    id: "limited-profile",
+    label: "Account",
+    groupLabelKey: "nav.group.limited_profile",
+    items: [PROFILE],
+  },
+];
+
 const SETTINGS: NavigationItem = {
   label: "Settings",
   labelKey: "nav.settings",
@@ -364,7 +380,13 @@ function filterGroup(role: SystemRole, group: NavigationGroupDefinition): Naviga
  * time records / timesheets / week report appear under Management → Attendance to avoid duplicate links.
  * Employees never receive management groups (see getManagementNavigationGroups).
  */
-export function getEmployeeNavigationGroups(role: SystemRole): NavigationGroupDefinition[] {
+export function getEmployeeNavigationGroups(
+  role: SystemRole,
+  options?: { limitedAccess?: boolean },
+): NavigationGroupDefinition[] {
+  if (options?.limitedAccess && role === "employee") {
+    return LIMITED_ACCESS_NAV_GROUP_DEFS;
+  }
   const isMgmt = role === "admin" || role === "administrator";
   return EMPLOYEE_NAV_GROUP_DEFS.map((group) => {
     if (group.id === "emp-time" && isMgmt) {

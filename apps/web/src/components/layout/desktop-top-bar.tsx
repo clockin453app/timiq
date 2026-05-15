@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { Building2, Clock, UserRound } from "lucide-react";
 
 import { formatSystemRole, LogoutButton, useCurrentUser } from "../../features/auth";
+import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { useT } from "../../lib/i18n";
 
 import { MessagesHeaderButton } from "./messages-header-button";
@@ -29,6 +30,7 @@ function roleLabelKey(role: string): string {
 
 export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps) {
   const user = useCurrentUser();
+  const limited = userHasLimitedAccess(user);
   const t = useT();
 
   const displayName = useMemo(() => {
@@ -66,7 +68,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
   return (
     <header className="timiq-print-hide-chrome sticky top-0 z-20 hidden h-[var(--layout-topbar-height)] w-full min-w-0 shrink-0 items-center gap-4 border-b border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-4 shadow-[0_1px_0_rgba(15,23,42,0.04)] xl:flex">
       <div className="flex min-w-0 flex-1 items-center gap-4">
-        <Link className="shrink-0 no-underline" href="/dashboard">
+        <Link className="shrink-0 no-underline" href={limited ? "/pay-history" : "/dashboard"}>
           <p className="text-base font-bold tracking-tight text-[var(--color-text)]">{t("nav.tagline", "TimIQ")}</p>
           <p className="hidden text-xs text-[var(--color-text-muted)] sm:block">{t("nav.tagline_sub", "Payroll & workforce")}</p>
         </Link>
@@ -91,10 +93,14 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
       </div>
 
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
-        {quickBtn("/clock", "nav.clock", "Clock In / Out", Clock)}
-        {quickBtn("/site-progress", "nav.site_progress", "Site Progress", Building2)}
-        <MessagesHeaderButton activeHref={activeHref} />
-        <NotificationBell />
+        {!limited ? (
+          <>
+            {quickBtn("/clock", "nav.clock", "Clock In / Out", Clock)}
+            {quickBtn("/site-progress", "nav.site_progress", "Site Progress", Building2)}
+            <MessagesHeaderButton activeHref={activeHref} />
+            <NotificationBell />
+          </>
+        ) : null}
 
         <details className="relative shrink-0">
           <summary

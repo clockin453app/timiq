@@ -8,7 +8,11 @@ from sqlalchemy.orm import Session
 from app.core.storage.file_response import content_disposition_attachment
 
 from app.db.session import get_db_session
-from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
+from app.modules.auth.dependencies import (
+    get_current_user,
+    require_admin_or_administrator,
+    require_authenticated_employee_self_service,
+)
 from app.modules.auth.models import User
 from app.modules.time_records.schemas import (
     AdminCreateCompletedShiftRequest,
@@ -219,7 +223,7 @@ def admin_force_clock_out_route(
 def read_my_timesheet_week(
     week_start: str = Query(..., description="Monday local date for the company policy timezone (YYYY-MM-DD)."),
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_authenticated_employee_self_service),
 ) -> TimesheetWeekResponse:
     try:
         parsed = _opt_date(week_start)
@@ -314,7 +318,7 @@ def read_admin_company_timesheet_week(
 def export_my_timesheet_week_csv(
     week_start: str = Query(...),
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_authenticated_employee_self_service),
 ):
     try:
         parsed = _opt_date(week_start)

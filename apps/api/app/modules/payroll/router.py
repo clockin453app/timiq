@@ -8,7 +8,11 @@ from app.core.export_csv import safe_export_filename
 from app.core.storage.file_response import content_disposition_attachment
 
 from app.db.session import get_db_session
-from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
+from app.modules.auth.dependencies import (
+    get_current_user,
+    require_admin_or_administrator,
+    require_authenticated_employee_self_service,
+)
 from app.modules.auth.models import User
 from app.modules.payroll.schemas import (
     PayHistoryEntry,
@@ -234,7 +238,7 @@ def payroll_approve_all(
 @router.get("/pay-history/me", response_model=list[PayHistoryEntry])
 def payroll_pay_history_me(
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_authenticated_employee_self_service),
 ) -> list[PayHistoryEntry]:
     return list_my_pay_history(db_session, current_user)
 
@@ -243,7 +247,7 @@ def payroll_pay_history_me(
 def payroll_item_summary(
     item_id: uuid.UUID,
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_authenticated_employee_self_service),
 ) -> PayrollItemSummaryResponse:
     try:
         return get_payroll_item_summary(db_session, current_user, item_id)
@@ -263,7 +267,7 @@ def payroll_item_summary(
 def payroll_item_payslip(
     item_id: uuid.UUID,
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_authenticated_employee_self_service),
 ) -> Response:
     try:
         body = render_payroll_item_payslip_html(db_session, current_user, item_id)

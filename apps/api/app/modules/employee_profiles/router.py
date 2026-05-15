@@ -4,7 +4,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
-from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
+from app.modules.auth.dependencies import (
+    get_current_user,
+    require_admin_or_administrator,
+    require_authenticated_employee_self_service,
+)
 from app.modules.auth.models import User
 from app.modules.employee_profiles.schemas import (
     EmployeeProfileResponse,
@@ -24,7 +28,7 @@ router = APIRouter(prefix="/api/employee-profiles", tags=["employee-profiles"])
 @router.get("/me", response_model=EmployeeProfileResponse)
 def get_my_profile(
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_authenticated_employee_self_service),
 ) -> EmployeeProfileResponse:
     profile = get_profile_for_actor_or_user_id(db_session=db_session, actor=current_user)
     return employee_profile_to_response(db_session, profile, actor=current_user)
@@ -34,7 +38,7 @@ def get_my_profile(
 def update_my_profile(
     request: EmployeeProfileUpdateRequest,
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_authenticated_employee_self_service),
 ) -> EmployeeProfileResponse:
     try:
         profile = update_profile_for_actor_or_user_id(

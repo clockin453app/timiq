@@ -4,7 +4,8 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.modules.auth.models import SystemRole
+from app.modules.auth.limited_access import has_limited_access
+from app.modules.auth.models import SystemRole, User
 
 
 def normalize_email_value(value: str) -> str:
@@ -111,6 +112,7 @@ class UserResponse(BaseModel):
     email: str
     system_role: SystemRole
     is_active: bool
+    limited_access: bool = False
     created_at: datetime
     updated_at: datetime
     profile_first_name: Optional[str] = None
@@ -120,6 +122,11 @@ class UserResponse(BaseModel):
     invited_at: Optional[datetime] = None
     invite_accepted_at: Optional[datetime] = None
     password_changed_at: Optional[datetime] = None
+
+
+def build_user_response(user: User) -> UserResponse:
+    base = UserResponse.model_validate(user)
+    return base.model_copy(update={"limited_access": has_limited_access(user)})
 
 
 class LoginResponse(BaseModel):

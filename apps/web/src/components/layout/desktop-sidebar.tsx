@@ -12,6 +12,7 @@ import {
 import type { NotificationSummary } from "../../features/notifications/api";
 import { navBadgesFromSummary } from "../../features/notifications/nav-badges";
 import { LogoutButton, useCurrentUser, UserAccountSummary } from "../../features/auth";
+import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { useT } from "../../lib/i18n";
 
 import { findDefaultAccordionGroupId, GroupedNavBlock } from "./grouped-nav";
@@ -48,14 +49,16 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
     }
   }, []);
 
+  const limited = userHasLimitedAccess(user);
+
   const employeeGroups = useMemo(
-    () => getEmployeeNavigationGroups(user.system_role),
-    [user.system_role],
+    () => getEmployeeNavigationGroups(user.system_role, { limitedAccess: limited }),
+    [user.system_role, limited],
   );
 
   const managementGroups = useMemo(
-    () => getManagementNavigationGroups(user.system_role),
-    [user.system_role],
+    () => (limited ? [] : getManagementNavigationGroups(user.system_role)),
+    [user.system_role, limited],
   );
 
   const flatNav = useMemo(() => getAllNavLinksForRole(user.system_role), [user.system_role]);

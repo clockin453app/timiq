@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import (
+    get_authenticated_user,
     get_current_user,
     require_admin_or_administrator,
     require_authenticated_employee,
+    require_authenticated_employee_self_service,
     require_administrator,
 )
 from app.modules.auth.models import User
@@ -27,6 +29,7 @@ from app.modules.auth.schemas import (
     UserPasswordResetRequest,
     UserResponse,
     UserStatusUpdateRequest,
+    build_user_response,
     UserUpdateRequest,
     VerifyEmailTokenRequest,
 )
@@ -108,14 +111,14 @@ def login(
         **cookie_kw,
     )
 
-    return LoginResponse(user=UserResponse.model_validate(user))
+    return LoginResponse(user=build_user_response(user))
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(
     body: PasswordChangeRequest,
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(require_authenticated_employee),
+    current_user: User = Depends(require_authenticated_employee_self_service),
 ) -> Response:
     try:
         change_my_password(db_session, current_user, body)
@@ -236,8 +239,8 @@ def verify_email_route(
 
 
 @router.get("/me", response_model=UserResponse)
-def me(current_user: User = Depends(get_current_user)) -> UserResponse:
-    return UserResponse.model_validate(current_user)
+def me(current_user: User = Depends(get_authenticated_user)) -> UserResponse:
+    return build_user_response(current_user)
 
 
 @router.post("/logout")
