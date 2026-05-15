@@ -1,7 +1,13 @@
+import contextvars
 from typing import Any
 
 from pydantic import AliasChoices, Field, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, PydanticBaseSettingsSource, SettingsConfigDict
+
+_constructor_timiq_web_app_url: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "constructor_timiq_web_app_url",
+    default=None,
+)
 
 
 class Settings(BaseSettings):
@@ -141,9 +147,10 @@ class Settings(BaseSettings):
     )
     timiq_web_app_url: str = Field(
         default="http://localhost:3000",
+        # WEB_ORIGIN is mapped in __init__ only — do not add it here or process env
+        # WEB_ORIGIN=localhost in CI would override explicit constructor values.
         validation_alias=AliasChoices(
             "TIMIQ_WEB_APP_URL",
-            "WEB_ORIGIN",
             "timiq_web_app_url",
         ),
     )
@@ -159,16 +166,66 @@ class Settings(BaseSettings):
     def web_origin(self) -> str:
         return self.timiq_web_app_url
 
+    def __init__(self, **data: Any) -> None:
+        normalized = dict(data)
+        explicit = normalized.get("timiq_web_app_url")
+        resolved_web_app_url: str | None = None
+        if explicit is not None and str(explicit).strip():
+            resolved_web_app_url = str(explicit).strip()
+        else:
+            timiq_url = normalized.get("TIMIQ_WEB_APP_URL")
+            web_origin = normalized.get("WEB_ORIGIN")
+            if timiq_url is not None and str(timiq_url).strip():
+                resolved_web_app_url = str(timiq_url).strip()
+            elif web_origin is not None and str(web_origin).strip():
+                resolved_web_app_url = str(web_origin).strip()
+        token: contextvars.Token[str | None] | None = None
+        if resolved_web_app_url is not None:
+            normalized["timiq_web_app_url"] = resolved_web_app_url
+            normalized.pop("TIMIQ_WEB_APP_URL", None)
+            normalized.pop("WEB_ORIGIN", None)
+            token = _constructor_timiq_web_app_url.set(resolved_web_app_url)
+        try:
+            super().__init__(**normalized)
+        finally:
+            if token is not None:
+                _constructor_timiq_web_app_url.reset(token)
+
+    @classmethod
+    def settings_customise_sources(
+        cls,
+        settings_cls: type[BaseSettings],
+        init_settings: PydanticBaseSettingsSource,
+        env_settings: PydanticBaseSettingsSource,
+        dotenv_settings: PydanticBaseSettingsSource,
+        file_secret_settings: PydanticBaseSettingsSource,
+    ) -> tuple[PydanticBaseSettingsSource, ...]:
+        if _constructor_timiq_web_app_url.get() is not None:
+            return (init_settings,)
+        return (
+            dotenv_settings,
+            env_settings,
+            file_secret_settings,
+            init_settings,
+        )
+
     @model_validator(mode="before")
     @classmethod
     def _normalize_web_app_url_keys(cls, data: Any) -> Any:
         if not isinstance(data, dict):
             return data
-        for key in ("timiq_web_app_url", "TIMIQ_WEB_APP_URL", "WEB_ORIGIN"):
-            value = data.get(key)
-            if value is not None and str(value).strip():
-                data["timiq_web_app_url"] = str(value).strip()
-                break
+        explicit = data.get("timiq_web_app_url")
+        if explicit is not None and str(explicit).strip():
+            data["timiq_web_app_url"] = str(explicit).strip()
+            return data
+        timiq_url = data.get("TIMIQ_WEB_APP_URL")
+        if timiq_url is not None and str(timiq_url).strip():
+            data["timiq_web_app_url"] = str(timiq_url).strip()
+            return data
+        # WEB_ORIGIN constructor kwarg only (not a Field env alias).
+        web_origin = data.get("WEB_ORIGIN")
+        if web_origin is not None and str(web_origin).strip():
+            data["timiq_web_app_url"] = str(web_origin).strip()
         return data
 
     @model_validator(mode="after")
