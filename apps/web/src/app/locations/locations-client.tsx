@@ -291,11 +291,11 @@ export function LocationsClient() {
   return (
     <Sheet>
       <PageHeader
-        title="Locations"
+        title="Sites"
         description={
           editingLocation
             ? `Editing ${editingLocation.name}. Adjust map, fields, then save.`
-            : "Create geofenced work locations with GPS coordinates."
+            : "Operational sites for clock-in, GPS geofence, site access, and site payroll rules."
         }
       />
 

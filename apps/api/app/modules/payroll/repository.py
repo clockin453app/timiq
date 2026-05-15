@@ -120,6 +120,7 @@ def max_employee_shift_updated_at_in_payroll_week(
 
 
 def first_workplace_tax(db_session: Session, company_id: uuid.UUID) -> float | None:
+    """Company CIS fallback when employee/company rates unset (first workplace by name)."""
     statement = (
         select(Workplace)
         .where(Workplace.company_id == company_id)

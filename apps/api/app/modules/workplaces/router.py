@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
-from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
+from app.modules.auth.dependencies import require_admin_or_administrator
 from app.modules.auth.models import User
 from app.modules.workplaces.schemas import (
     WorkplaceCreateRequest,
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/api/workplaces", tags=["workplaces"])
 @router.get("", response_model=list[WorkplaceResponse])
 def get_workplaces(
     db_session: Session = Depends(get_db_session),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_admin_or_administrator),
 ) -> list[WorkplaceResponse]:
     workplaces = list_workplaces_visible_to_user(db_session, current_user)
     return [WorkplaceResponse.model_validate(workplace) for workplace in workplaces]

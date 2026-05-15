@@ -212,15 +212,15 @@ const COMPANIES: NavigationItem = {
   allowedRoles: ["administrator"],
 };
 
-const WORKPLACES: NavigationItem = {
-  label: "Workplaces",
-  labelKey: "nav.workplaces",
+const CIS_WORKPLACES: NavigationItem = {
+  label: "CIS Workplaces",
+  labelKey: "nav.cis_workplaces",
   href: "/workplaces",
   allowedRoles: ["administrator", "admin"],
 };
 
 const LOCATIONS: NavigationItem = {
-  label: "Locations",
+  label: "Sites",
   labelKey: "nav.locations",
   href: "/locations",
   allowedRoles: ["administrator", "admin"],
@@ -319,7 +319,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mgmt-sites",
     label: "Sites",
     groupLabelKey: "nav.group.mgmt_sites",
-    items: [COMPANIES, WORKPLACES, LOCATIONS, SITE_ACCESS],
+    items: [COMPANIES, LOCATIONS, SITE_ACCESS],
   },
   {
     id: "mgmt-attendance",
@@ -331,7 +331,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mgmt-payroll",
     label: "Payroll",
     groupLabelKey: "nav.group.mgmt_payroll",
-    items: [PAYROLL_REPORT, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
+    items: [PAYROLL_REPORT, CIS_WORKPLACES, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
   },
   {
     id: "mgmt-work",

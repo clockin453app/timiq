@@ -54,6 +54,7 @@ const NAV_ICON_BY_LABEL_KEY: Record<string, LucideIcon> = {
   "nav.clock_selfies": Camera,
   "nav.companies": Building,
   "nav.workplaces": Factory,
+  "nav.cis_workplaces": Factory,
   "nav.locations": MapPin,
   "nav.site_access": KeyRound,
   "nav.live_attendance": Activity,
