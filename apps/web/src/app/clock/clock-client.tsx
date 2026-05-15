@@ -1,6 +1,5 @@
-"use client";
+﻿"use client";
 
-import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -22,7 +21,9 @@ import {
   isGpsClientSubmittable,
   stabilizeGpsFix,
 } from "../../features/time-clock/gps";
+import { ClockSelfieCameraOverlay } from "../../features/time-clock/clock-selfie-camera-overlay";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
+import { cn } from "../../lib/cn";
 import { haversineDistanceMeters } from "../../lib/geo";
 import { isEmployee, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
@@ -37,13 +38,6 @@ type ActiveSelfiePhase = "clock_in" | "clock_out";
 type GpsFailure = null | "denied" | "failed" | "unsupported";
 
 type FlowStatus = ClockStatus["current_status"];
-
-const CAMERA_UNSUPPORTED = "Your browser does not support camera capture.";
-const CAMERA_REQUIRED = "Camera permission is required to clock in or out.";
-
-function stopMediaStream(stream: MediaStream | null) {
-  stream?.getTracks().forEach((track) => track.stop());
-}
 
 function deriveFlowStatus(cs: ClockStatus): FlowStatus {
   if (cs.current_status) {
@@ -84,8 +78,8 @@ function statusCardTitle(flow: FlowStatus, t: (key: string, fallback?: string) =
 export function ClockClient() {
   const t = useT();
   const user = useCurrentUser();
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  const clockInConfirmButtonRef = useRef<HTMLDivElement>(null);
+  const clockOutConfirmButtonRef = useRef<HTMLDivElement>(null);
 
   const [clockStatus, setClockStatus] = useState<ClockStatus | null>(null);
   const [geoCapture, setGeoCapture] = useState<GpsCapture | null>(null);
@@ -111,7 +105,7 @@ export function ClockClient() {
     "idle" | "searching" | "improving" | "captured" | "too_low" | "denied" | "failed" | "unsupported"
   >("idle");
 
-  /** unknown = before first client measure — do not mount Leaflet yet. */
+  /** unknown = before first client measure â€” do not mount Leaflet yet. */
   const [viewportClockMapMode, setViewportClockMapMode] = useState<"unknown" | "narrow" | "wide">(
     "unknown",
   );
@@ -294,13 +288,6 @@ export function ClockClient() {
   }, [selfieClockOut]);
 
   useEffect(() => {
-    return () => {
-      stopMediaStream(streamRef.current);
-      streamRef.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
     if (clockStatus?.has_open_shift) {
       setSelfieClockIn(null);
     }
@@ -312,67 +299,6 @@ export function ClockClient() {
       setSelfieClockOut(null);
     }
   }, [clockStatus?.has_completed_shift_today]);
-
-  useEffect(() => {
-    if (!activeSelfiePhase) {
-      stopMediaStream(streamRef.current);
-      streamRef.current = null;
-      const element = videoRef.current;
-      if (element) {
-        element.srcObject = null;
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    async function attachCamera() {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        setErrorMessage(CAMERA_UNSUPPORTED);
-        setActiveSelfiePhase(null);
-        return;
-      }
-
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user" },
-          audio: false,
-        });
-        if (cancelled) {
-          stopMediaStream(stream);
-          return;
-        }
-        streamRef.current = stream;
-        const element = videoRef.current;
-        if (element) {
-          element.srcObject = stream;
-          await element.play().catch(() => undefined);
-        }
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-        if (error instanceof DOMException && error.name === "NotAllowedError") {
-          setErrorMessage(CAMERA_REQUIRED);
-        } else {
-          setErrorMessage(CAMERA_REQUIRED);
-        }
-        setActiveSelfiePhase(null);
-      }
-    }
-
-    void attachCamera();
-
-    return () => {
-      cancelled = true;
-      stopMediaStream(streamRef.current);
-      streamRef.current = null;
-      const element = videoRef.current;
-      if (element) {
-        element.srcObject = null;
-      }
-    };
-  }, [activeSelfiePhase]);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -481,52 +407,28 @@ export function ClockClient() {
     setActiveSelfiePhase(null);
   }
 
-  function handleConfirmSelfieCapture() {
-    const phase = activeSelfiePhase;
-    if (!phase) {
-      return;
-    }
+  function focusConfirmAfterSelfie(phase: ActiveSelfiePhase) {
+    const targetRef = phase === "clock_in" ? clockInConfirmButtonRef : clockOutConfirmButtonRef;
+    requestAnimationFrame(() => {
+      targetRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      targetRef.current?.focus();
+    });
+  }
 
+  function handleSelfieAccepted(file: File, phase: ActiveSelfiePhase) {
     setErrorMessage("");
-    const video = videoRef.current;
-    if (!video || video.readyState < 2 || video.videoWidth === 0) {
-      setErrorMessage("Camera is not ready yet. Wait a moment or try again.");
-      return;
+    if (phase === "clock_in") {
+      setSelfieClockIn(file);
+    } else {
+      setSelfieClockOut(file);
     }
-
-    const canvas = document.createElement("canvas");
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const context = canvas.getContext("2d");
-    if (!context) {
-      setErrorMessage("Could not capture from camera.");
-      return;
-    }
-
-    context.drawImage(video, 0, 0);
-    canvas.toBlob(
-      (blob) => {
-        if (!blob) {
-          setErrorMessage("Could not capture from camera.");
-          return;
-        }
-        const file = new File([blob], `live-clock-selfie-${phase}-${Date.now()}.jpg`, {
-          type: "image/jpeg",
-        });
-        if (phase === "clock_in") {
-          setSelfieClockIn(file);
-        } else {
-          setSelfieClockOut(file);
-        }
-        setSuccessMessage(
-          phase === "clock_in" ? "Clock-in selfie captured." : "Clock-out selfie captured.",
-        );
-        setActiveSelfiePhase(null);
-        void refreshStatus();
-      },
-      "image/jpeg",
-      0.92,
+    setSuccessMessage(
+      phase === "clock_in"
+        ? "Selfie captured. Confirm clock in."
+        : "Selfie captured. Confirm clock out.",
     );
+    setActiveSelfiePhase(null);
+    focusConfirmAfterSelfie(phase);
   }
 
   async function handleClockIn() {
@@ -534,7 +436,7 @@ export function ClockClient() {
     setSuccessMessage("");
     if (!geoCapture || !isGpsClientSubmittable(geoCapture)) {
       setGpsAcquisitionKey((key) => key + 1);
-      setErrorMessage("Getting a reliable GPS fix… please wait, then try again.");
+      setErrorMessage("Getting a reliable GPS fixâ€¦ please wait, then try again.");
       return;
     }
     if (!selfieClockIn) {
@@ -565,7 +467,7 @@ export function ClockClient() {
     setSuccessMessage("");
     if (!geoCapture || !isGpsClientSubmittable(geoCapture)) {
       setGpsAcquisitionKey((key) => key + 1);
-      setErrorMessage("Getting a reliable GPS fix… please wait, then try again.");
+      setErrorMessage("Getting a reliable GPS fixâ€¦ please wait, then try again.");
       return;
     }
     if (!selfieClockOut) {
@@ -653,7 +555,7 @@ export function ClockClient() {
 
   const clockInDisabledReason = useMemo(() => {
     if (!clockStatus) {
-      return "Loading status…";
+      return "Loading statusâ€¦";
     }
     if (!canClockInServer) {
       return (
@@ -677,7 +579,7 @@ export function ClockClient() {
       if (geoCapture) {
         return "Waiting for accurate GPS.";
       }
-      return "Waiting for location…";
+      return "Waiting for locationâ€¦";
     }
     if (nearestSiteSummary?.outside) {
       return "You may be outside the nearest assigned site; the server will confirm on submit.";
@@ -703,7 +605,7 @@ export function ClockClient() {
 
   const clockOutDisabledReason = useMemo(() => {
     if (!clockStatus) {
-      return "Loading status…";
+      return "Loading statusâ€¦";
     }
     if (!canClockOutServer) {
       return (
@@ -727,7 +629,7 @@ export function ClockClient() {
       if (geoCapture) {
         return "Waiting for accurate GPS.";
       }
-      return "Waiting for location…";
+      return "Waiting for locationâ€¦";
     }
     if (!selfieClockOut) {
       return "Take a clock-out selfie.";
@@ -773,15 +675,15 @@ export function ClockClient() {
   } else if (gpsFailure === "failed") {
     gpsStatusLine = "Could not get a reliable GPS fix in time.";
   } else if (gpsAcquiring && gpsPhaseText === "searching") {
-    gpsStatusLine = "Searching for location…";
+    gpsStatusLine = "Searching for locationâ€¦";
   } else if (gpsAcquiring && gpsPhaseText === "improving") {
-    gpsStatusLine = "Improving GPS accuracy…";
+    gpsStatusLine = "Improving GPS accuracyâ€¦";
   } else if (gpsAcceptable) {
     gpsStatusLine = "Location captured.";
   } else if (geoCapture && !gpsAcquiring) {
     gpsStatusLine = "GPS accuracy too low for secure clocking.";
   } else {
-    gpsStatusLine = "Preparing location…";
+    gpsStatusLine = "Preparing locationâ€¦";
   }
 
   const locationOk = !noAssignedSites && gpsFailure !== "denied" && gpsFailure !== "unsupported";
@@ -822,7 +724,7 @@ export function ClockClient() {
           </div>
         ) : null}
         {isRefreshing && !clockStatus ? (
-          <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading", "Loading…")}</p>
+          <p className="text-sm text-[var(--color-text-muted)]">{t("common.loading", "Loadingâ€¦")}</p>
         ) : null}
 
         {clockStatus && flowStatus === "no_assigned_sites" ? (
@@ -859,10 +761,10 @@ export function ClockClient() {
                   <p>
                     <span className="text-[var(--color-text-muted)]">On shift: </span>
                     <span className="font-mono font-semibold text-[var(--color-text)]" suppressHydrationWarning>
-                      {currentShiftDurationParts.hms || currentShiftDurationParts.compact || "—"}
+                      {currentShiftDurationParts.hms || currentShiftDurationParts.compact || "â€”"}
                     </span>
                     {flowStatus === "open_break" ? (
-                      <span className="ml-2 text-[var(--color-warning-700)]">· On break</span>
+                      <span className="ml-2 text-[var(--color-warning-700)]">Â· On break</span>
                     ) : null}
                   </p>
                 ) : null}
@@ -899,15 +801,26 @@ export function ClockClient() {
                     />
                   </div>
                 ) : null}
-                <Button
-                  className="w-full min-h-[3rem] text-base"
-                  disabled={!clockInEnabled}
-                  onClick={handleClockIn}
-                  type="button"
-                  variant="secondary"
-                >
-                  {t("clock.action_clock_in", "Clock in")}
-                </Button>
+                {selfieClockIn ? (
+                  <p className="text-sm font-medium text-[var(--color-text)]">
+                    Selfie captured. Confirm clock in.
+                  </p>
+                ) : null}
+                <div ref={clockInConfirmButtonRef} className="outline-none" tabIndex={-1}>
+                  <Button
+                    className={cn(
+                      "w-full min-h-[3.25rem] text-base font-semibold",
+                      selfieClockIn &&
+                        clockInEnabled &&
+                        "ring-2 ring-[var(--color-primary)] ring-offset-2 ring-offset-[var(--color-cell)]",
+                    )}
+                    disabled={!clockInEnabled}
+                    onClick={handleClockIn}
+                    type="button"
+                  >
+                    {t("clock.action_clock_in", "Clock in")}
+                  </Button>
+                </div>
                 {!clockInEnabled && clockInDisabledReason ? (
                   <p className="text-xs text-[var(--color-text-muted)]">{clockInDisabledReason}</p>
                 ) : null}
@@ -961,15 +874,26 @@ export function ClockClient() {
                     />
                   </div>
                 ) : null}
-                <Button
-                  className="w-full min-h-[3rem] text-base"
-                  disabled={!clockOutEnabled}
-                  onClick={handleClockOut}
-                  type="button"
-                  variant="secondary"
-                >
-                  {t("clock.action_clock_out", "Clock out")}
-                </Button>
+                {selfieClockOut ? (
+                  <p className="text-sm font-medium text-[var(--color-text)]">
+                    Selfie captured. Confirm clock out.
+                  </p>
+                ) : null}
+                <div ref={clockOutConfirmButtonRef} className="outline-none" tabIndex={-1}>
+                  <Button
+                    className={cn(
+                      "w-full min-h-[3.25rem] text-base font-semibold",
+                      selfieClockOut &&
+                        clockOutEnabled &&
+                        "ring-2 ring-[var(--color-primary)] ring-offset-2 ring-offset-[var(--color-cell)]",
+                    )}
+                    disabled={!clockOutEnabled}
+                    onClick={handleClockOut}
+                    type="button"
+                  >
+                    {t("clock.action_clock_out", "Clock out")}
+                  </Button>
+                </div>
                 {!clockOutEnabled && clockOutDisabledReason ? (
                   <p className="text-xs text-[var(--color-text-muted)]">{clockOutDisabledReason}</p>
                 ) : null}
@@ -983,7 +907,7 @@ export function ClockClient() {
             <p className="font-medium text-[var(--color-text)]">{gpsStatusLine}</p>
             {geoCapture ? (
               <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                Accuracy {Math.round(geoCapture.payload.accuracy_meters)}m · Sites{" "}
+                Accuracy {Math.round(geoCapture.payload.accuracy_meters)}m Â· Sites{" "}
                 {clockStatus?.active_location_count ?? 0}
               </p>
             ) : null}
@@ -1010,7 +934,7 @@ export function ClockClient() {
               <li className="flex flex-wrap items-start justify-between gap-2">
                 <span>Location access</span>
                 <span className={locationOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"}>
-                  {gpsFailure === "denied" ? "Permission needed" : locationOk ? "OK" : "—"}
+                  {gpsFailure === "denied" ? "Permission needed" : locationOk ? "OK" : "â€”"}
                 </span>
               </li>
               <li className="flex flex-wrap items-start justify-between gap-2">
@@ -1022,9 +946,9 @@ export function ClockClient() {
                 </span>
               </li>
               <li className="flex flex-wrap items-start justify-between gap-2">
-                <span>GPS accuracy (≤{BACKEND_MAX_ACCURACY_M}m)</span>
+                <span>GPS accuracy (â‰¤{BACKEND_MAX_ACCURACY_M}m)</span>
                 <span className={gpsAccuracyOk ? "text-[var(--color-success-700)]" : "text-[var(--color-text-muted)]"}>
-                  {gpsAccuracyOk ? "OK" : gpsAcquiring ? "Improving…" : geoCapture ? "Too low" : "—"}
+                  {gpsAccuracyOk ? "OK" : gpsAcquiring ? "Improvingâ€¦" : geoCapture ? "Too low" : "â€”"}
                 </span>
               </li>
               {flowStatus === "not_clocked_in" ? (
@@ -1054,7 +978,7 @@ export function ClockClient() {
             </ul>
             {gpsAcquiring || gpsBestAccuracy !== null ? (
               <p className="text-xs text-[var(--color-text-muted)]">
-                Best accuracy: {gpsBestAccuracy !== null ? `${Math.round(gpsBestAccuracy)}m` : "—"} · Samples:{" "}
+                Best accuracy: {gpsBestAccuracy !== null ? `${Math.round(gpsBestAccuracy)}m` : "â€”"} Â· Samples:{" "}
                 {gpsSamples}
               </p>
             ) : null}
@@ -1063,7 +987,7 @@ export function ClockClient() {
                 Nearest site: <span className="font-semibold">{nearestSiteSummary.site.name}</span> (~
                 {nearestSiteSummary.distanceM}m)
                 {nearestSiteSummary.outside ? (
-                  <span className="text-[var(--color-danger-700)]"> · May be outside geofence</span>
+                  <span className="text-[var(--color-danger-700)]"> Â· May be outside geofence</span>
                 ) : null}
               </p>
             ) : null}
@@ -1077,7 +1001,7 @@ export function ClockClient() {
               <p className="mt-1 text-[var(--color-text-muted)]">No map data.</p>
             ) : (
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Supporting view only — GPS validation still runs on the server.
+                Supporting view only â€” GPS validation still runs on the server.
               </p>
             )}
             <div className="mt-2 w-full min-w-0 max-w-full overflow-x-hidden">
@@ -1095,8 +1019,8 @@ export function ClockClient() {
               ) : !mapMountDeferred ? (
                 <div className="flex min-h-[80px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-3 text-center text-xs text-[var(--color-text-muted)]">
                   {isSubmitting || isRefreshing
-                    ? "Map paused while the clock status updates…"
-                    : "Preparing map…"}
+                    ? "Map paused while the clock status updatesâ€¦"
+                    : "Preparing mapâ€¦"}
                 </div>
               ) : Number.isFinite(geoCapture.payload.latitude) &&
                 Number.isFinite(geoCapture.payload.longitude) ? (
@@ -1146,42 +1070,15 @@ export function ClockClient() {
           </Button>
         </div>
 
-        {typeof document !== "undefined" && activeSelfiePhase
-          ? createPortal(
-              <div
-                aria-modal="true"
-                className="fixed inset-0 z-[2000] flex items-center justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3"
-                role="dialog"
-              >
-                <div className="mx-auto w-full max-w-[min(24rem,calc(100vw-1.5rem))] min-w-0 max-h-[calc(100dvh-2rem)] overflow-y-auto rounded border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md">
-                  <p className="text-sm font-bold text-[var(--color-text)]">
-                    {activeSelfiePhase === "clock_in"
-                      ? t("clock.dialog_title_in", "Clock-in selfie")
-                      : t("clock.dialog_title_out", "Clock-out selfie")}
-                  </p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">{t("clock.dialog_hint")}</p>
-                  <div className="mt-2 overflow-hidden rounded border border-[var(--color-border-dark)] bg-black">
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      className="aspect-video max-h-44 w-full object-cover"
-                      muted
-                      playsInline
-                    />
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button onClick={handleConfirmSelfieCapture} type="button">
-                      {t("clock.capture", "Capture")}
-                    </Button>
-                    <Button onClick={handleCancelSelfieCapture} type="button" variant="secondary">
-                      {t("common.cancel", "Cancel")}
-                    </Button>
-                  </div>
-                </div>
-              </div>,
-              document.body,
-            )
-          : null}
+        {activeSelfiePhase ? (
+          <ClockSelfieCameraOverlay
+            open
+            phase={activeSelfiePhase}
+            onCancel={handleCancelSelfieCapture}
+            onUsePhoto={handleSelfieAccepted}
+            t={t}
+          />
+        ) : null}
 
         {errorMessage ? (
           <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
