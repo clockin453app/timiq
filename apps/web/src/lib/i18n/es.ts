@@ -1215,6 +1215,7 @@ export const ES_STRINGS: Record<string, string> = {
   "payroll.report.not_calculated_body": "Rows are built on the server from time records. Use Calculate payroll or Refresh if this message persists.",
   "payroll.report.not_calculated_title": "Payroll not calculated for this week yet",
   "payroll.report.open_payslip_btn": "Open payslip",
+  "payroll.report.pdf_export_failed": "Could not download payroll PDF report.",
   "payroll.report.open_shift": "Open shift",
   "payroll.report.other_pay": "Other pay",
   "payroll.report.overtime_wages": "Overtime wages",
