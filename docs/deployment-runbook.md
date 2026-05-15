@@ -15,12 +15,13 @@ Use with [render-deployment.md](./render-deployment.md) and [env-production-chec
 
 1. **Create PostgreSQL** and note `DATABASE_URL`.
 2. **Create API Web Service** — build/start commands from `render-deployment.md`.
-3. Set API env vars: `DATABASE_URL`, `SESSION_SECRET`, `TIMIQ_ENV=production`, `CORS_ALLOWED_ORIGINS`, storage vars, optional `TIMIQ_APP_NAME`.
+3. Set API env vars: `DATABASE_URL`, `SESSION_SECRET`, `TIMIQ_ENV=production`, `CORS_ALLOWED_ORIGINS`, `WEB_ORIGIN` (frontend URL for emailed links), storage vars, optional `TIMIQ_APP_NAME`. For transactional email: `TIMIQ_EMAIL_ENABLED=true`, `TIMIQ_EMAIL_FROM`, `TIMIQ_SMTP_*` (see checklist).
 4. **Run migrations** — Pre-deploy `alembic upgrade head` or manual shell once.
 5. Wait until **`GET https://<api>/api/healthz`** returns `200` and JSON with `status: ok`.
 6. **Create frontend Web Service** — set **`API_PROXY_URL`** to the API public URL (server-only); leave **`NEXT_PUBLIC_API_URL`** empty for same-origin `/api`. Redeploy web after env changes (Next rewrites at build).
 7. Redeploy frontend if CORS was updated after first API deploy.
-8. **Smoke test** (see below).
+8. Confirm API **`WEB_ORIGIN`** matches the frontend URL; test forgot-password email link opens `/reset-password` on the web host (not the API).
+9. **Smoke test** (see below).
 
 ---
 

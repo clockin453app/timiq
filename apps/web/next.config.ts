@@ -14,6 +14,15 @@ function apiProxyOrigin(): string {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  async redirects() {
+    return [
+      {
+        source: "/invite/accept",
+        destination: "/accept-invite",
+        permanent: false,
+      },
+    ];
+  },
   async headers() {
     return [
       {

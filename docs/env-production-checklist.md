@@ -14,7 +14,8 @@ See also: [render-deployment.md](./render-deployment.md), [deployment-runbook.md
 | `SESSION_SECRET` | **Yes** (non-local) | Long random string. Must **not** remain `change-this-with-a-secure-random-value` when `TIMIQ_ENV` ≠ `local`. |
 | `TIMIQ_ENV` or `APP_ENV` | Recommended | Use `production` (or any non-`local` value) on Render so session cookies use **`Secure`**. Default **`SESSION_COOKIE_SAMESITE=lax`** suits same-origin web → `/api` proxy; use `none` only if the browser still talks to the API on another hostname. |
 | `SESSION_COOKIE_SAMESITE` | No | `lax` (default), `strict`, or `none`. `none` forces `Secure=true`. Prefer **lax** with Next.js **`API_PROXY_URL`** same-origin mode. |
-| `CORS_ALLOWED_ORIGINS` or `WEB_ORIGIN` | **Yes** (split stack) | Comma-separated list of **exact** frontend origins (`https://your-frontend.onrender.com`). No trailing slashes. |
+| `CORS_ALLOWED_ORIGINS` | **Yes** (split stack) | Comma-separated list of **exact** frontend origins (`https://your-frontend.onrender.com`). No trailing slashes. |
+| `WEB_ORIGIN` or `TIMIQ_WEB_APP_URL` | **Yes** (email + production) | Public **web app** origin for emailed action links (reset, invite, verify). Same hostname users open in the browser — **not** the API URL. No trailing slash. |
 | `TIMIQ_APP_NAME` / `APP_NAME` | No | Display only. |
 | `TIMIQ_API_HOST` / `API_HOST` | No | Uvicorn bind uses Render `$PORT`; these are mainly local. |
 | `TIMIQ_API_PORT` / `API_PORT` | No | Local default; Render uses `$PORT`. |
@@ -43,14 +44,16 @@ See also: [render-deployment.md](./render-deployment.md), [deployment-runbook.md
 
 | Variable | Required | Notes |
 |----------|----------|--------|
-| `TIMIQ_WEB_APP_URL` | **Yes** (email flows) | Public web app origin used in emailed links, e.g. `https://your-frontend.onrender.com` — no trailing slash. |
-| `TIMIQ_EMAIL_ENABLED` | For SMTP sending | `true` to send mail. When `false`, forgot-password does not persist reset tokens unless SMTP is later enabled. |
-| `TIMIQ_EMAIL_FROM` | When sending | From header, e.g. `TimIQ <noreply@yourdomain.com>`. |
-| `TIMIQ_SMTP_HOST` | When sending | SMTP server hostname. |
-| `TIMIQ_SMTP_PORT` | No | Default `587`. |
-| `TIMIQ_SMTP_USERNAME` | Often | May be empty for some relays (rare in production). |
-| `TIMIQ_SMTP_PASSWORD` | Often | Render secret; never commit. |
-| `TIMIQ_SMTP_USE_TLS` | No | Default `true` (STARTTLS). |
+| `TIMIQ_EMAIL_ENABLED` / `SMTP_ENABLED` | For SMTP sending | `true` to send mail. When `false`, forgot-password does not persist reset tokens unless SMTP is later enabled. |
+| `TIMIQ_EMAIL_FROM` / `SMTP_FROM_EMAIL` | When sending | From address, e.g. `noreply@yourdomain.com`. |
+| `TIMIQ_EMAIL_FROM_NAME` / `SMTP_FROM_NAME` | No | Display name in From header, e.g. `TimIQ`. |
+| `TIMIQ_SMTP_HOST` / `SMTP_HOST` | When sending | SMTP server hostname. |
+| `TIMIQ_SMTP_PORT` / `SMTP_PORT` | No | Default `587`. |
+| `TIMIQ_SMTP_USERNAME` / `SMTP_USERNAME` | Often | May be empty for some relays (rare in production). |
+| `TIMIQ_SMTP_PASSWORD` / `SMTP_PASSWORD` | Often | Render secret; never commit. |
+| `TIMIQ_SMTP_USE_TLS` / `SMTP_USE_TLS` | No | Default `true` (STARTTLS on port 587). |
+
+Emailed links use **`WEB_ORIGIN`** (or `TIMIQ_WEB_APP_URL`) and open on the web app: `/reset-password?token=…`, `/accept-invite?token=…`, `/verify-email?token=…`. Legacy path `/invite/accept` redirects to `/accept-invite`.
 
 **Production:** configure SMTP before relying on forgot-password, invite-by-email, or verification. Never log raw tokens. Do not return reset links in public API responses.
 

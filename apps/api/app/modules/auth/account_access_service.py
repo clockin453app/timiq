@@ -4,11 +4,10 @@ import hashlib
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
-
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.email.frontend_urls import build_frontend_url
 from app.core.email.smtp_sender import send_plain_email, smtp_delivery_configured
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth import account_tokens_repository as token_repo
@@ -30,6 +29,7 @@ from app.modules.auth.schemas import (
     UserResponse,
 )
 from app.modules.employee_profiles.models import EmployeeProfile
+from app.modules.companies.repository import get_company_by_id
 from app.modules.employee_profiles.repository import (
     get_employee_profile_by_user_id,
     save_employee_profile,
@@ -49,15 +49,6 @@ def _is_local_env() -> bool:
     return settings.app_env.strip().lower() == "local"
 
 
-def _app_base_url() -> str:
-    return settings.timiq_web_app_url.rstrip("/")
-
-
-def _link(path: str, **query: str) -> str:
-    base = _app_base_url()
-    return f"{base}{path}?{urlencode(query)}"
-
-
 def _peer_hashes(ip: str | None, ua: str | None) -> tuple[str | None, str | None]:
     ip_h = hashlib.sha256(f"ip|{ip or ''}".encode()).hexdigest() if ip else None
     ua_h = hashlib.sha256(f"ua|{(ua or '')[:600]}".encode()).hexdigest() if ua else None
@@ -75,11 +66,29 @@ def _password_reset_email_body(*, reset_url: str) -> tuple[str, str]:
     return subject, body
 
 
-def _invite_email_body(*, invite_url: str, note: str | None) -> tuple[str, str]:
+def _role_label(role: SystemRole) -> str:
+    return role.value.replace("_", " ").title()
+
+
+def _invite_email_body(
+    *,
+    invite_url: str,
+    note: str | None,
+    company_name: str | None = None,
+    role: SystemRole | None = None,
+) -> tuple[str, str]:
     subject = "You have been invited to TimIQ"
+    context_lines: list[str] = []
+    if company_name and company_name.strip():
+        context_lines.append(f"Company: {company_name.strip()}")
+    if role is not None:
+        context_lines.append(f"Role: {_role_label(role)}")
+    context = "\n".join(context_lines)
+    context_block = f"{context}\n\n" if context else ""
     extra = f"\nMessage from your administrator:\n{note}\n" if (note and note.strip()) else ""
     body = (
         "You have been invited to join TimIQ.\n\n"
+        f"{context_block}"
         f"Use this link to set your password and activate your account (valid about {INVITE_EXPIRY_DAYS} days):\n"
         f"{invite_url}\n"
         f"{extra}\n"
@@ -165,7 +174,7 @@ def request_forgot_password(
     )
     db_session.flush()
 
-    reset_url = _link("/reset-password", token=raw)
+    reset_url = build_frontend_url(settings, "/reset-password", {"token": raw})
     if smtp_delivery_configured(settings):
         try:
             subj, text = _password_reset_email_body(reset_url=reset_url)
@@ -292,11 +301,21 @@ def invite_user_by_email(
     )
     db_session.flush()
 
-    invite_url = _link("/accept-invite", token=raw)
+    invite_url = build_frontend_url(settings, "/accept-invite", {"token": raw})
+    company_name: str | None = None
+    if company_id is not None:
+        company = get_company_by_id(db_session, company_id)
+        if company is not None:
+            company_name = company.name
     dev_link: str | None = None
     if smtp_delivery_configured(settings):
         try:
-            subj, text = _invite_email_body(invite_url=invite_url, note=body.personal_message)
+            subj, text = _invite_email_body(
+                invite_url=invite_url,
+                note=body.personal_message,
+                company_name=company_name,
+                role=body.system_role,
+            )
             send_plain_email(settings, to_address=user.email, subject=subj, body=text)
         except RuntimeError as exc:
             logger.exception("Invite email send failed.")
@@ -418,7 +437,7 @@ def send_email_verification(
     )
     db_session.flush()
 
-    verify_url = _link("/verify-email", token=raw)
+    verify_url = build_frontend_url(settings, "/verify-email", {"token": raw})
     dev_link: str | None = None
 
     if smtp_delivery_configured(settings):

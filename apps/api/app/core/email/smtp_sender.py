@@ -22,13 +22,21 @@ def smtp_delivery_configured(settings: Settings) -> bool:
     return True
 
 
+def _smtp_from_header(settings: Settings) -> str:
+    addr = settings.timiq_email_from.strip()
+    name = settings.timiq_email_from_name.strip()
+    if name:
+        return f"{name} <{addr}>"
+    return addr
+
+
 def send_plain_email(settings: Settings, *, to_address: str, subject: str, body: str) -> None:
     if not smtp_delivery_configured(settings):
         raise RuntimeError("Email is not configured.")
 
     msg = EmailMessage()
     msg["Subject"] = subject
-    msg["From"] = settings.timiq_email_from.strip()
+    msg["From"] = _smtp_from_header(settings)
     msg["To"] = to_address.strip()
     msg.set_content(body)
 

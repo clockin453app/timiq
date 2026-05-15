@@ -48,7 +48,7 @@ A Blueprint file pins service names, regions, and env wiring and goes stale quic
 
 7. **Health check path:** `/api/healthz` (or `/health` — both are public and DB-free).
 
-8. **Environment variables:** see [env-production-checklist.md](./env-production-checklist.md). Minimum: `DATABASE_URL`, `SESSION_SECRET`, `TIMIQ_ENV=production`, `CORS_ALLOWED_ORIGINS`, storage (`TIMIQ_STORAGE_BACKEND=s3` + S3 keys in production).
+8. **Environment variables:** see [env-production-checklist.md](./env-production-checklist.md). Minimum: `DATABASE_URL`, `SESSION_SECRET`, `TIMIQ_ENV=production`, `CORS_ALLOWED_ORIGINS`, `WEB_ORIGIN` (web app URL for emailed links — **not** the API hostname), storage (`TIMIQ_STORAGE_BACKEND=s3` + S3 keys in production). For password reset / invites / verification: `TIMIQ_EMAIL_ENABLED=true` and SMTP vars.
 
 ---
 
@@ -83,7 +83,21 @@ A Blueprint file pins service names, regions, and env wiring and goes stale quic
 
 ---
 
-## 4. CORS
+## 4. Emailed action links (`WEB_ORIGIN`)
+
+Set **`WEB_ORIGIN`** (or `TIMIQ_WEB_APP_URL`) on the **API** service to the public **frontend** origin users open in the browser, e.g. `https://timiq-web.onrender.com` (no trailing slash).
+
+Password reset, invite, and email-verification messages link to:
+
+- `/reset-password?token=…`
+- `/accept-invite?token=…` (legacy `/invite/accept` redirects here)
+- `/verify-email?token=…`
+
+If `WEB_ORIGIN` points at the API host (e.g. `timiq-api.onrender.com`), production startup validation fails. **`WEB_ORIGIN` is not a substitute for `CORS_ALLOWED_ORIGINS`** — set both to the same frontend origin in split-stack deploys.
+
+---
+
+## 5. CORS
 
 `CORS_ALLOWED_ORIGINS` on the API must include the **exact** frontend origin(s), comma-separated:
 
@@ -95,7 +109,7 @@ https://timiq-web.onrender.com
 
 ---
 
-## 5. Storage (production)
+## 6. Storage (production)
 
 - **Recommended:** `TIMIQ_STORAGE_BACKEND=s3` with a **private** S3-compatible bucket (AWS S3, Cloudflare R2, DigitalOcean Spaces, MinIO).
 - **Not recommended on default Render Web disks:** `local` storage without a **persistent disk** — uploaded files are lost on redeploy.

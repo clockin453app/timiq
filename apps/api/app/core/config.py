@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     )
     cors_allowed_origins: str = Field(
         default="http://localhost:3000,http://127.0.0.1:3000",
-        validation_alias=AliasChoices("CORS_ALLOWED_ORIGINS", "WEB_ORIGIN"),
+        validation_alias=AliasChoices("CORS_ALLOWED_ORIGINS", "cors_allowed_origins"),
     )
     session_secret: str = Field(
         default="change-this-with-a-secure-random-value",
@@ -83,35 +83,67 @@ class Settings(BaseSettings):
     # Transactional email (password reset, invites, verification). Optional; see docs/env-production-checklist.md.
     timiq_email_enabled: bool = Field(
         default=False,
-        validation_alias=AliasChoices("TIMIQ_EMAIL_ENABLED", "timiq_email_enabled"),
+        validation_alias=AliasChoices(
+            "TIMIQ_EMAIL_ENABLED",
+            "SMTP_ENABLED",
+            "timiq_email_enabled",
+        ),
     )
     timiq_email_from: str = Field(
         default="",
-        validation_alias=AliasChoices("TIMIQ_EMAIL_FROM", "timiq_email_from"),
+        validation_alias=AliasChoices(
+            "TIMIQ_EMAIL_FROM",
+            "SMTP_FROM_EMAIL",
+            "timiq_email_from",
+        ),
+    )
+    timiq_email_from_name: str = Field(
+        default="",
+        validation_alias=AliasChoices(
+            "TIMIQ_EMAIL_FROM_NAME",
+            "SMTP_FROM_NAME",
+            "timiq_email_from_name",
+        ),
     )
     timiq_smtp_host: str = Field(
         default="",
-        validation_alias=AliasChoices("TIMIQ_SMTP_HOST", "timiq_smtp_host"),
+        validation_alias=AliasChoices("TIMIQ_SMTP_HOST", "SMTP_HOST", "timiq_smtp_host"),
     )
     timiq_smtp_port: int = Field(
         default=587,
-        validation_alias=AliasChoices("TIMIQ_SMTP_PORT", "timiq_smtp_port"),
+        validation_alias=AliasChoices("TIMIQ_SMTP_PORT", "SMTP_PORT", "timiq_smtp_port"),
     )
     timiq_smtp_username: str = Field(
         default="",
-        validation_alias=AliasChoices("TIMIQ_SMTP_USERNAME", "timiq_smtp_username"),
+        validation_alias=AliasChoices(
+            "TIMIQ_SMTP_USERNAME",
+            "SMTP_USERNAME",
+            "timiq_smtp_username",
+        ),
     )
     timiq_smtp_password: str = Field(
         default="",
-        validation_alias=AliasChoices("TIMIQ_SMTP_PASSWORD", "timiq_smtp_password"),
+        validation_alias=AliasChoices(
+            "TIMIQ_SMTP_PASSWORD",
+            "SMTP_PASSWORD",
+            "timiq_smtp_password",
+        ),
     )
     timiq_smtp_use_tls: bool = Field(
         default=True,
-        validation_alias=AliasChoices("TIMIQ_SMTP_USE_TLS", "timiq_smtp_use_tls"),
+        validation_alias=AliasChoices(
+            "TIMIQ_SMTP_USE_TLS",
+            "SMTP_USE_TLS",
+            "timiq_smtp_use_tls",
+        ),
     )
     timiq_web_app_url: str = Field(
         default="http://localhost:3000",
-        validation_alias=AliasChoices("TIMIQ_WEB_APP_URL", "timiq_web_app_url"),
+        validation_alias=AliasChoices(
+            "TIMIQ_WEB_APP_URL",
+            "WEB_ORIGIN",
+            "timiq_web_app_url",
+        ),
     )
 
     model_config = SettingsConfigDict(
@@ -132,6 +164,33 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "TIMIQ_S3_ACCESS_KEY_ID and TIMIQ_S3_SECRET_ACCESS_KEY are required when TIMIQ_STORAGE_BACKEND=s3.",
                 )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_production_web_origin(self) -> "Settings":
+        env = self.app_env.strip().lower()
+        if env not in ("production", "prod"):
+            return self
+        from app.core.email.frontend_urls import (
+            is_localhost_web_origin,
+            looks_like_api_web_origin,
+            resolve_web_origin,
+        )
+
+        try:
+            origin = resolve_web_origin(self)
+        except ValueError as exc:
+            raise ValueError(
+                "WEB_ORIGIN or TIMIQ_WEB_APP_URL must be set to the public web app URL in production.",
+            ) from exc
+        if is_localhost_web_origin(origin):
+            raise ValueError(
+                "WEB_ORIGIN / TIMIQ_WEB_APP_URL must not be localhost in production.",
+            )
+        if looks_like_api_web_origin(origin):
+            raise ValueError(
+                "WEB_ORIGIN / TIMIQ_WEB_APP_URL must point to the web app, not the API service.",
+            )
         return self
 
 
