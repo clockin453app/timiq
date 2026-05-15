@@ -26,7 +26,7 @@ export function faceCheckStatusLabel(status: FaceCheckStatus): string {
     case "not_checked":
       return "Not checked";
     case "unavailable":
-      return "Check pending";
+      return "Unavailable";
     case "passed":
       return "Passed";
     case "needs_review":
@@ -38,16 +38,16 @@ export function faceCheckStatusLabel(status: FaceCheckStatus): string {
 
 export function faceCheckAfterClockMessage(status: FaceCheckStatus): string | null {
   switch (status) {
-    case "not_enrolled":
-      return "Face check: no reference photo on file. You can add one in Profile.";
-    case "unavailable":
-      return "Face check: selfie saved. Automated matching is not enabled yet.";
     case "passed":
-      return "Face check: passed.";
+      return "Face check passed.";
     case "needs_review":
-      return "Face check: flagged for review.";
+      return "Clock action submitted. Face check needs admin review.";
+    case "unavailable":
+      return "Clock action submitted. Face check could not be completed.";
+    case "not_enrolled":
+      return "Clock action submitted. Face check is not set up.";
     case "not_checked":
-      return "Face check: not run for this shift.";
+      return "Clock action submitted. Face check was not run.";
     default:
       return null;
   }

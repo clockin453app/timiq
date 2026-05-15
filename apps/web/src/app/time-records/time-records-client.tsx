@@ -27,7 +27,7 @@ import { formatDurationSeconds } from "../../features/time-records/format-durati
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
-import { FaceCheckBadge } from "../../features/face-check/face-check-badge";
+import { FaceCheckCell } from "../../features/face-check/face-check-cell";
 import {
   adminCreateCompletedShift,
   adminForceClockOut,
@@ -610,7 +610,10 @@ export function TimeRecordsClient() {
                       />
                     </TableCell>
                     <TableCell className="text-xs">
-                      <FaceCheckBadge status={row.face_check_status} />
+                      <FaceCheckCell
+                        status={row.face_check_status}
+                        confidence={row.face_match_confidence}
+                      />
                     </TableCell>
                     {adminMode && management ? (
                       <TableCell className="align-top text-xs">

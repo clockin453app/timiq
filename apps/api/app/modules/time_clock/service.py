@@ -9,6 +9,7 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
+from app.modules.face_check.engine import FaceMatchResult
 from app.modules.face_check.service import apply_face_check_to_shift
 from app.modules.locations.models import Location
 from app.modules.locations.repository import get_location_by_id
@@ -393,6 +394,33 @@ def _normalize_selfie_media(content_type: str, file_bytes: bytes) -> tuple[str, 
     return media_type, extension
 
 
+def _audit_face_match_checked(
+    *,
+    db_session: Session,
+    actor: User,
+    shift: TimeShift,
+    result: FaceMatchResult,
+) -> None:
+    details: dict[str, object] = {
+        "user_id": str(actor.id),
+        "shift_id": str(shift.id),
+        "status": result.status,
+    }
+    if result.confidence is not None:
+        details["confidence"] = round(result.confidence, 4)
+    if result.reason:
+        details["reason"] = result.reason
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="face_match.checked",
+        entity_type="time_shift",
+        entity_id=str(shift.id),
+        company_id=actor.company_id,
+        details=details,
+    )
+
+
 def _write_selfie_file(
     actor_id: uuid.UUID,
     shift_id: uuid.UUID,
@@ -450,6 +478,7 @@ def clock_in(
 
     media_type, extension = _normalize_selfie_media(selfie_content_type, selfie_bytes)
     relative_storage_path: str | None = None
+    face_result: FaceMatchResult | None = None
     try:
         save_shift(db_session, shift, commit=False)
         relative_storage_path = _write_selfie_file(
@@ -469,7 +498,12 @@ def clock_in(
         )
         save_clock_selfie(db_session, selfie_row, commit=False)
         profile = get_employee_profile_by_user_id(db_session, actor.id)
-        apply_face_check_to_shift(shift, profile, selfie_captured=True)
+        face_result = apply_face_check_to_shift(
+            shift,
+            profile,
+            selfie_captured=True,
+            selfie_bytes=selfie_bytes,
+        )
         save_shift(db_session, shift, commit=False)
         db_session.commit()
     except Exception:
@@ -479,6 +513,14 @@ def clock_in(
         raise
 
     db_session.refresh(shift)
+
+    if face_result is not None:
+        _audit_face_match_checked(
+            db_session=db_session,
+            actor=actor,
+            shift=shift,
+            result=face_result,
+        )
 
     create_internal_audit_event(
         db_session=db_session,
@@ -547,6 +589,7 @@ def clock_out(
     open_shift.break_seconds = max(break_seconds, 0)
     open_shift.worked_seconds = max(worked_seconds, 0)
     relative_storage_path: str | None = None
+    face_result: FaceMatchResult | None = None
     try:
         relative_storage_path = _write_selfie_file(
             actor.id,
@@ -565,7 +608,12 @@ def clock_out(
         )
         save_clock_selfie(db_session, selfie_row, commit=False)
         profile = get_employee_profile_by_user_id(db_session, actor.id)
-        apply_face_check_to_shift(open_shift, profile, selfie_captured=True)
+        face_result = apply_face_check_to_shift(
+            open_shift,
+            profile,
+            selfie_captured=True,
+            selfie_bytes=selfie_bytes,
+        )
         save_shift(db_session, open_shift, commit=False)
         db_session.commit()
     except Exception:
@@ -575,6 +623,14 @@ def clock_out(
         raise
 
     db_session.refresh(open_shift)
+
+    if face_result is not None:
+        _audit_face_match_checked(
+            db_session=db_session,
+            actor=actor,
+            shift=open_shift,
+            result=face_result,
+        )
 
     create_internal_audit_event(
         db_session=db_session,

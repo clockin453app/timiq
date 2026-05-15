@@ -95,19 +95,21 @@ export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
     }
   }
 
-  const displayStatus = configured ? "unavailable" : "not_enrolled";
-
   return (
     <div className="border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
           Face check (optional)
         </p>
-        <FaceCheckBadge status={displayStatus} />
+        {configured ? (
+          <span className="text-xs font-medium text-[var(--color-text)]">Reference enrolled</span>
+        ) : (
+          <FaceCheckBadge status="not_enrolled" />
+        )}
       </div>
       <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-        Upload a clear front-facing photo so future clock selfies can be compared. This does not block
-        clock in or out. Automated matching is not enabled yet.
+        Upload a clear front-facing photo so clock selfies can be compared for admin review. Face check
+        is a review aid — it does not block clocking in this version.
       </p>
       <dl className="mt-3 grid gap-2 text-sm">
         <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">

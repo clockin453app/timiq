@@ -145,6 +145,16 @@ class Settings(BaseSettings):
             "timiq_smtp_use_tls",
         ),
     )
+    face_check_match_threshold: float = Field(
+        default=0.70,
+        ge=0.50,
+        le=0.95,
+        validation_alias=AliasChoices(
+            "FACE_CHECK_MATCH_THRESHOLD",
+            "face_check_match_threshold",
+        ),
+    )
+
     timiq_web_app_url: str = Field(
         default="http://localhost:3000",
         # WEB_ORIGIN is mapped in __init__ only — do not add it here or process env

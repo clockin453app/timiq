@@ -19,8 +19,9 @@ from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.face_check.constants import (
     FACE_CHECK_NOT_ENROLLED,
     FACE_CHECK_UNAVAILABLE,
-    MATCHING_ENGINE_NOT_ENABLED_REASON,
+    REASON_MATCHING_ENGINE_NOT_CONFIGURED,
 )
+from app.modules.face_check.engine import FaceMatchResult
 from app.modules.face_check.service import apply_face_check_to_shift, face_reference_configured
 from app.modules.time_clock.models import TimeShift
 
@@ -82,11 +83,20 @@ def test_apply_face_check_not_enrolled() -> None:
         clock_in_accuracy_meters=1.0,
         clock_in_distance_to_site_meters=1.0,
     )
-    apply_face_check_to_shift(shift, None, selfie_captured=True)
+    apply_face_check_to_shift(shift, None, selfie_captured=True, selfie_bytes=b"x")
     assert shift.face_check_status == FACE_CHECK_NOT_ENROLLED
 
 
-def test_apply_face_check_unavailable_when_enrolled() -> None:
+@patch("app.modules.face_check.service._read_storage_bytes", return_value=b"ref")
+@patch(
+    "app.modules.face_check.service.compare_reference_to_selfie",
+    return_value=FaceMatchResult(
+        status=FACE_CHECK_UNAVAILABLE,
+        confidence=None,
+        reason=REASON_MATCHING_ENGINE_NOT_CONFIGURED,
+    ),
+)
+def test_apply_face_check_unavailable_when_engine_not_configured(mock_compare, mock_read) -> None:
     user = _user()
     shift = TimeShift(
         user_id=user.id,
@@ -98,9 +108,14 @@ def test_apply_face_check_unavailable_when_enrolled() -> None:
         clock_in_accuracy_meters=1.0,
         clock_in_distance_to_site_meters=1.0,
     )
-    apply_face_check_to_shift(shift, _profile(user=user), selfie_captured=True)
+    apply_face_check_to_shift(
+        shift,
+        _profile(user=user),
+        selfie_captured=True,
+        selfie_bytes=b"selfie",
+    )
     assert shift.face_check_status == FACE_CHECK_UNAVAILABLE
-    assert shift.face_check_reason == MATCHING_ENGINE_NOT_ENABLED_REASON
+    assert shift.face_check_reason == REASON_MATCHING_ENGINE_NOT_CONFIGURED
 
 
 @patch("app.modules.employee_profiles.face_reference_service.get_or_create_profile_for_user")
