@@ -121,7 +121,7 @@ class Settings(BaseSettings):
     )
 
     @model_validator(mode="after")
-    def _validate_storage_settings(self) -> Settings:
+    def _validate_storage_settings(self) -> "Settings":
         backend = self.timiq_storage_backend.strip().lower()
         if backend not in ("local", "s3"):
             raise ValueError("TIMIQ_STORAGE_BACKEND must be 'local' or 's3'.")
