@@ -90,6 +90,17 @@ export function ProfileClient() {
   }, []);
 
   useEffect(() => {
+    if (isLoadingProfile) {
+      return;
+    }
+    if (typeof window !== "undefined" && window.location.hash === "#face-check") {
+      requestAnimationFrame(() => {
+        document.getElementById("face-check")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  }, [isLoadingProfile, profile]);
+
+  useEffect(() => {
     if (!isEmployee(user)) {
       setOnboarding(null);
       setOnboardingError("");

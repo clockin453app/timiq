@@ -6,7 +6,10 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
+from app.modules.auth.limited_access import has_limited_access
 from app.modules.auth.models import SystemRole, User
+from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
+from app.modules.face_check.service import face_reference_configured
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.leave import repository as leave_repo
 from app.modules.messaging.repository import count_unread_visible_announcements
@@ -58,6 +61,8 @@ def _monday_week_start_in_tz(policy_timezone: str, instant_utc: datetime) -> dat
 
 
 def _category_for_kind(kind: str) -> str:
+    if kind in ("face_check_setup",):
+        return "account"
     if kind in ("message", "announcement"):
         return "messages"
     if kind in ("rams_ack", "toolbox_sign", "rams_review", "toolbox_review", "form_complete"):
@@ -112,6 +117,30 @@ def _default_informational_kinds(actor: User) -> frozenset[str]:
             },
         )
     return frozenset({"announcement"})
+
+
+def face_check_setup_notification_item(db: Session, actor: User) -> NotificationSummaryItem | None:
+    """Important setup reminder for active employees missing a face reference (not dismissible)."""
+    if actor.system_role != SystemRole.EMPLOYEE:
+        return None
+    if not actor.is_active:
+        return None
+    if has_limited_access(actor):
+        return None
+    profile = get_employee_profile_by_user_id(db, actor.id)
+    if face_reference_configured(profile):
+        return None
+    return _item(
+        kind="face_check_setup",
+        target_key="face_check_setup:missing",
+        title="Set up face check",
+        description=(
+            "Upload a reference photo so clock selfies can be compared for attendance review."
+        ),
+        href="/profile#face-check",
+        count=1,
+        priority="high",
+    )
 
 
 def _week_report_target_key(db: Session, actor: User) -> str | None:
@@ -233,6 +262,10 @@ def get_notification_summary(
         )
 
     if actor.system_role == SystemRole.EMPLOYEE and actor.company_id is not None:
+        face_setup = face_check_setup_notification_item(db, actor)
+        if face_setup is not None:
+            items.append(face_setup)
+
         rams_n = rams_repo.count_pending_acknowledgements_for_user(db, actor.id)
         if rams_n > 0:
             items.append(

@@ -21,9 +21,10 @@ NotificationKind = Literal[
     "leave_request_pending",
     "leave_approved",
     "leave_rejected",
+    "face_check_setup",
 ]
 
-NotificationCategory = Literal["messages", "safety", "payroll", "time", "leave", "admin"]
+NotificationCategory = Literal["messages", "safety", "payroll", "time", "leave", "admin", "account"]
 
 
 class NotificationSummaryItem(BaseModel):

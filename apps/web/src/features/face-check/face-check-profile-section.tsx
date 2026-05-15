@@ -96,25 +96,35 @@ export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
   }
 
   return (
-    <div className="border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
+    <div
+      className="scroll-mt-4 border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
+      id="face-check"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-          Face check (optional)
+          Face check setup
         </p>
         {configured ? (
           <span className="text-xs font-medium text-[var(--color-text)]">Reference enrolled</span>
         ) : (
-          <FaceCheckBadge status="not_enrolled" />
+          <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-950">
+            Important setup required
+          </span>
         )}
       </div>
       <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-        Upload a clear front-facing photo so clock selfies can be compared for admin review. Face check
-        is a review aid — it does not block clocking in this version.
+        Upload a clear front-facing reference photo so clock selfies can be compared for attendance
+        review. Clocking is not blocked, but shifts will show Not enrolled until this is completed.
+      </p>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+        Face check is a review aid. It does not block clocking in this version.
       </p>
       <dl className="mt-3 grid gap-2 text-sm">
         <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
           <dt className="text-[var(--color-text-muted)]">Reference on file</dt>
-          <dd className="font-medium text-[var(--color-text)]">{configured ? "Yes" : "No"}</dd>
+          <dd className="font-medium text-[var(--color-text)]">
+            {configured ? "Yes" : <FaceCheckBadge status="not_enrolled" />}
+          </dd>
         </div>
         {configured ? (
           <>

@@ -1,10 +1,11 @@
 import type { NotificationSummaryItem } from "./api";
 
-/** Small nav dots for Messages / RAMS / Toolbox (subset of bell summary). */
+/** Small nav dots for Messages / RAMS / Toolbox / Profile setup (subset of bell summary). */
 export function navBadgesFromSummary(items: NotificationSummaryItem[]): Record<string, number> {
   let messages = 0;
   let rams = 0;
   let toolbox = 0;
+  const out: Record<string, number> = {};
   for (const it of items) {
     if (it.kind === "message" || it.kind === "announcement") {
       messages += it.count;
@@ -15,8 +16,10 @@ export function navBadgesFromSummary(items: NotificationSummaryItem[]): Record<s
     if (it.kind === "toolbox_sign") {
       toolbox += it.count;
     }
+    if (it.kind === "face_check_setup") {
+      out["/profile"] = (out["/profile"] ?? 0) + it.count;
+    }
   }
-  const out: Record<string, number> = {};
   if (messages > 0) {
     out["/messages"] = messages;
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CLOCK_MAP_FALLBACK_MESSAGE, ClockSitesMap } from "../../components/maps";
@@ -23,6 +24,9 @@ import {
 } from "../../features/time-clock/gps";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { haversineDistanceMeters } from "../../lib/geo";
+import { isEmployee, useCurrentUser } from "../../features/auth";
+import { userHasLimitedAccess } from "../../features/auth/limited-access";
+import { getMyEmployeeProfile } from "../../features/employee-profiles/api";
 import { asFaceCheckStatus, faceCheckAfterClockMessage } from "../../features/face-check/labels";
 import { useT } from "../../lib/i18n";
 
@@ -79,6 +83,7 @@ function statusCardTitle(flow: FlowStatus, t: (key: string, fallback?: string) =
 
 export function ClockClient() {
   const t = useT();
+  const user = useCurrentUser();
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -114,6 +119,7 @@ export function ClockClient() {
   const [clockMapSessionOff, setClockMapSessionOff] = useState(false);
   // Match server render: assume online until after mount, then sync from navigator (avoids hydration mismatch when offline).
   const [networkOnline, setNetworkOnline] = useState(true);
+  const [faceReferenceConfigured, setFaceReferenceConfigured] = useState<boolean | null>(null);
 
   const handleClockMapFault = useCallback(() => {
     setClockMapSessionOff(true);
@@ -150,6 +156,28 @@ export function ClockClient() {
   }, [geoCapture, clockStatus?.assigned_sites]);
 
   const gpsAcceptable = Boolean(geoCapture && isGpsClientSubmittable(geoCapture));
+
+  useEffect(() => {
+    if (!isEmployee(user) || !user.is_active || userHasLimitedAccess(user)) {
+      setFaceReferenceConfigured(null);
+      return;
+    }
+    let cancelled = false;
+    void getMyEmployeeProfile()
+      .then((profile) => {
+        if (!cancelled) {
+          setFaceReferenceConfigured(Boolean(profile.face_reference_configured));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setFaceReferenceConfigured(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const refreshStatus = useCallback(async () => {
     setIsRefreshing(true);
@@ -776,6 +804,21 @@ export function ClockClient() {
           <div className="rounded border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] p-3 text-sm text-[var(--color-warning-700)]">
             <p className="font-semibold">{t("clock.offline_title")}</p>
             <p className="mt-1">{t("clock.offline_body")}</p>
+          </div>
+        ) : null}
+        {faceReferenceConfigured === false ? (
+          <div className="rounded border border-amber-700 bg-amber-50 p-3 text-sm text-amber-950">
+            <p className="font-semibold">Face check is not set up</p>
+            <p className="mt-1">
+              Your clock action will still work, but your selfie cannot be compared until you upload a
+              reference photo.
+            </p>
+            <Link
+              className="mt-2 inline-flex text-sm font-semibold text-amber-950 underline"
+              href="/profile#face-check"
+            >
+              Set up face check
+            </Link>
           </div>
         ) : null}
         {isRefreshing && !clockStatus ? (

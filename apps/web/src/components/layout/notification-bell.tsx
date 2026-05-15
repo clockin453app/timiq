@@ -27,7 +27,7 @@ const SEEN_MARK_KINDS = new Set([
   "announcement",
 ]);
 
-const GROUP_ORDER = ["messages", "safety", "payroll", "time", "leave", "admin"];
+const GROUP_ORDER = ["account", "messages", "safety", "payroll", "time", "leave", "admin"];
 
 function itemCategory(it: NotificationSummaryItem): string {
   return (it.category ?? it.group ?? "").trim();
@@ -99,6 +99,8 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
 
   function categoryHeading(cat: string): string {
     switch (cat) {
+      case "account":
+        return t("notifications.category_account", "Account setup");
       case "messages":
         return t("notifications.category_messages", "Messages");
       case "safety":

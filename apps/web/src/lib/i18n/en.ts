@@ -249,6 +249,7 @@ export const EN_STRINGS: Record<string, string> = {
   "notifications.bell_aria": "Notifications",
   "notifications.close_overlay": "Close",
   "notifications.mark_all_seen": "Mark all seen",
+  "notifications.category_account": "Account setup",
   "notifications.category_messages": "Messages",
   "notifications.category_safety": "Safety",
   "notifications.category_payroll": "Payroll",
