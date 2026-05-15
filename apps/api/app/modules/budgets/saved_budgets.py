@@ -218,6 +218,25 @@ def _workplace_name(db_session: Session, workplace_id: uuid.UUID | None) -> str 
     return wp.name if wp is not None else None
 
 
+def build_budget_labour_warnings(project: BudgetProject) -> list[str]:
+    """Warnings when operational site is missing; no warning once location_id is set."""
+    if project.location_id is not None:
+        return []
+    if project.workplace_id is not None:
+        return [
+            "Operational site required for labour filtering. "
+            "Select an operational site for accurate labour totals.",
+        ]
+    return ["No operational site selected. Labour totals cannot be filtered accurately."]
+
+
+def _operational_site_label(db_session: Session, location_id: uuid.UUID | None) -> str:
+    if location_id is None:
+        return "No operational site selected."
+    name = _location_name(db_session, location_id)
+    return name if name else "Operational site"
+
+
 def _compute_labour_and_expenses(
     db_session: Session,
     actor: User,
@@ -236,28 +255,25 @@ def _compute_labour_and_expenses(
     if start_utc is None or end_utc is None:
         raise HTTPException(status_code=500, detail="Could not build date bounds.")
 
-    loc_filter = project.location_id
-    rows = list_company_shifts_clock_in_window(
-        db_session,
-        company_id=project.company_id,
-        start_utc=start_utc,
-        end_utc=end_utc,
-        location_id=loc_filter,
-        user_id=None,
-        limit=MAX_SHIFTS_SCAN + 1,
-    )
-    if len(rows) > MAX_SHIFTS_SCAN:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Too many shifts for this budget window; narrow dates or set a site filter.",
-        )
+    warnings: list[str] = build_budget_labour_warnings(project)
 
-    warnings: list[str] = []
-    if project.workplace_id is not None:
-        warnings.append(
-            "Workplace is recorded on this budget but clock sites are not linked to workplaces yet; "
-            "labour totals are not filtered by workplace.",
+    loc_filter = project.location_id
+    rows: list[tuple[TimeShift, Location, User, EmployeeProfile | None]] = []
+    if loc_filter is not None:
+        rows = list_company_shifts_clock_in_window(
+            db_session,
+            company_id=project.company_id,
+            start_utc=start_utc,
+            end_utc=end_utc,
+            location_id=loc_filter,
+            user_id=None,
+            limit=MAX_SHIFTS_SCAN + 1,
         )
+        if len(rows) > MAX_SHIFTS_SCAN:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Too many shifts for this budget window; narrow dates or set a site filter.",
+            )
 
     emp_fin: dict[uuid.UUID, Decimal] = {}
     emp_est: dict[uuid.UUID, Decimal] = {}
@@ -777,7 +793,9 @@ def export_budget_csv(db_session: Session, actor: User, budget_id: uuid.UUID) ->
     w.writerow(["Project", detail.budget.name])
     w.writerow(["Client", detail.budget.client_name or ""])
     w.writerow(["Company", company_name])
-    w.writerow(["Location", detail.budget.location_name or ""])
+    w.writerow(["Operational site", _operational_site_label(db_session, detail.budget.location_id)])
+    if detail.budget.workplace_name:
+        w.writerow(["CIS workplace (reference)", detail.budget.workplace_name])
     w.writerow(["Reference", detail.budget.reference_code or ""])
     w.writerow(["Date range", f"{detail.budget.start_date} – {detail.budget.end_date}"])
     w.writerow(["Planned budget", str(detail.totals.planned_budget_amount)])
@@ -872,7 +890,8 @@ def export_budget_print_html(db_session: Session, actor: User, budget_id: uuid.U
 </style></head><body>
 <h1>{title}</h1>
 <p><strong>Company:</strong> {company_name} &nbsp;|&nbsp; <strong>Client:</strong> {esc(detail.budget.client_name)}
- &nbsp;|&nbsp; <strong>Site:</strong> {esc(detail.budget.location_name)}</p>
+ &nbsp;|&nbsp; <strong>Operational site:</strong> {esc(_operational_site_label(db_session, detail.budget.location_id))}</p>
+{f"<p><strong>CIS workplace (reference):</strong> {esc(detail.budget.workplace_name)}</p>" if detail.budget.workplace_name else ""}
 <p><strong>Reference:</strong> {esc(detail.budget.reference_code)} &nbsp;|&nbsp;
 <strong>Period:</strong> {detail.budget.start_date} – {detail.budget.end_date}</p>
 <p><strong>Generated:</strong> {now}</p>

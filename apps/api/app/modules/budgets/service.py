@@ -234,9 +234,9 @@ def labour_cost_budget(
         "Dates are interpreted in the company policy timezone; the range is inclusive of "
         f"{date_from.isoformat()} through {date_to.isoformat()}.",
     ]
-    if workplace_id is not None:
+    if workplace_id is not None and location_id is None:
         estimate_bits.append(
-            "Workplace is validated but does not filter shifts in this version (no workplace link on clock sites yet).",
+            "CIS workplace is recorded but does not filter labour; select an operational site to filter by clocking location.",
         )
 
     for shift, location, owner, profile in rows:

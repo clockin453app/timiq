@@ -262,6 +262,22 @@ export function BudgetsSavedTab() {
   const [cNotes, setCNotes] = useState("");
   const [cStatus, setCStatus] = useState("active");
 
+  const suggestedSiteId = useMemo(() => {
+    if (cLocation.trim()) {
+      return null;
+    }
+    if (!cWorkplace.trim()) {
+      return null;
+    }
+    const wp = workplaces.find((w) => w.id === cWorkplace);
+    if (!wp) {
+      return null;
+    }
+    const key = wp.name.trim().toLowerCase();
+    const matches = locations.filter((l) => l.name.trim().toLowerCase() === key);
+    return matches.length === 1 ? matches[0].id : null;
+  }, [cLocation, cWorkplace, workplaces, locations]);
+
   function resetCreateForm() {
     setCName("");
     setCClient("");
@@ -545,26 +561,41 @@ export function BudgetsSavedTab() {
       </label>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label className={fieldLabelClass()}>
-          <span className="text-[var(--color-text)]">Workplace (optional)</span>
-          <select className={selectClass()} onChange={(e) => setCWorkplace(e.target.value)} value={cWorkplace}>
-            <option value="">Any</option>
-            {workplaces.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className={fieldLabelClass()}>
-          <span className="text-[var(--color-text)]">Location (optional)</span>
+          <span className="text-[var(--color-text)]">Operational site</span>
           <select className={selectClass()} onChange={(e) => setCLocation(e.target.value)} value={cLocation}>
-            <option value="">Company-wide</option>
+            <option value="">— Select site —</option>
             {locations.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name}
               </option>
             ))}
           </select>
+          <span className="mt-1 block text-xs text-[var(--color-text-muted)]">
+            Labour totals are filtered by this clocking site.
+          </span>
+          {suggestedSiteId ? (
+            <button
+              className="mt-1 text-xs font-semibold text-[var(--color-text)] underline decoration-dotted hover:text-[var(--color-text-muted)]"
+              type="button"
+              onClick={() => setCLocation(suggestedSiteId)}
+            >
+              Suggested site: {locations.find((l) => l.id === suggestedSiteId)?.name ?? "match"}
+            </button>
+          ) : null}
+        </label>
+        <label className={fieldLabelClass()}>
+          <span className="text-[var(--color-text)]">CIS workplace / payroll reference (optional)</span>
+          <select className={selectClass()} onChange={(e) => setCWorkplace(e.target.value)} value={cWorkplace}>
+            <option value="">None</option>
+            {workplaces.map((w) => (
+              <option key={w.id} value={w.id}>
+                {w.name}
+              </option>
+            ))}
+          </select>
+          <span className="mt-1 block text-xs text-[var(--color-text-muted)]">
+            For CIS and payroll reference only; does not filter labour.
+          </span>
         </label>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -684,7 +715,16 @@ export function BudgetsSavedTab() {
       dateRangeLabel = `Until ${dateEnd}`;
     }
 
-    const siteLine = [b?.location_name, b?.workplace_name].filter(Boolean).join(" · ") || "Company-wide (no site filter)";
+    const siteParts: string[] = [];
+    if (b?.location_name) {
+      siteParts.push(`Operational site: ${b.location_name}`);
+    }
+    if (b?.workplace_name) {
+      siteParts.push(`CIS workplace: ${b.workplace_name}`);
+    }
+    const siteLine =
+      siteParts.length > 0 ? siteParts.join(" · ") : "No operational site selected — labour not filtered by site";
+    const hasOperationalSite = Boolean(b?.location_id);
 
     return (
       <div className="min-w-0 space-y-5">
@@ -852,6 +892,23 @@ export function BudgetsSavedTab() {
                   </section>
                 ) : null}
 
+                {!hasOperationalSite ? (
+                  <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm text-[var(--color-warning-700)]">
+                      Select an operational site to calculate labour accurately.
+                    </p>
+                    {b.status !== "archived" ? (
+                      <Button size="sm" type="button" variant="secondary" onClick={openEditFromDetail}>
+                        Edit budget
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+                    Labour totals are filtered by the selected operational site.
+                  </p>
+                )}
+
                 {totals.warnings.length > 0 ? (
                   <ul className="list-inside list-disc rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-2 text-sm text-[var(--color-warning-700)]">
                     {totals.warnings.map((w) => (
@@ -995,7 +1052,9 @@ export function BudgetsSavedTab() {
                 <div className="overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
                   {detail.breakdown_by_employee.length === 0 ? (
                     <p className="p-4 text-sm text-[var(--color-text-muted)]">
-                      No completed shifts found in this budget date range.
+                      {!hasOperationalSite
+                        ? "No operational site selected. Select a site on this budget to include shift labour."
+                        : "No completed shifts found at this site in the budget date range."}
                     </p>
                   ) : (
                     <Table>
