@@ -1,3 +1,5 @@
+from typing import Any
+
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -150,7 +152,24 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
     )
+
+    @property
+    def web_origin(self) -> str:
+        return self.timiq_web_app_url
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_web_app_url_keys(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        for key in ("timiq_web_app_url", "TIMIQ_WEB_APP_URL", "WEB_ORIGIN"):
+            value = data.get(key)
+            if value is not None and str(value).strip():
+                data["timiq_web_app_url"] = str(value).strip()
+                break
+        return data
 
     @model_validator(mode="after")
     def _validate_storage_settings(self) -> "Settings":

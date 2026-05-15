@@ -4,14 +4,20 @@ from __future__ import annotations
 
 from urllib.parse import urlencode, urlparse
 
-from app.core.config import Settings
+from app.core.config import Settings, settings
 
 
-def resolve_web_origin(settings: Settings) -> str:
-    raw = (settings.timiq_web_app_url or "").strip()
-    if not raw:
+def _web_app_url_from_settings(cfg: Settings) -> str:
+    """Read web app URL from the provided Settings instance only (never CORS)."""
+    raw = (getattr(cfg, "timiq_web_app_url", None) or cfg.web_origin or "").strip()
+    return raw.rstrip("/")
+
+
+def resolve_web_origin(settings_obj: Settings | None = None) -> str:
+    cfg = settings_obj if settings_obj is not None else settings
+    base = _web_app_url_from_settings(cfg)
+    if not base:
         raise ValueError("WEB_ORIGIN or TIMIQ_WEB_APP_URL must be set.")
-    base = raw.rstrip("/")
     parsed = urlparse(base)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         raise ValueError("WEB_ORIGIN must be a valid http(s) origin with no path.")
@@ -37,11 +43,11 @@ def looks_like_api_web_origin(origin: str) -> bool:
 
 
 def build_frontend_url(
-    settings: Settings,
+    settings_obj: Settings | None,
     path: str,
     query: dict[str, str] | None = None,
 ) -> str:
-    base = resolve_web_origin(settings)
+    base = resolve_web_origin(settings_obj)
     normalized = path if path.startswith("/") else f"/{path}"
     if not query:
         return f"{base}{normalized}"

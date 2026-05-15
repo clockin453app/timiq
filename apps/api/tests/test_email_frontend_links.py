@@ -12,8 +12,24 @@ from app.core.email.frontend_urls import (
 from app.modules.auth import account_access_service as access
 
 
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"WEB_ORIGIN": "https://app.example.com"},
+        {"TIMIQ_WEB_APP_URL": "https://app.example.com"},
+        {"timiq_web_app_url": "https://app.example.com"},
+    ],
+)
+def test_settings_web_origin_aliases_populate_timiq_web_app_url(kwargs: dict[str, str]) -> None:
+    s = Settings(**kwargs)
+    assert s.timiq_web_app_url == "https://app.example.com"
+    assert s.web_origin == "https://app.example.com"
+    assert resolve_web_origin(s) == "https://app.example.com"
+
+
 def test_web_origin_env_sets_email_base() -> None:
     s = Settings(WEB_ORIGIN="https://timiq-web.onrender.com")
+    assert s.timiq_web_app_url == "https://timiq-web.onrender.com"
     assert resolve_web_origin(s) == "https://timiq-web.onrender.com"
 
 
