@@ -37,8 +37,8 @@ type RootLayoutProps = Readonly<{
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en">
-      <body className="min-h-dvh min-w-0 overflow-x-clip antialiased">
+    <html className="min-h-dvh min-w-0 overflow-x-hidden" lang="en">
+      <body className="min-h-dvh min-w-0 overflow-x-hidden antialiased">
         <AppProviders>{children}</AppProviders>
       </body>
     </html>

@@ -14,7 +14,7 @@ html {
   color: var(--color-text);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
-  overflow-x: clip;
+  overflow-x: hidden;
   overscroll-behavior-x: none;
 }
 
@@ -25,7 +25,27 @@ body {
   margin: 0;
   background: var(--color-page);
   color: var(--color-text);
-  overflow-x: clip;
+  overflow-x: hidden;
+}
+
+.timiq-app-main {
+  min-width: 0;
+  max-width: 100%;
+}
+
+img,
+video,
+canvas,
+svg {
+  max-width: 100%;
+  height: auto;
+}
+
+input,
+select,
+textarea,
+button {
+  max-width: 100%;
 }
 
 button,

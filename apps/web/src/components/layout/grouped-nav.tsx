@@ -33,6 +33,8 @@ type GroupedNavBlockProps = {
    */
   accordionOpenGroupId?: string | null;
   onAccordionOpenGroupChange?: (groupId: string | null) => void;
+  /** Called when a nav link is activated (e.g. close mobile drawer). */
+  onNavigate?: () => void;
 };
 
 /** Match nav item active state (nested routes under the item href). */
@@ -105,6 +107,7 @@ export function GroupedNavBlock({
   badgeByHref = {},
   accordionOpenGroupId: controlledOpenId,
   onAccordionOpenGroupChange,
+  onNavigate,
 }: GroupedNavBlockProps) {
   const t = useT();
   const isControlled = typeof onAccordionOpenGroupChange === "function";
@@ -186,7 +189,7 @@ export function GroupedNavBlock({
           const n = badgeByHref[only.href] ?? 0;
           return (
             <div key={group.id}>
-              <Link className={linkClass(active, variant, showIcons)} href={only.href}>
+              <Link className={linkClass(active, variant, showIcons)} href={only.href} onClick={onNavigate}>
                 {showIcons ? <NavItemIcon labelKey={only.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" /> : null}
                 <span className="min-w-0 flex-1 break-words">{t(only.labelKey, only.label)}</span>
                 {n > 0 ? (
@@ -228,7 +231,12 @@ export function GroupedNavBlock({
                   const active = navItemMatchesActive(item.href, activeHref);
                   const n = badgeByHref[item.href] ?? 0;
                   return (
-                    <Link className={linkClass(active, variant, showIcons)} href={item.href} key={item.href}>
+                    <Link
+                      className={linkClass(active, variant, showIcons)}
+                      href={item.href}
+                      key={item.href}
+                      onClick={onNavigate}
+                    >
                       {showIcons ? (
                         <NavItemIcon labelKey={item.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" />
                       ) : null}

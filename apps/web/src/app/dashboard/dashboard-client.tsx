@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { PageHeader, Sheet, SheetBody } from "../../components/ui";
-import { isEmployee, LogoutButton, useCurrentUser } from "../../features/auth";
+import { isEmployee, useCurrentUser } from "../../features/auth";
 import { fetchManagementSummary, type ManagementSummary } from "../../features/dashboard/api";
 import { getClockStatus, type ClockStatus } from "../../features/time-clock/api";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
@@ -157,11 +157,7 @@ function EmployeeDashboard() {
 
   return (
     <Sheet>
-      <PageHeader
-        action={<LogoutButton />}
-        description={`Signed in as ${user.email}`}
-        title="Dashboard"
-      />
+      <PageHeader description={`Signed in as ${user.email}`} title="Dashboard" />
 
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
@@ -304,11 +300,7 @@ function ManagementDashboard() {
 
   return (
     <Sheet>
-      <PageHeader
-        action={<LogoutButton />}
-        description="Workforce summary and payroll activity."
-        title="Dashboard"
-      />
+      <PageHeader description="Workforce summary and payroll activity." title="Dashboard" />
 
       <SheetBody className="min-w-0 space-y-4 md:p-5">
         <p className="text-sm text-[var(--color-text-muted)]">

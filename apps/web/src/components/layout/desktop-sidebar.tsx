@@ -11,7 +11,7 @@ import {
 } from "../../config/navigation";
 import type { NotificationSummary } from "../../features/notifications/api";
 import { navBadgesFromSummary } from "../../features/notifications/nav-badges";
-import { useCurrentUser, UserAccountSummary } from "../../features/auth";
+import { LogoutButton, useCurrentUser, UserAccountSummary } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 
 import { findDefaultAccordionGroupId, GroupedNavBlock } from "./grouped-nav";
@@ -191,7 +191,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
       )}
 
       {collapsed ? (
-        <div className="mt-auto shrink-0 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2">
+        <div className="mt-auto shrink-0 space-y-2 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2">
           <Link
             aria-label={t("nav.profile", "Profile")}
             className="mx-auto flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)] border border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]"
@@ -200,6 +200,9 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
           >
             <NavItemIcon labelKey="nav.profile" className="h-5 w-5 shrink-0" />
           </Link>
+          <div className="px-0.5" title={t("common.logout", "Logout")}>
+            <LogoutButton className="w-full text-[10px] leading-tight" />
+          </div>
         </div>
       ) : (
         <div className="shrink-0">
