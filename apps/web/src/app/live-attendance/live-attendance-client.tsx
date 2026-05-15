@@ -29,6 +29,7 @@ import { listLocations, type Location } from "../../features/locations/api";
 import { listSiteAccessRecords, type SiteAccessRecord } from "../../features/site-access/api";
 import { FaceCheckBadge } from "../../features/face-check/face-check-badge";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
+import { useT } from "../../lib/i18n";
 
 function isFormLikeFocused(): boolean {
   const el = document.activeElement;
@@ -98,6 +99,7 @@ function durationLabelForRow(row: LiveAttendanceEmployeeRow): string {
 }
 
 export function LiveAttendanceClient() {
+  const t = useT();
   const currentUser = useCurrentUser();
   const adminAllCompanies = isAdministrator(currentUser);
 
@@ -461,7 +463,9 @@ export function LiveAttendanceClient() {
                   <TableHead>Clock in</TableHead>
                   <TableHead>Clock out</TableHead>
                   <TableHead>Duration</TableHead>
-                  <TableHead className="hidden xl:table-cell">Face check</TableHead>
+                  <TableHead className="hidden xl:table-cell">
+                    {t("face_check.table_header", "Face check")}
+                  </TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>

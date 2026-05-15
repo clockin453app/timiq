@@ -78,8 +78,8 @@ function statusCardTitle(flow: FlowStatus, t: (key: string, fallback?: string) =
 export function ClockClient() {
   const t = useT();
   const user = useCurrentUser();
-  const clockInConfirmButtonRef = useRef<HTMLDivElement>(null);
-  const clockOutConfirmButtonRef = useRef<HTMLDivElement>(null);
+  const clockInConfirmButtonRef = useRef<HTMLButtonElement>(null);
+  const clockOutConfirmButtonRef = useRef<HTMLButtonElement>(null);
 
   const [clockStatus, setClockStatus] = useState<ClockStatus | null>(null);
   const [geoCapture, setGeoCapture] = useState<GpsCapture | null>(null);
@@ -409,10 +409,16 @@ export function ClockClient() {
 
   function focusConfirmAfterSelfie(phase: ActiveSelfiePhase) {
     const targetRef = phase === "clock_in" ? clockInConfirmButtonRef : clockOutConfirmButtonRef;
-    requestAnimationFrame(() => {
-      targetRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-      targetRef.current?.focus();
-    });
+    window.setTimeout(() => {
+      requestAnimationFrame(() => {
+        const el = targetRef.current;
+        if (!el) {
+          return;
+        }
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.focus();
+      });
+    }, 0);
   }
 
   function handleSelfieAccepted(file: File, phase: ActiveSelfiePhase) {
@@ -424,8 +430,8 @@ export function ClockClient() {
     }
     setSuccessMessage(
       phase === "clock_in"
-        ? "Selfie captured. Confirm clock in."
-        : "Selfie captured. Confirm clock out.",
+        ? t("clock.confirm_selfie_in", "Selfie captured. Confirm clock in.")
+        : t("clock.confirm_selfie_out", "Selfie captured. Confirm clock out."),
     );
     setActiveSelfiePhase(null);
     focusConfirmAfterSelfie(phase);
@@ -447,7 +453,7 @@ export function ClockClient() {
     setIsSubmitting(true);
     try {
       const result = await clockInWithSelfie(geoCapture.payload, selfieClockIn);
-      const faceNote = faceCheckAfterClockMessage(asFaceCheckStatus(result.face_check_status));
+      const faceNote = faceCheckAfterClockMessage(asFaceCheckStatus(result.face_check_status), t);
       setSuccessMessage(
         faceNote ? `Clock-in successful. ${faceNote}` : "Clock-in successful.",
       );
@@ -478,7 +484,7 @@ export function ClockClient() {
     setIsSubmitting(true);
     try {
       const result = await clockOutWithSelfie(geoCapture.payload, selfieClockOut);
-      const faceNote = faceCheckAfterClockMessage(asFaceCheckStatus(result.face_check_status));
+      const faceNote = faceCheckAfterClockMessage(asFaceCheckStatus(result.face_check_status), t);
       setSuccessMessage(
         faceNote ? `Clock-out successful. ${faceNote}` : "Clock-out successful.",
       );
@@ -710,16 +716,20 @@ export function ClockClient() {
         ) : null}
         {faceReferenceConfigured === false ? (
           <div className="rounded border border-amber-700 bg-amber-50 p-3 text-sm text-amber-950">
-            <p className="font-semibold">Face check is not set up</p>
+            <p className="font-semibold">
+              {t("face_check.not_set_up_banner", "Face check is not set up")}
+            </p>
             <p className="mt-1">
-              Your clock action will still work, but your selfie cannot be compared until you upload a
-              reference photo.
+              {t(
+                "clock.face_setup_banner_body",
+                "Your clock action will still work, but your selfie cannot be compared until you upload a reference photo.",
+              )}
             </p>
             <Link
               className="mt-2 inline-flex text-sm font-semibold text-amber-950 underline"
               href="/profile#face-check"
             >
-              Set up face check
+              {t("face_check.set_up_link", "Set up face check")}
             </Link>
           </div>
         ) : null}
@@ -803,24 +813,23 @@ export function ClockClient() {
                 ) : null}
                 {selfieClockIn ? (
                   <p className="text-sm font-medium text-[var(--color-text)]">
-                    Selfie captured. Confirm clock in.
+                    {t("clock.confirm_selfie_in", "Selfie captured. Confirm clock in.")}
                   </p>
                 ) : null}
-                <div ref={clockInConfirmButtonRef} className="outline-none" tabIndex={-1}>
-                  <Button
-                    className={cn(
-                      "w-full min-h-[3.25rem] text-base font-semibold",
-                      selfieClockIn &&
-                        clockInEnabled &&
-                        "ring-2 ring-[var(--color-primary)] ring-offset-2 ring-offset-[var(--color-cell)]",
-                    )}
-                    disabled={!clockInEnabled}
-                    onClick={handleClockIn}
-                    type="button"
-                  >
-                    {t("clock.action_clock_in", "Clock in")}
-                  </Button>
-                </div>
+                <Button
+                  ref={clockInConfirmButtonRef}
+                  className={cn(
+                    "w-full min-h-[3.25rem] text-base font-semibold",
+                    selfieClockIn &&
+                      clockInEnabled &&
+                      "ring-2 ring-[var(--color-primary)] ring-offset-2 ring-offset-[var(--color-cell)]",
+                  )}
+                  disabled={!clockInEnabled}
+                  onClick={handleClockIn}
+                  type="button"
+                >
+                  {t("clock.action_clock_in", "Clock in")}
+                </Button>
                 {!clockInEnabled && clockInDisabledReason ? (
                   <p className="text-xs text-[var(--color-text-muted)]">{clockInDisabledReason}</p>
                 ) : null}
@@ -876,24 +885,23 @@ export function ClockClient() {
                 ) : null}
                 {selfieClockOut ? (
                   <p className="text-sm font-medium text-[var(--color-text)]">
-                    Selfie captured. Confirm clock out.
+                    {t("clock.confirm_selfie_out", "Selfie captured. Confirm clock out.")}
                   </p>
                 ) : null}
-                <div ref={clockOutConfirmButtonRef} className="outline-none" tabIndex={-1}>
-                  <Button
-                    className={cn(
-                      "w-full min-h-[3.25rem] text-base font-semibold",
-                      selfieClockOut &&
-                        clockOutEnabled &&
-                        "ring-2 ring-[var(--color-primary)] ring-offset-2 ring-offset-[var(--color-cell)]",
-                    )}
-                    disabled={!clockOutEnabled}
-                    onClick={handleClockOut}
-                    type="button"
-                  >
-                    {t("clock.action_clock_out", "Clock out")}
-                  </Button>
-                </div>
+                <Button
+                  ref={clockOutConfirmButtonRef}
+                  className={cn(
+                    "w-full min-h-[3.25rem] text-base font-semibold",
+                    selfieClockOut &&
+                      clockOutEnabled &&
+                      "ring-2 ring-[var(--color-primary)] ring-offset-2 ring-offset-[var(--color-cell)]",
+                  )}
+                  disabled={!clockOutEnabled}
+                  onClick={handleClockOut}
+                  type="button"
+                >
+                  {t("clock.action_clock_out", "Clock out")}
+                </Button>
                 {!clockOutEnabled && clockOutDisabledReason ? (
                   <p className="text-xs text-[var(--color-text-muted)]">{clockOutDisabledReason}</p>
                 ) : null}

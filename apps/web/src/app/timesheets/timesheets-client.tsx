@@ -27,6 +27,7 @@ import { useLiveShiftDurationParts } from "../../features/time-clock/shift-durat
 import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import { PayrollRoundingHint } from "../../features/time-records/payroll-rounding-hint";
+import { useT } from "../../lib/i18n";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import {
   downloadAdminCompanyTimesheetWeekCsv,
@@ -100,6 +101,7 @@ function TimesheetWeekSummaryLine(props: {
   payroll: number;
   breakSeconds: number;
 }) {
+  const t = useT();
   const weekLabel = props.timeZone
     ? formatPayrollWeekUkLabel(props.weekStart, props.timeZone, false)
     : props.weekStart;
@@ -108,25 +110,25 @@ function TimesheetWeekSummaryLine(props: {
       <p className="font-semibold text-[var(--color-text)]">{weekLabel}</p>
       <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-[var(--color-text-muted)]">
         <div>
-          <dt className="inline">Clocked: </dt>
+          <dt className="inline">{t("timesheets.clocked", "Clocked:")} </dt>
           <dd className="inline tabular-nums font-semibold text-[var(--color-text)]">
             {formatDurationSeconds(props.clocked)}
           </dd>
         </div>
         <div>
-          <dt className="inline">Payable: </dt>
+          <dt className="inline">{t("timesheets.payable", "Payable:")} </dt>
           <dd className="inline tabular-nums font-semibold text-[var(--color-text)]">
             {formatDurationSeconds(props.payable)}
           </dd>
         </div>
         <div>
-          <dt className="inline">Payroll: </dt>
+          <dt className="inline">{t("timesheets.payroll", "Payroll:")} </dt>
           <dd className="inline tabular-nums font-semibold text-[var(--color-text)]">
             {formatDurationSeconds(props.payroll)}
           </dd>
         </div>
         <div>
-          <dt className="inline">Break deducted: </dt>
+          <dt className="inline">{t("timesheets.break_deducted", "Break deducted:")} </dt>
           <dd className="inline">
             <BreakDeductionCell seconds={props.breakSeconds} />
           </dd>
@@ -170,6 +172,7 @@ function segmentBtnClass(active: boolean) {
 }
 
 export function TimesheetsClient() {
+  const t = useT();
   const user = useCurrentUser();
   const management = canAccessManagement(user);
 
@@ -650,10 +653,10 @@ export function TimesheetsClient() {
             <TableHeader>
               <TableRow>
                 <TableHead>Day</TableHead>
-                <TableHead>Clocked time</TableHead>
-                <TableHead>Payable time</TableHead>
-                <TableHead>Payroll time</TableHead>
-                <TableHead>Break deducted</TableHead>
+                <TableHead>{t("timesheets.col_clocked", "Clocked time")}</TableHead>
+                <TableHead>{t("timesheets.col_payable", "Payable time")}</TableHead>
+                <TableHead>{t("timesheets.col_payroll", "Payroll time")}</TableHead>
+                <TableHead>{t("timesheets.col_break_deducted", "Break deducted")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -697,7 +700,7 @@ export function TimesheetsClient() {
           <Table className="min-w-[960px]">
               <TableHeader>
                 <TableRow>
-                  <TableHead>Employee</TableHead>
+                  <TableHead>{t("timesheets.col_employee", "Employee")}</TableHead>
                   <TableHead>Job title</TableHead>
                   <TableHead>Day</TableHead>
                   <TableHead>Clocked time</TableHead>

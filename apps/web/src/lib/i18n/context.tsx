@@ -4,16 +4,29 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
   type ReactNode,
 } from "react";
 
 import { EN_STRINGS } from "./en";
+import { LOCALE_STORAGE_KEY } from "./locale-storage";
 import { LOCALE_OVERRIDES } from "./overrides";
 import { normalizeAppLocale } from "./locales";
 import { interpolate, lookupString } from "./translate-core";
 import type { AppLocale } from "./types";
+
+function readStoredLocale(): AppLocale | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    return normalizeAppLocale(localStorage.getItem(LOCALE_STORAGE_KEY));
+  } catch {
+    return null;
+  }
+}
 
 type I18nContextValue = {
   locale: AppLocale;
@@ -24,10 +37,23 @@ type I18nContextValue = {
 const I18nContext = createContext<I18nContextValue | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
-  const [locale, setLocaleState] = useState<AppLocale>("en-GB");
+  const [locale, setLocaleState] = useState<AppLocale>(() => readStoredLocale() ?? "en-GB");
 
   const setLocale = useCallback((next: AppLocale) => {
-    setLocaleState(normalizeAppLocale(next));
+    const normalized = normalizeAppLocale(next);
+    setLocaleState(normalized);
+    try {
+      localStorage.setItem(LOCALE_STORAGE_KEY, normalized);
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, []);
+
+  useEffect(() => {
+    const stored = readStoredLocale();
+    if (stored) {
+      setLocaleState(stored);
+    }
   }, []);
 
   const t = useCallback(

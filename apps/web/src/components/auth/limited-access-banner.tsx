@@ -11,8 +11,8 @@ export function LimitedAccessBanner() {
     >
       <p className="font-medium">
         {t(
-          "auth.limited_access.title",
-          "Your account is deactivated. You still have access to your timesheets and pay history.",
+          "limited_access.banner",
+          "Your account has limited access. Some features are unavailable until your account is reactivated.",
         )}
       </p>
       <p className="mt-1 text-[var(--color-text-muted)]">

@@ -8,7 +8,7 @@ DATE_FORMATS = frozenset({"DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD"})
 TIME_FORMATS = frozenset({"12h", "24h"})
 WEEK_START = frozenset({"monday", "sunday"})
 CURRENCIES = frozenset({"GBP", "EUR", "USD"})
-LOCALES = frozenset({"en-GB", "ro-RO", "pl-PL"})
+LOCALES = frozenset({"en-GB", "ro-RO", "pl-PL", "es-ES", "ru-RU"})
 
 _HEX_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 

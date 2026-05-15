@@ -320,8 +320,12 @@ export function SettingsClient() {
                   {loc === "en-GB"
                     ? t("settings.locale_en_GB", "English (United Kingdom)")
                     : loc === "ro-RO"
-                      ? t("settings.locale_ro_RO", "Romanian")
-                      : t("settings.locale_pl_PL", "Polish")}
+                      ? t("settings.locale_ro_RO", "Română")
+                      : loc === "pl-PL"
+                        ? t("settings.locale_pl_PL", "Polski")
+                        : loc === "es-ES"
+                          ? t("settings.locale_es_ES", "Español")
+                          : t("settings.locale_ru_RU", "Русский")}
                 </option>
               ))}
             </select>

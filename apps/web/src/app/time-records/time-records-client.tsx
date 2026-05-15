@@ -26,6 +26,7 @@ import { BreakDeductionCell } from "../../features/time-records/break-deduction-
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
+import { useT } from "../../lib/i18n";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import { FaceCheckCell } from "../../features/face-check/face-check-cell";
 import {
@@ -99,6 +100,7 @@ function payrollRecalcMessage(weekStart: string | null): string {
 }
 
 export function TimeRecordsClient() {
+  const t = useT();
   const user = useCurrentUser();
   const management = canAccessManagement(user);
 
@@ -544,16 +546,16 @@ export function TimeRecordsClient() {
         <Table>
           <TableHeader>
             <TableRow>
-              {adminMode ? <TableHead>Employee</TableHead> : null}
+              {adminMode ? <TableHead>{t("timesheets.col_employee", "Employee")}</TableHead> : null}
               <TableHead>Location</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Clock in</TableHead>
               <TableHead>Clock out</TableHead>
-              <TableHead>Clocked time</TableHead>
+              <TableHead>{t("timesheets.col_clocked", "Clocked time")}</TableHead>
               <TableHead>Payable time</TableHead>
               <TableHead>Payroll time</TableHead>
               <TableHead>Break deducted</TableHead>
-              <TableHead>Face check</TableHead>
+              <TableHead>{t("face_check.table_header", "Face check")}</TableHead>
               {adminMode && management ? <TableHead className="w-[9rem]">Actions</TableHead> : null}
             </TableRow>
           </TableHeader>

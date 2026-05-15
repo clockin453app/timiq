@@ -81,3 +81,13 @@ def test_user_patch_accepts_ro_locale() -> None:
 def test_user_patch_accepts_pl_locale() -> None:
     body = UserPreferencesPatchRequest(locale="pl-PL")
     assert body.locale == "pl-PL"
+
+
+def test_user_patch_accepts_es_locale() -> None:
+    body = UserPreferencesPatchRequest(locale="es-ES")
+    assert body.locale == "es-ES"
+
+
+def test_user_patch_accepts_ru_locale() -> None:
+    body = UserPreferencesPatchRequest(locale="ru-RU")
+    assert body.locale == "ru-RU"

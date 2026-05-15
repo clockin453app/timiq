@@ -1,4 +1,5 @@
 import { Badge } from "../../components/ui";
+import { useT } from "../../lib/i18n";
 import { asFaceCheckStatus, faceCheckStatusLabel, type FaceCheckStatus } from "./labels";
 
 function toneForStatus(status: FaceCheckStatus): "default" | "success" | "warning" | "danger" {
@@ -21,9 +22,10 @@ export function FaceCheckBadge({
 }: {
   status: FaceCheckStatus | string | null | undefined;
 }) {
+  const t = useT();
   const normalized = typeof status === "string" ? asFaceCheckStatus(status) : status;
   if (!normalized) {
     return <span className="text-[var(--color-text-muted)]">—</span>;
   }
-  return <Badge tone={toneForStatus(normalized)}>{faceCheckStatusLabel(normalized)}</Badge>;
+  return <Badge tone={toneForStatus(normalized)}>{faceCheckStatusLabel(normalized, t)}</Badge>;
 }

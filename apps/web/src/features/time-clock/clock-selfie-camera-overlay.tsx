@@ -18,11 +18,6 @@ type Props = {
   t: TranslateFn;
 };
 
-const CAMERA_UNSUPPORTED =
-  "Your device does not support camera capture. Use a phone or browser with a front camera.";
-const CAMERA_PERMISSION =
-  "Camera permission is required to capture a selfie. Allow camera access in your browser settings, then tap Retry.";
-
 function stopMediaStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((track) => track.stop());
 }
@@ -30,26 +25,16 @@ function stopMediaStream(stream: MediaStream | null) {
 export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const pendingFileRef = useRef<File | null>(null);
 
-  const [step, setStep] = useState<"live" | "preview">("live");
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [cameraError, setCameraError] = useState<"permission" | "unsupported" | "failed" | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
+  const [isCapturing, setIsCapturing] = useState(false);
   const [attachKey, setAttachKey] = useState(0);
 
   const title =
     phase === "clock_in"
       ? t("clock.dialog_title_in", "Clock-in selfie")
       : t("clock.dialog_title_out", "Clock-out selfie");
-
-  const releasePreview = useCallback(() => {
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-    }
-    setPreviewUrl(null);
-    pendingFileRef.current = null;
-  }, [previewUrl]);
 
   const stopCamera = useCallback(() => {
     stopMediaStream(streamRef.current);
@@ -62,24 +47,23 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
   }, []);
 
   const resetOverlay = useCallback(() => {
-    releasePreview();
     stopCamera();
-    setStep("live");
     setCameraError(null);
-  }, [releasePreview, stopCamera]);
+    setIsCapturing(false);
+  }, [stopCamera]);
 
   useEffect(() => {
     if (!open) {
       resetOverlay();
       return;
     }
-    setStep("live");
     setCameraError(null);
+    setIsCapturing(false);
     setAttachKey((k) => k + 1);
   }, [open, phase, resetOverlay]);
 
   useEffect(() => {
-    if (!open || step !== "live" || cameraError) {
+    if (!open || cameraError || isCapturing) {
       return;
     }
 
@@ -127,7 +111,7 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
       cancelled = true;
       stopCamera();
     };
-  }, [open, step, cameraError, attachKey, stopCamera]);
+  }, [open, cameraError, isCapturing, attachKey, stopCamera]);
 
   useEffect(() => {
     if (!open) {
@@ -155,12 +139,14 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
 
   useEffect(() => {
     return () => {
-      releasePreview();
       stopCamera();
     };
-  }, [releasePreview, stopCamera]);
+  }, [stopCamera]);
 
   function handleCaptureFrame() {
+    if (isCapturing) {
+      return;
+    }
     setCameraError(null);
     const video = videoRef.current;
     if (!video || video.readyState < 2 || video.videoWidth === 0) {
@@ -177,9 +163,11 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
       return;
     }
 
+    setIsCapturing(true);
     context.drawImage(video, 0, 0);
     canvas.toBlob(
       (blob) => {
+        setIsCapturing(false);
         if (!blob) {
           setCameraError("failed");
           return;
@@ -188,39 +176,16 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
         const file = new File([blob], `live-clock-selfie-${phase}-${Date.now()}.jpg`, {
           type: "image/jpeg",
         });
-        pendingFileRef.current = file;
-        setPreviewUrl((prev) => {
-          if (prev) {
-            URL.revokeObjectURL(prev);
-          }
-          return URL.createObjectURL(blob);
-        });
-        setStep("preview");
+        onUsePhoto(file, phase);
       },
       "image/jpeg",
       0.92,
     );
   }
 
-  function handleRetake() {
-    releasePreview();
-    setStep("live");
-    setCameraError(null);
-    setAttachKey((k) => k + 1);
-  }
-
-  function handleUsePhoto() {
-    const file = pendingFileRef.current;
-    if (!file) {
-      return;
-    }
-    onUsePhoto(file, phase);
-    resetOverlay();
-  }
-
   function handleRetryCamera() {
     setCameraError(null);
-    setStep("live");
+    setIsCapturing(false);
     setAttachKey((k) => k + 1);
   }
 
@@ -230,11 +195,17 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
 
   const errorMessage =
     cameraError === "permission"
-      ? CAMERA_PERMISSION
+      ? t(
+          "clock.camera_permission",
+          "Camera permission is required to capture a selfie. Allow camera access in your browser settings, then tap Retry.",
+        )
       : cameraError === "unsupported"
-        ? CAMERA_UNSUPPORTED
+        ? t(
+            "clock.camera_unsupported",
+            "Your device does not support camera capture. Use a phone or browser with a front camera.",
+          )
         : cameraError === "failed"
-          ? "Could not start the camera. Try again or use another device."
+          ? t("clock.camera_failed", "Could not start the camera. Try again or use another device.")
           : null;
 
   return createPortal(
@@ -253,9 +224,7 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
         <div className="min-w-0">
           <p className="truncate text-base font-semibold">{title}</p>
           <p className="mt-0.5 text-xs text-white/70">
-            {step === "preview"
-              ? t("clock.camera_review_hint", "Review your photo, then use it or retake.")
-              : t("clock.camera_live_hint", "Position your face in the frame, then capture.")}
+            {t("clock.camera_live_hint", "Position your face in the frame, then capture.")}
           </p>
         </div>
         <button
@@ -278,15 +247,6 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
               </Button>
             ) : null}
           </div>
-        ) : step === "preview" && previewUrl ? (
-          <div className="flex h-full items-center justify-center bg-black p-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              alt={t("clock.camera_preview_alt", "Selfie preview")}
-              className="max-h-full max-w-full object-contain"
-              src={previewUrl}
-            />
-          </div>
         ) : (
           <div className="flex h-full items-center justify-center bg-black">
             <video
@@ -296,9 +256,11 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
               muted
               playsInline
             />
-            {!cameraReady ? (
+            {!cameraReady || isCapturing ? (
               <p className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm text-white/80">
-                {t("clock.camera_starting", "Starting camera…")}
+                {isCapturing
+                  ? t("clock.camera_capturing", "Capturing…")
+                  : t("clock.camera_starting", "Starting camera…")}
               </p>
             ) : null}
           </div>
@@ -310,24 +272,17 @@ export function ClockSelfieCameraOverlay({ phase, open, onCancel, onUsePhoto, t 
           <Button className="w-full" onClick={onCancel} type="button" variant="secondary">
             {t("common.cancel", "Cancel")}
           </Button>
-        ) : step === "preview" ? (
-          <div className="mx-auto flex w-full max-w-lg flex-col gap-2 sm:flex-row">
-            <Button className="w-full flex-1" onClick={handleRetake} type="button" variant="secondary">
-              {t("clock.camera_retake", "Retake")}
-            </Button>
-            <Button className="w-full flex-1" onClick={handleUsePhoto} type="button">
-              {t("clock.camera_use_photo", "Use photo")}
-            </Button>
-          </div>
         ) : (
           <div className="mx-auto flex w-full max-w-lg flex-col gap-2 sm:flex-row">
             <Button
               className="w-full flex-1 min-h-[3rem] text-base"
-              disabled={!cameraReady}
+              disabled={!cameraReady || isCapturing}
               onClick={handleCaptureFrame}
               type="button"
             >
-              {t("clock.capture", "Capture selfie")}
+              {isCapturing
+                ? t("clock.camera_capturing", "Capturing…")
+                : t("clock.capture", "Capture selfie")}
             </Button>
             <Button className="w-full flex-1" onClick={onCancel} type="button" variant="secondary">
               {t("common.cancel", "Cancel")}

@@ -15,7 +15,7 @@ export function lookupString(
   locale: AppLocale,
   key: string,
   en: Record<string, string>,
-  overrides: Partial<Record<string, string>> | undefined,
+  overrides: Record<string, string> | undefined,
   fallback?: string,
 ): string {
   if (locale !== "en-GB") {

@@ -8,6 +8,7 @@ import {
   removeMyFaceReference,
   type EmployeeProfile,
 } from "../employee-profiles/api";
+import { useT } from "../../lib/i18n";
 import { FaceCheckBadge } from "./face-check-badge";
 
 function formatWhen(iso: string | null | undefined): string {
@@ -27,6 +28,7 @@ type Props = {
 };
 
 export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
+  const t = useT();
   const fileRef = useRef<HTMLInputElement>(null);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -40,11 +42,11 @@ export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
     setMessage("");
     const file = fileRef.current?.files?.[0];
     if (!consent) {
-      setError("You must consent before uploading a reference photo.");
+      setError(t("face_check.consent_required", "You must consent before uploading a reference photo."));
       return;
     }
     if (!file) {
-      setError("Choose a photo to upload.");
+      setError(t("face_check.choose_photo", "Choose a photo to upload."));
       return;
     }
 
@@ -62,9 +64,13 @@ export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
       if (fileRef.current) {
         fileRef.current.value = "";
       }
-      setMessage(configured ? "Reference photo updated." : "Reference photo saved.");
+      setMessage(
+        configured
+          ? t("face_check.updated", "Reference photo updated.")
+          : t("face_check.saved", "Reference photo saved."),
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save reference photo.");
+      setError(err instanceof Error ? err.message : t("face_check.save_error", "Could not save reference photo."));
     } finally {
       setBusy(false);
     }
@@ -73,7 +79,14 @@ export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
   async function handleRemove() {
     setError("");
     setMessage("");
-    if (!window.confirm("Remove your face reference photo? Clock in/out will not be blocked.")) {
+    if (
+      !window.confirm(
+        t(
+          "face_check.remove_confirm",
+          "Remove your face reference photo? Clock in/out will not be blocked.",
+        ),
+      )
+    ) {
       return;
     }
     setBusy(true);
@@ -87,9 +100,11 @@ export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
         face_reference_configured: status.face_reference_configured,
       });
       setConsent(false);
-      setMessage("Reference photo removed.");
+      setMessage(t("face_check.removed", "Reference photo removed."));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not remove reference photo.");
+      setError(
+        err instanceof Error ? err.message : t("face_check.remove_error", "Could not remove reference photo."),
+      );
     } finally {
       setBusy(false);
     }
@@ -102,40 +117,51 @@ export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-          Face check setup
+          {t("face_check.setup_title", "Face check setup")}
         </p>
         {configured ? (
-          <span className="text-xs font-medium text-[var(--color-text)]">Reference enrolled</span>
+          <span className="text-xs font-medium text-[var(--color-text)]">
+            {t("face_check.reference_enrolled", "Reference enrolled")}
+          </span>
         ) : (
           <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-950">
-            Important setup required
+            {t("face_check.important_setup", "Important setup required")}
           </span>
         )}
       </div>
       <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-        Upload a clear front-facing reference photo so clock selfies can be compared for attendance
-        review. Clocking is not blocked, but shifts will show Not enrolled until this is completed.
+        {t(
+          "face_check.upload_intro",
+          "Upload a clear front-facing reference photo so clock selfies can be compared for attendance review. Clocking is not blocked, but shifts will show Not enrolled until this is completed.",
+        )}
       </p>
       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-        Face check is a review aid. It does not block clocking in this version.
+        {t(
+          "face_check.review_aid",
+          "Face check is a review aid. It does not block clocking in this version.",
+        )}
       </p>
       <dl className="mt-3 grid gap-2 text-sm">
         <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
-          <dt className="text-[var(--color-text-muted)]">Reference on file</dt>
+          <dt className="text-[var(--color-text-muted)]">
+            {t("face_check.reference_on_file", "Reference on file")}
+          </dt>
           <dd className="font-medium text-[var(--color-text)]">
-            {configured ? "Yes" : <FaceCheckBadge status="not_enrolled" />}
+            {configured ? t("face_check.yes", "Yes") : <FaceCheckBadge status="not_enrolled" />}
           </dd>
         </div>
         {configured ? (
           <>
             <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
-              <dt className="text-[var(--color-text-muted)]">Enrolled</dt>
+              <dt className="text-[var(--color-text-muted)]">{t("face_check.enrolled_at", "Enrolled")}</dt>
               <dd className="font-medium text-[var(--color-text)]">
                 {formatWhen(profile.face_reference_enrolled_at)}
               </dd>
             </div>
             <div className="flex flex-col gap-0.5 sm:flex-row sm:justify-between sm:gap-4">
-              <dt className="text-[var(--color-text-muted)]">Last updated</dt>
+              <dt className="text-[var(--color-text-muted)]">
+                {t("face_check.last_updated", "Last updated")}
+              </dt>
               <dd className="font-medium text-[var(--color-text)]">
                 {formatWhen(profile.face_reference_updated_at)}
               </dd>
@@ -153,8 +179,10 @@ export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
           type="checkbox"
         />
         <span>
-          I consent to TimIQ storing a reference photo for optional face checks on my clock selfies. I
-          can remove it at any time.
+          {t(
+            "face_check.consent_label",
+            "I consent to TimIQ storing a reference photo for optional face checks on my clock selfies. I can remove it at any time.",
+          )}
         </span>
       </label>
 
@@ -171,11 +199,15 @@ export function FaceCheckProfileSection({ profile, onProfileUpdated }: Props) {
 
       <div className="mt-3 flex flex-wrap gap-2">
         <Button disabled={busy} onClick={() => void handleEnroll()} type="button">
-          {busy ? "Saving…" : configured ? "Replace photo" : "Save reference photo"}
+          {busy
+            ? t("face_check.saving", "Saving…")
+            : configured
+              ? t("face_check.replace_photo", "Replace photo")
+              : t("face_check.save_reference", "Save reference photo")}
         </Button>
         {configured ? (
           <Button disabled={busy} onClick={() => void handleRemove()} type="button" variant="secondary">
-            Remove reference
+            {t("face_check.remove_reference", "Remove reference")}
           </Button>
         ) : null}
       </div>
