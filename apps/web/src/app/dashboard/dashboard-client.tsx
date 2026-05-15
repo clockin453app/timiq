@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 
 import { PageHeader, Sheet, SheetBody } from "../../components/ui";
-import { isEmployee, useCurrentUser } from "../../features/auth";
+import { isAdministrator, isEmployee, useCurrentUser } from "../../features/auth";
+import { readStoredCompanyId } from "../../features/companies/selected-company";
 import { fetchManagementSummary, type ManagementSummary } from "../../features/dashboard/api";
 import { getClockStatus, type ClockStatus } from "../../features/time-clock/api";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
@@ -263,23 +264,39 @@ function EmployeeDashboard() {
 
 function ManagementDashboard() {
   const t = useT();
+  const user = useCurrentUser();
+  const adminNeedsCompany = isAdministrator(user);
   const [summary, setSummary] = useState<ManagementSummary | null>(null);
   const [loadError, setLoadError] = useState("");
+  const [needsCompanySelection, setNeedsCompanySelection] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(
     async (silent: boolean) => {
+      const companyId = adminNeedsCompany ? readStoredCompanyId() : null;
+      if (adminNeedsCompany && !companyId) {
+        setNeedsCompanySelection(true);
+        setLoadError("");
+        setSummary(null);
+        setLoading(false);
+        return;
+      }
+      setNeedsCompanySelection(false);
       if (!silent) {
         setLoading(true);
       }
       setLoadError("");
       try {
-        const data = await fetchManagementSummary(null);
+        const data = await fetchManagementSummary(companyId);
         setSummary(data);
       } catch (e) {
-        setLoadError(
-          e instanceof Error ? e.message : t("dashboard.summary_error", "Could not load dashboard summary."),
-        );
+        const message = e instanceof Error ? e.message : "";
+        if (adminNeedsCompany && message.toLowerCase().includes("company")) {
+          setNeedsCompanySelection(true);
+          setLoadError("");
+        } else {
+          setLoadError(message || t("dashboard.summary_error", "Could not load dashboard summary."));
+        }
         if (!silent) {
           setSummary(null);
         }
@@ -287,7 +304,7 @@ function ManagementDashboard() {
         setLoading(false);
       }
     },
-    [t],
+    [adminNeedsCompany, t],
   );
 
   useEffect(() => {
@@ -329,6 +346,23 @@ function ManagementDashboard() {
             {t("dashboard.loading_summary", "Loading summary…")}
           </p>
         ) : null}
+        {needsCompanySelection ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-5 text-sm text-[var(--color-text-muted)]">
+            <p>
+              {t(
+                "dashboard.select_company_hint",
+                "Select a company on the Overview page to view company dashboard data.",
+              )}
+            </p>
+            <Link
+              className="mt-3 inline-flex h-9 items-center rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-btn-secondary-bg)] px-3 text-sm font-semibold text-[var(--color-text)] hover:bg-[var(--color-cell)]"
+              href="/overview"
+            >
+              {t("dashboard.go_overview", "Go to Overview")}
+            </Link>
+          </div>
+        ) : null}
+
         {loadError ? <p className="text-sm text-[var(--color-danger-700)]">{loadError}</p> : null}
 
         {summary && !loading ? (

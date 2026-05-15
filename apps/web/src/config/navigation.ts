@@ -452,16 +452,17 @@ export function filterNavGroupsForMobileQuickNav(
     .filter((group) => group.items.length > 0);
 }
 
-/** Consolidated desktop top-bar groups (dropdowns). Messages/profile/settings stay in the top bar chrome. */
+/** Desktop top bar: single-item groups render as direct links; multi-item groups use dropdowns. */
+const DESKTOP_TOP_NAV_LIMITED: NavigationGroupDefinition[] = [
+  { id: "desk-timesheets", label: "Timesheets", groupLabelKey: "nav.timesheets", items: [TIMESHEETS] },
+  { id: "desk-pay-history", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
+];
+
 const DESKTOP_TOP_NAV_EMPLOYEE: NavigationGroupDefinition[] = [
-  { id: "desk-home", label: "Home", groupLabelKey: "nav.group.desk_home", items: [DASHBOARD] },
-  {
-    id: "desk-time",
-    label: "Time",
-    groupLabelKey: "nav.group.emp_time",
-    items: [CLOCK, TIME_RECORDS, TIMESHEETS],
-  },
-  { id: "desk-pay", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
+  { id: "desk-dashboard", label: "Dashboard", groupLabelKey: "nav.dashboard", items: [DASHBOARD] },
+  { id: "desk-clock", label: "Clock", groupLabelKey: "nav.clock", items: [CLOCK] },
+  { id: "desk-timesheets", label: "Timesheets", groupLabelKey: "nav.timesheets", items: [TIMESHEETS] },
+  { id: "desk-pay-history", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
   {
     id: "desk-work",
     label: "Work",
@@ -472,23 +473,14 @@ const DESKTOP_TOP_NAV_EMPLOYEE: NavigationGroupDefinition[] = [
     id: "desk-more",
     label: "More",
     groupLabelKey: "nav.group.desk_more",
-    items: [STARTER_FORM, LEAVE, HELP_CENTRE, PRIVACY_PORTAL],
+    items: [TIME_RECORDS, STARTER_FORM, LEAVE, HELP_CENTRE, PRIVACY_PORTAL],
   },
 ];
 
 const DESKTOP_TOP_NAV_MANAGEMENT: NavigationGroupDefinition[] = [
-  {
-    id: "desk-home",
-    label: "Home",
-    groupLabelKey: "nav.group.desk_home",
-    items: [DASHBOARD, OVERVIEW],
-  },
-  {
-    id: "desk-work",
-    label: "Work",
-    groupLabelKey: "nav.group.desk_work",
-    items: [CLOCK, TIME_RECORDS, SITE_PROGRESS, WORK_PROGRESS_REVIEW],
-  },
+  { id: "desk-dashboard", label: "Dashboard", groupLabelKey: "nav.dashboard", items: [DASHBOARD] },
+  { id: "desk-overview", label: "Overview", groupLabelKey: "nav.overview", items: [OVERVIEW] },
+  { id: "desk-clock", label: "Clock", groupLabelKey: "nav.clock", items: [CLOCK] },
   {
     id: "desk-people",
     label: "People",
@@ -514,19 +506,23 @@ const DESKTOP_TOP_NAV_MANAGEMENT: NavigationGroupDefinition[] = [
     items: [PAYROLL_REPORT, CIS_WORKPLACES, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
   },
   {
-    id: "desk-system",
-    label: "System",
-    groupLabelKey: "nav.group.desk_system",
+    id: "desk-work",
+    label: "Work",
+    groupLabelKey: "nav.group.mgmt_work",
     items: [
-      AUDIT_LOG,
-      SYSTEM_HEALTH,
-      SETTINGS,
-      HELP_CENTRE,
+      SITE_PROGRESS,
+      WORK_PROGRESS_REVIEW,
       FORMS_MANAGE,
       FORMS_REVIEW,
       TOOLBOX_TALKS_MANAGE,
       RAMS_MANAGE,
     ],
+  },
+  {
+    id: "desk-system",
+    label: "System",
+    groupLabelKey: "nav.group.desk_system",
+    items: [AUDIT_LOG, SYSTEM_HEALTH, SETTINGS, HELP_CENTRE],
   },
 ];
 
@@ -535,7 +531,7 @@ export function getDesktopTopNavigationGroups(
   options?: { limitedAccess?: boolean },
 ): NavigationGroupDefinition[] {
   if (options?.limitedAccess && role === "employee") {
-    return LIMITED_ACCESS_NAV_GROUP_DEFS.map((group) => filterGroup(role, group)).filter(
+    return DESKTOP_TOP_NAV_LIMITED.map((group) => filterGroup(role, group)).filter(
       (g): g is NavigationGroupDefinition => g !== null,
     );
   }

@@ -33,7 +33,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
   const t = useT();
 
   return (
-    <header className="timiq-print-hide-chrome sticky top-0 z-30 hidden min-h-[var(--layout-topbar-height)] w-full min-w-0 shrink-0 flex-col border-b border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_0_rgba(15,23,42,0.04)] xl:flex">
+    <header className="timiq-print-hide-chrome sticky top-0 z-40 hidden min-h-[var(--layout-topbar-height)] w-full min-w-0 shrink-0 flex-col overflow-visible border-b border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_0_rgba(15,23,42,0.04)] xl:flex">
       <div className="flex min-h-[var(--layout-topbar-height)] w-full min-w-0 items-center gap-3 px-4">
         <Link
           className="shrink-0 no-underline"
@@ -65,7 +65,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
                 </span>
               </span>
             </summary>
-            <div className="absolute right-0 z-40 mt-1 w-60 max-w-[calc(100vw-1rem)] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_4px_16px_rgba(15,23,42,0.12)]">
+            <div className="absolute right-0 z-[60] mt-1 w-60 max-w-[calc(100vw-1rem)] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]">
               <p className="truncate px-3 py-2 text-xs text-[var(--color-text-muted)]" title={user.email}>
                 {user.email}
               </p>
