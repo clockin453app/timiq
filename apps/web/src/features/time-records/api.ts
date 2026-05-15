@@ -23,6 +23,9 @@ export type TimeRecordShiftRow = {
   counted_seconds: number | null;
   rounded_seconds: number | null;
   time_policy_source?: string;
+  face_check_status?: string | null;
+  face_match_confidence?: number | null;
+  face_check_reason?: string | null;
 };
 
 export type ListTimeRecordsParams = {

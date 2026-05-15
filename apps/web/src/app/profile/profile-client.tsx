@@ -16,6 +16,8 @@ import {
   useCurrentUser,
   useRefreshAuthUser,
 } from "../../features/auth";
+import { userHasLimitedAccess } from "../../features/auth/limited-access";
+import { FaceCheckProfileSection } from "../../features/face-check/face-check-profile-section";
 import {
   fetchOnboardingDocumentBlob,
   fetchOnboardingProfilePhotoBlob,
@@ -584,6 +586,13 @@ export function ProfileClient() {
 
           {!isLoadingProfile && profile ? (
             <>
+              {isEmployee(user) && user.is_active && !userHasLimitedAccess(user) ? (
+                <FaceCheckProfileSection
+                  profile={profile}
+                  onProfileUpdated={setProfile}
+                />
+              ) : null}
+
               <div className="border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
                 <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
                   Employment snapshot

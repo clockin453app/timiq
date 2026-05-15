@@ -27,6 +27,7 @@ import { formatDurationSeconds } from "../../features/time-records/format-durati
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
+import { FaceCheckBadge } from "../../features/face-check/face-check-badge";
 import {
   adminCreateCompletedShift,
   adminForceClockOut,
@@ -410,7 +411,7 @@ export function TimeRecordsClient() {
     }
   }
 
-  const adminCols = adminMode && management ? 10 : adminMode ? 9 : 8;
+  const adminCols = adminMode && management ? 11 : adminMode ? 10 : 9;
 
   return (
     <Sheet>
@@ -552,6 +553,7 @@ export function TimeRecordsClient() {
               <TableHead>Payable time</TableHead>
               <TableHead>Payroll time</TableHead>
               <TableHead>Break deducted</TableHead>
+              <TableHead>Face check</TableHead>
               {adminMode && management ? <TableHead className="w-[9rem]">Actions</TableHead> : null}
             </TableRow>
           </TableHeader>
@@ -606,6 +608,9 @@ export function TimeRecordsClient() {
                       <BreakDeductionCell
                         seconds={row.break_deducted_seconds ?? row.break_seconds}
                       />
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <FaceCheckBadge status={row.face_check_status} />
                     </TableCell>
                     {adminMode && management ? (
                       <TableCell className="align-top text-xs">

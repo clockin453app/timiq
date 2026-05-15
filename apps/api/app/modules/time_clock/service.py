@@ -8,6 +8,8 @@ from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.employee_profiles.models import EmployeeProfile
+from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
+from app.modules.face_check.service import apply_face_check_to_shift
 from app.modules.locations.models import Location
 from app.modules.locations.repository import get_location_by_id
 from app.modules.time_clock.geofence import haversine_distance_meters, is_inside_geofence
@@ -466,6 +468,9 @@ def clock_in(
             captured_at=_utc_now(),
         )
         save_clock_selfie(db_session, selfie_row, commit=False)
+        profile = get_employee_profile_by_user_id(db_session, actor.id)
+        apply_face_check_to_shift(shift, profile, selfie_captured=True)
+        save_shift(db_session, shift, commit=False)
         db_session.commit()
     except Exception:
         db_session.rollback()
@@ -559,6 +564,9 @@ def clock_out(
             captured_at=_utc_now(),
         )
         save_clock_selfie(db_session, selfie_row, commit=False)
+        profile = get_employee_profile_by_user_id(db_session, actor.id)
+        apply_face_check_to_shift(open_shift, profile, selfie_captured=True)
+        save_shift(db_session, open_shift, commit=False)
         db_session.commit()
     except Exception:
         db_session.rollback()

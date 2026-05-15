@@ -23,6 +23,7 @@ import {
 } from "../../features/time-clock/gps";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { haversineDistanceMeters } from "../../lib/geo";
+import { asFaceCheckStatus, faceCheckAfterClockMessage } from "../../features/face-check/labels";
 import { useT } from "../../lib/i18n";
 
 const EMPTY_ASSIGNED_SITES: ClockAssignedSite[] = [];
@@ -515,8 +516,11 @@ export function ClockClient() {
 
     setIsSubmitting(true);
     try {
-      await clockInWithSelfie(geoCapture.payload, selfieClockIn);
-      setSuccessMessage("Clock-in successful.");
+      const result = await clockInWithSelfie(geoCapture.payload, selfieClockIn);
+      const faceNote = faceCheckAfterClockMessage(asFaceCheckStatus(result.face_check_status));
+      setSuccessMessage(
+        faceNote ? `Clock-in successful. ${faceNote}` : "Clock-in successful.",
+      );
       setSelfieClockIn(null);
       setSelfieClockOut(null);
       await refreshStatus();
@@ -543,8 +547,11 @@ export function ClockClient() {
 
     setIsSubmitting(true);
     try {
-      await clockOutWithSelfie(geoCapture.payload, selfieClockOut);
-      setSuccessMessage("Clock-out successful.");
+      const result = await clockOutWithSelfie(geoCapture.payload, selfieClockOut);
+      const faceNote = faceCheckAfterClockMessage(asFaceCheckStatus(result.face_check_status));
+      setSuccessMessage(
+        faceNote ? `Clock-out successful. ${faceNote}` : "Clock-out successful.",
+      );
       setSelfieClockOut(null);
       setSelfieClockIn(null);
       setGeoCapture(null);

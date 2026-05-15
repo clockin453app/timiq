@@ -26,6 +26,9 @@ export type LiveAttendanceEmployeeRow = {
   today_completed_worked_seconds: number | null;
   open_shift_id: string | null;
   clock_source: string | null;
+  face_check_status?: string | null;
+  face_match_confidence?: number | null;
+  face_check_reason?: string | null;
 };
 
 export type LiveAttendanceResponse = {

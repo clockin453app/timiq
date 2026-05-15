@@ -54,6 +54,9 @@ class ClockActionResponse(BaseModel):
     status: str
     worked_seconds: int | None = None
     break_seconds: int | None = None
+    face_check_status: str | None = None
+    face_match_confidence: float | None = None
+    face_check_reason: str | None = None
 
 
 class BreakActionResponse(BaseModel):

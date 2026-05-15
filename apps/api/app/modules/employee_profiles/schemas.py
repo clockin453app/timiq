@@ -21,6 +21,13 @@ class EmployeeProfileUpdateRequest(BaseModel):
     tax_rate: Decimal | None = Field(default=None, ge=0, le=100)
 
 
+class FaceReferenceStatusResponse(BaseModel):
+    face_check_consent_at: datetime | None = None
+    face_reference_enrolled_at: datetime | None = None
+    face_reference_updated_at: datetime | None = None
+    face_reference_configured: bool = False
+
+
 class EmployeeProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -41,5 +48,9 @@ class EmployeeProfileResponse(BaseModel):
     early_access_enabled: bool
     hourly_rate: Decimal | None = None
     tax_rate: Decimal | None = None
+    face_check_consent_at: datetime | None = None
+    face_reference_enrolled_at: datetime | None = None
+    face_reference_updated_at: datetime | None = None
+    face_reference_configured: bool = False
     created_at: datetime
     updated_at: datetime

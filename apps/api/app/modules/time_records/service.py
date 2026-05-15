@@ -177,6 +177,9 @@ def _shift_to_row(
         counted_seconds=metrics.counted_seconds,
         rounded_seconds=metrics.rounded_seconds,
         time_policy_source=time_policy_source_for_shift(db_session, location),
+        face_check_status=shift.face_check_status,
+        face_match_confidence=shift.face_match_confidence,
+        face_check_reason=shift.face_check_reason,
     )
 
 

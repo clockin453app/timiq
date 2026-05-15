@@ -20,6 +20,7 @@ from app.modules.employee_profiles.schemas import (
     EmployeeProfileResponse,
     EmployeeProfileUpdateRequest,
 )
+from app.modules.face_check.service import face_reference_configured
 
 
 def employee_profile_to_response(
@@ -36,7 +37,10 @@ def employee_profile_to_response(
 
     mask_rates = actor.id == profile.user_id
     base = EmployeeProfileResponse.model_validate(profile).model_copy(
-        update={"company_name": company_name},
+        update={
+            "company_name": company_name,
+            "face_reference_configured": face_reference_configured(profile),
+        },
     )
     if mask_rates:
         return base.model_copy(

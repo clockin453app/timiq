@@ -153,6 +153,9 @@ def get_live_attendance_snapshot(
         today_worked = None
         open_shift_id = None
         clock_source = None
+        face_check_status = None
+        face_match_confidence = None
+        face_check_reason = None
         loc_name = None
         loc_id = None
 
@@ -163,6 +166,9 @@ def get_live_attendance_snapshot(
             clock_in_at = open_shift.clock_in_at
             open_shift_id = open_shift.id
             clock_source = open_shift.clock_source
+            face_check_status = open_shift.face_check_status
+            face_match_confidence = open_shift.face_match_confidence
+            face_check_reason = open_shift.face_check_reason
             running_seconds = max(0, int((now - open_shift.clock_in_at).total_seconds()))
             loc = get_location_by_id(db_session, open_shift.location_id)
             loc_name = loc.name if loc is not None else None
@@ -220,6 +226,9 @@ def get_live_attendance_snapshot(
                 "today_completed_worked_seconds": today_worked,
                 "open_shift_id": open_shift_id,
                 "clock_source": clock_source,
+                "face_check_status": face_check_status,
+                "face_match_confidence": face_match_confidence,
+                "face_check_reason": face_check_reason,
             },
         )
 

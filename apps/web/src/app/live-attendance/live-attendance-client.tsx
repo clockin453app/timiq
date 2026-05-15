@@ -27,6 +27,7 @@ import {
 } from "../../features/live-attendance/api";
 import { listLocations, type Location } from "../../features/locations/api";
 import { listSiteAccessRecords, type SiteAccessRecord } from "../../features/site-access/api";
+import { FaceCheckBadge } from "../../features/face-check/face-check-badge";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 
 function isFormLikeFocused(): boolean {
@@ -460,18 +461,19 @@ export function LiveAttendanceClient() {
                   <TableHead>Clock in</TableHead>
                   <TableHead>Clock out</TableHead>
                   <TableHead>Duration</TableHead>
+                  <TableHead className="hidden xl:table-cell">Face check</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isInitialLoad && !snapshot ? (
                   <TableRow>
-                    <TableCell colSpan={8}>Loading attendance…</TableCell>
+                    <TableCell colSpan={10}>Loading attendance…</TableCell>
                   </TableRow>
                 ) : null}
                 {!isInitialLoad && snapshot && snapshot.employees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8}>No employees match the current filters.</TableCell>
+                    <TableCell colSpan={10}>No employees match the current filters.</TableCell>
                   </TableRow>
                 ) : null}
                 {snapshot
@@ -490,6 +492,13 @@ export function LiveAttendanceClient() {
                           <TableCell className="whitespace-nowrap text-xs tabular-nums sm:text-sm">{formatTimeShort(row.clock_in_at)}</TableCell>
                           <TableCell className="hidden whitespace-nowrap text-xs tabular-nums sm:table-cell sm:text-sm">{formatTimeShort(row.clock_out_at)}</TableCell>
                           <TableCell className="text-xs tabular-nums sm:text-sm">{outOrDurationLabel(row)}</TableCell>
+                          <TableCell className="hidden text-xs xl:table-cell">
+                            {row.status === "open_shift" && row.face_check_status ? (
+                              <FaceCheckBadge status={row.face_check_status} />
+                            ) : (
+                              <span className="text-[var(--color-text-muted)]">—</span>
+                            )}
+                          </TableCell>
                           <TableCell className="text-right">
                             <div className="flex flex-wrap justify-end gap-2">
                               <Button

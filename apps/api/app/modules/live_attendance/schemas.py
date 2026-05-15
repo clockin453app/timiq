@@ -20,6 +20,9 @@ class LiveAttendanceEmployeeRow(BaseModel):
     today_completed_worked_seconds: int | None = None
     open_shift_id: uuid.UUID | None = None
     clock_source: str | None = None
+    face_check_status: str | None = None
+    face_match_confidence: float | None = None
+    face_check_reason: str | None = None
 
 
 class LiveAttendanceSummary(BaseModel):

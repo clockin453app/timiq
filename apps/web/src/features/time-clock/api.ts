@@ -39,6 +39,9 @@ export type ClockActionResponse = {
   status: string;
   worked_seconds?: number | null;
   break_seconds?: number | null;
+  face_check_status?: string | null;
+  face_match_confidence?: number | null;
+  face_check_reason?: string | null;
 };
 
 export type BreakActionResponse = {

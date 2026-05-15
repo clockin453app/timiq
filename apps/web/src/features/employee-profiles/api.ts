@@ -1,4 +1,5 @@
 import { API_URL } from "../../config/api";
+import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 
 export type EmployeeProfile = {
   id: string;
@@ -18,8 +19,19 @@ export type EmployeeProfile = {
   early_access_enabled: boolean;
   hourly_rate: string | null;
   tax_rate: string | null;
+  face_check_consent_at?: string | null;
+  face_reference_enrolled_at?: string | null;
+  face_reference_updated_at?: string | null;
+  face_reference_configured?: boolean;
   created_at: string;
   updated_at: string;
+};
+
+export type FaceReferenceStatus = {
+  face_check_consent_at: string | null;
+  face_reference_enrolled_at: string | null;
+  face_reference_updated_at: string | null;
+  face_reference_configured: boolean;
 };
 
 export type UpdateMyEmployeeProfileRequest = {
@@ -115,4 +127,52 @@ export async function updateMyEmployeeProfile(
   }
 
   return response.json() as Promise<EmployeeProfile>;
+}
+
+export async function enrollMyFaceReference(
+  consent: boolean,
+  image: File,
+): Promise<FaceReferenceStatus> {
+  const body = new FormData();
+  body.append("consent", consent ? "true" : "false");
+  body.append("image", image, image.name);
+
+  const response = await fetch(`${API_URL}/api/employee-profiles/me/face-reference`, {
+    method: "POST",
+    credentials: "include",
+    body,
+  });
+
+  if (!response.ok) {
+    let detail = "Could not save face reference.";
+    try {
+      const parsed = (await response.json()) as { detail?: unknown };
+      detail = fastApiDetailToMessage(parsed.detail, detail);
+    } catch {
+      // keep fallback
+    }
+    throw new Error(detail);
+  }
+
+  return response.json() as Promise<FaceReferenceStatus>;
+}
+
+export async function removeMyFaceReference(): Promise<FaceReferenceStatus> {
+  const response = await fetch(`${API_URL}/api/employee-profiles/me/face-reference`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    let detail = "Could not remove face reference.";
+    try {
+      const parsed = (await response.json()) as { detail?: unknown };
+      detail = fastApiDetailToMessage(parsed.detail, detail);
+    } catch {
+      // keep fallback
+    }
+    throw new Error(detail);
+  }
+
+  return response.json() as Promise<FaceReferenceStatus>;
 }

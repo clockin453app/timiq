@@ -78,6 +78,9 @@ class TimeShift(Base):
     clock_out_distance_to_site_meters: Mapped[float] = mapped_column(Float, nullable=True)
     worked_seconds: Mapped[int] = mapped_column(Integer, nullable=True)
     break_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    face_check_status: Mapped[str] = mapped_column(String(32), nullable=True)
+    face_match_confidence: Mapped[float] = mapped_column(Float, nullable=True)
+    face_check_reason: Mapped[str] = mapped_column(String(120), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

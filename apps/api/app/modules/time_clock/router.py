@@ -15,6 +15,7 @@ from app.modules.time_clock.schemas import (
     ClockSelfieReviewItemResponse,
     ClockStatusResponse,
 )
+from app.modules.face_check.service import face_check_fields_for_shift
 from app.modules.time_clock.service import (
     ClockSelfieAccessDeniedError,
     ClockStateError,
@@ -162,7 +163,11 @@ async def post_clock_in(
     except (LocationAccessError, GeofenceValidationError, ClockStateError) as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-    return ClockActionResponse(shift_id=shift.id, status=shift.status)
+    return ClockActionResponse(
+        shift_id=shift.id,
+        status=shift.status,
+        **face_check_fields_for_shift(shift),
+    )
 
 
 @router.post("/clock-out", response_model=ClockActionResponse)
@@ -203,6 +208,7 @@ async def post_clock_out(
         status=shift.status,
         worked_seconds=shift.worked_seconds,
         break_seconds=shift.break_seconds,
+        **face_check_fields_for_shift(shift),
     )
 
 
