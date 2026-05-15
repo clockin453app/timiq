@@ -8,7 +8,6 @@ from app.modules.workplaces.models import Workplace
 from app.modules.workplaces.repository import (
     get_workplace_by_company_and_name,
     get_workplace_by_id,
-    list_workplaces,
     list_workplaces_by_company,
     save_workplace,
     update_workplace,
@@ -35,14 +34,25 @@ class WorkplaceCompanyNotFoundError(WorkplaceError):
     pass
 
 
-def list_workplaces_visible_to_user(db_session: Session, actor: User) -> list[Workplace]:
-    if actor.system_role == SystemRole.ADMINISTRATOR:
-        return list_workplaces(db_session)
+def list_workplaces_visible_to_user(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None = None,
+) -> list[Workplace]:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        if actor.company_id is None:
+            return []
+        return list_workplaces_by_company(db_session, actor.company_id)
 
-    if actor.company_id is None:
-        return []
+    from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
 
-    return list_workplaces_by_company(db_session, actor.company_id)
+    try:
+        scoped_company_id = resolve_operational_company_id(db_session, actor, company_id)
+    except CompanyScopeError as exc:
+        raise WorkplaceError(str(exc)) from exc
+
+    return list_workplaces_by_company(db_session, scoped_company_id)
 
 
 def resolve_workplace_company_id(

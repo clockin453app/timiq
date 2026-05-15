@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -25,10 +27,24 @@ router = APIRouter(prefix="/api/site-access", tags=["site-access"])
 
 @router.get("", response_model=list[SiteAccessResponse])
 def get_site_access_records(
+    company_id: uuid.UUID | None = Query(
+        default=None,
+        description="Required for administrators; ignored for company admins (own company enforced).",
+    ),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
 ) -> list[SiteAccessResponse]:
-    records = list_site_access_visible_to_user(db_session, current_user)
+    try:
+        records = list_site_access_visible_to_user(
+            db_session,
+            current_user,
+            company_id=company_id,
+        )
+    except SiteAccessError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
     return [SiteAccessResponse.model_validate(record) for record in records]
 
 

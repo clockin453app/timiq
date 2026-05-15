@@ -71,9 +71,19 @@ def can_manage_site_access_for_pair(
 def list_site_access_visible_to_user(
     db_session: Session,
     actor: User,
+    *,
+    company_id: uuid.UUID | None = None,
 ) -> list[EmployeeLocationAccess]:
+    from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
+
     if actor.system_role == SystemRole.ADMINISTRATOR:
-        return list_site_access(db_session)
+        try:
+            scoped_company_id = resolve_operational_company_id(db_session, actor, company_id)
+        except CompanyScopeError as exc:
+            raise SiteAccessError(str(exc)) from exc
+        locations = list_locations_by_company(db_session, scoped_company_id)
+        location_ids = [location.id for location in locations]
+        return list_site_access_for_location_ids(db_session, location_ids)
 
     if actor.company_id is None:
         return []

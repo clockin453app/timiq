@@ -5,7 +5,9 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Button, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui";
 import { isAdministrator, listManagedUsers, useCurrentUser, type AuthUser } from "../../features/auth";
 import { fetchLabourCostBudget, type LabourCostBudgetResponse } from "../../features/budgets/api";
+import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import { formatHoursFromSeconds } from "../../features/payroll/format";
 import { listLocations, type Location } from "../../features/locations/api";
 import { listWorkplaces, type Workplace } from "../../features/workplaces/api";
@@ -22,17 +24,10 @@ function defaultDateRange(): { from: string; to: string } {
   return { from: isoYmd(from), to: isoYmd(to) };
 }
 
-function resolveCompanyId(user: AuthUser, override: string | null): string | null {
-  if (isAdministrator(user)) {
-    return override;
-  }
-  return user.company_id;
-}
-
 export function BudgetQuickCalculatorTab() {
   const user = useCurrentUser();
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyOverride, setCompanyOverride] = useState<string | null>(null);
+  const companyScope = useAdministratorCompanyScope(user, companies);
   const range = useMemo(() => defaultDateRange(), []);
   const [dateFrom, setDateFrom] = useState(range.from);
   const [dateTo, setDateTo] = useState(range.to);
@@ -48,7 +43,10 @@ export function BudgetQuickCalculatorTab() {
   const [error, setError] = useState("");
   const [hasRun, setHasRun] = useState(false);
 
-  const activeCompanyId = useMemo(() => resolveCompanyId(user, companyOverride), [user, companyOverride]);
+  const activeCompanyId = useMemo(
+    () => (isAdministrator(user) ? companyScope.companyId : user.company_id),
+    [user, companyScope.companyId],
+  );
 
   useEffect(() => {
     if (!isAdministrator(user)) {
@@ -72,13 +70,6 @@ export function BudgetQuickCalculatorTab() {
     };
   }, [user]);
 
-  useEffect(() => {
-    if (!isAdministrator(user) || companies.length === 0 || companyOverride !== null) {
-      return;
-    }
-    setCompanyOverride(companies[0].id);
-  }, [user, companies, companyOverride]);
-
   const loadFilters = useCallback(async () => {
     if (!activeCompanyId) {
       setLocations([]);
@@ -87,12 +78,16 @@ export function BudgetQuickCalculatorTab() {
       return;
     }
     try {
-      const [locs, wps, users] = await Promise.all([listLocations(), listWorkplaces(), listManagedUsers()]);
-      setLocations(locs.filter((l) => l.company_id === activeCompanyId && l.is_active));
-      setWorkplaces(wps.filter((w) => w.company_id === activeCompanyId && w.is_active));
+      const [locs, wps, users] = await Promise.all([
+        listLocations(activeCompanyId),
+        listWorkplaces(activeCompanyId),
+        listManagedUsers(activeCompanyId),
+      ]);
+      setLocations(locs.filter((l) => l.is_active));
+      setWorkplaces(wps.filter((w) => w.is_active));
       setEmployees(
         users
-          .filter((u) => u.system_role === "employee" && u.company_id === activeCompanyId)
+          .filter((u) => u.system_role === "employee")
           .slice()
           .sort((a, b) => (a.email || "").localeCompare(b.email || "")),
       );
@@ -148,21 +143,23 @@ export function BudgetQuickCalculatorTab() {
         onSubmit={(e) => void handleSubmit(e)}
       >
         {isAdministrator(user) ? (
-          <label className="block max-w-md text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-            <span className="text-[var(--color-text)]">Company</span>
-            <select
-              className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
-              onChange={(e) => setCompanyOverride(e.target.value || null)}
-              value={companyOverride ?? ""}
-            >
-              <option value="">Choose company…</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <CompanySelector
+              companies={companyScope.companies}
+              label="Company"
+              onChange={companyScope.setCompanyId}
+              value={companyScope.companyId}
+            />
+            {companyScope.scopeLabel ? (
+              <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {isAdministrator(user) && companyScope.needsCompanySelection ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
+            Select a company to continue. Labour estimates use only that company&apos;s shifts and employees.
+          </div>
         ) : null}
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -18,12 +18,13 @@ import {
 } from "../../components/ui";
 import {
   isAdministrator,
-  listManagedUsers,
   RoleGuard,
   type AuthUser,
   useCurrentUser,
 } from "../../features/auth";
+import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import {
   deleteSitePayrollPolicy,
   getSitePayrollPolicyEffective,
@@ -79,7 +80,7 @@ export function SitePayrollRulesClient() {
   const showCompanySelector = isAdministrator(currentUser);
 
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyId, setCompanyId] = useState("");
+  const companyScope = useAdministratorCompanyScope(currentUser, companies);
   const [listItems, setListItems] = useState<SitePayrollPolicyListItem[]>([]);
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -99,13 +100,11 @@ export function SitePayrollRulesClient() {
   const [roundingMode, setRoundingMode] = useState("");
   const [notes, setNotes] = useState("");
 
-  const activeCompanies = useMemo(
-    () => companies.filter((c) => c.is_active),
-    [companies],
-  );
-  const selectedCompanyId = companyId || activeCompanies[0]?.id || "";
+  const selectedCompanyId = showCompanySelector
+    ? companyScope.companyId ?? ""
+    : currentUser.company_id ?? "";
 
-  const companyQueryArg = showCompanySelector ? selectedCompanyId : undefined;
+  const companyQueryArg = showCompanySelector ? selectedCompanyId || undefined : undefined;
 
   const loadList = useCallback(async () => {
     if (!selectedCompanyId) {
@@ -129,23 +128,7 @@ export function SitePayrollRulesClient() {
           if (cancelled) {
             return;
           }
-          setCompanies(loaded);
-          const first = loaded.find((c) => c.is_active);
-          if (first) {
-            setCompanyId((v) => v || first.id);
-          }
-        } else if (currentUser?.company_id) {
-          setCompanyId(currentUser.company_id);
-        } else {
-          const users = await listManagedUsers();
-          if (cancelled) {
-            return;
-          }
-          const self = users.find((u: AuthUser) => u.id === currentUser?.id);
-          const cid = self?.company_id;
-          if (cid) {
-            setCompanyId(cid);
-          }
+          setCompanies(loaded.filter((c) => c.is_active));
         }
       } catch {
         if (!cancelled) {
@@ -324,21 +307,22 @@ export function SitePayrollRulesClient() {
         />
 
         {showCompanySelector ? (
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
-            <label className="flex flex-1 flex-col gap-1 text-sm">
-              <span className="text-neutral-600">Company</span>
-              <select
-                className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-neutral-900"
-                value={selectedCompanyId}
-                onChange={(ev) => setCompanyId(ev.target.value)}
-              >
-                {activeCompanies.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <CompanySelector
+              companies={companyScope.companies}
+              label="Company"
+              onChange={companyScope.setCompanyId}
+              value={companyScope.companyId}
+            />
+            {companyScope.scopeLabel ? (
+              <p className="text-xs text-neutral-600">{companyScope.scopeLabel}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {showCompanySelector && companyScope.needsCompanySelection ? (
+          <div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-6 text-center text-sm text-neutral-600">
+            Select a company to continue. Choose the company whose site payroll rules you want to manage.
           </div>
         ) : null}
 

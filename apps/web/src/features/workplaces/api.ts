@@ -20,8 +20,13 @@ export type CreateWorkplaceRequest = {
   is_active: boolean;
 };
 
-export async function listWorkplaces(): Promise<Workplace[]> {
-  const response = await fetch(`${API_URL}/api/workplaces`, {
+export async function listWorkplaces(companyId?: string | null): Promise<Workplace[]> {
+  const params = new URLSearchParams();
+  if (companyId?.trim()) {
+    params.set("company_id", companyId.trim());
+  }
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/workplaces${qs ? `?${qs}` : ""}`, {
     method: "GET",
     credentials: "include",
   });

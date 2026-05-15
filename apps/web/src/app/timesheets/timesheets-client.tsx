@@ -22,7 +22,9 @@ import {
   useCurrentUser,
   type AuthUser,
 } from "../../features/auth";
+import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
@@ -189,16 +191,16 @@ export function TimesheetsClient() {
   const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
   const [subjectUserId, setSubjectUserId] = useState("");
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyOverride, setCompanyOverride] = useState<string | null>(null);
+  const companyScope = useAdministratorCompanyScope(user, companies);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState("");
 
   const activeCompanyId = useMemo(() => {
     if (isAdministrator(user)) {
-      return companyOverride;
+      return companyScope.companyId;
     }
     return user.company_id;
-  }, [user, companyOverride]);
+  }, [user, companyScope.companyId]);
 
   const employeeOptions = useMemo(() => {
     const cid = isAdministrator(user) ? activeCompanyId : user.company_id;
@@ -235,20 +237,25 @@ export function TimesheetsClient() {
   }, [user]);
 
   useEffect(() => {
-    if (!isAdministrator(user) || companies.length === 0 || companyOverride !== null) {
-      return;
+    if (isAdministrator(user)) {
+      setSubjectUserId("");
     }
-    setCompanyOverride(companies[0].id);
-  }, [user, companies, companyOverride]);
+  }, [activeCompanyId, user]);
 
   useEffect(() => {
     if (!management || !adminMode) {
       return;
     }
+    if (isAdministrator(user) && !activeCompanyId) {
+      setManagedUsers([]);
+      return;
+    }
     let cancelled = false;
     (async () => {
       try {
-        const users = await listManagedUsers();
+        const users = await listManagedUsers(
+          isAdministrator(user) ? activeCompanyId : undefined,
+        );
         if (!cancelled) {
           setManagedUsers(users);
         }
@@ -261,7 +268,7 @@ export function TimesheetsClient() {
     return () => {
       cancelled = true;
     };
-  }, [management, adminMode]);
+  }, [management, adminMode, activeCompanyId, user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -270,6 +277,13 @@ export function TimesheetsClient() {
       setError("");
       try {
         if (adminMode && management) {
+          if (isAdministrator(user) && !activeCompanyId) {
+            setSheet(null);
+            setCompanySheet(null);
+            setError("");
+            setLoading(false);
+            return;
+          }
           if (!subjectUserId.trim()) {
             setSheet(null);
             setCompanySheet(null);
@@ -441,21 +455,23 @@ export function TimesheetsClient() {
         ) : null}
 
         {adminMode && management && isAdministrator(user) ? (
-          <label className="block max-w-md text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-            <span className="text-[var(--color-text)]">Company</span>
-            <select
-              className="timiq-select mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
-              onChange={(event) => setCompanyOverride(event.target.value || null)}
-              value={companyOverride ?? ""}
-            >
-              <option value="">Choose company…</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+            <CompanySelector
+              companies={companyScope.companies}
+              label="Company"
+              onChange={companyScope.setCompanyId}
+              value={companyScope.companyId}
+            />
+            {companyScope.scopeLabel ? (
+              <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {adminMode && management && isAdministrator(user) && companyScope.needsCompanySelection ? (
+          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+            Select a company to continue. Choose the company whose timesheets you want to manage.
+          </div>
         ) : null}
 
         {adminMode && management ? (
@@ -463,6 +479,7 @@ export function TimesheetsClient() {
             <span className="text-[var(--color-text)]">Employee</span>
             <select
               className="timiq-select mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
+              disabled={isAdministrator(user) && !activeCompanyId}
               onChange={(event) => setSubjectUserId(event.target.value)}
               value={subjectUserId}
             >

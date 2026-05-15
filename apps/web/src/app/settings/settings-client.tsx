@@ -29,6 +29,11 @@ import {
   supportedTimeFormats,
 } from "../../lib/preferences-format";
 import { normalizeSelectableLocale, useI18n, useT } from "../../lib/i18n";
+import {
+  readSoundNotificationsEnabled,
+  writeSoundNotificationsEnabled,
+} from "../../lib/sound/sound-notifications-pref";
+import { unlockNotificationAudioFromGesture } from "../../lib/sound/notification-sound";
 
 function fieldClass(): string {
   return "mt-1 w-full max-w-md rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-white px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-accent)]";
@@ -68,6 +73,7 @@ export function SettingsClient() {
   const [notifEmail, setNotifEmail] = useState(true);
   const [notifInApp, setNotifInApp] = useState(true);
   const [notifPushUser, setNotifPushUser] = useState(false);
+  const [soundNotif, setSoundNotif] = useState(false);
 
   const [coDisplayName, setCoDisplayName] = useState("");
   const [coTimezone, setCoTimezone] = useState("");
@@ -81,6 +87,18 @@ export function SettingsClient() {
   const [coBrandColor, setCoBrandColor] = useState("");
 
   const previewDate = new Date(2026, 4, 11, 14, 30, 0);
+
+  useEffect(() => {
+    setSoundNotif(readSoundNotificationsEnabled());
+    const onPref = (event: Event) => {
+      const enabled = (event as CustomEvent<{ enabled: boolean }>).detail?.enabled;
+      if (typeof enabled === "boolean") {
+        setSoundNotif(enabled);
+      }
+    };
+    window.addEventListener("timiq:sound-notifications-pref", onPref);
+    return () => window.removeEventListener("timiq:sound-notifications-pref", onPref);
+  }, []);
 
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNew, setPwNew] = useState("");
@@ -406,6 +424,30 @@ export function SettingsClient() {
                 onChange={(ev) => setNotifPushUser(ev.target.checked)}
               />
               {t("settings.notif_push", "Push notifications (stored only; mobile push not available yet)")}
+            </label>
+            <label className="flex items-start gap-2 text-sm text-[var(--color-text)]">
+              <input
+                className="mt-0.5"
+                type="checkbox"
+                checked={soundNotif}
+                onChange={(ev) => {
+                  const enabled = ev.target.checked;
+                  setSoundNotif(enabled);
+                  writeSoundNotificationsEnabled(enabled);
+                  if (enabled) {
+                    unlockNotificationAudioFromGesture();
+                  }
+                }}
+              />
+              <span>
+                {t("settings.notif_sound", "Sound notifications on this device")}
+                <span className="mt-0.5 block text-xs text-[var(--color-text-muted)]">
+                  {t(
+                    "settings.notif_sound_help",
+                    "Play a short sound for new messages and important notifications while TimIQ is open.",
+                  )}
+                </span>
+              </span>
             </label>
           </div>
 

@@ -12,8 +12,13 @@ export type CreateSiteAccessRequest = {
   location_id: string;
 };
 
-export async function listSiteAccessRecords(): Promise<SiteAccessRecord[]> {
-  const response = await fetch(`${API_URL}/api/site-access`, {
+export async function listSiteAccessRecords(companyId?: string | null): Promise<SiteAccessRecord[]> {
+  const params = new URLSearchParams();
+  if (companyId?.trim()) {
+    params.set("company_id", companyId.trim());
+  }
+  const qs = params.toString();
+  const response = await fetch(`${API_URL}/api/site-access${qs ? `?${qs}` : ""}`, {
     method: "GET",
     credentials: "include",
   });

@@ -21,7 +21,9 @@ import {
   type AuthUser,
   useCurrentUser,
 } from "../../features/auth";
+import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import { listLocations, type Location } from "../../features/locations/api";
 import {
   createSiteAccessRecord,
@@ -47,7 +49,6 @@ export function SiteAccessClient() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [records, setRecords] = useState<SiteAccessRecord[]>([]);
-  const [companyId, setCompanyId] = useState("");
   const [userId, setUserId] = useState("");
   const [locationId, setLocationId] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -57,12 +58,11 @@ export function SiteAccessClient() {
   const [deletingKey, setDeletingKey] = useState<string | null>(null);
 
   const showCompanySelector = isAdministrator(currentUser);
+  const companyScope = useAdministratorCompanyScope(currentUser, companies);
 
-  const activeCompanies = useMemo(() => {
-    return companies.filter((company) => company.is_active);
-  }, [companies]);
-
-  const selectedCompanyId = companyId || activeCompanies[0]?.id || "";
+  const selectedCompanyId = showCompanySelector
+    ? companyScope.companyId ?? ""
+    : currentUser.company_id ?? "";
 
   const assignableUsers = useMemo(() => {
     return users.filter(
@@ -80,51 +80,66 @@ export function SiteAccessClient() {
     );
   }, [locations, selectedCompanyId]);
 
-  const visibleRecords = useMemo(() => {
-    if (!selectedCompanyId) {
-      return [];
-    }
+  const visibleRecords = records;
 
-    return records.filter((record) => {
-      const location = locations.find((item) => item.id === record.location_id);
-      return location?.company_id === selectedCompanyId;
-    });
-  }, [records, locations, selectedCompanyId]);
-
-  async function loadPageData() {
+  async function loadScopedCompanyData(companyId: string) {
     setIsLoading(true);
-
+    setErrorMessage("");
     try {
-      const [loadedUsers, loadedCompanies, loadedLocations, loadedRecords] =
-        await Promise.all([
-          listManagedUsers(),
-          listCompanies(),
-          listLocations(),
-          listSiteAccessRecords(),
-        ]);
-
+      const [loadedUsers, loadedLocations, loadedRecords] = await Promise.all([
+        listManagedUsers(companyId),
+        listLocations(companyId),
+        listSiteAccessRecords(companyId),
+      ]);
       setUsers(loadedUsers);
-      setCompanies(loadedCompanies);
       setLocations(loadedLocations);
       setRecords(loadedRecords);
-
-      const firstActiveCompany = loadedCompanies.find(
-        (company) => company.is_active,
-      );
-
-      if (firstActiveCompany) {
-        setCompanyId((currentValue) => currentValue || firstActiveCompany.id);
-      }
     } catch {
       setErrorMessage(t("site_access.load_error"));
+      setUsers([]);
+      setLocations([]);
+      setRecords([]);
     } finally {
       setIsLoading(false);
     }
   }
 
   useEffect(() => {
-    loadPageData();
-  }, []);
+    if (!showCompanySelector) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const loaded = await listCompanies();
+        if (!cancelled) {
+          setCompanies(loaded.filter((c) => c.is_active));
+        }
+      } catch {
+        if (!cancelled) {
+          setCompanies([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showCompanySelector]);
+
+  useEffect(() => {
+    if (!selectedCompanyId) {
+      setUsers([]);
+      setLocations([]);
+      setRecords([]);
+      setUserId("");
+      setLocationId("");
+      if (showCompanySelector) {
+        setIsLoading(false);
+      }
+      return;
+    }
+    void loadScopedCompanyData(selectedCompanyId);
+  }, [selectedCompanyId, showCompanySelector]);
 
   useEffect(() => {
     const firstUser = assignableUsers[0];
@@ -166,7 +181,7 @@ export function SiteAccessClient() {
       });
 
       setSuccessMessage(t("site_access.success"));
-      await loadPageData();
+      await loadScopedCompanyData(selectedCompanyId);
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : t("site_access.assign_failed"),
@@ -188,7 +203,7 @@ export function SiteAccessClient() {
       });
 
       setSuccessMessage(t("site_access.removed"));
-      await loadPageData();
+      await loadScopedCompanyData(selectedCompanyId);
     } catch (error) {
       setErrorMessage(
         error instanceof Error
@@ -217,35 +232,32 @@ export function SiteAccessClient() {
             {showCompanySelector ? t("site_access.select_company_hint") : t("site_access.scope_hint")}
           </div>
 
+          {showCompanySelector ? (
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <CompanySelector
+                companies={companyScope.companies}
+                label={t("common.company")}
+                onChange={companyScope.setCompanyId}
+                value={companyScope.companyId}
+              />
+              {companyScope.scopeLabel ? (
+                <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {showCompanySelector && companyScope.needsCompanySelection ? (
+            <div className="mb-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+              Select a company to continue. Choose the company whose site access you want to manage.
+            </div>
+          ) : null}
+
+          {(!showCompanySelector || !companyScope.needsCompanySelection) ? (
           <form
             className="mb-4 w-full max-w-[min(48rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
             onSubmit={handleCreateSiteAccess}
           >
-            <div
-              className={
-                showCompanySelector
-                  ? "grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_auto]"
-                  : "grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.3fr)_auto]"
-              }
-            >
-              {showCompanySelector ? (
-                <label className="block text-xs font-bold text-[var(--color-text)]">
-                  {t("common.company")}
-                  <select
-                    className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    onChange={(event) => setCompanyId(event.target.value)}
-                    required
-                    value={selectedCompanyId}
-                  >
-                    {activeCompanies.map((company) => (
-                      <option key={company.id} value={company.id}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1.3fr)_minmax(0,1.3fr)_auto]">
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 {t("site_access.select_user")}
                 <select
@@ -296,6 +308,7 @@ export function SiteAccessClient() {
               </div>
             </div>
           </form>
+          ) : null}
 
           {errorMessage ? (
             <div className="mb-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
@@ -309,6 +322,7 @@ export function SiteAccessClient() {
             </div>
           ) : null}
 
+          {(!showCompanySelector || !companyScope.needsCompanySelection) ? (
           <Table>
             <TableHeader>
               <TableRow>
@@ -370,6 +384,7 @@ export function SiteAccessClient() {
                 : null}
             </TableBody>
           </Table>
+          ) : null}
         </RoleGuard>
       </SheetBody>
     </Sheet>

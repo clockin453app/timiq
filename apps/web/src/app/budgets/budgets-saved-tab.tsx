@@ -22,7 +22,9 @@ import {
   type BudgetProjectDetailResponse,
   type BudgetProjectSummary,
 } from "../../features/budgets/api";
+import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
+import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import { formatHoursFromSeconds } from "../../features/payroll/format";
 import { listLocations, type Location } from "../../features/locations/api";
 import { listWorkplaces, type Workplace } from "../../features/workplaces/api";
@@ -52,13 +54,6 @@ const CATEGORY_KEYS = [
 type BudgetDetailTab = "overview" | "purchases" | "labour" | "reports";
 
 type CategoryEntry = { key: (typeof CATEGORY_KEYS)[number]; amount: number };
-
-function resolveCompanyId(user: AuthUser, override: string | null): string | null {
-  if (isAdministrator(user)) {
-    return override;
-  }
-  return user.company_id;
-}
 
 function overlayPanelClass() {
   return "w-full max-w-lg rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg";
@@ -107,7 +102,7 @@ function purchaseDateDisplay(row: BudgetExpenseResponse): string {
 export function BudgetsSavedTab() {
   const user = useCurrentUser();
   const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyOverride, setCompanyOverride] = useState<string | null>(null);
+  const companyScope = useAdministratorCompanyScope(user, companies);
   const [rows, setRows] = useState<BudgetProjectSummary[]>([]);
   const [listLoading, setListLoading] = useState(false);
   const [listError, setListError] = useState("");
@@ -132,7 +127,10 @@ export function BudgetsSavedTab() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [workplaces, setWorkplaces] = useState<Workplace[]>([]);
 
-  const activeCompanyId = useMemo(() => resolveCompanyId(user, companyOverride), [user, companyOverride]);
+  const activeCompanyId = useMemo(
+    () => (isAdministrator(user) ? companyScope.companyId : user.company_id),
+    [user, companyScope.companyId],
+  );
 
   const budgetCompanyId = detail?.budget.company_id ?? activeCompanyId;
 
@@ -170,13 +168,6 @@ export function BudgetsSavedTab() {
     };
   }, [user]);
 
-  useEffect(() => {
-    if (!isAdministrator(user) || companies.length === 0 || companyOverride !== null) {
-      return;
-    }
-    setCompanyOverride(companies[0].id);
-  }, [user, companies, companyOverride]);
-
   const loadLocationFilters = useCallback(async () => {
     if (!budgetCompanyId) {
       setLocations([]);
@@ -184,9 +175,12 @@ export function BudgetsSavedTab() {
       return;
     }
     try {
-      const [locs, wps] = await Promise.all([listLocations(), listWorkplaces()]);
-      setLocations(locs.filter((l) => l.company_id === budgetCompanyId && l.is_active));
-      setWorkplaces(wps.filter((w) => w.company_id === budgetCompanyId && w.is_active));
+      const [locs, wps] = await Promise.all([
+        listLocations(budgetCompanyId),
+        listWorkplaces(budgetCompanyId),
+      ]);
+      setLocations(locs.filter((l) => l.is_active));
+      setWorkplaces(wps.filter((w) => w.is_active));
     } catch {
       setLocations([]);
       setWorkplaces([]);
@@ -696,7 +690,23 @@ export function BudgetsSavedTab() {
   );
 
   if (!activeCompanyId && isAdministrator(user)) {
-    return <p className="text-sm text-[var(--color-text-muted)]">Select a company to manage saved budgets.</p>;
+    return (
+      <div className="space-y-3">
+        {companyScope.companies.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <CompanySelector
+              companies={companyScope.companies}
+              label="Company"
+              onChange={companyScope.setCompanyId}
+              value={companyScope.companyId}
+            />
+          </div>
+        ) : null}
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+          Select a company to continue. Choose the company whose budgets you want to manage.
+        </div>
+      </div>
+    );
   }
 
   if (selectedId) {
@@ -1172,21 +1182,17 @@ export function BudgetsSavedTab() {
     <div className="min-w-0 space-y-4">
       <div className="flex flex-wrap items-end gap-3">
         {isAdministrator(user) ? (
-          <label className={fieldLabelClass()}>
-            <span className="text-[var(--color-text)]">Company</span>
-            <select
-              className={selectClass()}
-              onChange={(e) => setCompanyOverride(e.target.value || null)}
-              value={companyOverride ?? ""}
-            >
-              <option value="">Choose…</option>
-              {companies.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="flex flex-wrap items-center gap-2">
+            <CompanySelector
+              companies={companyScope.companies}
+              label="Company"
+              onChange={companyScope.setCompanyId}
+              value={companyScope.companyId}
+            />
+            {companyScope.scopeLabel ? (
+              <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
+            ) : null}
+          </div>
         ) : null}
         <label className={fieldLabelClass()}>
           <span className="text-[var(--color-text)]">Status</span>
