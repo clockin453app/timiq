@@ -1,5 +1,17 @@
 import type { NextConfig } from "next";
 
+/** Server-only: where Next proxies /api and /health (Render web service). Not exposed to the browser. */
+function apiProxyOrigin(): string {
+  const raw =
+    process.env.API_PROXY_URL?.trim() ||
+    process.env.NEXT_PUBLIC_API_URL?.trim() ||
+    "";
+  if (raw) {
+    return raw.replace(/\/$/, "");
+  }
+  return "http://127.0.0.1:8000";
+}
+
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   async headers() {
@@ -11,17 +23,15 @@ const nextConfig: NextConfig = {
     ];
   },
   async rewrites() {
-    if (process.env.NODE_ENV !== "development") {
-      return [];
-    }
+    const base = apiProxyOrigin();
     return [
       {
         source: "/api/:path*",
-        destination: "http://127.0.0.1:8000/api/:path*",
+        destination: `${base}/api/:path*`,
       },
       {
         source: "/health",
-        destination: "http://127.0.0.1:8000/health",
+        destination: `${base}/health`,
       },
     ];
   },

@@ -746,7 +746,7 @@ export const GUIDE_SECTIONS: GuideSection[] = [
           "SESSION_SECRET — cookie signing secret for the API tier.",
           "TIMIQ_STORAGE_BACKEND and TIMIQ_S3_BUCKET — object storage routing.",
           "TIMIQ_EMAIL_ENABLED plus SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD — mail delivery.",
-          "NEXT_PUBLIC_API_URL — browser-accessible API base for the web app.",
+          "API_PROXY_URL — server-side Next rewrite target for /api (recommended on Render); NEXT_PUBLIC_API_URL empty = same-origin /api in the browser.",
         ],
         warning:
           "Never paste real secrets into tickets or help articles. Rotate credentials if exposure is suspected.",

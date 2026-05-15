@@ -69,9 +69,17 @@ A Blueprint file pins service names, regions, and env wiring and goes stale quic
    cd apps/web && npm run start -- -p $PORT
    ```
 
-4. **Environment:** set `NEXT_PUBLIC_API_URL` to the **public HTTPS URL** of your API service, e.g. `https://timiq-api.onrender.com` (no trailing slash). See `apps/web/.env.example`.
+4. **Environment (recommended — same-origin API, reliable mobile login):**
 
-5. **Dev rewrites:** `apps/web/next.config.ts` only proxies `/api` and `/health` to `127.0.0.1:8000` in **development**. Production builds use **no** rewrites; the browser calls the API origin from `NEXT_PUBLIC_API_URL`.
+   - **`API_PROXY_URL`**: server-only, set to your API public origin, e.g. `https://timiq-api.onrender.com` (no trailing slash). Next.js **rewrites** proxy browser requests from `https://timiq-web.onrender.com/api/...` to the API. **Redeploy the web service** after changing this (rewrites are applied at build).
+   - **`NEXT_PUBLIC_API_URL`**: leave **empty** or unset so the browser uses relative `/api/...` on the web origin (session cookie is first-party).
+   - **`NODE_VERSION`**: e.g. `20` (match your local major if possible).
+
+   Legacy mode (browser calls the API host directly): set `NEXT_PUBLIC_API_URL` to the API URL and configure the API for cross-site cookies (`SESSION_COOKIE_SAMESITE=none`); not recommended for mobile Safari–style issues.
+
+   See `apps/web/.env.example`.
+
+5. **Rewrites:** `apps/web/next.config.ts` proxies `/api/:path*` and `/health` to `API_PROXY_URL` (or `NEXT_PUBLIC_API_URL`, or `http://127.0.0.1:8000` for local) in **all** environments so production matches dev.
 
 ---
 

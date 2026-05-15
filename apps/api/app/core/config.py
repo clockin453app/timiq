@@ -31,6 +31,10 @@ class Settings(BaseSettings):
         default="change-this-with-a-secure-random-value",
         validation_alias=AliasChoices("SESSION_SECRET", "session_secret"),
     )
+    session_cookie_samesite: str = Field(
+        default="lax",
+        validation_alias=AliasChoices("SESSION_COOKIE_SAMESITE", "session_cookie_samesite"),
+    )
 
     google_drive_client_id: str = ""
     google_drive_client_secret: str = ""

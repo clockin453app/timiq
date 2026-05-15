@@ -12,7 +12,8 @@ See also: [render-deployment.md](./render-deployment.md), [deployment-runbook.md
 |----------|----------|--------|
 | `DATABASE_URL` | **Yes** | PostgreSQL URL, e.g. `postgresql+psycopg://user:pass@host:5432/dbname` (Render provides this). |
 | `SESSION_SECRET` | **Yes** (non-local) | Long random string. Must **not** remain `change-this-with-a-secure-random-value` when `TIMIQ_ENV` ≠ `local`. |
-| `TIMIQ_ENV` or `APP_ENV` | Recommended | Use `production` (or any non-`local` value) on Render so session cookies use `Secure` + `SameSite=None` for split frontend/API hosts. |
+| `TIMIQ_ENV` or `APP_ENV` | Recommended | Use `production` (or any non-`local` value) on Render so session cookies use **`Secure`**. Default **`SESSION_COOKIE_SAMESITE=lax`** suits same-origin web → `/api` proxy; use `none` only if the browser still talks to the API on another hostname. |
+| `SESSION_COOKIE_SAMESITE` | No | `lax` (default), `strict`, or `none`. `none` forces `Secure=true`. Prefer **lax** with Next.js **`API_PROXY_URL`** same-origin mode. |
 | `CORS_ALLOWED_ORIGINS` or `WEB_ORIGIN` | **Yes** (split stack) | Comma-separated list of **exact** frontend origins (`https://your-frontend.onrender.com`). No trailing slashes. |
 | `TIMIQ_APP_NAME` / `APP_NAME` | No | Display only. |
 | `TIMIQ_API_HOST` / `API_HOST` | No | Uvicorn bind uses Render `$PORT`; these are mainly local. |
@@ -59,7 +60,9 @@ See also: [render-deployment.md](./render-deployment.md), [deployment-runbook.md
 
 | Variable | Required | Notes |
 |----------|----------|--------|
-| `NEXT_PUBLIC_API_URL` | **Yes** (split Render services) | Full public API origin, e.g. `https://timiq-api.onrender.com` — **no** trailing slash. Empty string means same-origin `/api` (reverse proxy or monolith-style host). |
+| `API_PROXY_URL` | **Yes** (recommended on Render) | **Server-only** (not `NEXT_PUBLIC_*`). Public API origin for Next rewrites, e.g. `https://timiq-api.onrender.com` — no trailing slash. Proxies `/api` and `/health` from the web hostname to the API. |
+| `NEXT_PUBLIC_API_URL` | No (recommended empty) | If **empty**, browser uses same-origin `/api/...` (pair with `API_PROXY_URL`). If set, the browser calls this origin directly (cross-site; set API `SESSION_COOKIE_SAMESITE=none` if needed). |
+| `NODE_VERSION` | Recommended | e.g. `20` on Render. |
 
 ---
 
@@ -74,6 +77,8 @@ Neither performs DB queries or leaks configuration.
 
 ## Cookie / CORS reminder
 
-With **two Render Web services** (different hostnames), the browser sends the session cookie to the API origin only. Set `TIMIQ_ENV` to something other than `local` so login uses **`Secure` + `SameSite=None`**. You must serve the API over **HTTPS** (Render does). Always list the frontend origin in `CORS_ALLOWED_ORIGINS` and use `credentials: "include"` from the web app (already the pattern in TimIQ fetch helpers).
+**Recommended:** point the **browser** at same-origin `/api/...` on the web app; set **`API_PROXY_URL`** on the web service so Next rewrites to the API. Session cookies are then **first-party** on the web origin; use default **`SESSION_COOKIE_SAMESITE=lax`** and `Secure` in production (`TIMIQ_ENV` ≠ `local`).
 
-If you terminate TLS on a **single hostname** and proxy `/api` to the backend, you can use same-origin `NEXT_PUBLIC_API_URL=""` and tighter cookies; document that architecture in your internal runbook.
+Keep **`CORS_ALLOWED_ORIGINS`** listing the web origin for direct API access, tools, and fallbacks. `allow_credentials=True` remains; never use `*` origins with credentials.
+
+If the browser must call the **API hostname** directly (legacy), use `NEXT_PUBLIC_API_URL` and typically **`SESSION_COOKIE_SAMESITE=none`** with HTTPS on both hosts.

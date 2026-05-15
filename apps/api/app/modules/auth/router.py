@@ -64,11 +64,22 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 def _session_cookie_params() -> dict[str, bool | str]:
-    """Local dev: lax + not secure. Production (split origins): Secure + None so API cookies work cross-site."""
+    """Local: Secure=false, SameSite=lax. Non-local: Secure=true; SameSite from SESSION_COOKIE_SAMESITE (default lax).
+
+    Default **lax** matches same-origin browser calls via the Next.js `/api` proxy (recommended on Render).
+    Set SESSION_COOKIE_SAMESITE=none only if the browser still calls the API on a different site and needs cross-site cookies.
+    """
     is_local = settings.app_env.strip().lower() == "local"
     if is_local:
         return {"secure": False, "samesite": "lax"}
-    return {"secure": True, "samesite": "none"}
+
+    raw = settings.session_cookie_samesite.strip().lower()
+    if raw not in ("lax", "strict", "none"):
+        raw = "lax"
+    # Browsers require Secure when SameSite=None.
+    if raw == "none":
+        return {"secure": True, "samesite": "none"}
+    return {"secure": True, "samesite": raw}
 
 
 @router.post("/login", response_model=LoginResponse)
