@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from app.modules.payroll.calculation import (
     compute_money_bundle,
     normalize_payroll_payment_mode,
+    resolve_effective_tax_rate_percent,
     split_regular_overtime,
 )
 from app.modules.payroll.service import _effective_net_amount_for_item, _effective_tax_amount_for_item
@@ -81,3 +82,25 @@ def test_effective_tax_amount_net_payment_uses_display_then_calculated() -> None
 def test_effective_net_prefers_display() -> None:
     item = SimpleNamespace(display_net_amount=50, net_amount=48)
     assert _effective_net_amount_for_item(item) == Decimal(50)
+
+
+def test_resolve_cis_employee_overrides_company_and_workplace() -> None:
+    profile = SimpleNamespace(tax_rate=15.0)
+    rate = resolve_effective_tax_rate_percent(profile, company_default=20.0, workplace_tax=25.0)
+    assert rate == Decimal("15")
+
+
+def test_resolve_cis_company_default_before_legacy_workplace() -> None:
+    profile = SimpleNamespace(tax_rate=None)
+    rate = resolve_effective_tax_rate_percent(profile, company_default=20.0, workplace_tax=25.0)
+    assert rate == Decimal("20")
+
+
+def test_resolve_cis_legacy_workplace_when_no_company_default() -> None:
+    profile = SimpleNamespace(tax_rate=None)
+    rate = resolve_effective_tax_rate_percent(profile, company_default=None, workplace_tax=25.0)
+    assert rate == Decimal("25")
+
+
+def test_resolve_cis_none_when_all_unset() -> None:
+    assert resolve_effective_tax_rate_percent(None, None, None) is None

@@ -89,7 +89,7 @@ export function CompanyPayrollTaxModal({
             />
           </label>
           <p className="text-xs text-[var(--color-text-muted)]">
-            Used when an employee has no individual tax rate. Leave blank to clear.
+            Company default CIS deduction. Employee profile CIS % overrides this. Also editable under Site payroll rules.
           </p>
           <Button disabled={saving} type="submit">
             {saving ? "Saving…" : "Save"}

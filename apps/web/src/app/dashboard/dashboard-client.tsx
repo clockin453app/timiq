@@ -408,12 +408,10 @@ function ManagementDashboard() {
             <ManagementMetricLinkCard
               badge={t("dashboard.badge_active", "Active")}
               badgeTone="muted"
-              href="/workplaces"
-              label={t("dashboard.metric_workplaces", "Workplaces configured")}
-              subline={t("dashboard.metric_active_locations", "{{count}} active locations", {
-                count: summary.active_location_count,
-              })}
-              value={String(summary.active_workplace_count)}
+              href="/locations"
+              label={t("dashboard.metric_active_sites", "Active sites")}
+              subline={t("dashboard.metric_locations_sub", "Operational locations for clocking")}
+              value={String(summary.active_location_count)}
             />
           </div>
         ) : null}

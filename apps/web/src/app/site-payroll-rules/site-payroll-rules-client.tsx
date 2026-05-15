@@ -34,6 +34,7 @@ import {
   type SitePayrollPolicyEffectiveResponse,
   type SitePayrollPolicyListItem,
 } from "../../features/payroll-policies/api";
+import { CisSettingsPanel } from "../../features/payroll/cis-settings-panel";
 import { useT } from "../../lib/i18n";
 
 function formatFallbackBlock(label: string, f: CompanyTimePolicyFields) {
@@ -324,6 +325,10 @@ export function SitePayrollRulesClient() {
           <div className="rounded-md border border-neutral-200 bg-neutral-50 px-4 py-6 text-center text-sm text-neutral-600">
             Select a company to continue. Choose the company whose site payroll rules you want to manage.
           </div>
+        ) : null}
+
+        {selectedCompanyId ? (
+          <CisSettingsPanel companyId={selectedCompanyId} hideCompanySelector />
         ) : null}
 
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">

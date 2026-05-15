@@ -317,9 +317,7 @@ export function OverviewClient() {
                 badgeTone="muted"
                 href="/locations"
                 primary={String(data.active_location_count)}
-                secondary={t("overview.locations_workplaces_sub", "{{count}} active workplaces", {
-                  count: data.active_workplace_count,
-                })}
+                secondary={t("overview.locations_sites_sub", "Operational sites for clocking and access")}
                 title={t("overview.active_locations", "Active locations")}
               />
               <OverviewCard
@@ -544,10 +542,6 @@ export function OverviewClient() {
                         <li className="flex justify-between gap-2">
                           <span className="text-[var(--color-text-muted)]">{t("overview.setup_active_locations")}</span>
                           <span className="tabular-nums font-medium">{data.setup_health.active_location_count}</span>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_active_workplaces")}</span>
-                          <span className="tabular-nums font-medium">{data.setup_health.active_workplace_count}</span>
                         </li>
                         <li className="flex justify-between gap-2">
                           <span className="text-[var(--color-text-muted)]">{t("overview.setup_missing_hourly_rate")}</span>

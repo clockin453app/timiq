@@ -347,7 +347,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mgmt-payroll",
     label: "Payroll",
     groupLabelKey: "nav.group.mgmt_payroll",
-    items: [PAYROLL_REPORT, CIS_WORKPLACES, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
+    items: [PAYROLL_REPORT, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
   },
   {
     id: "mgmt-work",
@@ -538,7 +538,7 @@ const DESKTOP_TOP_NAV_MANAGEMENT: NavigationGroupDefinition[] = [
     id: "desk-payroll",
     label: "Payroll",
     groupLabelKey: "nav.group.desk_payroll",
-    items: [PAYROLL_REPORT, CIS_WORKPLACES, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
+    items: [PAYROLL_REPORT, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
   },
   {
     id: "desk-work",
