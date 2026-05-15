@@ -2,44 +2,38 @@
 
 from __future__ import annotations
 
-from urllib.parse import urlencode, urlparse
+from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
-from app.core.config import Settings, settings
+from app.core.web_origin_validation import (
+    is_localhost_web_origin,
+    looks_like_api_web_origin,
+    parse_web_origin,
+)
+
+if TYPE_CHECKING:
+    from app.core.config import Settings
+
+__all__ = [
+    "build_frontend_url",
+    "is_localhost_web_origin",
+    "looks_like_api_web_origin",
+    "resolve_web_origin",
+]
 
 
 def _web_app_url_from_settings(cfg: Settings) -> str:
     """Read web app URL from the provided Settings instance only (never CORS)."""
-    raw = (getattr(cfg, "timiq_web_app_url", None) or cfg.web_origin or "").strip()
+    raw = (getattr(cfg, "timiq_web_app_url", None) or getattr(cfg, "web_origin", None) or "").strip()
     return raw.rstrip("/")
 
 
 def resolve_web_origin(settings_obj: Settings | None = None) -> str:
-    cfg = settings_obj if settings_obj is not None else settings
-    base = _web_app_url_from_settings(cfg)
-    if not base:
-        raise ValueError("WEB_ORIGIN or TIMIQ_WEB_APP_URL must be set.")
-    parsed = urlparse(base)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
-        raise ValueError("WEB_ORIGIN must be a valid http(s) origin with no path.")
-    if parsed.path not in ("", "/"):
-        raise ValueError("WEB_ORIGIN must not include a path.")
-    return base
+    if settings_obj is None:
+        from app.core.config import settings as global_settings
 
-
-def is_localhost_web_origin(origin: str) -> bool:
-    host = (urlparse(origin).hostname or "").lower()
-    return host in ("localhost", "127.0.0.1", "::1")
-
-
-def looks_like_api_web_origin(origin: str) -> bool:
-    host = (urlparse(origin).hostname or "").lower()
-    if not host:
-        return True
-    if "-api." in host or host.endswith("-api.onrender.com"):
-        return True
-    if host.startswith("api.") or host.split(".", 1)[0] == "api":
-        return True
-    return False
+        settings_obj = global_settings
+    return parse_web_origin(_web_app_url_from_settings(settings_obj))
 
 
 def build_frontend_url(

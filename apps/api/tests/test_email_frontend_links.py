@@ -81,6 +81,23 @@ def test_production_rejects_localhost_web_origin() -> None:
         )
 
 
+def test_production_settings_instantiation_avoids_config_import_cycle() -> None:
+    """Settings() must not import frontend_urls (which would import config mid-init)."""
+    s = Settings(
+        TIMIQ_ENV="production",
+        WEB_ORIGIN="https://timiq-web.onrender.com",
+        DATABASE_URL="postgresql+psycopg://u:p@localhost/db",
+    )
+    assert s.timiq_web_app_url == "https://timiq-web.onrender.com"
+    assert resolve_web_origin(s) == "https://timiq-web.onrender.com"
+
+
+def test_app_import_after_settings_module_load() -> None:
+    from app.main import app
+
+    assert app is not None
+
+
 def test_password_reset_email_body_uses_frontend_path_only() -> None:
     subj, body = access._password_reset_email_body(
         reset_url="https://timiq-web.onrender.com/reset-password?token=secret",

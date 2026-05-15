@@ -190,14 +190,14 @@ class Settings(BaseSettings):
         env = self.app_env.strip().lower()
         if env not in ("production", "prod"):
             return self
-        from app.core.email.frontend_urls import (
+        from app.core.web_origin_validation import (
             is_localhost_web_origin,
             looks_like_api_web_origin,
-            resolve_web_origin,
+            parse_web_origin,
         )
 
         try:
-            origin = resolve_web_origin(self)
+            origin = parse_web_origin(self.timiq_web_app_url)
         except ValueError as exc:
             raise ValueError(
                 "WEB_ORIGIN or TIMIQ_WEB_APP_URL must be set to the public web app URL in production.",
