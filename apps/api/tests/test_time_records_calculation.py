@@ -80,5 +80,45 @@ def test_break_deduction_floor_applies_after_threshold() -> None:
         policy=pol,
     )
     assert m.break_seconds == 0
+    assert m.break_deducted_seconds == 30 * 60
     assert m.counted_seconds is not None
     assert m.counted_seconds == 3 * 3600 - 30 * 60
+
+
+def test_break_deducted_uses_max_of_tracked_and_policy_floor() -> None:
+    pol = _policy(break_deduction_minutes=30, break_deduction_after_minutes=60)
+    clock_in = datetime(2026, 6, 2, 9, 0, tzinfo=timezone.utc)
+    clock_out = datetime(2026, 6, 2, 12, 0, tzinfo=timezone.utc)
+    m = compute_shift_metrics(
+        clock_in_at_utc=clock_in,
+        clock_out_at_utc=clock_out,
+        break_seconds_tracked=20 * 60,
+        early_access_enabled=True,
+        policy=pol,
+    )
+    assert m.break_seconds == 20 * 60
+    assert m.break_deducted_seconds == 30 * 60
+
+
+def test_user_example_7h16_clocked_30m_break_payable() -> None:
+    """7h16 clocked with 30m automatic break → 6h46 payable (display field populated)."""
+    pol = _policy(
+        break_deduction_minutes=30,
+        break_deduction_after_minutes=360,
+        rounding_increment_minutes=30,
+        rounding_mode="nearest",
+        standard_start_time="09:00",
+    )
+    clock_in = datetime(2026, 6, 2, 8, 0, tzinfo=timezone.utc)
+    clock_out = datetime(2026, 6, 2, 15, 16, tzinfo=timezone.utc)
+    m = compute_shift_metrics(
+        clock_in_at_utc=clock_in,
+        clock_out_at_utc=clock_out,
+        break_seconds_tracked=0,
+        early_access_enabled=True,
+        policy=pol,
+    )
+    assert m.actual_seconds == 7 * 3600 + 16 * 60
+    assert m.break_deducted_seconds == 30 * 60
+    assert m.counted_seconds == 7 * 3600 + 16 * 60 - 30 * 60
+    assert m.rounded_seconds == 7 * 3600

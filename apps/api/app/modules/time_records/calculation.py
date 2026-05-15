@@ -70,7 +70,10 @@ class ShiftCountedMetrics:
     counted_clock_out_at: datetime | None
     actual_seconds: int | None
     running_actual_seconds: int | None
+    """Break time recorded on the shift (clock breaks / admin entry)."""
     break_seconds: int
+    """Automatic or tracked break actually deducted from payable time."""
+    break_deducted_seconds: int
     counted_seconds: int | None
     rounded_seconds: int | None
 
@@ -133,6 +136,7 @@ def compute_shift_metrics(
         actual_seconds=actual_seconds,
         running_actual_seconds=running_actual_seconds,
         break_seconds=max(0, break_seconds_tracked),
+        break_deducted_seconds=max(0, effective_break),
         counted_seconds=net_seconds,
         rounded_seconds=rounded,
     )

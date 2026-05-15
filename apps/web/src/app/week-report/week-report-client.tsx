@@ -20,6 +20,7 @@ import { canAccessManagement, isAdministrator, useCurrentUser } from "../../feat
 import { listCompanies, type Company } from "../../features/companies/api";
 import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
+import { PayrollRoundingHint } from "../../features/time-records/payroll-rounding-hint";
 import {
   downloadAdminCompanyWeekReportCsv,
   downloadAdminEmployeeWeekReportCsv,
@@ -301,6 +302,11 @@ function AdminWeekReportTable() {
               <span className="font-semibold text-[var(--color-text)]">Payable</span> = after policy.{" "}
               <span className="font-semibold text-[var(--color-text)]">Payroll</span> = rounded for payroll.
             </p>
+            <PayrollRoundingHint
+              clockedSeconds={companyReport.totals.clocked_seconds}
+              payableSeconds={companyReport.totals.payable_seconds}
+              payrollSeconds={companyReport.totals.payroll_seconds}
+            />
             <Table className="min-w-[960px]">
               <TableHeader>
                 <TableRow>

@@ -603,7 +603,9 @@ export function TimeRecordsClient() {
                         : "—"}
                     </TableCell>
                     <TableCell className="text-xs">
-                      <BreakDeductionCell seconds={row.break_seconds} />
+                      <BreakDeductionCell
+                        seconds={row.break_deducted_seconds ?? row.break_seconds}
+                      />
                     </TableCell>
                     {adminMode && management ? (
                       <TableCell className="align-top text-xs">

@@ -272,7 +272,7 @@ def labour_cost_budget(
         act = metrics.actual_seconds or 0
         cnt = metrics.counted_seconds or 0
         rnd = metrics.rounded_seconds or 0
-        brk = metrics.break_seconds
+        brk = metrics.break_deducted_seconds
 
         total_clocked += act
         total_payable += cnt

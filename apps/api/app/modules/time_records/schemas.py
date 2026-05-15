@@ -21,6 +21,7 @@ class TimeRecordShiftRow(BaseModel):
     clock_in_at: datetime
     clock_out_at: datetime | None
     break_seconds: int
+    break_deducted_seconds: int = 0
     actual_seconds: int | None = None
     running_actual_seconds: int | None = None
     counted_clock_in_at: datetime

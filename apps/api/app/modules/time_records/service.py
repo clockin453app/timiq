@@ -169,6 +169,7 @@ def _shift_to_row(
         clock_in_at=shift.clock_in_at,
         clock_out_at=shift.clock_out_at,
         break_seconds=metrics.break_seconds,
+        break_deducted_seconds=metrics.break_deducted_seconds,
         actual_seconds=metrics.actual_seconds,
         running_actual_seconds=metrics.running_actual_seconds,
         counted_clock_in_at=metrics.counted_clock_in_at,
@@ -439,8 +440,8 @@ def timesheet_week_for_user(
             bucket.rounded_seconds += metrics.rounded_seconds
             week_rounded += metrics.rounded_seconds
 
-        bucket.break_seconds += metrics.break_seconds
-        week_break += metrics.break_seconds
+        bucket.break_seconds += metrics.break_deducted_seconds
+        week_break += metrics.break_deducted_seconds
 
     week_leave: list[WeekLeaveRow] = []
     if subject.company_id is not None:
@@ -605,8 +606,8 @@ def timesheet_week_all_employees_for_company(
         if metrics.rounded_seconds is not None:
             acc.payroll += metrics.rounded_seconds
             week_payroll += metrics.rounded_seconds
-        acc.break_sec += metrics.break_seconds
-        week_break += metrics.break_seconds
+        acc.break_sec += metrics.break_deducted_seconds
+        week_break += metrics.break_deducted_seconds
         acc.locs.add(location.name)
         acc.completed_count += 1
 
@@ -756,7 +757,7 @@ def week_report_all_employees_for_company(
                 payable += metrics.counted_seconds
             if metrics.rounded_seconds is not None:
                 payroll += metrics.rounded_seconds
-            break_sum += metrics.break_seconds
+            break_sum += metrics.break_deducted_seconds
             loc_names.add(location.name)
 
         employees_out.append(
@@ -879,7 +880,7 @@ def export_timesheet_week_shifts_csv(
                 shift.status,
                 format_dt_local(shift.clock_in_at, tz),
                 format_dt_local(shift.clock_out_at, tz) if shift.clock_out_at else "",
-                seconds_to_hours_csv(metrics.break_seconds),
+                seconds_to_hours_csv(metrics.break_deducted_seconds),
                 seconds_to_hours_csv(clocked_sec),
                 seconds_to_hours_csv(metrics.counted_seconds),
                 seconds_to_hours_csv(metrics.rounded_seconds),

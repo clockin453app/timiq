@@ -26,6 +26,7 @@ import { listCompanies, type Company } from "../../features/companies/api";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
+import { PayrollRoundingHint } from "../../features/time-records/payroll-rounding-hint";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import {
   downloadAdminCompanyTimesheetWeekCsv,
@@ -134,6 +135,12 @@ function TimesheetWeekSummaryLine(props: {
       <p className="mt-2 text-[11px] leading-relaxed text-[var(--color-text-muted)]">
         Payable and payroll totals are after automatic break deduction from clocked time (completed shifts only).
       </p>
+      <PayrollRoundingHint
+        className="mt-1.5 text-[11px] leading-relaxed text-[var(--color-text-muted)]"
+        clockedSeconds={props.clocked}
+        payableSeconds={props.payable}
+        payrollSeconds={props.payroll}
+      />
     </div>
   );
 }

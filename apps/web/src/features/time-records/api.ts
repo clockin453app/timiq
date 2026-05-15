@@ -15,6 +15,7 @@ export type TimeRecordShiftRow = {
   clock_in_at: string;
   clock_out_at: string | null;
   break_seconds: number;
+  break_deducted_seconds?: number;
   actual_seconds: number | null;
   running_actual_seconds: number | null;
   counted_clock_in_at: string;
