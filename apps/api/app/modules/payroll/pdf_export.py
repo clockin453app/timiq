@@ -41,6 +41,9 @@ def build_payroll_report_pdf(
     total_cis_tax: Decimal | None,
     total_net: Decimal | None,
     alert_lines: list[str],
+    period_label: str | None = None,
+    employee_filter_label: str | None = None,
+    employee_count: int | None = None,
 ) -> bytes:
     styles = getSampleStyleSheet()
     title_s = ParagraphStyle("T", parent=styles["Heading1"], fontSize=14, spaceAfter=8)
@@ -60,10 +63,13 @@ def build_payroll_report_pdf(
     story.append(_p(f"Company: {company_name}", body))
     story.append(
         _p(
-            f"Payroll week: {week_start.isoformat()} to {week_end.isoformat()} · {timezone_name or '—'}",
+            period_label
+            or f"Payroll week: {week_start.isoformat()} to {week_end.isoformat()} · {timezone_name or '—'}",
             body,
         ),
     )
+    if employee_filter_label:
+        story.append(_p(f"Employee filter: {employee_filter_label}", body))
     gen = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     story.append(_p(f"Generated: {gen}", body))
     story.append(Spacer(1, 0.25 * cm))
@@ -78,6 +84,7 @@ def build_payroll_report_pdf(
         [
             "Employee",
             "Role",
+            "Period / date",
             "Hours",
             "OT h",
             "Gross",
@@ -91,6 +98,7 @@ def build_payroll_report_pdf(
         [
             r["employee"],
             r["role"],
+            r.get("period", "—"),
             r["hours"],
             r["ot_hours"],
             r["gross"],
@@ -102,9 +110,9 @@ def build_payroll_report_pdf(
         for r in rows
     ]
     if not data_rows:
-        data_rows = [["—", "—", "—", "—", "—", "—", "—", "—", "No rows"]]
+        data_rows = [["—", "—", "—", "—", "—", "—", "—", "—", "—", "No rows"]]
 
-    col_widths = [4.2 * cm, 2.8 * cm, 1.6 * cm, 1.4 * cm, 2 * cm, 2 * cm, 2 * cm, 2 * cm, 2.2 * cm]
+    col_widths = [3.6 * cm, 2.4 * cm, 2.4 * cm, 1.35 * cm, 1.2 * cm, 1.75 * cm, 1.75 * cm, 1.75 * cm, 1.65 * cm, 1.9 * cm]
     table = Table(hdr + data_rows, colWidths=col_widths, repeatRows=1)
     table.setStyle(
         TableStyle(
@@ -121,6 +129,8 @@ def build_payroll_report_pdf(
     story.append(Spacer(1, 0.35 * cm))
     story.append(_p("Summary", h2))
     story.append(_p(f"Total hours: {_hours(total_hours_seconds)}", body))
+    if employee_count is not None:
+        story.append(_p(f"Employees: {employee_count}", body))
     story.append(_p(f"Gross pay: {_money(total_gross)}", body))
     story.append(_p(f"CIS tax: {_money(total_cis_tax)}", body))
     story.append(_p(f"Net pay: {_money(total_net)}", body))

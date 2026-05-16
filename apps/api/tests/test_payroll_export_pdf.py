@@ -6,7 +6,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -69,8 +69,22 @@ def test_admin_cannot_export_other_company_pdf() -> None:
         )
 
 
+def test_admin_cannot_export_other_company_range_pdf() -> None:
+    own_company = uuid.uuid4()
+    other_company = uuid.uuid4()
+    actor = _user(role=SystemRole.ADMIN, company_id=own_company)
+    with pytest.raises(PayrollPermissionError):
+        export_pdf_report(
+            None,  # type: ignore[arg-type]
+            actor,
+            company_id=other_company,
+            date_from=date(2025, 1, 7),
+            date_to=date(2025, 1, 8),
+        )
+
+
 @patch("app.modules.payroll.router.export_pdf_report")
-def test_export_pdf_response_headers(mock_export: object, client: TestClient) -> None:
+def test_export_pdf_response_headers(mock_export: MagicMock, client: TestClient) -> None:
     company_id = uuid.uuid4()
     admin = _user(role=SystemRole.ADMIN, company_id=company_id)
     mock_export.return_value = b"%PDF-1.4 payroll"  # type: ignore[attr-defined]
@@ -87,6 +101,79 @@ def test_export_pdf_response_headers(mock_export: object, client: TestClient) ->
         assert "timiq-payroll-report-2025-01-06.pdf" in disposition
         assert len(response.content) > 0
         assert response.content.startswith(b"%PDF")
+    finally:
+        app.dependency_overrides.clear()
+
+
+@patch("app.modules.payroll.router.export_pdf_report")
+def test_export_pdf_range_response_passes_date_and_employee_filter(
+    mock_export: MagicMock,
+    client: TestClient,
+) -> None:
+    company_id = uuid.uuid4()
+    employee_id = uuid.uuid4()
+    admin = _user(role=SystemRole.ADMIN, company_id=company_id)
+    mock_export.return_value = b"%PDF-1.4 payroll"
+
+    app.dependency_overrides[require_admin_or_administrator] = lambda: admin
+    try:
+        response = client.get(
+            "/api/payroll/export.pdf"
+            f"?company_id={company_id}"
+            "&date_from=2025-01-07"
+            "&date_to=2025-01-08"
+            f"&employee_user_id={employee_id}",
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        kwargs = mock_export.call_args.kwargs
+        assert kwargs["date_from"] == date(2025, 1, 7)
+        assert kwargs["date_to"] == date(2025, 1, 8)
+        assert kwargs["employee_user_id"] == employee_id
+        assert kwargs["week_start"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+@patch("app.modules.payroll.router.export_csv_report")
+def test_export_csv_range_response_passes_date_and_employee_filter(
+    mock_export: MagicMock,
+    client: TestClient,
+) -> None:
+    company_id = uuid.uuid4()
+    employee_id = uuid.uuid4()
+    admin = _user(role=SystemRole.ADMIN, company_id=company_id)
+    mock_export.return_value = "row_type,company_name\n"
+
+    app.dependency_overrides[require_admin_or_administrator] = lambda: admin
+    try:
+        response = client.get(
+            "/api/payroll/export.csv"
+            f"?company_id={company_id}"
+            "&date_from=2025-01-07"
+            "&date_to=2025-01-08"
+            f"&employee_user_id={employee_id}",
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"].startswith("text/csv")
+        kwargs = mock_export.call_args.kwargs
+        assert kwargs["date_from"] == date(2025, 1, 7)
+        assert kwargs["date_to"] == date(2025, 1, 8)
+        assert kwargs["employee_user_id"] == employee_id
+        assert kwargs["week_start"] is None
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_export_pdf_range_rejects_invalid_range(client: TestClient) -> None:
+    company_id = uuid.uuid4()
+    admin = _user(role=SystemRole.ADMIN, company_id=company_id)
+    app.dependency_overrides[require_admin_or_administrator] = lambda: admin
+    try:
+        response = client.get(
+            f"/api/payroll/export.pdf?company_id={company_id}&date_from=2025-01-09&date_to=2025-01-08",
+        )
+        assert response.status_code == 400
     finally:
         app.dependency_overrides.clear()
 

@@ -42,7 +42,6 @@ import {
   effectiveDisplayedTaxAmount,
   formatHoursFromSeconds,
   formatMoneyGBP,
-  formatPayrollWeekRangeLabel,
 } from "../../features/payroll/format";
 import { listAdminTimeRecords, type TimeRecordShiftRow } from "../../features/time-records/api";
 import { leaveTypeLabel } from "../../features/leave/labels";
@@ -196,6 +195,8 @@ export function PayrollReportClient() {
   );
   const [draftEmployeeId, setDraftEmployeeId] = useState("");
   const [appliedEmployeeId, setAppliedEmployeeId] = useState("");
+  const [exportDateFrom, setExportDateFrom] = useState(weekStart);
+  const [exportDateTo, setExportDateTo] = useState(() => addDaysIsoYmd(weekStart, 6));
   const [report, setReport] = useState<PayrollReportResponse | null>(null);
   const [monthSummary, setMonthSummary] = useState<PayrollMonthSummary | null>(null);
   const [error, setError] = useState("");
@@ -235,14 +236,11 @@ export function PayrollReportClient() {
 
   useEffect(() => {
     setPayrollSaveMessage("");
+    setExportDateFrom(weekStart);
+    setExportDateTo(addDaysIsoYmd(weekStart, 6));
   }, [weekStart]);
 
   const policyTimeZone = report?.period.timezone_name ?? browserDefaultTimeZone();
-
-  const weekRangeLabel = useMemo(
-    () => formatPayrollWeekRangeLabel(weekStart, policyTimeZone),
-    [weekStart, policyTimeZone],
-  );
 
   const monthFromWeek = useMemo(() => {
     const y = Number(weekStart.slice(0, 4));
@@ -608,12 +606,36 @@ export function PayrollReportClient() {
     }
   }
 
+  function selectedExportRange(): { dateFrom: string; dateTo: string } | null {
+    const dateFrom = exportDateFrom || weekStart;
+    const dateTo = exportDateTo || addDaysIsoYmd(weekStart, 6);
+    if (!dateFrom || !dateTo) {
+      setError(t("payroll.report.range_required", "Date from and date to are required for exports."));
+      return null;
+    }
+    if (dateFrom > dateTo) {
+      setError(t("payroll.report.invalid_range", "Date from must be before or equal to date to."));
+      return null;
+    }
+    return { dateFrom, dateTo };
+  }
+
   async function handleCsv() {
     if (!activeCompanyId) {
       return;
     }
+    const range = selectedExportRange();
+    if (!range) {
+      return;
+    }
     try {
-      await downloadPayrollCsv(activeCompanyId, weekStart);
+      setError("");
+      await downloadPayrollCsv({
+        companyId: activeCompanyId,
+        dateFrom: range.dateFrom,
+        dateTo: range.dateTo,
+        employeeUserId: draftEmployeeId || null,
+      });
     } catch {
       setError(t("payroll.report.csv_export_failed", "CSV export failed."));
     }
@@ -630,8 +652,18 @@ export function PayrollReportClient() {
     if (!activeCompanyId) {
       return;
     }
+    const range = selectedExportRange();
+    if (!range) {
+      return;
+    }
     try {
-      await downloadPayrollPdfReport(activeCompanyId, weekStart, appliedEmployeeId || null);
+      setError("");
+      await downloadPayrollPdfReport({
+        companyId: activeCompanyId,
+        dateFrom: range.dateFrom,
+        dateTo: range.dateTo,
+        employeeUserId: draftEmployeeId || null,
+      });
     } catch {
       setError(
         t("payroll.report.pdf_export_failed", "Could not download payroll PDF report."),
@@ -773,8 +805,8 @@ export function PayrollReportClient() {
               </p>
             )}
 
-            <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
-              <div className="min-w-0 flex-1">
+            <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-end">
+              <div className="min-w-0 flex-1 xl:min-w-[19rem]">
                 <WeekPickerBar
                   disabled={loading}
                   onWeekChange={setWeekStart}
@@ -783,16 +815,25 @@ export function PayrollReportClient() {
                   weekStartIso={weekStart}
                 />
               </div>
-              <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-3 py-2 text-xs">
-                <span className="font-bold uppercase tracking-wide text-[#374151]">
-                  {t("payroll.report.date_range", "Date range")}:{" "}
-                </span>
-                <span className="font-medium text-[#111827]">{weekRangeLabel}</span>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end sm:gap-3">
-              <label className="block w-full min-w-0 flex-1 text-xs font-bold text-[#111827] sm:min-w-[12rem]">
+              <label className="block text-xs font-bold text-[#111827] xl:w-36">
+                {t("payroll.report.date_from", "Date from")}
+                <input
+                  className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-3 text-sm font-medium text-[#111827]"
+                  onChange={(event) => setExportDateFrom(event.target.value)}
+                  type="date"
+                  value={exportDateFrom}
+                />
+              </label>
+              <label className="block text-xs font-bold text-[#111827] xl:w-36">
+                {t("payroll.report.date_to", "Date to")}
+                <input
+                  className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-3 text-sm font-medium text-[#111827]"
+                  onChange={(event) => setExportDateTo(event.target.value)}
+                  type="date"
+                  value={exportDateTo}
+                />
+              </label>
+              <label className="block w-full min-w-0 text-xs font-bold text-[#111827] sm:min-w-[12rem] xl:w-56">
                 {t("payroll.report.employee_label", "Employee")}
                 <select
                   className="timiq-select mt-1.5 h-10 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] pl-3 text-sm font-medium text-[#111827]"
@@ -822,6 +863,12 @@ export function PayrollReportClient() {
                 </Button>
               </div>
             </div>
+            <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
+              {t(
+                "payroll.report.range_export_help",
+                "Recalculate and approval apply to the selected payroll week. PDF/CSV downloads use the selected date range and employee filter.",
+              )}
+            </p>
 
             <div className="border-t border-[var(--color-border-dark)] pt-3">
               <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[#374151]">

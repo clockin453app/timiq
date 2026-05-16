@@ -5,6 +5,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
+from app.modules.employee_profiles.models import EmployeeProfile
+from app.modules.locations.models import Location
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.time_clock.models import TimeShift
 from app.modules.workplaces.models import Workplace
@@ -192,6 +194,34 @@ def count_open_shifts_started_in_week(
         .where(TimeShift.clock_in_at < week_end_utc)
     )
     return int(db_session.scalar(statement) or 0)
+
+
+def list_completed_time_shifts_for_company_range(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    range_start_utc: datetime,
+    range_end_utc: datetime,
+    user_id: uuid.UUID | None = None,
+) -> list[tuple[TimeShift, Location, User, EmployeeProfile | None]]:
+    """Completed shifts clocked in during [range_start_utc, range_end_utc) for payroll range exports."""
+    statement = (
+        select(TimeShift, Location, User, EmployeeProfile)
+        .join(Location, TimeShift.location_id == Location.id)
+        .join(User, TimeShift.user_id == User.id)
+        .outerjoin(EmployeeProfile, EmployeeProfile.user_id == User.id)
+        .where(User.company_id == company_id)
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
+        .where(TimeShift.status == "completed")
+        .where(TimeShift.clock_in_at >= range_start_utc)
+        .where(TimeShift.clock_in_at < range_end_utc)
+    )
+    if user_id is not None:
+        statement = statement.where(TimeShift.user_id == user_id)
+    statement = statement.order_by(User.email.asc(), TimeShift.clock_in_at.asc())
+    rows = db_session.execute(statement).all()
+    return [(shift, location, owner, profile) for shift, location, owner, profile in rows]
 
 
 def list_items_for_user_pay_history(

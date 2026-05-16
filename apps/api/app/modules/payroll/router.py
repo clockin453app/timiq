@@ -294,23 +294,38 @@ def payroll_item_payslip(
 @router.get("/export.csv")
 def payroll_export_csv(
     company_id: uuid.UUID = Query(...),
-    week_start: date = Query(...),
+    week_start: date | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    employee_user_id: uuid.UUID | None = Query(default=None),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
 ) -> Response:
+    if date_from is None and date_to is None and week_start is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="week_start or date range required.")
+    if (date_from is None) != (date_to is None):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="date_from and date_to are required together.")
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="date_from must be before or equal to date_to.")
     try:
         body = export_csv_report(
             db_session,
             current_user,
             company_id=company_id,
             week_start=week_start,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
         )
     except PayrollPermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
-    filename = safe_export_filename("payroll", str(company_id), str(week_start)) + ".csv"
+    except PayrollError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    filename_date = f"{date_from}_to_{date_to}" if date_from and date_to else str(week_start)
+    filename = safe_export_filename("payroll", str(company_id), filename_date) + ".csv"
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
@@ -352,11 +367,20 @@ def payroll_export_print(
 @router.get("/export.pdf")
 def payroll_export_pdf(
     company_id: uuid.UUID = Query(...),
-    week_start: date = Query(...),
+    week_start: date | None = Query(default=None),
     user_id: uuid.UUID | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    employee_user_id: uuid.UUID | None = Query(default=None),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
 ) -> Response:
+    if date_from is None and date_to is None and week_start is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="week_start or date range required.")
+    if (date_from is None) != (date_to is None):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="date_from and date_to are required together.")
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="date_from must be before or equal to date_to.")
     try:
         body = export_pdf_report(
             db_session,
@@ -364,13 +388,19 @@ def payroll_export_pdf(
             company_id=company_id,
             week_start=week_start,
             user_id=user_id,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
         )
     except PayrollPermissionError as exc:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
-    filename = f"timiq-payroll-report-{week_start.isoformat()}.pdf"
+    except PayrollError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    filename_date = f"{date_from.isoformat()}-to-{date_to.isoformat()}" if date_from and date_to else week_start.isoformat()
+    filename = f"timiq-payroll-report-{filename_date}.pdf"
     return protected_file_response(
         body=body,
         download_filename=filename,

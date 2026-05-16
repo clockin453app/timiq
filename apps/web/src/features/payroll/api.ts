@@ -461,9 +461,23 @@ export async function fetchPayrollItemSummary(itemId: string): Promise<PayrollIt
   return response.json() as Promise<PayrollItemSummaryResponse>;
 }
 
-export async function downloadPayrollCsv(companyId: string, weekStartIso: string): Promise<void> {
+export type PayrollReportExportParams = {
+  companyId: string;
+  weekStartIso?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  employeeUserId?: string | null;
+};
+
+export async function downloadPayrollCsv(params: PayrollReportExportParams): Promise<void> {
   const response = await fetch(
-    `${API_URL}/api/payroll/export.csv?${qs({ company_id: companyId, week_start: weekStartIso })}`,
+    `${API_URL}/api/payroll/export.csv?${qs({
+      company_id: params.companyId,
+      week_start: params.weekStartIso,
+      date_from: params.dateFrom,
+      date_to: params.dateTo,
+      employee_user_id: params.employeeUserId ?? undefined,
+    })}`,
     { credentials: "include" },
   );
   if (!response.ok) {
@@ -473,7 +487,9 @@ export async function downloadPayrollCsv(companyId: string, weekStartIso: string
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `payroll-${companyId}-${weekStartIso}.csv`;
+  const datePart =
+    params.dateFrom && params.dateTo ? `${params.dateFrom}-to-${params.dateTo}` : params.weekStartIso ?? "export";
+  anchor.download = `payroll-${params.companyId}-${datePart}.csv`;
   anchor.click();
   URL.revokeObjectURL(url);
 }
@@ -495,18 +511,22 @@ export function openPayrollPrintView(
 }
 
 export async function downloadPayrollPdfReport(
-  companyId: string,
-  weekStartIso: string,
-  userId?: string | null,
+  exportParams: PayrollReportExportParams,
 ): Promise<void> {
-  const params: Record<string, string> = {
-    company_id: companyId,
-    week_start: weekStartIso,
+  const requestParams: Record<string, string> = {
+    company_id: exportParams.companyId,
   };
-  if (userId) {
-    params.user_id = userId;
+  if (exportParams.weekStartIso) {
+    requestParams.week_start = exportParams.weekStartIso;
   }
-  const response = await fetch(`${API_URL}/api/payroll/export.pdf?${qs(params)}`, {
+  if (exportParams.dateFrom && exportParams.dateTo) {
+    requestParams.date_from = exportParams.dateFrom;
+    requestParams.date_to = exportParams.dateTo;
+  }
+  if (exportParams.employeeUserId) {
+    requestParams.employee_user_id = exportParams.employeeUserId;
+  }
+  const response = await fetch(`${API_URL}/api/payroll/export.pdf?${qs(requestParams)}`, {
     credentials: "include",
   });
   if (!response.ok) {
@@ -516,7 +536,11 @@ export async function downloadPayrollPdfReport(
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `timiq-payroll-report-${weekStartIso}.pdf`;
+  const datePart =
+    exportParams.dateFrom && exportParams.dateTo
+      ? `${exportParams.dateFrom}-to-${exportParams.dateTo}`
+      : exportParams.weekStartIso ?? "export";
+  anchor.download = `timiq-payroll-report-${datePart}.pdf`;
   anchor.click();
   URL.revokeObjectURL(url);
 }

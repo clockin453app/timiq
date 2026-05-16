@@ -6,9 +6,10 @@ import csv
 import html
 import io
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
@@ -55,6 +56,7 @@ from app.modules.payroll.repository import (
     get_item_by_id,
     get_period_by_company_week,
     list_employee_users_for_company,
+    list_completed_time_shifts_for_company_range,
     list_items_for_period,
     list_items_for_user_pay_history,
     list_payroll_items_for_user_company_ytd_calendar_year,
@@ -216,6 +218,53 @@ def _employee_tax_identifiers_for_payroll(
 
 def _week_end_display(week_start: date) -> date:
     return week_start + timedelta(days=6)
+
+
+PARTIAL_RANGE_PAYROLL_NOTE = (
+    "Payroll pay totals are weekly aggregates and are not split across partial date ranges. "
+    "This export shows shift hours for the selected dates."
+)
+
+
+def _policy_zone_name(timezone_name: str | None) -> ZoneInfo:
+    try:
+        return ZoneInfo(timezone_name or "UTC")
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _date_range_bounds_utc(timezone_name: str, date_from: date, date_to: date) -> tuple[datetime, datetime]:
+    tz = _policy_zone_name(timezone_name)
+    start_local = datetime.combine(date_from, time.min, tzinfo=tz)
+    end_local = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=tz)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def _payroll_week_start_for_dt(dt_utc: datetime, timezone_name: str) -> date:
+    local_date = dt_utc.astimezone(_policy_zone_name(timezone_name)).date()
+    return local_date - timedelta(days=local_date.weekday())
+
+
+def _complete_week_starts_in_range(date_from: date, date_to: date) -> list[date]:
+    cursor = date_from + timedelta(days=(7 - date_from.weekday()) % 7)
+    weeks: list[date] = []
+    while cursor + timedelta(days=6) <= date_to:
+        weeks.append(cursor)
+        cursor += timedelta(days=7)
+    return weeks
+
+
+def _range_has_partial_week_portion(date_from: date, date_to: date) -> bool:
+    complete_days: set[date] = set()
+    for week_start in _complete_week_starts_in_range(date_from, date_to):
+        for offset in range(7):
+            complete_days.add(week_start + timedelta(days=offset))
+    cursor = date_from
+    while cursor <= date_to:
+        if cursor not in complete_days:
+            return True
+        cursor += timedelta(days=1)
+    return False
 
 
 def _accounting_export_overlaps_payroll_week(
@@ -1693,13 +1742,336 @@ def list_my_pay_history(db_session: Session, actor: User) -> list[PayHistoryEntr
     return result
 
 
+def _assert_valid_range_filter(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    employee_user_id: uuid.UUID | None,
+) -> None:
+    if employee_user_id is None:
+        return
+    target = get_user_by_id(db_session, employee_user_id)
+    if (
+        target is None
+        or target.company_id != company_id
+        or target.system_role != SystemRole.EMPLOYEE
+    ):
+        raise PayrollError("Invalid employee filter.")
+
+
+def _range_shift_rows(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    date_from: date,
+    date_to: date,
+    employee_user_id: uuid.UUID | None,
+) -> tuple[list[dict[str, Any]], int, set[uuid.UUID]]:
+    if date_from > date_to:
+        raise PayrollError("date_from must be before or equal to date_to.")
+    policy = ensure_company_time_policy(db_session, company_id)
+    start_utc, end_utc = _date_range_bounds_utc(policy.timezone_name, date_from, date_to)
+    rows = list_completed_time_shifts_for_company_range(
+        db_session,
+        company_id=company_id,
+        range_start_utc=start_utc,
+        range_end_utc=end_utc,
+        user_id=employee_user_id,
+    )
+    out: list[dict[str, Any]] = []
+    total_rounded_seconds = 0
+    employee_ids: set[uuid.UUID] = set()
+    for shift, location, owner, profile in rows:
+        shift_policy = effective_time_policy_for_shift(db_session, shift, location)
+        profile_early = bool(profile.early_access_enabled) if profile is not None else False
+        early_access = effective_early_access_for_shift(
+            db_session,
+            location,
+            profile_early_access=profile_early,
+        )
+        metrics = compute_shift_metrics(
+            clock_in_at_utc=shift.clock_in_at,
+            clock_out_at_utc=shift.clock_out_at,
+            break_seconds_tracked=int(shift.break_seconds or 0),
+            early_access_enabled=early_access,
+            policy=shift_policy,
+        )
+        rounded = int(metrics.rounded_seconds or 0)
+        actual = int(metrics.actual_seconds or 0)
+        total_rounded_seconds += rounded
+        employee_ids.add(owner.id)
+        name = " ".join(
+            part
+            for part in (
+                getattr(profile, "first_name", None),
+                getattr(profile, "last_name", None),
+            )
+            if part
+        ).strip()
+        out.append(
+            {
+                "row_type": "shift",
+                "employee": name or owner.email or "Employee",
+                "employee_email": owner.email or "",
+                "role": (getattr(profile, "job_title", None) or "").strip() or "—",
+                "period": _payroll_week_start_for_dt(shift.clock_in_at, policy.timezone_name).isoformat(),
+                "shift_date": shift.clock_in_at.astimezone(_policy_zone_name(policy.timezone_name)).date().isoformat(),
+                "clock_in": shift.clock_in_at.isoformat(),
+                "clock_out": shift.clock_out_at.isoformat() if shift.clock_out_at is not None else "",
+                "location": getattr(location, "name", "") or "",
+                "status": shift.status,
+                "hours": f"{rounded / 3600:.2f}",
+                "actual_hours": f"{actual / 3600:.2f}",
+                "ot_hours": "",
+                "gross": "",
+                "cis_tax": "",
+                "net": "",
+                "other_deductions": "",
+            },
+        )
+    return out, total_rounded_seconds, employee_ids
+
+
+def _range_payroll_total_rows(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    date_from: date,
+    date_to: date,
+    employee_user_id: uuid.UUID | None,
+) -> tuple[list[dict[str, Any]], Decimal | None, Decimal | None, Decimal | None]:
+    week_rows: list[dict[str, Any]] = []
+    gross_sum = Decimal(0)
+    cis_sum = Decimal(0)
+    net_sum = Decimal(0)
+    has_gross = has_cis = has_net = False
+    for week_start in _complete_week_starts_in_range(date_from, date_to):
+        period = get_period_by_company_week(db_session, company_id, week_start)
+        if period is None:
+            continue
+        items = list_items_for_period(db_session, period.id)
+        if employee_user_id is not None:
+            items = [i for i in items if i.user_id == employee_user_id]
+        for item in items:
+            email, name, job_title = _employee_display(db_session, item.user_id)
+            eff_cis = _effective_tax_amount_for_item(item)
+            eff_net = _effective_net_amount_for_item(item)
+            gross = _decimal_or_none(item.gross_amount)
+            if gross is not None:
+                gross_sum += gross
+                has_gross = True
+            if eff_cis is not None:
+                cis_sum += eff_cis
+                has_cis = True
+            if eff_net is not None:
+                net_sum += eff_net
+                has_net = True
+            week_rows.append(
+                {
+                    "row_type": "payroll_week_total",
+                    "employee": (name or email or "Employee"),
+                    "employee_email": email or "",
+                    "role": job_title or "—",
+                    "period": f"{week_start.isoformat()} to {_week_end_display(week_start).isoformat()}",
+                    "shift_date": "",
+                    "clock_in": "",
+                    "clock_out": "",
+                    "location": "",
+                    "status": item.status,
+                    "hours": f"{item.rounded_total_seconds / 3600:.2f}",
+                    "actual_hours": "",
+                    "ot_hours": f"{item.overtime_seconds / 3600:.2f}",
+                    "gross": "" if gross is None else f"{gross:.2f}",
+                    "cis_tax": "" if eff_cis is None else f"{eff_cis:.2f}",
+                    "net": "" if eff_net is None else f"{eff_net:.2f}",
+                    "other_deductions": f"{Decimal(str(item.other_deductions_amount or 0)):.2f}",
+                },
+            )
+    return (
+        week_rows,
+        gross_sum if has_gross else None,
+        cis_sum if has_cis else None,
+        net_sum if has_net else None,
+    )
+
+
+def _employee_filter_label(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    employee_user_id: uuid.UUID | None,
+) -> str:
+    if employee_user_id is None:
+        return "All employees"
+    target = get_user_by_id(db_session, employee_user_id)
+    if target is None or target.company_id != company_id:
+        return "Selected employee"
+    name = _employee_primary_name(db_session, employee_user_id)
+    return f"{name} ({target.email})" if target.email else name
+
+
 def export_csv_report(
     db_session: Session,
     actor: User,
     *,
     company_id: uuid.UUID,
-    week_start: date,
+    week_start: date | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    employee_user_id: uuid.UUID | None = None,
 ) -> str:
+    assert_payroll_admin_or_administrator(actor)
+    assert_payroll_company_scope(actor, company_id)
+    if date_from is not None or date_to is not None:
+        if date_from is None or date_to is None:
+            raise PayrollError("date_from and date_to are required together.")
+        _assert_valid_range_filter(db_session, company_id=company_id, employee_user_id=employee_user_id)
+        company = get_company_by_id(db_session, company_id)
+        company_name = company.name if company is not None else "Company"
+        shift_rows, total_shift_seconds, employee_ids = _range_shift_rows(
+            db_session,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
+        )
+        payroll_rows, gross_total, cis_total, net_total = _range_payroll_total_rows(
+            db_session,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
+        )
+        partial_note = PARTIAL_RANGE_PAYROLL_NOTE if _range_has_partial_week_portion(date_from, date_to) else ""
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(
+            [
+                "row_type",
+                "company_name",
+                "date_from",
+                "date_to",
+                "employee_filter",
+                "employee",
+                "employee_email",
+                "role",
+                "payroll_week_or_period",
+                "shift_date",
+                "clock_in",
+                "clock_out",
+                "location",
+                "hours",
+                "actual_hours",
+                "overtime_hours",
+                "gross_pay",
+                "cis_tax",
+                "net_pay",
+                "status",
+                "notes",
+            ],
+        )
+        employee_label = _employee_filter_label(
+            db_session,
+            company_id=company_id,
+            employee_user_id=employee_user_id,
+        )
+        for row in shift_rows:
+            writer.writerow(
+                [
+                    row["row_type"],
+                    company_name,
+                    date_from,
+                    date_to,
+                    employee_label,
+                    row["employee"],
+                    row["employee_email"],
+                    row["role"],
+                    row["period"],
+                    row["shift_date"],
+                    row["clock_in"],
+                    row["clock_out"],
+                    row["location"],
+                    row["hours"],
+                    row["actual_hours"],
+                    row["ot_hours"],
+                    row["gross"],
+                    row["cis_tax"],
+                    row["net"],
+                    row["status"],
+                    partial_note,
+                ],
+            )
+        for row in payroll_rows:
+            writer.writerow(
+                [
+                    row["row_type"],
+                    company_name,
+                    date_from,
+                    date_to,
+                    employee_label,
+                    row["employee"],
+                    row["employee_email"],
+                    row["role"],
+                    row["period"],
+                    row["shift_date"],
+                    row["clock_in"],
+                    row["clock_out"],
+                    row["location"],
+                    row["hours"],
+                    row["actual_hours"],
+                    row["ot_hours"],
+                    row["gross"],
+                    row["cis_tax"],
+                    row["net"],
+                    row["status"],
+                    "Stored payroll total for a complete payroll week inside the selected range.",
+                ],
+            )
+        if not shift_rows and not payroll_rows:
+            writer.writerow(
+                [
+                    "note",
+                    company_name,
+                    date_from,
+                    date_to,
+                    employee_label,
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    "",
+                    seconds_to_hours_csv(total_shift_seconds),
+                    "",
+                    "",
+                    gross_total or "",
+                    cis_total or "",
+                    net_total or "",
+                    "",
+                    partial_note or "No completed shifts or complete payroll-week totals for this range.",
+                ],
+            )
+        create_internal_audit_event(
+            db_session=db_session,
+            actor=actor,
+            action="payroll.report_exported",
+            entity_type="payroll_period",
+            entity_id=None,
+            company_id=company_id,
+            details={
+                "export_type": "csv_range",
+                "date_from": str(date_from),
+                "date_to": str(date_to),
+                "row_count": len(shift_rows),
+                "employee_user_id": str(employee_user_id) if employee_user_id else None,
+            },
+        )
+        return buffer.getvalue()
+
+    if week_start is None:
+        raise PayrollError("week_start is required.")
     report = get_payroll_report(
         db_session,
         actor,
@@ -1900,13 +2272,108 @@ def export_pdf_report(
     actor: User,
     *,
     company_id: uuid.UUID,
-    week_start: date,
+    week_start: date | None = None,
     user_id: uuid.UUID | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    employee_user_id: uuid.UUID | None = None,
 ) -> bytes:
     assert_payroll_admin_or_administrator(actor)
     assert_payroll_company_scope(actor, company_id)
     company = get_company_by_id(db_session, company_id)
     company_name = company.name if company is not None else "Company"
+    if date_from is not None or date_to is not None:
+        if date_from is None or date_to is None:
+            raise PayrollError("date_from and date_to are required together.")
+        _assert_valid_range_filter(db_session, company_id=company_id, employee_user_id=employee_user_id)
+        policy = ensure_company_time_policy(db_session, company_id)
+        shift_rows, total_shift_seconds, employee_ids = _range_shift_rows(
+            db_session,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
+        )
+        payroll_rows, gross_total, cis_total, net_total = _range_payroll_total_rows(
+            db_session,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
+        )
+        alert_lines: list[str] = []
+        if _range_has_partial_week_portion(date_from, date_to):
+            alert_lines.append(PARTIAL_RANGE_PAYROLL_NOTE)
+        if payroll_rows:
+            alert_lines.append("Stored pay totals are shown only for complete payroll weeks fully inside this range.")
+        pdf_rows = [
+            {
+                "employee": row["employee"],
+                "role": row["role"],
+                "period": row["shift_date"],
+                "hours": row["hours"],
+                "ot_hours": row["ot_hours"] or "—",
+                "gross": "—",
+                "cis_tax": "—",
+                "net": "—",
+                "other_deductions": "—",
+                "status": row["status"],
+            }
+            for row in shift_rows
+        ]
+        pdf_rows.extend(
+            {
+                "employee": row["employee"],
+                "role": row["role"],
+                "period": row["period"],
+                "hours": row["hours"],
+                "ot_hours": row["ot_hours"],
+                "gross": row["gross"] or "—",
+                "cis_tax": row["cis_tax"] or "—",
+                "net": row["net"] or "—",
+                "other_deductions": row["other_deductions"] or "—",
+                "status": row["status"],
+            }
+            for row in payroll_rows
+        )
+        body = build_payroll_report_pdf(
+            company_name=company_name,
+            week_start=date_from,
+            week_end=date_to,
+            timezone_name=policy.timezone_name,
+            rows=pdf_rows,
+            total_hours_seconds=total_shift_seconds,
+            total_gross=gross_total,
+            total_cis_tax=cis_total,
+            total_net=net_total,
+            alert_lines=alert_lines,
+            period_label=f"Date range: {date_from.isoformat()} to {date_to.isoformat()} · {policy.timezone_name}",
+            employee_filter_label=_employee_filter_label(
+                db_session,
+                company_id=company_id,
+                employee_user_id=employee_user_id,
+            ),
+            employee_count=len(employee_ids),
+        )
+        create_internal_audit_event(
+            db_session=db_session,
+            actor=actor,
+            action="payroll.report_exported",
+            entity_type="payroll_period",
+            entity_id=None,
+            company_id=company_id,
+            details={
+                "export_type": "pdf_range",
+                "date_from": str(date_from),
+                "date_to": str(date_to),
+                "row_count": len(shift_rows),
+                "employee_user_id": str(employee_user_id) if employee_user_id else None,
+            },
+        )
+        return body
+
+    if week_start is None:
+        raise PayrollError("week_start is required.")
     report = get_payroll_report(
         db_session,
         actor,
