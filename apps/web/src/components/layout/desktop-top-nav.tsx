@@ -38,6 +38,8 @@ function NavGroupTrigger(props: {
   groupId: string;
   groupLabel: string;
   isOpen: boolean;
+  onFocusSwitch: (anchor: HTMLButtonElement) => void;
+  onHoverSwitch: (anchor: HTMLButtonElement) => void;
   onToggle: (anchor: HTMLButtonElement) => void;
 }) {
   return (
@@ -50,6 +52,8 @@ function NavGroupTrigger(props: {
         props.isOpen ? dropdownTriggerOpenClass : dropdownTriggerIdleClass,
       ].join(" ")}
       type="button"
+      onFocus={(event) => props.onFocusSwitch(event.currentTarget)}
+      onMouseEnter={(event) => props.onHoverSwitch(event.currentTarget)}
       onClick={(event) => props.onToggle(event.currentTarget)}
     >
       <span>{props.groupLabel}</span>
@@ -88,6 +92,18 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
 
   const closeMenus = useCallback(() => {
     setOpenMenu(null);
+  }, []);
+
+  const switchOpenMenu = useCallback((groupId: string, anchor: HTMLButtonElement) => {
+    setOpenMenu((prev) => {
+      if (!prev) {
+        return prev;
+      }
+      if (prev.id === groupId && prev.anchor === anchor) {
+        return prev;
+      }
+      return { id: groupId, anchor };
+    });
   }, []);
 
   useEffect(() => {
@@ -174,6 +190,8 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
                 groupId={group.id}
                 groupLabel={groupLabel}
                 isOpen={isOpen}
+                onFocusSwitch={(anchor) => switchOpenMenu(group.id, anchor)}
+                onHoverSwitch={(anchor) => switchOpenMenu(group.id, anchor)}
                 onToggle={(anchor) => {
                   setOpenMenu((prev) =>
                     prev?.id === group.id ? null : { id: group.id, anchor },
@@ -197,10 +215,10 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
             return (
               <Link
                 className={[
-                  "flex items-center gap-2 px-3 py-2 text-sm font-medium break-words",
+                  "mx-1 flex items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2.5 py-2 text-sm font-medium break-words outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-1",
                   isChildActive
-                    ? "bg-[var(--color-btn-active-bg)] text-[var(--color-text)]"
-                    : "text-[var(--color-text)] hover:bg-[var(--color-cell)]",
+                    ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-active-bg)]"
+                    : "text-[var(--color-text)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] focus-visible:border-[var(--color-border-dark)]",
                 ].join(" ")}
                 href={item.href}
                 key={item.href}
