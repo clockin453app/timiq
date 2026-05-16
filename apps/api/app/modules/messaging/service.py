@@ -26,6 +26,7 @@ from app.modules.messaging.repository import (
     get_last_message,
     get_participant,
     list_announcement_reads,
+    list_announcement_recipient_users,
     list_announcements_visible,
     list_conversation_ids_with_unread_ordered,
     list_messages_for_conversation,
@@ -37,6 +38,7 @@ from app.modules.messaging.repository import (
     touch_conversation_updated,
     upsert_announcement_read,
 )
+from app.modules.notifications.events import record_announcement_published, record_message_received
 from app.modules.messaging.schemas import (
     AnnouncementCreateRequest,
     AnnouncementDetailResponse,
@@ -95,6 +97,42 @@ def _can_manage_announcement(actor: User, row: Announcement) -> bool:
     if actor.system_role == SystemRole.ADMIN:
         return row.audience_type == "company" and actor.company_id is not None and row.company_id == actor.company_id
     return False
+
+
+def _announcement_is_live(row: Announcement, now: datetime | None = None) -> bool:
+    when = now or _now()
+    return bool(row.is_active and row.published_at is not None and row.published_at <= when)
+
+
+def _record_announcement_publish_event(db_session: Session, actor: User, row: Announcement) -> None:
+    recipients = list_announcement_recipient_users(db_session, row)
+    record_announcement_published(
+        db_session,
+        announcement_id=row.id,
+        company_id=row.company_id,
+        actor_user_id=actor.id,
+        recipient_user_ids=[u.id for u in recipients],
+        priority=row.priority,
+    )
+
+
+def _record_message_received_events(
+    db_session: Session,
+    *,
+    actor: User,
+    conversation: Conversation,
+    message: Message,
+    recipient_user_ids: list[uuid.UUID],
+) -> None:
+    record_message_received(
+        db_session,
+        company_id=conversation.company_id,
+        conversation_id=conversation.id,
+        message_id=message.id,
+        sender_user_id=actor.id,
+        sender_display_name=_peer_display_name(db_session, actor.id),
+        recipient_user_ids=recipient_user_ids,
+    )
 
 
 def _resolve_company_filter(actor: User, company_id: uuid.UUID | None) -> uuid.UUID | None:
@@ -286,6 +324,8 @@ def create_announcement(
         is_active=True,
     )
     save_announcement(db_session, row)
+    if _announcement_is_live(row):
+        _record_announcement_publish_event(db_session, actor, row)
     create_internal_audit_event(
         db_session,
         actor,
@@ -311,6 +351,7 @@ def patch_announcement(
         raise MessagingNotFoundError("Announcement not found.")
     if not _can_manage_announcement(actor, row):
         raise MessagingPermissionError("You cannot edit this announcement.")
+    was_live = _announcement_is_live(row)
     if body.title is not None:
         t = _strip_html(body.title)
         if not t:
@@ -329,6 +370,8 @@ def patch_announcement(
         row.expires_at = body.expires_at
     row.updated_at = _now()
     save_announcement(db_session, row)
+    if not was_live and _announcement_is_live(row):
+        _record_announcement_publish_event(db_session, actor, row)
     create_internal_audit_event(
         db_session,
         actor,
@@ -503,6 +546,13 @@ def create_conversation(
             msg = Message(conversation_id=existing.id, sender_user_id=actor.id, body=msg_text[:4000])
             save_message(db_session, msg)
             touch_conversation_updated(db_session, existing.id, _now())
+            _record_message_received_events(
+                db_session,
+                actor=actor,
+                conversation=existing,
+                message=msg,
+                recipient_user_ids=others,
+            )
             create_internal_audit_event(
                 db_session,
                 actor,
@@ -529,6 +579,13 @@ def create_conversation(
         msg = Message(conversation_id=conv.id, sender_user_id=actor.id, body=msg_text[:4000])
         save_message(db_session, msg)
         touch_conversation_updated(db_session, conv.id, _now())
+        _record_message_received_events(
+            db_session,
+            actor=actor,
+            conversation=conv,
+            message=msg,
+            recipient_user_ids=others,
+        )
         create_internal_audit_event(
             db_session,
             actor,
@@ -560,6 +617,13 @@ def create_conversation(
     msg = Message(conversation_id=conv.id, sender_user_id=actor.id, body=msg_text[:4000])
     save_message(db_session, msg)
     touch_conversation_updated(db_session, conv.id, _now())
+    _record_message_received_events(
+        db_session,
+        actor=actor,
+        conversation=conv,
+        message=msg,
+        recipient_user_ids=others,
+    )
     create_internal_audit_event(
         db_session,
         actor,
@@ -646,6 +710,13 @@ def append_message(
     if conv is None:
         raise MessagingNotFoundError("Conversation not found.")
     others = [p.user_id for p in list_participants_for_conversation(db_session, conversation_id) if p.user_id != actor.id]
+    _record_message_received_events(
+        db_session,
+        actor=actor,
+        conversation=conv,
+        message=msg,
+        recipient_user_ids=others,
+    )
     create_internal_audit_event(
         db_session,
         actor,

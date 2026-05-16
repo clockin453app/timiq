@@ -16,6 +16,7 @@ from app.modules.auth.repository import get_user_by_id
 from app.modules.companies.repository import get_company_by_id
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
 from app.modules.locations.repository import get_location_by_id
+from app.modules.notifications.events import record_toolbox_sign_required
 from app.modules.site_access.repository import list_site_access_for_location_ids
 from app.modules.toolbox_talks import repository as tt_repo
 from app.modules.toolbox_talks.constants import is_known_topic, topic_label
@@ -420,6 +421,14 @@ def publish_talk(db: Session, actor: User, talk_id: uuid.UUID) -> ToolboxTalkDet
     talk.published_at = _utc_now()
     talk.updated_at = _utc_now()
     tt_repo.save_talk(db, talk)
+    for attendee in tt_repo.list_attendees_for_talk(db, talk.id):
+        if attendee.status == "pending":
+            record_toolbox_sign_required(
+                db,
+                company_id=talk.company_id,
+                talk_id=talk.id,
+                recipient_user_id=attendee.user_id,
+            )
     _audit_talk_transition(db, actor, talk, "toolbox_talk.published")
     return build_talk_detail(db, actor, talk)
 
@@ -507,6 +516,13 @@ def add_attendees(
             updated_at=now,
         )
         tt_repo.save_attendee(db, att)
+        if talk.status == "published":
+            record_toolbox_sign_required(
+                db,
+                company_id=talk.company_id,
+                talk_id=talk.id,
+                recipient_user_id=uid,
+            )
         added += 1
 
     create_internal_audit_event(

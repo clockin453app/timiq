@@ -31,6 +31,11 @@ from app.modules.leave.schemas import (
     LeaveRequestResponse,
     WeekLeaveRow,
 )
+from app.modules.notifications.events import (
+    list_active_company_admin_ids,
+    record_leave_decision,
+    record_leave_request_submitted,
+)
 from app.modules.time_records.repository import list_time_shifts_for_records
 
 
@@ -322,6 +327,14 @@ def create_leave_request_for_user(
         employee_note=body.employee_note,
     )
     leave_repo.save_request(db, row)
+    if actor.system_role == SystemRole.EMPLOYEE and actor.id == subject_id:
+        record_leave_request_submitted(
+            db,
+            company_id=company_id,
+            request_id=row.id,
+            employee_user_id=subject_id,
+            recipient_user_ids=list_active_company_admin_ids(db, company_id=company_id),
+        )
     create_internal_audit_event(
         db_session=db,
         actor=actor,
@@ -363,6 +376,13 @@ def cancel_my_leave(db: Session, actor: User, request_id: uuid.UUID) -> LeaveReq
     row.cancelled_at = datetime.now(timezone.utc)
     row.updated_at = datetime.now(timezone.utc)
     leave_repo.save_request(db, row)
+    record_leave_decision(
+        db,
+        company_id=row.company_id,
+        request_id=row.id,
+        employee_user_id=row.user_id,
+        approved=True,
+    )
     create_internal_audit_event(
         db_session=db,
         actor=actor,
@@ -480,6 +500,13 @@ def reject_leave_request(
     row.admin_note = body.admin_note
     row.updated_at = datetime.now(timezone.utc)
     leave_repo.save_request(db, row)
+    record_leave_decision(
+        db,
+        company_id=row.company_id,
+        request_id=row.id,
+        employee_user_id=row.user_id,
+        approved=False,
+    )
     create_internal_audit_event(
         db_session=db,
         actor=actor,

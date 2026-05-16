@@ -306,6 +306,36 @@ def list_unread_visible_announcement_ids(
     return list(db_session.scalars(stmt).unique().all())
 
 
+def list_announcement_recipient_users(db_session: Session, row: Announcement) -> list[User]:
+    if row.audience_type == "company":
+        if row.company_id is None:
+            return []
+        stmt = (
+            select(User)
+            .where(User.company_id == row.company_id)
+            .where(User.is_active.is_(True))
+            .order_by(User.email.asc())
+        )
+        return list(db_session.scalars(stmt).unique().all())
+    if row.audience_type == "administrators":
+        stmt = (
+            select(User)
+            .where(User.system_role == SystemRole.ADMINISTRATOR)
+            .where(User.is_active.is_(True))
+            .order_by(User.email.asc())
+        )
+        return list(db_session.scalars(stmt).unique().all())
+    if row.audience_type == "all_companies":
+        stmt = (
+            select(User)
+            .where(User.is_active.is_(True))
+            .where(or_(User.company_id.isnot(None), User.system_role == SystemRole.ADMINISTRATOR))
+            .order_by(User.email.asc())
+        )
+        return list(db_session.scalars(stmt).unique().all())
+    return []
+
+
 def count_conversations_with_unread_incoming(
     db_session: Session,
     *,

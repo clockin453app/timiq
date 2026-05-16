@@ -14,6 +14,11 @@ from app.modules.auth.repository import get_user_by_id
 from app.modules.companies.repository import get_company_by_id
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
 from app.modules.locations.repository import get_location_by_id
+from app.modules.notifications.events import (
+    list_active_company_admin_ids,
+    record_form_decision,
+    record_form_submitted,
+)
 from app.modules.site_access.repository import list_site_access_for_user
 from app.modules.smart_forms.models import SmartFormSubmission, SmartFormTemplate
 from app.modules.smart_forms import repository as sf_repo
@@ -626,6 +631,13 @@ def submit_submission(db: Session, actor: User, submission_id: uuid.UUID) -> Sma
     row.submitted_at = _utc_now()
     row.updated_at = _utc_now()
     sf_repo.save_submission(db, row)
+    record_form_submitted(
+        db,
+        company_id=row.company_id,
+        submission_id=row.id,
+        submitter_user_id=actor.id,
+        recipient_user_ids=list_active_company_admin_ids(db, company_id=row.company_id),
+    )
     create_internal_audit_event(
         db_session=db,
         actor=actor,
@@ -727,6 +739,13 @@ def review_submission(
     row.review_notes = body.review_notes.strip() if body.review_notes else None
     row.updated_at = _utc_now()
     sf_repo.save_submission(db, row)
+    record_form_decision(
+        db,
+        company_id=row.company_id,
+        submission_id=row.id,
+        submitter_user_id=row.submitted_by_user_id,
+        reviewed=row.status == "reviewed",
+    )
 
     template = sf_repo.get_template(db, row.template_id)
     category = template.category if template else "unknown"

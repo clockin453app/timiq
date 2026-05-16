@@ -17,6 +17,7 @@ from app.modules.auth.repository import get_user_by_id
 from app.modules.companies.repository import get_company_by_id
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
 from app.modules.locations.repository import get_location_by_id
+from app.modules.notifications.events import record_rams_ack_required
 from app.modules.rams import repository as rams_repo
 from app.modules.rams.constants import (
     HAZARD_EXAMPLE_PRESETS,
@@ -603,6 +604,14 @@ def create_assessment(db: Session, actor: User, body: RamsAssessmentCreateReques
         archived_at=None,
     )
     rams_repo.save_assessment(db, row)
+    for ack in rams_repo.list_acknowledgements_for_assessment(db, row.id):
+        if ack.status == "pending":
+            record_rams_ack_required(
+                db,
+                company_id=row.company_id,
+                assessment_id=row.id,
+                recipient_user_id=ack.user_id,
+            )
     create_internal_audit_event(
         db_session=db,
         actor=actor,
@@ -1069,6 +1078,13 @@ def add_acknowledgements(
             updated_at=now,
         )
         rams_repo.save_acknowledgement(db, ack)
+        if talk.status in ("published", "reviewed"):
+            record_rams_ack_required(
+                db,
+                company_id=talk.company_id,
+                assessment_id=talk.id,
+                recipient_user_id=uid,
+            )
         added += 1
     create_internal_audit_event(
         db_session=db,

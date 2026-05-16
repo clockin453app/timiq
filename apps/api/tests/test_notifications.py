@@ -222,6 +222,7 @@ def test_mark_all_seen_handles_visible_computed_and_persistent_items() -> None:
             NotificationMarkAllSeenItem(kind="rams_review", target_key="rams_review:co:4:ts"),
             NotificationMarkAllSeenItem(kind="payroll_pending", target_key="payroll_pending:co:2:ts"),
             NotificationMarkAllSeenItem(kind="attendance_late_arrival", target_key="attendance:late_arrival:x"),
+            NotificationMarkAllSeenItem(kind="message_received", target_key="message:x"),
         ],
     )
     with (
@@ -230,9 +231,6 @@ def test_mark_all_seen_handles_visible_computed_and_persistent_items() -> None:
     ):
         mark_all_informational_seen(db, actor, body)
     assert upsert.call_count == 2
-    mark_record.assert_called_once_with(
-        db,
-        user_id=actor.id,
-        kind="attendance_late_arrival",
-        dedupe_key="attendance:late_arrival:x",
-    )
+    assert mark_record.call_count == 2
+    mark_record.assert_any_call(db, user_id=actor.id, kind="attendance_late_arrival", dedupe_key="attendance:late_arrival:x")
+    mark_record.assert_any_call(db, user_id=actor.id, kind="message_received", dedupe_key="message:x")

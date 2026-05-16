@@ -60,6 +60,17 @@ _PERSISTENT_RECORD_KINDS = frozenset(
         "attendance_forgot_clock_in",
         "attendance_forgot_clock_out",
         "push_test",
+        "message_received",
+        "announcement_published",
+        "leave_request_submitted",
+        "leave_request_approved",
+        "leave_request_rejected",
+        "rams_ack_required",
+        "toolbox_sign_required",
+        "form_submitted",
+        "form_reviewed",
+        "form_rejected",
+        "payroll_paid",
     }
 )
 
@@ -87,11 +98,19 @@ def _monday_week_start_in_tz(policy_timezone: str, instant_utc: datetime) -> dat
 def _category_for_kind(kind: str) -> str:
     if kind in ("face_check_setup",):
         return "account"
-    if kind in ("message", "announcement"):
+    if kind in ("message", "message_received", "announcement", "announcement_published"):
         return "messages"
-    if kind in ("rams_ack", "toolbox_sign", "rams_review", "toolbox_review", "form_complete"):
+    if kind in (
+        "rams_ack",
+        "rams_ack_required",
+        "toolbox_sign",
+        "toolbox_sign_required",
+        "rams_review",
+        "toolbox_review",
+        "form_complete",
+    ):
         return "safety"
-    if kind in ("payroll_pending", "payslip_ready"):
+    if kind in ("payroll_pending", "payslip_ready", "payroll_paid"):
         return "payroll"
     if kind in (
         "week_report_ready",
@@ -102,9 +121,9 @@ def _category_for_kind(kind: str) -> str:
         "push_test",
     ):
         return "time"
-    if kind in ("leave_approved", "leave_rejected"):
+    if kind in ("leave_approved", "leave_rejected", "leave_request_approved", "leave_request_rejected"):
         return "leave"
-    if kind in ("form_review", "leave_request_pending"):
+    if kind in ("form_review", "form_submitted", "form_reviewed", "form_rejected", "leave_request_pending", "leave_request_submitted"):
         return "admin"
     return "admin"
 

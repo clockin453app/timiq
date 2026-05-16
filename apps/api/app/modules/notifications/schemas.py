@@ -7,10 +7,17 @@ from pydantic import BaseModel, Field
 
 NotificationKind = Literal[
     "message",
+    "message_received",
     "announcement",
+    "announcement_published",
     "rams_ack",
+    "rams_ack_required",
     "toolbox_sign",
+    "toolbox_sign_required",
     "form_complete",
+    "form_submitted",
+    "form_reviewed",
+    "form_rejected",
     "form_review",
     "rams_review",
     "toolbox_review",
@@ -19,6 +26,9 @@ NotificationKind = Literal[
     "payroll_pending",
     "time_review",
     "leave_request_pending",
+    "leave_request_submitted",
+    "leave_request_approved",
+    "leave_request_rejected",
     "leave_approved",
     "leave_rejected",
     "face_check_setup",
@@ -26,6 +36,7 @@ NotificationKind = Literal[
     "attendance_forgot_clock_in",
     "attendance_forgot_clock_out",
     "push_test",
+    "payroll_paid",
 ]
 
 NotificationCategory = Literal["messages", "safety", "payroll", "time", "leave", "admin", "account"]

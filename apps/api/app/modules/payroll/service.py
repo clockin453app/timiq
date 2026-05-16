@@ -26,6 +26,7 @@ from app.modules.onboarding.repository import (
     get_approved_onboarding_national_insurance_number,
     get_approved_onboarding_utr,
 )
+from app.modules.notifications.events import record_payroll_paid
 from app.modules.payroll.calculation import (
     compute_money_bundle,
     normalize_payroll_payment_mode,
@@ -1437,6 +1438,12 @@ def mark_paid_item(db_session: Session, actor: User, item_id: uuid.UUID) -> Payr
     item.paid_at = datetime.now(timezone.utc)
     item.paid_by_user_id = actor.id
     update_item(db_session, item)
+    record_payroll_paid(
+        db_session,
+        company_id=item.company_id,
+        payroll_item_id=item.id,
+        employee_user_id=item.user_id,
+    )
     create_internal_audit_event(
         db_session=db_session,
         actor=actor,

@@ -38,6 +38,17 @@ const SEEN_MARK_KINDS = new Set([
   "attendance_late_arrival",
   "attendance_forgot_clock_in",
   "attendance_forgot_clock_out",
+  "message_received",
+  "announcement_published",
+  "leave_request_submitted",
+  "leave_request_approved",
+  "leave_request_rejected",
+  "rams_ack_required",
+  "toolbox_sign_required",
+  "form_submitted",
+  "form_reviewed",
+  "form_rejected",
+  "payroll_paid",
 ]);
 
 const GROUP_ORDER = ["account", "messages", "safety", "payroll", "time", "leave", "admin"];

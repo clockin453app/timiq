@@ -1,7 +1,9 @@
 import uuid
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
+from app.modules.notifications import events
 from app.modules.notifications import push_service
+from app.modules.notifications.repository import create_notification_record_once
 
 
 def test_push_payload_keeps_url_same_origin_path_only() -> None:
@@ -50,3 +52,77 @@ def test_disabled_push_does_not_list_or_send(monkeypatch) -> None:
 
     assert sent == 0
     list_subscriptions.assert_not_called()
+
+
+def test_message_event_creates_records_for_recipients_not_sender() -> None:
+    sender_id = uuid.uuid4()
+    recipient_id = uuid.uuid4()
+    company_id = uuid.uuid4()
+    conversation_id = uuid.uuid4()
+    message_id = uuid.uuid4()
+
+    with patch("app.modules.notifications.events.create_notification_record_once", return_value=True) as create:
+        created = events.record_message_received(
+            Mock(),
+            company_id=company_id,
+            conversation_id=conversation_id,
+            message_id=message_id,
+            sender_user_id=sender_id,
+            sender_display_name="Petre Rotaru",
+            recipient_user_ids=[sender_id, recipient_id, recipient_id],
+        )
+
+    assert created == 1
+    create.assert_called_once()
+    kwargs = create.call_args.kwargs
+    assert kwargs["recipient_user_id"] == recipient_id
+    assert kwargs["kind"] == "message_received"
+    assert kwargs["dedupe_key"] == f"message:{conversation_id}:{message_id}:{recipient_id}"
+    assert kwargs["description"] == "You have a new message in TimIQ."
+    assert kwargs["href"] == f"/messages?tab=messages&conversation={conversation_id}"
+
+
+def test_event_helpers_use_safe_generic_payloads() -> None:
+    with patch("app.modules.notifications.events.create_notification_record_once", return_value=True) as create:
+        events.record_payroll_paid(
+            Mock(),
+            company_id=uuid.uuid4(),
+            payroll_item_id=uuid.uuid4(),
+            employee_user_id=uuid.uuid4(),
+        )
+
+    kwargs = create.call_args.kwargs
+    assert kwargs["kind"] == "payroll_paid"
+    assert "amount" not in kwargs["description"].lower()
+    assert kwargs["href"] == "/pay-history"
+
+
+def test_create_notification_record_once_triggers_push_only_for_inserted_record() -> None:
+    db = Mock()
+    db.scalar.side_effect = [uuid.uuid4(), None]
+
+    with patch("app.modules.notifications.push_service.send_push_for_notification_record") as send:
+        first = create_notification_record_once(
+            db,
+            recipient_user_id=uuid.uuid4(),
+            company_id=uuid.uuid4(),
+            kind="message_received",
+            dedupe_key="message:one",
+            title="New message",
+            description="You have a new message in TimIQ.",
+            href="/messages",
+        )
+        second = create_notification_record_once(
+            db,
+            recipient_user_id=uuid.uuid4(),
+            company_id=uuid.uuid4(),
+            kind="message_received",
+            dedupe_key="message:one",
+            title="New message",
+            description="You have a new message in TimIQ.",
+            href="/messages",
+        )
+
+    assert first is True
+    assert second is False
+    assert send.call_count == 1
