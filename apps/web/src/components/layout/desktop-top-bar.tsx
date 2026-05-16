@@ -36,7 +36,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
   return (
     <header className="timiq-print-hide-chrome sticky top-0 z-40 hidden min-h-[var(--layout-topbar-height)] w-full min-w-0 shrink-0 flex-col overflow-visible border-b border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_0_rgba(15,23,42,0.04)] xl:flex">
       <div className="flex min-h-[var(--layout-topbar-height)] w-full min-w-0 items-center pr-4">
-        <div className="flex min-h-[var(--layout-topbar-height)] w-[var(--layout-topbar-brand-width)] min-w-[9.5rem] max-w-[11.25rem] shrink-0 flex-col justify-center border-r border-[var(--layout-topbar-brand-border)] bg-[var(--layout-topbar-brand-bg)] px-4">
+        <div className="flex min-h-[var(--layout-topbar-height)] w-[var(--layout-topbar-brand-width)] min-w-[9.5rem] max-w-[11.25rem] shrink-0 flex-col justify-center px-4">
           <Link
             className="min-w-0 no-underline"
             href={getDefaultLandingPath(user.system_role, { limitedAccess: limited })}
@@ -48,6 +48,11 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
           </Link>
         </div>
 
+        <div
+          className="h-[var(--layout-topbar-divider-height)] shrink-0 border-l border-[var(--color-border-dark)]"
+          aria-hidden
+          role="presentation"
+        />
         <div className="w-4 shrink-0 xl:w-5 2xl:w-6" aria-hidden role="presentation" />
         <DesktopTopNav activeHref={activeHref} />
 

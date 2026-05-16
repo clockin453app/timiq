@@ -62,8 +62,6 @@
   --layout-sidebar-collapsed: 4.25rem;
   --layout-topbar-height: 4rem;
   --layout-topbar-brand-width: 10.5rem;
-  --layout-topbar-brand-bg: linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%);
-  --layout-topbar-brand-border: var(--color-border-dark);
   --layout-topbar-divider-height: 2rem;
   /* Bottom bar + iOS home indicator / safe area (used by app shell padding) */
   --layout-mobile-bottom-nav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
