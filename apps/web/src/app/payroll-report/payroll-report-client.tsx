@@ -737,8 +737,9 @@ export function PayrollReportClient() {
   const lateDetectedCount = report?.late_shift_count_detected ?? report?.late_shift_count ?? 0;
   const canAdjustLateShiftsGlobally =
     report?.has_payable_late_unpaid_shifts === true || (report?.late_unpaid_total_rounded_seconds ?? 0) > 0;
-  const statusChips = useMemo(() => {
+  const chipGroups = useMemo(() => {
     const chips: Array<{ label: string; tone: "info" | "warning" | "danger" | "success" }> = [];
+    const status: Array<{ label: string; tone: "info" | "warning" | "danger" | "success" }> = [];
     if (!hasCompany && isAdministrator(user)) {
       chips.push({ label: "Select company", tone: "info" });
     }
@@ -746,31 +747,42 @@ export function PayrollReportClient() {
       chips.push({ label: "Pending calculation", tone: "warning" });
     }
     if (hasCompany && payrollNeedsRecalculation && paidRowCount > 0) {
-      chips.push({ label: "Payroll locked", tone: "danger" });
+      chips.push({ label: `Payroll locked: ${paidRowCount}`, tone: "danger" });
     } else if (hasCompany && payrollNeedsRecalculation && approvedRowCount > 0) {
-      chips.push({ label: "Approved rows available to unlock", tone: "warning" });
+      chips.push({ label: `Approved rows available to unlock: ${approvedRowCount}`, tone: "warning" });
     } else if (hasCompany && payrollNeedsRecalculation) {
       chips.push({ label: "Needs recalculation", tone: "warning" });
     }
-    if (hasCompany && lateShiftDetected) {
-      chips.push({ label: "Late shift detected", tone: "warning" });
+    if (hasCompany && lateShiftDetected && lateDetectedCount > 0) {
+      chips.push({ label: `Late shifts: ${lateDetectedCount}`, tone: "warning" });
     }
-    if (hasCompany && (alerts?.zero_rounded_hours_employees_count ?? 0) > 0) {
-      chips.push({ label: "Employee with zero hours", tone: "info" });
+    const zeroHoursCount = alerts?.zero_rounded_hours_employees_count ?? 0;
+    if (hasCompany && zeroHoursCount > 0) {
+      chips.push({ label: `Employee with zero hours: ${zeroHoursCount}`, tone: "info" });
     }
-    if (hasCompany && (alerts?.pending_approval_count ?? 0) > 0) {
-      chips.push({ label: "Pending approval", tone: "warning" });
+    const pendingApprovalCount = alerts?.pending_approval_count ?? 0;
+    if (hasCompany && pendingApprovalCount > 0) {
+      chips.push({ label: `Pending approval: ${pendingApprovalCount}`, tone: "warning" });
     }
-    if (hasCompany && report && !payrollPeriodNotCalculated && !payrollNeedsRecalculation && !lateShiftDetected) {
-      chips.push({ label: "Ready for review", tone: "success" });
+    if (
+      hasCompany &&
+      report &&
+      report.items.length > 0 &&
+      chips.length === 0 &&
+      !payrollPeriodNotCalculated &&
+      !payrollNeedsRecalculation &&
+      !lateShiftDetected
+    ) {
+      status.push({ label: `Ready for review: ${report.items.length}`, tone: "success" });
     }
-    return chips;
+    return { attention: chips, status };
   }, [
     alerts?.pending_approval_count,
     alerts?.zero_rounded_hours_employees_count,
     approvedRowCount,
     hasCompany,
     lateShiftDetected,
+    lateDetectedCount,
     paidRowCount,
     payrollNeedsRecalculation,
     payrollPeriodNotCalculated,
@@ -950,12 +962,24 @@ export function PayrollReportClient() {
           <div className="min-w-0 w-full space-y-5">
             <div className="w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-sm">
               <p className="mb-1 text-sm font-semibold text-[#111827]">Weekly payroll review</p>
-              {statusChips.length > 0 ? (
+              {chipGroups.attention.length > 0 ? (
                 <div className="mb-2 flex flex-wrap items-center gap-2" aria-label="Payroll needs attention">
                   <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
                     Needs attention:
                   </span>
-                  {statusChips.map((chip) => (
+                  {chipGroups.attention.map((chip) => (
+                    <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
+                      {chip.label}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {chipGroups.status.length > 0 ? (
+                <div className="mb-2 flex flex-wrap items-center gap-2" aria-label="Payroll status">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                    Status:
+                  </span>
+                  {chipGroups.status.map((chip) => (
                     <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
                       {chip.label}
                     </span>
