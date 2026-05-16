@@ -33,6 +33,17 @@ export type SmartFormTemplate = {
   archived_at: string | null;
 };
 
+export type SmartFormProfessionalTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  schema_json: SmartFormSchemaJson;
+  requires_location: boolean;
+  requires_signature: boolean;
+  allow_photos: boolean;
+};
+
 export type SmartFormFieldDef = {
   id: string;
   label: string;
@@ -112,6 +123,17 @@ export type SmartFormReviewQueueItem = {
   submitted_at: string | null;
   updated_at: string;
 };
+
+export async function listSmartFormProfessionalTemplates(): Promise<SmartFormProfessionalTemplate[]> {
+  const response = await fetch(`${API_URL}/api/smart-forms/professional-templates`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not load professional templates."));
+  }
+  return response.json() as Promise<SmartFormProfessionalTemplate[]>;
+}
 
 export async function listSmartFormTemplates(): Promise<SmartFormTemplate[]> {
   const response = await fetch(`${API_URL}/api/smart-forms/templates`, {

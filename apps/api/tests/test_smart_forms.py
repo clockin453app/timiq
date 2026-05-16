@@ -64,9 +64,12 @@ def test_professional_templates_load() -> None:
     from app.modules.smart_forms.service import list_professional_templates
 
     rows = list_professional_templates()
-    assert len(rows) == 11
+    assert len(rows) == 10
     assert rows[0].id
     assert rows[0].form_schema.get("sections")
+    assert rows[0].requires_location
+    assert rows[0].requires_signature
+    assert rows[0].allow_photos
 
 
 def test_professional_templates_route_registered() -> None:

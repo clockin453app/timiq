@@ -24,15 +24,18 @@ import {
   EXAMPLE_HS_INSPECTION_SCHEMA,
   EXAMPLE_SMART_FORM_SCHEMA,
   getSmartFormTemplate,
+  listSmartFormProfessionalTemplates,
   listSmartFormTemplates,
   patchSmartFormTemplate,
   type SmartFormFieldDef,
+  type SmartFormProfessionalTemplate,
   type SmartFormSchemaJson,
   type SmartFormSectionDef,
   type SmartFormTemplate,
   type SmartFormTemplateCreateBody,
 } from "../../../features/smart-forms/api";
 import {
+  isSmartFormCategory,
   SMART_FORM_CATEGORY_VALUES,
   smartFormCategoryLabel,
   type SmartFormCategoryValue,
@@ -41,15 +44,39 @@ import { useT } from "../../../lib/i18n";
 
 const FIELD_TYPES = ["text", "textarea", "yes_no", "number", "date", "select", "checkbox"] as const;
 
+const FIELD_TYPE_LABELS: Record<(typeof FIELD_TYPES)[number], string> = {
+  text: "Short text",
+  textarea: "Long text",
+  yes_no: "Yes / No",
+  number: "Number",
+  date: "Date",
+  select: "Dropdown",
+  checkbox: "Checkbox",
+};
+
 type ProfessionalFormPreset = {
   id: string;
   title: string;
+  description?: string;
   category: SmartFormCategoryValue;
   schema: SmartFormSchemaJson;
   requires_location?: boolean;
   requires_signature?: boolean;
   allow_photos?: boolean;
 };
+
+function presetFromApi(row: SmartFormProfessionalTemplate): ProfessionalFormPreset {
+  return {
+    id: row.id,
+    title: row.name,
+    description: row.description,
+    category: isSmartFormCategory(row.category) ? row.category : "general",
+    schema: row.schema_json,
+    requires_location: row.requires_location,
+    requires_signature: row.requires_signature,
+    allow_photos: row.allow_photos,
+  };
+}
 
 function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -296,6 +323,7 @@ export function FormsManageClient() {
   const t = useT();
   const user = useCurrentUser();
   const [items, setItems] = useState<SmartFormTemplate[]>([]);
+  const [professionalTemplates, setProfessionalTemplates] = useState<ProfessionalFormPreset[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -320,8 +348,9 @@ export function FormsManageClient() {
   const load = useCallback(async () => {
     setError("");
     try {
-      const rows = await listSmartFormTemplates();
+      const [rows, proRows] = await Promise.all([listSmartFormTemplates(), listSmartFormProfessionalTemplates()]);
       setItems(rows);
+      setProfessionalTemplates(proRows.map(presetFromApi));
       if (user && isAdministrator(user)) {
         const comps = await listCompanies();
         setCompanies(comps);
@@ -598,12 +627,16 @@ export function FormsManageClient() {
     [companies, t],
   );
 
-  const presetList = useMemo(() => professionalPresets(t), [t]);
+  const presetList = useMemo(
+    () => (professionalTemplates.length > 0 ? professionalTemplates : professionalPresets(t)),
+    [professionalTemplates, t],
+  );
 
   const applyProfessionalPreset = (p: ProfessionalFormPreset) => {
     setEditingId(null);
     setName(p.title);
     setCategory(p.category);
+    setDescription(p.description ?? "");
     setSchemaJson(cloneSchema(p.schema));
     setRequiresLocation(p.requires_location ?? false);
     setRequiresSignature(p.requires_signature ?? false);
@@ -692,7 +725,10 @@ export function FormsManageClient() {
             {t("forms.presets_heading", "Start from a professional template")}
           </h2>
           <p className="mb-4 text-sm text-[var(--color-text-soft)]">
-            {t("forms.presets_intro", "Pick a checklist — the builder opens with questions ready to edit.")}
+            {t(
+              "forms.presets_intro",
+              "Choose a construction-ready form. The builder opens with company, site, operative, checklist, evidence, and sign-off sections ready to edit.",
+            )}
           </p>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {presetList.map((p) => (
@@ -703,7 +739,36 @@ export function FormsManageClient() {
                 onClick={() => applyProfessionalPreset(p)}
               >
                 <p className="font-semibold text-[var(--color-text)]">{p.title}</p>
-                <p className="mt-2 text-xs text-[var(--color-text-soft)]">{smartFormCategoryLabel(p.category, t)}</p>
+                <p className="mt-2 text-sm text-[var(--color-text-soft)]">
+                  {p.description ?? smartFormCategoryLabel(p.category, t)}
+                </p>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                  Best for
+                </p>
+                <p className="mt-1 text-xs text-[var(--color-text-soft)]">{smartFormCategoryLabel(p.category, t)}</p>
+                <p className="mt-3 text-xs font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                  Includes
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {p.requires_location ? (
+                    <span className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-text-soft)]">
+                      Site details
+                    </span>
+                  ) : null}
+                  {p.allow_photos ? (
+                    <span className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-text-soft)]">
+                      Photos
+                    </span>
+                  ) : null}
+                  {p.requires_signature ? (
+                    <span className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-text-soft)]">
+                      Employee signature
+                    </span>
+                  ) : null}
+                  <span className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-text-soft)]">
+                    Supervisor sign-off
+                  </span>
+                </div>
                 <p className="mt-3 text-xs font-medium text-[var(--color-link)]">{t("forms.preset_use", "Use template →")}</p>
               </button>
             ))}
@@ -790,16 +855,21 @@ export function FormsManageClient() {
             <input checked={requiresLocation} onChange={(e) => setRequiresLocation(e.target.checked)} type="checkbox" />
             {t("forms.requires_location")}
           </label>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Requires the employee to choose one of their assigned TimIQ sites before starting the form.
+          </p>
           <label className="flex items-center gap-2 text-sm">
             <input checked={requiresSignature} onChange={(e) => setRequiresSignature(e.target.checked)} type="checkbox" />
-            {t("forms.requires_signature")}
+            {t("forms.requires_signature")} — employees must add a printed name and drawn signature before submitting.
           </label>
           <label className="flex items-center gap-2 text-sm">
             <input checked={allowPhotos} onChange={(e) => setAllowPhotos(e.target.checked)} type="checkbox" />
             {t("forms.allow_photos")}
           </label>
           {allowPhotos ? (
-            <p className="text-xs text-[var(--color-text-muted)]">{t("forms.photos_coming_later", "Photo attachments coming later.")}</p>
+            <p className="text-xs text-[var(--color-text-muted)]">
+              Use the template questions to request evidence photos. Photo attachment storage for Smart Forms is flagged here and remains protected when implemented.
+            </p>
           ) : null}
         </div>
 
@@ -871,7 +941,7 @@ export function FormsManageClient() {
                         >
                           {FIELD_TYPES.map((ft) => (
                             <option key={ft} value={ft}>
-                              {ft}
+                              {FIELD_TYPE_LABELS[ft]}
                             </option>
                           ))}
                         </select>
@@ -927,7 +997,12 @@ export function FormsManageClient() {
           </button>
           {advancedOpen ? (
             <div className="space-y-2 border-t border-[var(--color-border)] p-3">
-              <p className="text-xs text-[var(--color-text-muted)]">{t("forms.advanced_schema_hint", "For power users. Invalid JSON cannot be saved.")}</p>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                {t(
+                  "forms.advanced_schema_hint",
+                  "For advanced users only. Most templates can be edited using the form fields above. Invalid JSON cannot be saved.",
+                )}
+              </p>
               <div className="flex flex-wrap gap-2">
                 <Button onClick={() => loadExampleSchema("daily")} size="sm" type="button" variant="secondary">
                   {t("forms.example_daily", "Daily site checklist")}
