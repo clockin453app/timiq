@@ -107,7 +107,166 @@ def _risk_matrix_table(styles: Any) -> Table:
     return t
 
 
+def _doc_has_content(section: Any) -> bool:
+    if getattr(section, "not_applicable", False):
+        return True
+    for block in getattr(section, "blocks", []) or []:
+        if getattr(block, "text", None):
+            return True
+        if getattr(block, "items", None):
+            return True
+        if getattr(block, "rows", None):
+            return True
+        if getattr(block, "type", "") in {"hazard_table", "risk_matrix", "signature_register"}:
+            return True
+    return False
+
+
+def _plain_rows(rows: list[dict[str, object]] | None, columns: list[str] | None) -> list[list[str]]:
+    if not rows:
+        return []
+    cols = columns or [str(k) for k in rows[0].keys()]
+    return [[str(row.get(col, "") or "") for col in cols] for row in rows]
+
+
+def _append_doc_table(story: list[Any], columns: list[str], rows: list[list[str]], body: ParagraphStyle) -> None:
+    if not rows:
+        return
+    table_rows = [columns, *rows]
+    table = Table([_row([str(v) for v in r], body) for r in table_rows], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7.5),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d1d5db")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        ),
+    )
+    story.append(table)
+
+
+def _append_hazard_table(story: list[Any], detail: RamsAssessmentDetailResponse, body: ParagraphStyle) -> None:
+    rows = [["Activity / hazard", "Who affected", "Initial", "Controls", "Residual"]]
+    for h in detail.hazards:
+        warn = " residual > initial" if h.residual_higher_than_initial else ""
+        rows.append(
+            [
+                (h.hazard or "")[:320] + warn,
+                (h.who_might_be_harmed or "")[:220],
+                f"{h.initial_risk_score} ({h.initial_risk_band})",
+                (h.control_measures or "")[:900],
+                f"{h.residual_risk_score} ({h.residual_risk_band})",
+            ],
+        )
+    if len(rows) == 1:
+        return
+    table = Table([_row(r, body) for r in rows], colWidths=[3.8 * cm, 2.8 * cm, 2 * cm, 6 * cm, 2.4 * cm], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 6.7),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d1d5db")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        ),
+    )
+    story.append(table)
+
+
+def _append_signature_register(story: list[Any], detail: RamsAssessmentDetailResponse, body: ParagraphStyle) -> None:
+    rows = [["Employee", "Status", "Signed at", "Printed name", "Signature", "Notes"]]
+    for a in detail.acknowledgements:
+        rows.append(
+            [
+                (a.display_name or a.user_email or "")[:100],
+                a.status,
+                a.acknowledged_at.isoformat() if a.acknowledged_at else "",
+                (a.acknowledgement_name or "")[:120],
+                _signature_status(a.status, a.signature_method, a.has_signature),
+                (a.manual_signature_note or a.declined_reason or "")[:160],
+            ],
+        )
+    if len(rows) == 1:
+        rows.append(["", "", "", "", "", ""])
+    table = Table([_row(r, body) for r in rows], colWidths=[3.5 * cm, 2 * cm, 3 * cm, 3 * cm, 2.6 * cm, 3 * cm], repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 7),
+                ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d1d5db")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        ),
+    )
+    story.append(table)
+
+
+def _draw_header_footer(canvas: Any, doc: Any, detail: RamsAssessmentDetailResponse) -> None:
+    canvas.saveState()
+    canvas.setFont("Helvetica", 8)
+    canvas.setFillColor(colors.HexColor("#6b7280"))
+    canvas.drawString(1.7 * cm, A4[1] - 1.0 * cm, f"RAMS pack: {detail.title[:80]}")
+    canvas.drawRightString(A4[0] - 1.7 * cm, 0.85 * cm, f"Page {doc.page}")
+    canvas.restoreState()
+
+
+def _build_document_sections_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
+    styles = getSampleStyleSheet()
+    body = _body_style(styles)
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, rightMargin=1.7 * cm, leftMargin=1.7 * cm, topMargin=1.6 * cm, bottomMargin=1.6 * cm)
+    story: list[Any] = []
+    sections = sorted(detail.document_sections or [], key=lambda s: s.order)
+    visible = [section for section in sections if section.visible_in_pdf and _doc_has_content(section)]
+    for idx, section in enumerate(visible):
+        story += _section_title(styles, section.title)
+        if section.not_applicable:
+            story.append(_p("Not applicable.", body))
+        for block in section.blocks:
+            block_type = block.type
+            if block_type == "text" and block.text:
+                story.append(_p(block.text, body))
+                story.append(Spacer(1, 0.15 * cm))
+            elif block_type == "list" and block.items:
+                for item in block.items:
+                    if str(item).strip():
+                        story.append(_p(f"- {item}", body))
+                story.append(Spacer(1, 0.15 * cm))
+            elif block_type == "table":
+                rows = _plain_rows(block.rows, block.columns)
+                _append_doc_table(story, block.columns or [], rows, body)
+                story.append(Spacer(1, 0.2 * cm))
+            elif block_type == "risk_matrix" or section.type == "risk_matrix":
+                story.append(_p(block.text or "Risk score is likelihood x severity using a 1-5 scale.", body))
+                story.append(Spacer(1, 0.2 * cm))
+                story.append(_risk_matrix_table(styles))
+            elif block_type == "hazard_table" or section.type == "hazard_table":
+                _append_hazard_table(story, detail, body)
+            elif block_type == "photo" and block.caption:
+                story.append(_p(f"Photo: {block.caption}", body))
+        if section.type == "risk_matrix":
+            story.append(Spacer(1, 0.2 * cm))
+            story.append(_risk_matrix_table(styles))
+        if section.type == "signature_register":
+            _append_signature_register(story, detail, body)
+            story.append(Spacer(1, 0.2 * cm))
+            story.append(_p("Signature images are stored privately in TimIQ; this PDF lists signature metadata only and never file paths.", ParagraphStyle("F", parent=styles["Normal"], fontSize=8, textColor=colors.grey)))
+        if idx < len(visible) - 1:
+            story.append(PageBreak())
+    doc.build(story or [_p(detail.title, body)], onFirstPage=lambda c, d: _draw_header_footer(c, d, detail), onLaterPages=lambda c, d: _draw_header_footer(c, d, detail))
+    return buf.getvalue()
+
+
 def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
+    if detail.document_sections:
+        return _build_document_sections_pdf(detail)
     styles = getSampleStyleSheet()
     body = _body_style(styles)
     buf = BytesIO()

@@ -16,6 +16,27 @@ class RamsDocumentPresetHazardPublic(BaseModel):
     residual_severity: int
 
 
+class RamsDocumentBlock(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    type: str = Field(default="text", max_length=32)
+    text: str | None = None
+    items: list[str] | None = None
+    rows: list[dict[str, object]] | None = None
+    columns: list[str] | None = None
+    section_key: str | None = Field(default=None, max_length=64)
+    caption: str | None = Field(default=None, max_length=500)
+
+
+class RamsDocumentSection(BaseModel):
+    id: str = Field(min_length=1, max_length=120)
+    type: str = Field(default="content", max_length=64)
+    title: str = Field(min_length=1, max_length=200)
+    order: int = 0
+    visible_in_pdf: bool = True
+    not_applicable: bool = False
+    blocks: list[RamsDocumentBlock] = Field(default_factory=list)
+
+
 class RamsDocumentPresetPublic(BaseModel):
     id: str
     title: str
@@ -33,6 +54,7 @@ class RamsDocumentPresetPublic(BaseModel):
     coshh_items: list[str] | None = None
     glove_requirements: list[str] | None = None
     method_statement_sections: list[dict[str, object]] | None = None
+    document_sections: list[RamsDocumentSection] | None = None
 
 
 class RamsPresetsResponse(BaseModel):
@@ -73,6 +95,7 @@ class RamsAssessmentCreateRequest(BaseModel):
     review_due_date: date | None = None
     ppe_json: list[str] = Field(default_factory=list)
     no_special_ppe: bool = False
+    document_sections: list[RamsDocumentSection] | None = None
 
 
 class RamsAssessmentPatchRequest(BaseModel):
@@ -114,6 +137,7 @@ class RamsAssessmentPatchRequest(BaseModel):
     coshh_items: list[str] | None = None
     glove_requirements: list[str] | None = None
     method_statement_sections: list[dict[str, object]] | None = None
+    document_sections: list[RamsDocumentSection] | None = None
 
 
 class RamsHazardCreateRequest(BaseModel):
@@ -278,6 +302,7 @@ class RamsAssessmentDetailResponse(BaseModel):
     coshh_items: list[str] | None = None
     glove_requirements: list[str] | None = None
     method_statement_sections: list[dict[str, object]] | None = None
+    document_sections: list[RamsDocumentSection] | None = None
     hazards: list[RamsHazardResponse]
     acknowledgements: list[RamsAcknowledgementResponse]
     attachments: list[RamsAttachmentResponse] = Field(default_factory=list)

@@ -33,6 +33,29 @@ function signatureStatus(a: RamsAcknowledgement) {
   return "Not signed";
 }
 
+function renderAdminDocumentBlock(detail: RamsAssessmentDetail, block: NonNullable<RamsAssessmentDetail["document_sections"]>[number]["blocks"][number]) {
+  if (block.type === "text" && block.text) return <p className="whitespace-pre-wrap text-sm">{block.text}</p>;
+  if (block.type === "list" && block.items?.length) return <ul className="list-disc space-y-1 pl-5 text-sm">{block.items.map((item, idx) => <li key={`${block.id}-${idx}`}>{item}</li>)}</ul>;
+  if (block.type === "table" && block.rows?.length) {
+    const columns = block.columns?.length ? block.columns : Object.keys(block.rows[0] ?? {});
+    return (
+      <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+        <table className="min-w-full text-left text-xs">
+          <thead className="bg-[var(--color-header)]"><tr>{columns.map((col) => <th className="px-3 py-2 font-semibold" key={col}>{col}</th>)}</tr></thead>
+          <tbody>{block.rows.map((row, idx) => <tr className="border-t border-[var(--color-border)]" key={`${block.id}-${idx}`}>{columns.map((col) => <td className="px-3 py-2 align-top" key={col}>{String(row[col] ?? "")}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+    );
+  }
+  if (block.type === "photo") {
+    const attachment = (detail.attachments ?? []).find((a) => a.section_key === block.section_key);
+    return attachment ? <a className="text-sm font-semibold underline" href={ramsAttachmentUrl(attachment)} rel="noopener noreferrer" target="_blank">{block.caption ?? attachment.original_filename}</a> : <p className="text-xs text-[var(--color-text-soft)]">Photo: {block.caption ?? block.section_key}</p>;
+  }
+  if (block.type === "hazard_table") return <p className="text-sm text-[var(--color-text-soft)]">Hazard table renders from the controls below.</p>;
+  if (block.type === "risk_matrix") return <p className="text-sm text-[var(--color-text-soft)]">Standard 5x5 risk matrix included in PDF/print pack.</p>;
+  return null;
+}
+
 export function RamsDetailClient({ ramsId }: { ramsId: string }) {
   const [detail, setDetail] = useState<RamsAssessmentDetail | null>(null);
   const [locations, setLocations] = useState<Location[]>([]);
@@ -159,12 +182,15 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
               </p>
             </section>
 
-            <section className="grid gap-4 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4 md:grid-cols-2">
-              <div><h2 className="font-bold">Work activity</h2><p className="mt-2 whitespace-pre-wrap text-sm">{detail.work_activity}</p></div>
-              <div><h2 className="font-bold">PPE</h2><p className="mt-2 text-sm">{detail.ppe_json.length ? detail.ppe_json.join(", ") : detail.no_special_ppe ? "No special PPE required" : "—"}</p></div>
-              <div className="md:col-span-2"><h2 className="font-bold">Method statement steps</h2><ol className="mt-2 list-decimal space-y-1 pl-5 text-sm">{(detail.sequence_of_works ?? []).map((s, i) => <li key={i}>{String(s.text ?? s.step ?? "")}</li>)}</ol></div>
-              <div><h2 className="font-bold">Emergency arrangements</h2><p className="mt-2 whitespace-pre-wrap text-sm">{detail.emergency_arrangements ?? "—"}</p></div>
-              <div><h2 className="font-bold">Environmental controls</h2><p className="mt-2 whitespace-pre-wrap text-sm">{detail.deliveries_storage ?? detail.welfare_arrangements ?? "—"}</p></div>
+            <section className="space-y-4 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+              <h2 className="text-sm font-bold">RAMS document preview</h2>
+              {(detail.document_sections ?? []).filter((section) => section.visible_in_pdf).map((section) => (
+                <article className="rounded border border-[var(--color-border)] bg-white p-4" key={section.id}>
+                  <h3 className="border-b border-[var(--color-border)] pb-2 font-semibold">{section.title}</h3>
+                  {section.not_applicable ? <p className="mt-2 text-sm text-[var(--color-text-soft)]">Not applicable.</p> : null}
+                  <div className="mt-3 space-y-3">{section.blocks.map((block) => <div key={block.id}>{renderAdminDocumentBlock(detail, block)}</div>)}</div>
+                </article>
+              ))}
             </section>
 
             <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">

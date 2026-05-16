@@ -4,6 +4,7 @@ import csv
 import html
 import io
 import uuid
+from copy import deepcopy
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -129,6 +130,48 @@ def _coerce_obj_list(val: object | None) -> list[dict[str, object]] | None:
                 out.append({str(k): v for k, v in item.items()})
         return out or None
     return None
+
+
+def _document_sections_to_plain(val: object | None) -> list[dict[str, object]] | None:
+    sections = _coerce_obj_list(val)
+    if not sections:
+        return None
+    normalized: list[dict[str, object]] = []
+    for index, section in enumerate(sections):
+        title = str(section.get("title") or "").strip()
+        section_id = str(section.get("id") or f"section-{index + 1}").strip()
+        if not title or not section_id:
+            continue
+        blocks = section.get("blocks")
+        normalized.append(
+            {
+                "id": section_id[:120],
+                "type": str(section.get("type") or "content")[:64],
+                "title": title[:200],
+                "order": int(section.get("order") or index + 1),
+                "visible_in_pdf": bool(section.get("visible_in_pdf", True)),
+                "not_applicable": bool(section.get("not_applicable", False)),
+                "blocks": _coerce_obj_list(blocks) or [],
+            },
+        )
+    return sorted(normalized, key=lambda s: int(s.get("order") or 0)) or None
+
+
+def _legacy_document_sections(row: RamsAssessment, hazards: list[RamsHazardResponse]) -> list[dict[str, object]]:
+    seq = _coerce_obj_list(getattr(row, "sequence_of_works", None)) or []
+    method_rows = [{"Step": str(s.get("step", "")), "Method": str(s.get("text", ""))} for s in seq if isinstance(s, dict)]
+    return [
+        {"id": "cover", "type": "content", "title": "Cover page", "order": 1, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "cover-text", "type": "text", "text": row.description or row.work_activity}]},
+        {"id": "company_project_details", "type": "content", "title": "Company / project details", "order": 2, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "project-table", "type": "table", "columns": ["Field", "Detail"], "rows": [{"Field": "Project", "Detail": getattr(row, "project_name", None) or ""}, {"Field": "Client", "Detail": getattr(row, "client_name", None) or ""}, {"Field": "Site", "Detail": getattr(row, "site_address", None) or ""}]}]},
+        {"id": "emergency", "type": "content", "title": "Emergency procedures", "order": 3, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "emergency-text", "type": "text", "text": getattr(row, "emergency_arrangements", None) or ""}]},
+        {"id": "ppe", "type": "content", "title": "PPE requirements", "order": 4, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "ppe-list", "type": "list", "items": _coerce_str_list(getattr(row, "ppe_json", None)) or []}]},
+        {"id": "pre_start", "type": "content", "title": "Pre-start checklist", "order": 5, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "pre-list", "type": "list", "items": _coerce_str_list(getattr(row, "pre_start_checklist", None)) or []}]},
+        {"id": "method", "type": "content", "title": "Method statement / sequence of works", "order": 6, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "method-steps", "type": "table", "columns": ["Step", "Method"], "rows": method_rows}]},
+        {"id": "risk_matrix", "type": "risk_matrix", "title": "Risk matrix", "order": 7, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "risk-text", "type": "text", "text": "Risk score is likelihood x severity using a 1-5 scale."}]},
+        {"id": "hazard_assessment", "type": "hazard_table", "title": "Hazard assessment table", "order": 8, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "hazards-ref", "type": "hazard_table", "text": f"{len(hazards)} hazards recorded."}]},
+        {"id": "appendices", "type": "appendices", "title": "Appendices / attachments", "order": 9, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "appendix-text", "type": "text", "text": "Supporting RAMS attachments are stored privately in TimIQ."}]},
+        {"id": "signature_register", "type": "signature_register", "title": "Employee acknowledgement / signature register", "order": 10, "visible_in_pdf": True, "not_applicable": False, "blocks": [{"id": "sign-text", "type": "text", "text": "Employees must confirm they have read and understood this RAMS."}]},
+    ]
 
 
 def _utc_now() -> datetime:
@@ -272,6 +315,7 @@ def _build_detail(
     raw_ack = rams_repo.list_acknowledgements_for_assessment(db, row.id)
     acks = [_ack_to_response(db, a, viewer=viewer) for a in raw_ack]
     ppe = _normalize_ppe(list(row.ppe_json) if isinstance(row.ppe_json, list) else [])
+    document_sections = _document_sections_to_plain(getattr(row, "document_sections", None)) or _legacy_document_sections(row, hazards)
     signoff: RamsSignoffProgress | None = None
     if viewer.system_role in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR) and _can_admin_manage_company(
         viewer, row.company_id
@@ -327,6 +371,7 @@ def _build_detail(
         coshh_items=_coerce_str_list(getattr(row, "coshh_items", None)),
         glove_requirements=_coerce_str_list(getattr(row, "glove_requirements", None)),
         method_statement_sections=_coerce_obj_list(getattr(row, "method_statement_sections", None)),
+        document_sections=document_sections,
         hazards=hazards,
         acknowledgements=acks,
         attachments=attachments,
@@ -432,6 +477,7 @@ def create_assessment_from_preset(
         coshh_items=preset.get("coshh_items"),
         glove_requirements=gloves_combined,
         method_statement_sections=preset.get("method_statement_sections"),
+        document_sections=deepcopy(preset.get("document_sections")) if preset.get("document_sections") else None,
     )
     rams_repo.save_assessment(db, row)
     for i, hz in enumerate(preset["hazards"]):
@@ -602,6 +648,9 @@ def create_assessment(db: Session, actor: User, body: RamsAssessmentCreateReques
         published_at=None,
         reviewed_at=None,
         archived_at=None,
+        document_sections=_document_sections_to_plain(
+            [s.model_dump(mode="json") for s in body.document_sections] if body.document_sections is not None else None,
+        ),
     )
     rams_repo.save_assessment(db, row)
     for ack in rams_repo.list_acknowledgements_for_assessment(db, row.id):
@@ -773,6 +822,9 @@ def patch_assessment(
     if body.method_statement_sections is not None:
         row.method_statement_sections = body.method_statement_sections
         changed.append("method_statement_sections")
+    if body.document_sections is not None:
+        row.document_sections = _document_sections_to_plain([s.model_dump(mode="json") for s in body.document_sections])
+        changed.append("document_sections")
 
     _assert_location_for_company(db, row.company_id, row.location_id)
     row.updated_at = _utc_now()

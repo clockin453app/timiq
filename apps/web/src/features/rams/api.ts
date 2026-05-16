@@ -56,6 +56,28 @@ export type RamsDocumentPreset = {
   coshh_items?: string[];
   glove_requirements?: string[];
   method_statement_sections?: { title?: string; body?: string }[];
+  document_sections?: RamsDocumentSection[];
+};
+
+export type RamsDocumentBlock = {
+  id: string;
+  type: string;
+  text?: string | null;
+  items?: string[] | null;
+  rows?: Record<string, unknown>[] | null;
+  columns?: string[] | null;
+  section_key?: string | null;
+  caption?: string | null;
+};
+
+export type RamsDocumentSection = {
+  id: string;
+  type: string;
+  title: string;
+  order: number;
+  visible_in_pdf: boolean;
+  not_applicable: boolean;
+  blocks: RamsDocumentBlock[];
 };
 
 export type RamsAttachment = {
@@ -178,6 +200,7 @@ export type RamsAssessmentDetail = {
   coshh_items?: string[] | null;
   glove_requirements?: string[] | null;
   method_statement_sections?: { title?: string; body?: string }[] | null;
+  document_sections?: RamsDocumentSection[] | null;
   hazards: RamsHazard[];
   acknowledgements: RamsAcknowledgement[];
   attachments?: RamsAttachment[];
@@ -200,6 +223,7 @@ export type RamsCreateBody = {
   review_due_date?: string | null;
   ppe_json?: string[];
   no_special_ppe?: boolean;
+  document_sections?: RamsDocumentSection[] | null;
 };
 
 export type RamsPatchBody = Partial<{
@@ -241,6 +265,7 @@ export type RamsPatchBody = Partial<{
   coshh_items: string[] | null;
   glove_requirements: string[] | null;
   method_statement_sections: { title?: string; body?: string }[] | null;
+  document_sections: RamsDocumentSection[] | null;
 }>;
 
 export type RamsHazardCreateBody = {

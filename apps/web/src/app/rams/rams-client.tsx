@@ -36,8 +36,6 @@ function formatDate(iso: string | null | undefined) {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
-type RamsEmployeeTab = "overview" | "ppe" | "hazards" | "method" | "photos" | "signoff";
-
 function riskChipClass(level: string): string {
   switch (level) {
     case "low":
@@ -51,6 +49,40 @@ function riskChipClass(level: string): string {
     default:
       return "border-[var(--color-border)] bg-[var(--color-cell)] text-[var(--color-text)]";
   }
+}
+
+function renderDocumentBlock(detail: RamsAssessmentDetail, block: NonNullable<RamsAssessmentDetail["document_sections"]>[number]["blocks"][number]) {
+  if (block.type === "text" && block.text) {
+    return <p className="whitespace-pre-wrap text-[var(--color-text)]">{block.text}</p>;
+  }
+  if (block.type === "list" && block.items?.length) {
+    return <ul className="list-disc space-y-1 pl-5">{block.items.map((item, idx) => <li key={`${block.id}-${idx}`}>{item}</li>)}</ul>;
+  }
+  if (block.type === "table" && block.rows?.length) {
+    const columns = block.columns?.length ? block.columns : Object.keys(block.rows[0] ?? {});
+    return (
+      <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+        <table className="min-w-full text-left text-xs">
+          <thead className="bg-[var(--color-header)]"><tr>{columns.map((col) => <th className="px-3 py-2 font-semibold" key={col}>{col}</th>)}</tr></thead>
+          <tbody>{block.rows.map((row, idx) => <tr className="border-t border-[var(--color-border)]" key={`${block.id}-row-${idx}`}>{columns.map((col) => <td className="px-3 py-2 align-top" key={col}>{String(row[col] ?? "")}</td>)}</tr>)}</tbody>
+        </table>
+      </div>
+    );
+  }
+  if (block.type === "photo") {
+    const attachment = (detail.attachments ?? []).find((a) => a.section_key === block.section_key);
+    if (attachment && attachment.content_type.startsWith("image/")) {
+      return <figure className="rounded border border-[var(--color-border)] p-2"><img alt={block.caption ?? attachment.original_filename} className="max-h-80 w-full object-contain" src={ramsAttachmentUrl(attachment)} /><figcaption className="mt-1 text-xs text-[var(--color-text-soft)]">{block.caption ?? attachment.original_filename}</figcaption></figure>;
+    }
+    return block.caption ? <p className="text-xs text-[var(--color-text-soft)]">Photo: {block.caption}</p> : null;
+  }
+  if (block.type === "hazard_table") {
+    return <div className="space-y-2">{detail.hazards.map((h) => <div className="rounded border border-[var(--color-border)] p-3" key={h.id}><p className="font-medium">{h.hazard}</p><p className="text-xs text-[var(--color-text-soft)]">Initial {h.initial_risk_score} ({h.initial_risk_band}) · Residual {h.residual_risk_score} ({h.residual_risk_band})</p><p className="mt-2 whitespace-pre-wrap">{h.control_measures}</p></div>)}</div>;
+  }
+  if (block.type === "risk_matrix") {
+    return <p className="text-[var(--color-text-soft)]">Risk score is likelihood x severity using a 1-5 scale: low 1-5, medium 6-10, high 11-15, critical 16-25.</p>;
+  }
+  return null;
 }
 
 export function RamsClient() {
@@ -70,7 +102,6 @@ export function RamsClient() {
   const [actionBusy, setActionBusy] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [navigatorOffline, setNavigatorOffline] = useState(false);
-  const [detailTab, setDetailTab] = useState<RamsEmployeeTab>("overview");
 
   const employee = Boolean(currentUser && isEmployee(currentUser));
 
@@ -140,7 +171,6 @@ export function RamsClient() {
     setSignaturePng(null);
     setReadAck(false);
     setDeclineReason("");
-    setDetailTab("overview");
     try {
       const d = await getRams(id);
       setDetail(d);
@@ -158,18 +188,6 @@ export function RamsClient() {
     }
     return detail.acknowledgements.find((a) => a.user_id === currentUser.id) ?? null;
   }, [detail, currentUser]);
-
-  const tabLabels = useMemo<Record<RamsEmployeeTab, string>>(
-    () => ({
-      overview: t("rams.tab_overview", "Overview"),
-      ppe: t("rams.tab_ppe", "PPE"),
-      hazards: t("rams.tab_hazards", "Hazards & controls"),
-      method: t("rams.tab_method", "Method statement"),
-      photos: t("rams.tab_photos", "Photos"),
-      signoff: t("rams.tab_signoff", "Acknowledge"),
-    }),
-    [t],
-  );
 
   const submitAck = async (ev: FormEvent) => {
     ev.preventDefault();
@@ -305,210 +323,43 @@ export function RamsClient() {
                   </Button>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-1 border-b border-[var(--color-border)] pb-2">
-                {(["overview", "ppe", "hazards", "method", "photos", "signoff"] as const).map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    className={`rounded px-2 py-1 text-xs font-medium ${
-                      detailTab === key ? "bg-[var(--color-text)] text-white" : "bg-[var(--color-cell)] text-[var(--color-text)]"
-                    }`}
-                    onClick={() => setDetailTab(key)}
-                  >
-                    {tabLabels[key]}
-                  </button>
+              <div className="grid gap-2 rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-xs sm:grid-cols-2">
+                <p><span className="font-medium">{t("rams.col_site", "Site")}:</span> {locationName(detail.location_id)}</p>
+                <p><span className="font-medium">{t("rams.review_due", "Review due")}:</span> {formatDate(detail.review_due_date)}</p>
+                <p><span className="font-medium">{t("rams.col_risk", "Risk")}:</span> <span className={`inline-block rounded border px-2 py-0.5 text-xs capitalize ${riskChipClass(detail.risk_level)}`}>{detail.risk_level}</span></p>
+                <p><span className="font-medium">{t("rams.col_your_status", "Your status")}:</span> {myRow?.status ?? "pending"}</p>
+              </div>
+              <div className="space-y-5">
+                {(detail.document_sections ?? []).filter((section) => section.visible_in_pdf).map((section) => (
+                  <section className="rounded border border-[var(--color-border)] bg-white p-4" key={section.id}>
+                    <h3 className="border-b border-[var(--color-border)] pb-2 text-base font-semibold text-[var(--color-text)]">{section.title}</h3>
+                    {section.not_applicable ? <p className="mt-3 text-[var(--color-text-soft)]">Not applicable.</p> : null}
+                    <div className="mt-3 space-y-3">{section.blocks.map((block) => <div key={block.id}>{renderDocumentBlock(detail, block)}</div>)}</div>
+                  </section>
                 ))}
               </div>
-
-              {detailTab === "overview" ? (
-                <div className="space-y-3">
-                  <p className="text-[var(--color-text-soft)]">
-                    {t("rams.work_activity", "Work activity")}: <span className="text-[var(--color-text)]">{detail.work_activity}</span>
-                  </p>
-                  {detail.description ? <p className="whitespace-pre-wrap text-[var(--color-text)]">{detail.description}</p> : null}
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <p>
-                      <span className="font-medium text-[var(--color-text)]">{t("rams.col_site", "Site")}: </span>
-                      {locationName(detail.location_id)}
-                    </p>
-                    <p>
-                      <span className="font-medium text-[var(--color-text)]">{t("rams.col_risk", "Risk")}: </span>
-                      <span className={`inline-block rounded border px-2 py-0.5 text-xs capitalize ${riskChipClass(detail.risk_level)}`}>
-                        {detail.risk_level}
-                      </span>
-                    </p>
-                    <p>
-                      <span className="font-medium text-[var(--color-text)]">{t("rams.review_due", "Review due")}: </span>
-                      {formatDate(detail.review_due_date)}
-                    </p>
-                    {detail.project_name ? (
-                      <p>
-                        <span className="font-medium text-[var(--color-text)]">{t("rams.project_name", "Project")}: </span>
-                        {detail.project_name}
-                      </p>
-                    ) : null}
-                    {detail.client_name ? (
-                      <p>
-                        <span className="font-medium text-[var(--color-text)]">{t("rams.client_name", "Client")}: </span>
-                        {detail.client_name}
-                      </p>
-                    ) : null}
-                  </div>
-                  {detail.emergency_contact || detail.muster_point ? (
-                    <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-xs">
-                      <p className="font-medium text-[var(--color-text)]">{t("rams.emergency_summary", "Emergency (summary)")}</p>
-                      {detail.emergency_contact ? <p className="mt-1">{detail.emergency_contact}</p> : null}
-                      {detail.muster_point ? (
-                        <p className="mt-1">
-                          {t("rams.muster_point", "Muster point")}: {detail.muster_point}
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {detailTab === "ppe" ? (
-                <div>
-                  <p className="font-semibold text-[var(--color-text)]">{t("rams.ppe", "PPE")}</p>
-                  <ul className="mt-1 list-disc pl-5">
-                    {detail.ppe_json.length === 0 && detail.no_special_ppe ? (
-                      <li className="text-[var(--color-text-soft)]">{t("rams.no_special_ppe", "No special PPE (as recorded)")}</li>
-                    ) : (
-                      detail.ppe_json.map((p) => <li key={p}>{p}</li>)
-                    )}
-                  </ul>
-                  {detail.glove_requirements && detail.glove_requirements.length > 0 ? (
-                    <div className="mt-4">
-                      <p className="font-semibold text-[var(--color-text)]">{t("rams.glove_requirements", "Glove / task PPE")}</p>
-                      <ul className="mt-1 list-disc pl-5">
-                        {detail.glove_requirements.map((g, i) => (
-                          <li key={`${g}-${i}`}>{g}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {detailTab === "hazards" ? (
-                <div className="space-y-2">
-                  {detail.hazards.map((h) => (
-                    <div key={h.id} className="rounded border border-[var(--color-border)] p-3">
-                      <p className="font-medium">{h.hazard}</p>
-                      {h.who_might_be_harmed ? (
-                        <p className="text-[var(--color-text-soft)]">
-                          {t("rams.who_harmed", "Who might be harmed")}: {h.who_might_be_harmed}
-                        </p>
-                      ) : null}
-                      <p className="mt-1 text-[var(--color-text-soft)]">
-                        {t("rams.initial_risk", "Initial risk")}: {h.initial_risk_score} ({h.initial_risk_band}) →{" "}
-                        {t("rams.residual_risk", "Residual risk")}: {h.residual_risk_score} ({h.residual_risk_band})
-                        {h.residual_higher_than_initial ? (
-                          <span className="ml-1 text-amber-700"> ({t("rams.residual_warning", "residual higher than initial")})</span>
-                        ) : null}
-                      </p>
-                      <p className="mt-2 whitespace-pre-wrap">{h.control_measures}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
-
-              {detailTab === "method" ? (
-                <div className="space-y-4">
-                  {detail.sequence_of_works && detail.sequence_of_works.length > 0 ? (
-                    <div>
-                      <p className="font-semibold text-[var(--color-text)]">{t("rams.sequence_of_works", "Sequence of works")}</p>
-                      <ol className="mt-2 list-decimal space-y-1 pl-5">
-                        {detail.sequence_of_works.map((step, idx) => (
-                          <li key={idx}>{step.text ?? "—"}</li>
-                        ))}
-                      </ol>
-                    </div>
-                  ) : (
-                    <p className="text-[var(--color-text-soft)]">{t("rams.no_method_sequence", "No sequence of works recorded.")}</p>
-                  )}
-                  {detail.method_statement_sections && detail.method_statement_sections.length > 0 ? (
-                    <div className="space-y-3">
-                      {detail.method_statement_sections.map((sec, idx) => (
-                        <div key={idx} className="rounded border border-[var(--color-border)] p-3">
-                          {sec.title ? <p className="font-medium">{sec.title}</p> : null}
-                          {sec.body ? <p className="mt-1 whitespace-pre-wrap text-[var(--color-text-soft)]">{sec.body}</p> : null}
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-
-              {detailTab === "photos" ? (
-                <div className="space-y-3">
-                  {(detail.attachments ?? []).length === 0 ? (
-                    <p className="text-[var(--color-text-soft)]">{t("rams.no_attachments", "No attachments yet.")}</p>
-                  ) : (
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      {(detail.attachments ?? []).map((a) => (
-                        <div key={a.id} className="rounded border border-[var(--color-border)] p-2">
-                          <a href={ramsAttachmentUrl(a)} target="_blank" rel="noopener noreferrer" className="block">
-                            {a.content_type.startsWith("image/") ? (
-                              <img
-                                src={ramsAttachmentUrl(a)}
-                                alt={a.caption ?? a.original_filename}
-                                className="h-40 w-full rounded object-cover"
-                              />
-                            ) : (
-                              <span className="block py-8 text-center text-xs text-[var(--color-text-soft)]">{a.original_filename}</span>
-                            )}
-                          </a>
-                          <p className="mt-1 text-xs text-[var(--color-text-soft)]">
-                            {a.section_key}
-                            {a.caption ? ` · ${a.caption}` : ""}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-
-              {detailTab === "signoff" ? (
-                <>
-                  {isEmployee(currentUser) && myRow?.status === "pending" && (detail.status === "published" || detail.status === "reviewed") ? (
-                    <div className="space-y-3 border-t border-[var(--color-border)] pt-4">
-                      <form className="space-y-3" onSubmit={submitAck}>
-                        <label className="flex items-start gap-2">
-                          <input type="checkbox" checked={readAck} onChange={(e) => setReadAck(e.target.checked)} className="mt-1" />
-                          <span>{t("rams.read_ack", "I have read and understood this RAMS and agree to follow the controls.")}</span>
-                        </label>
-                        <Input
-                          label={t("signature.printed_name_label", "Printed name")}
-                          value={ackName}
-                          onChange={(e) => setAckName(e.target.value)}
-                        />
-                        <SignaturePad disabled={actionBusy || offlineBlock} value={signaturePng} onChange={setSignaturePng} />
-                        <Button
-                          type="submit"
-                          disabled={actionBusy || offlineBlock || !readAck || !ackName.trim() || !signaturePng}
-                        >
-                          {t("rams.acknowledge", "Acknowledge")}
-                        </Button>
-                      </form>
-                      <form className="space-y-2" onSubmit={submitDecline}>
-                        <Input label={t("rams.decline_reason", "Decline reason")} value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} />
-                        <Button type="submit" variant="secondary" disabled={actionBusy || offlineBlock}>
-                          {t("rams.decline", "Decline")}
-                        </Button>
-                      </form>
-                    </div>
-                  ) : (
-                    <p className="text-[var(--color-text-soft)]">
-                      {myRow?.status === "acknowledged"
-                        ? t("rams.already_ack", "You have already acknowledged this RAMS.")
-                        : t("rams.signoff_unavailable", "Sign-off is not required or is not available for this RAMS.")}
-                    </p>
-                  )}
-                </>
-              ) : null}
+              <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                <h3 className="text-base font-semibold text-[var(--color-text)]">Final acknowledgement</h3>
+                {isEmployee(currentUser) && myRow?.status === "pending" && (detail.status === "published" || detail.status === "reviewed") ? (
+                  <>
+                    <form className="space-y-3" onSubmit={submitAck}>
+                      <label className="flex items-start gap-2">
+                        <input type="checkbox" checked={readAck} onChange={(e) => setReadAck(e.target.checked)} className="mt-1" />
+                        <span>{t("rams.read_ack", "I have read and understood this RAMS and agree to follow the controls.")}</span>
+                      </label>
+                      <Input label={t("signature.printed_name_label", "Printed name")} value={ackName} onChange={(e) => setAckName(e.target.value)} />
+                      <SignaturePad disabled={actionBusy || offlineBlock} value={signaturePng} onChange={setSignaturePng} />
+                      <Button type="submit" disabled={actionBusy || offlineBlock || !readAck || !ackName.trim() || !signaturePng}>{t("rams.acknowledge", "Sign RAMS")}</Button>
+                    </form>
+                    <form className="space-y-2 border-t border-[var(--color-border)] pt-3" onSubmit={submitDecline}>
+                      <Input label={t("rams.decline_reason", "Decline reason")} value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} />
+                      <Button type="submit" variant="secondary" disabled={actionBusy || offlineBlock}>{t("rams.decline", "Decline")}</Button>
+                    </form>
+                  </>
+                ) : (
+                  <p className="text-[var(--color-text-soft)]">{myRow?.status === "acknowledged" ? t("rams.already_ack", "You have already acknowledged this RAMS.") : t("rams.signoff_unavailable", "Sign-off is not required or is not available for this RAMS.")}</p>
+                )}
+              </section>
             </div>
           ) : null}
         </SheetBody>

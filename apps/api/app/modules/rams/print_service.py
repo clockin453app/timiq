@@ -82,7 +82,107 @@ def _first_attachment_href(detail: RamsAssessmentDetailResponse, key: str) -> st
     return None
 
 
+def _document_section_has_content(section: object) -> bool:
+    if getattr(section, "not_applicable", False):
+        return True
+    for block in getattr(section, "blocks", []) or []:
+        if getattr(block, "text", None) or getattr(block, "items", None) or getattr(block, "rows", None):
+            return True
+        if getattr(block, "type", "") in {"hazard_table", "risk_matrix", "signature_register"}:
+            return True
+    return False
+
+
+def _render_document_block(detail: RamsAssessmentDetailResponse, section_type: str, block: object) -> str:
+    block_type = getattr(block, "type", "")
+    if block_type == "text":
+        text = str(getattr(block, "text", "") or "").strip()
+        return f"<p>{_esc(text).replace(chr(10), '<br/>')}</p>" if text else ""
+    if block_type == "list":
+        items = [str(item).strip() for item in (getattr(block, "items", None) or []) if str(item).strip()]
+        return f"<ul>{''.join(f'<li>{_esc(item)}</li>' for item in items)}</ul>" if items else ""
+    if block_type == "table":
+        columns = [str(col) for col in (getattr(block, "columns", None) or [])]
+        rows = getattr(block, "rows", None) or []
+        if not columns and rows:
+            columns = [str(k) for k in rows[0].keys()]
+        body = "".join("<tr>" + "".join(f"<td>{_esc(str(row.get(col, '') or ''))}</td>" for col in columns) + "</tr>" for row in rows)
+        return f"<table class='rams-table'><thead><tr>{''.join(f'<th>{_esc(col)}</th>' for col in columns)}</tr></thead><tbody>{body}</tbody></table>" if columns and rows else ""
+    if block_type == "photo":
+        section_key = str(getattr(block, "section_key", "") or "")
+        href = _first_attachment_href(detail, section_key) if section_key else None
+        caption = str(getattr(block, "caption", "") or "")
+        if not href:
+            return f"<p class='rams-muted'>Photo: {_esc(caption or section_key)}</p>" if caption or section_key else ""
+        return f"<figure class='rams-photo'><img src='{_esc(href)}' alt='{_esc(caption or section_key)}'/><figcaption class='rams-muted'>{_esc(caption)}</figcaption></figure>"
+    if block_type == "risk_matrix" or section_type == "risk_matrix":
+        return """
+<p>Likelihood x severity (1-25). Bands: low, medium, high, critical.</p>
+<table class='rams-table'><thead><tr><th>Score</th><th>Band</th></tr></thead><tbody>
+<tr><td>1-5</td><td><span class='rams-band-low'>Low</span></td></tr>
+<tr><td>6-10</td><td><span class='rams-band-medium'>Medium</span></td></tr>
+<tr><td>11-15</td><td><span class='rams-band-high'>High</span></td></tr>
+<tr><td>16-25</td><td><span class='rams-band-critical'>Critical</span></td></tr>
+</tbody></table>"""
+    if block_type == "hazard_table" or section_type == "hazard_table":
+        rows = []
+        for h in detail.hazards:
+            warn = " residual higher" if h.residual_higher_than_initial else ""
+            rows.append(
+                "<tr>"
+                f"<td>{_esc(h.hazard)}{_esc(warn)}</td>"
+                f"<td>{_esc(h.who_might_be_harmed)}</td>"
+                f"<td><span class='{_risk_css(h.initial_risk_band)}'>{h.initial_risk_score} ({_esc(h.initial_risk_band)})</span></td>"
+                f"<td>{_esc(h.control_measures).replace(chr(10), '<br/>')}</td>"
+                f"<td><span class='{_risk_css(h.residual_risk_band)}'>{h.residual_risk_score} ({_esc(h.residual_risk_band)})</span></td>"
+                "</tr>"
+            )
+        return f"<table class='rams-table rams-hazards'><thead><tr><th>Hazard</th><th>Who might be harmed</th><th>Initial</th><th>Controls</th><th>Residual</th></tr></thead><tbody>{''.join(rows)}</tbody></table>" if rows else ""
+    return ""
+
+
+def _build_document_sections_print_html(detail: RamsAssessmentDetailResponse) -> str:
+    title = _esc(detail.title)
+    gen = html.escape(datetime.now(timezone.utc).isoformat())
+    sections = sorted(detail.document_sections or [], key=lambda section: section.order)
+    pages: list[str] = []
+    for section in sections:
+        if not section.visible_in_pdf or not _document_section_has_content(section):
+            continue
+        body = "<p class='rams-muted'>Not applicable.</p>" if section.not_applicable else ""
+        body += "".join(_render_document_block(detail, section.type, block) for block in section.blocks)
+        if section.type == "signature_register":
+            rows = []
+            for a in detail.acknowledgements:
+                sig = "Signed in app" if (a.signature_method == "app_signature" or a.has_signature) else ("Manual/paper signed" if (a.signature_method == "manual_paper" or a.status == "acknowledged") else "Not signed")
+                rows.append(f"<tr><td>{_esc(a.display_name or a.user_email)}</td><td>{_esc(a.status)}</td><td>{_esc(a.acknowledged_at.isoformat() if a.acknowledged_at else '')}</td><td>{_esc(a.acknowledgement_name)}</td><td>{_esc(sig)}</td><td>{_esc(a.manual_signature_note or a.declined_reason)}</td></tr>")
+            body += f"<table class='rams-table'><thead><tr><th>Person</th><th>Status</th><th>Signed at</th><th>Printed name</th><th>Signature</th><th>Notes</th></tr></thead><tbody>{''.join(rows)}</tbody></table>"
+            body += "<p class='rams-note'>Signature images are stored privately. This record shows only safe signature status and notes.</p>"
+        pages.append(f"<section class='rams-page'><h2>{_esc(section.title)}</h2>{body}</section>")
+    css = """
+body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #111827; background: #fff; }
+.rams-pack { max-width: 900px; margin: 0 auto; }
+.rams-page { page-break-after: always; padding: 28px 32px; }
+h1 { font-size: 24px; margin: 0 0 12px; }
+h2 { font-size: 17px; border-bottom: 1px solid #e5e7eb; padding-bottom: 6px; margin-top: 0; }
+.rams-table { border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 12px; }
+.rams-table th, .rams-table td { border: 1px solid #d1d5db; padding: 8px; vertical-align: top; text-align: left; }
+.rams-table th { background: #f3f4f6; font-weight: 600; }
+.rams-note, .rams-muted, .rams-footer { font-size: 11px; color: #6b7280; }
+.rams-photo img { max-width: 100%; max-height: 260px; object-fit: contain; }
+.rams-band-low { background: #dcfce7; color: #166534; }
+.rams-band-medium { background: #fef3c7; color: #92400e; }
+.rams-band-high { background: #ffedd5; color: #c2410c; }
+.rams-band-critical { background: #fee2e2; color: #991b1b; }
+@media print { .rams-page { padding: 16px 18px; } }
+"""
+    cover = f"<section class='rams-page'><h1>{title}</h1><p class='rams-muted'>RAMS document pack · Generated {gen}</p></section>"
+    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"/><title>RAMS - {title}</title><style>{css}</style></head><body><div class="rams-pack">{cover}{''.join(pages)}<p class='rams-footer'>TimIQ RAMS pack</p></div></body></html>"""
+
+
 def build_professional_rams_print_html(detail: RamsAssessmentDetailResponse) -> str:
+    if detail.document_sections:
+        return _build_document_sections_print_html(detail)
     title = _esc(detail.title)
     gen = html.escape(datetime.now(timezone.utc).isoformat())
     risk_cls = _risk_css(detail.risk_level)

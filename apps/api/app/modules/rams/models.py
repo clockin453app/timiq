@@ -87,6 +87,7 @@ class RamsAssessment(Base):
     coshh_items = mapped_column(JSONB, nullable=True)
     glove_requirements = mapped_column(JSONB, nullable=True)
     method_statement_sections = mapped_column(JSONB, nullable=True)
+    document_sections = mapped_column(JSONB, nullable=True)
 
 
 class RamsHazard(Base):

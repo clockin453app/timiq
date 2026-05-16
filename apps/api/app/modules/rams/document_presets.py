@@ -24,6 +24,7 @@ class _RamsPresetExtras(TypedDict, total=False):
     coshh_items: list[str]
     glove_requirements: list[str]
     method_statement_sections: list[dict[str, Any]]
+    document_sections: list[dict[str, Any]]
 
 
 class RamsDocumentPresetDict(_RamsPresetExtras):
@@ -56,10 +57,54 @@ def _h(
     }
 
 
+def _b(block_id: str, block_type: str, **kwargs: Any) -> dict[str, Any]:
+    return {"id": block_id, "type": block_type, **kwargs}
+
+
+def _sec(section_id: str, order: int, title: str, *blocks: dict[str, Any], section_type: str = "content") -> dict[str, Any]:
+    return {
+        "id": section_id,
+        "type": section_type,
+        "title": title,
+        "order": order,
+        "visible_in_pdf": True,
+        "not_applicable": False,
+        "blocks": list(blocks),
+    }
+
+
+def _nebw_brickwork_document_sections() -> list[dict[str, Any]]:
+    """Reusable professional document structure based on the NEBW RAMS pack, with private details removed."""
+    return [
+        _sec("cover", 1, "Cover page", _b("cover-text", "text", text="Risk Assessment and Method Statement for brickwork and blockwork. Complete project, site, client, contractor, revision and approval details before publishing."), _b("cover-table", "table", columns=["Field", "Detail"], rows=[{"Field": "Company", "Detail": ""}, {"Field": "Project", "Detail": ""}, {"Field": "Site", "Detail": ""}, {"Field": "Client", "Detail": ""}, {"Field": "Principal contractor", "Detail": ""}, {"Field": "Subcontractor", "Detail": ""}])),
+        _sec("revision_control", 2, "Revision control & approvals", _b("revision-table", "table", columns=["Rev", "Date", "Reference", "Reason for issue", "Produced by", "Checked by", "Approved by contractor", "Approved by client"], rows=[{"Rev": "01", "Date": "", "Reference": "", "Reason for issue": "First issue", "Produced by": "", "Checked by": "", "Approved by contractor": "", "Approved by client": ""}])),
+        _sec("company_project_details", 3, "Company / project details", _b("project-table", "table", columns=["Field", "Detail"], rows=[{"Field": "Managing director", "Detail": ""}, {"Field": "Contract supervisor", "Detail": ""}, {"Field": "H&S manager", "Detail": ""}, {"Field": "Site address", "Detail": ""}, {"Field": "Review date", "Detail": ""}])),
+        _sec("introduction", 4, "Introduction & safety commitment", _b("intro", "text", text="All works must be planned, supervised and carried out safely. Everyone on site is responsible for their own safety, their colleagues' safety and public protection. This RAMS must be briefed and understood before works start.")),
+        _sec("emergency", 5, "Emergency procedures", _b("emergency-text", "text", text="All accidents, incidents and near misses must be reported immediately and recorded. Injured persons should report to first aid. Emergency services must be contacted when required and management informed without delay."), _b("emergency-table", "table", columns=["Item", "Detail"], rows=[{"Item": "Muster point", "Detail": ""}, {"Item": "First aider", "Detail": ""}, {"Item": "Fire marshal", "Detail": ""}, {"Item": "Nearest hospital / A&E", "Detail": ""}]), _b("emergency-photo", "photo", section_key="emergency_plan", caption="Emergency plan / muster point diagram")),
+        _sec("site_security", 6, "Site security, welfare & public protection", _b("site-text", "text", text="Personnel and visitors must follow site sign-in rules. Welfare must be provided by the principal contractor or site arrangement. Public interfaces must be segregated with barriers, signage and controlled access."), _b("site-photo", "photo", section_key="site_layout", caption="Site layout / public interface")),
+        _sec("deliveries_storage", 7, "Deliveries, storage & logistics", _b("deliveries-text", "text", text="Deliveries must be planned around access constraints and supervised by a competent banksman where required. Materials must be stored close to work areas without blocking access, emergency routes or welfare facilities. COSHH materials must be segregated and secured."), _b("delivery-photo", "photo", section_key="delivery_area", caption="Delivery area"), _b("storage-photo", "photo", section_key="storage_area", caption="Storage / COSHH area")),
+        _sec("ppe", 8, "PPE requirements", _b("ppe-list", "list", items=["Hard hat", "Hi-vis clothing", "Safety boots", "Eye protection where cutting/drilling", "Hearing protection where cutting", "RPE where dust exposure requires it"]), _b("ppe-photo", "photo", section_key="ppe_image", caption="PPE board")),
+        _sec("gloves", 9, "Gloves / task-specific PPE", _b("gloves-list", "list", items=["Bricklayers gloves for mortar handling", "Labourers gloves for handling materials", "Wet cutting station gloves", "Cut resistant gloves for blades and sharp materials"]), _b("glove-photo", "photo", section_key="glove_image", caption="Task glove examples")),
+        _sec("key_hazards", 10, "Key hazards", _b("key-hazards-list", "list", items=["Working at height and platform loading", "Manual handling of blocks, bricks and mortar", "Dust and silica from cutting", "Plant and vehicle movement", "Falling materials", "COSHH exposure to cement and additives", "Housekeeping and slips/trips"])),
+        _sec("pre_start", 11, "Pre-start checklist", _b("pre-list", "list", items=["RAMS briefed and understood", "Access/scaffold/safe stand inspected", "Exclusion zones in place", "Delivery route agreed", "COSHH storage checked", "Dust controls available", "Emergency arrangements confirmed"])),
+        _sec("scope", 12, "Scope of works", _b("scope-text", "text", text="Brickwork and blockwork operations including deliveries, setting out, material distribution, mixing/handling mortar, cutting, building walls, housekeeping and waste management.")),
+        _sec("method", 13, "Method statement / sequence of works", _b("method-steps", "table", columns=["Step", "Method"], rows=[{"Step": "1", "Method": "Attend site induction and RAMS briefing."}, {"Step": "2", "Method": "Confirm work area, access, exclusion zones and material storage."}, {"Step": "3", "Method": "Distribute materials using planned mechanical aids where practicable."}, {"Step": "4", "Method": "Set out and build walls in accordance with drawings and supervision."}, {"Step": "5", "Method": "Control dust during cutting using suppression/extraction and RPE where required."}, {"Step": "6", "Method": "Maintain housekeeping and remove waste safely."}])),
+        _sec("tools_training", 14, "Plant, tools, training, competence", _b("tools-list", "list", items=["Mixer", "Clipper/cut-off saw", "110V or cordless tools", "Telehandler/crane support where planned", "Low-level access/safe stand"]), _b("training-list", "list", items=["Site induction", "Manual handling", "Abrasive wheels for cutting", "Dust/silica awareness", "Working at height/access briefing"])),
+        _sec("site_photos", 15, "Site-specific method pages with photos", _b("safe-stand-photo", "photo", section_key="safe_stand", caption="Safe stand / platform arrangement"), _b("housekeeping-photo", "photo", section_key="housekeeping", caption="Housekeeping example"), _b("method-photo", "photo", section_key="method_step", caption="Site-specific method photo")),
+        _sec("risk_matrix", 16, "Risk matrix", _b("risk-text", "text", text="Risk score is likelihood x severity using a 1-5 scale. Low 1-5, medium 6-10, high 11-15, critical 16-25."), section_type="risk_matrix"),
+        _sec("hazard_assessment", 17, "Hazard assessment table", _b("hazards-ref", "hazard_table", text="Hazards and controls are edited in the RAMS hazard table."), section_type="hazard_table"),
+        _sec("havs", 18, "HAVS assessment", _b("havs-text", "text", text="Identify vibrating tools, expected trigger times, controls, maintenance and health surveillance requirements before work starts.")),
+        _sec("manual_handling", 19, "Manual handling assessment", _b("mh-text", "text", text="Use mechanical aids where practicable. Break loads down, use team lifts, plan routes and rotate tasks to reduce strain.")),
+        _sec("coshh", 20, "COSHH assessment", _b("coshh-list", "list", items=["Cement / mortar", "Plasticiser", "Mastics / sealants", "Cutting fluids if used"]), _b("coshh-photo", "photo", section_key="coshh", caption="COSHH storage / labels")),
+        _sec("appendices", 21, "Appendices / attachments", _b("appendix-text", "text", text="Attach site plans, emergency diagrams, COSHH sheets, permits, drawings and relevant supporting documents in TimIQ."), section_type="appendices"),
+        _sec("signature_register", 22, "Employee acknowledgement / signature register", _b("sign-text", "text", text="Employees must confirm they have read and understood this RAMS. Signature records are stored privately and listed in the register."), section_type="signature_register"),
+    ]
+
+
 RAMS_DOCUMENT_PRESETS: list[RamsDocumentPresetDict] = [
     {
         "id": "brickwork_masonry",
-        "title": "RAMS — Brickwork / blockwork (professional preset)",
+        "title": "NEBW — Brickwork & Blockwork RAMS",
         "work_activity": "Brick and block walling, mortar works, pointing, cutting, loading/unloading, and associated tasks.",
         "description": "Professional pack starter for masonry trades: deliveries, access, dust, plant, COSHH interfaces, and public protection.",
         "risk_level": "medium",
@@ -98,6 +143,7 @@ RAMS_DOCUMENT_PRESETS: list[RamsDocumentPresetDict] = [
             {"title": "Setting out", "body": "Confirm grid, datum, tolerances, and structural openings before build."},
             {"title": "Housekeeping", "body": "Maintain clear walkways; secure pallets; sweep and suppress dust."},
         ],
+        "document_sections": _nebw_brickwork_document_sections(),
         "hazards": [
             _h(
                 "Manual handling of blocks and mortar boards",
@@ -654,6 +700,7 @@ def document_preset_public(p: RamsDocumentPresetDict) -> dict[str, Any]:
         "coshh_items",
         "glove_requirements",
         "method_statement_sections",
+        "document_sections",
     ):
         if key in p and p[key] is not None:  # type: ignore[index]
             out[key] = p[key]  # type: ignore[index]
