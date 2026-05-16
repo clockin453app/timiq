@@ -13,6 +13,8 @@ def test_toolbox_talk_routes_registered() -> None:
     assert "/api/toolbox-talks/me" in paths
     assert "/api/toolbox-talks/{talk_id}/export.csv" in paths
     assert "/api/toolbox-talks/{talk_id}/pdf" in paths
+    assert "/api/toolbox-talks/{talk_id}/record.pdf" in paths
+    assert "/api/toolbox-talks/{talk_id}/attendees/{user_id}/manual-sign" in paths
 
 
 def test_topics_requires_authentication() -> None:
@@ -38,6 +40,10 @@ def test_list_topic_templates_non_empty() -> None:
     assert len(tpls) >= 10
     assert tpls[0].topic
     assert tpls[0].default_body
+    topics = {t.topic for t in tpls}
+    assert "manual_handling" in topics
+    assert "ladder_safety" in topics
+    assert "site_induction_refresher" in topics
 
 
 def test_list_topic_options_includes_custom() -> None:

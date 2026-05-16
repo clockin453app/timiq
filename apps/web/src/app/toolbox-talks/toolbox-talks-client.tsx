@@ -40,6 +40,16 @@ function formatDate(iso: string | null | undefined) {
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
+function signatureMethodLabel(method: string | null | undefined) {
+  if (method === "app_signature") {
+    return "App signature";
+  }
+  if (method === "manual_paper") {
+    return "Manual/paper record";
+  }
+  return "Not signed";
+}
+
 export function ToolboxTalksClient() {
   const t = useT();
   const currentUser = useCurrentUser();
@@ -363,7 +373,7 @@ export function ToolboxTalksClient() {
                   <p>
                     {t("toolbox_talks.your_status", "Your status")}: <strong className="capitalize">{myRow.status}</strong>
                     {myRow.signed_at ? ` · ${formatDate(myRow.signed_at)}` : null}
-                    {myRow.has_signature ? ` · ${t("toolbox_talks.signature_on_file", "Signature on file")}` : null}
+                    {` · ${signatureMethodLabel(myRow.signature_method)}`}
                   </p>
                   {myRow.status === "signed" ? (
                     <Button

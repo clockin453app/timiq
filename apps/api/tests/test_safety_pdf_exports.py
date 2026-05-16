@@ -127,10 +127,12 @@ def test_toolbox_talk_pdf_is_pdf() -> None:
         do_list=["Do this"],
         dont_list=["Do not that"],
         ppe_reminders=["Boots"],
-        attendees_rows=[["User (u@e.com)", "signed", "2026-01-02", "Printed", "Yes", "—"]],
+        attendees_rows=[["User (u@e.com)", "signed", "2026-01-02", "Printed", "App signature", "—"]],
     )
     assert raw[:4] == b"%PDF"
     assert b"storage_path" not in raw.lower()
+    assert b"&lt;i&gt;" not in raw
+    assert b"<i>Generated" not in raw
 
 
 def test_smart_form_pdf_is_pdf() -> None:

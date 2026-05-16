@@ -17,6 +17,18 @@ async function parseErrorMessage(response: Response, fallback: string): Promise<
 
 export type ToolboxTopicOption = { value: string; label: string };
 
+export type ToolboxTopicTemplate = {
+  topic: string;
+  category: string;
+  default_title: string;
+  default_body: string;
+  key_points: string[];
+  required_ppe: string[];
+  do_list: string[];
+  dont_list: string[];
+  ppe_reminders: string[];
+};
+
 export type ToolboxTalkSummary = {
   id: string;
   company_id: string;
@@ -37,6 +49,8 @@ export type ToolboxTalkAttendee = {
   status: string;
   signed_at: string | null;
   signature_name: string | null;
+  signature_method: string;
+  manual_signature_note: string | null;
   has_signature: boolean;
   declined_reason: string | null;
 };
@@ -86,6 +100,11 @@ export type ToolboxTalkSignBody = {
   signature_image_data: string;
 };
 
+export type ToolboxTalkManualSignBody = {
+  signature_name: string;
+  manual_signature_note?: string | null;
+};
+
 export async function listToolboxTopics(): Promise<ToolboxTopicOption[]> {
   const response = await fetch(`${API_URL}/api/toolbox-talks/topics`, {
     method: "GET",
@@ -95,6 +114,17 @@ export async function listToolboxTopics(): Promise<ToolboxTopicOption[]> {
     throw new Error(await parseErrorMessage(response, "Could not load topics."));
   }
   return response.json() as Promise<ToolboxTopicOption[]>;
+}
+
+export async function listToolboxTemplates(): Promise<ToolboxTopicTemplate[]> {
+  const response = await fetch(`${API_URL}/api/toolbox-talks/templates`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not load talk templates."));
+  }
+  return response.json() as Promise<ToolboxTopicTemplate[]>;
 }
 
 export async function listMyToolboxTalks(): Promise<ToolboxTalkSummary[]> {
@@ -241,6 +271,26 @@ export async function removeToolboxTalkAttendee(talkId: string, userId: string):
   return response.json() as Promise<ToolboxTalkDetail>;
 }
 
+export async function manualSignToolboxTalkAttendee(
+  talkId: string,
+  userId: string,
+  body: ToolboxTalkManualSignBody,
+): Promise<ToolboxTalkDetail> {
+  const response = await fetch(
+    `${API_URL}/api/toolbox-talks/${talkId}/attendees/${userId}/manual-sign`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not record manual signature."));
+  }
+  return response.json() as Promise<ToolboxTalkDetail>;
+}
+
 export async function signToolboxTalk(talkId: string, body: ToolboxTalkSignBody): Promise<ToolboxTalkDetail> {
   const response = await fetch(`${API_URL}/api/toolbox-talks/${talkId}/sign`, {
     method: "POST",
@@ -285,7 +335,7 @@ export async function openToolboxTalkPrint(talkId: string): Promise<void> {
 }
 
 export async function downloadToolboxTalkPdf(talkId: string): Promise<void> {
-  const response = await fetch(`${API_URL}/api/toolbox-talks/${talkId}/pdf`, {
+  const response = await fetch(`${API_URL}/api/toolbox-talks/${talkId}/record.pdf`, {
     method: "GET",
     credentials: "include",
   });

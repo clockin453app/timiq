@@ -24,6 +24,7 @@ from app.modules.toolbox_talks.schemas import (
     ToolboxTalkCreateRequest,
     ToolboxTalkDeclineRequest,
     ToolboxTalkDetailResponse,
+    ToolboxTalkManualSignRequest,
     ToolboxTalkPatchRequest,
     ToolboxTalkSignRequest,
     ToolboxTalkSummaryResponse,
@@ -48,6 +49,7 @@ from app.modules.toolbox_talks.service import (
     list_talks_me,
     list_topic_options,
     list_topic_templates,
+    manual_sign_attendee,
     patch_talk,
     publish_talk,
     remove_attendee,
@@ -219,6 +221,20 @@ def get_toolbox_talk_pdf(
     return Response(content=raw, media_type="application/pdf", headers=headers)
 
 
+@router.get("/{talk_id}/record.pdf")
+def get_toolbox_talk_record_pdf(
+    talk_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        raw, filename = export_talk_pdf_bytes(db_session, current_user, talk_id)
+    except ToolboxTalkError as exc:
+        _raise_http_from_toolbox_exc(exc)
+    headers = {"Content-Disposition": content_disposition_attachment(filename)}
+    return Response(content=raw, media_type="application/pdf", headers=headers)
+
+
 @router.get("/{talk_id}/attendees", response_model=list[ToolboxTalkAttendeeResponse])
 def get_toolbox_talk_attendees(
     talk_id: uuid.UUID,
@@ -254,6 +270,20 @@ def delete_toolbox_talk_attendee(
 ) -> ToolboxTalkDetailResponse:
     try:
         return remove_attendee(db_session, current_user, talk_id, user_id)
+    except ToolboxTalkError as exc:
+        _raise_http_from_toolbox_exc(exc)
+
+
+@router.post("/{talk_id}/attendees/{user_id}/manual-sign", response_model=ToolboxTalkDetailResponse)
+def post_toolbox_talk_manual_signature(
+    talk_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: ToolboxTalkManualSignRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> ToolboxTalkDetailResponse:
+    try:
+        return manual_sign_attendee(db_session, current_user, talk_id, user_id, body)
     except ToolboxTalkError as exc:
         _raise_http_from_toolbox_exc(exc)
 

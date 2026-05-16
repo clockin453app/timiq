@@ -56,6 +56,8 @@ class ToolboxTalkAttendeeResponse(BaseModel):
     status: str
     signed_at: datetime | None = None
     signature_name: str | None = None
+    signature_method: str = "not_signed"
+    manual_signature_note: str | None = None
     has_signature: bool = False
     declined_reason: str | None = None
 
@@ -98,6 +100,11 @@ class ToolboxTalkSignRequest(BaseModel):
         min_length=50,
         description="PNG data URL. Stored privately; never returned in JSON.",
     )
+
+
+class ToolboxTalkManualSignRequest(BaseModel):
+    signature_name: str = Field(min_length=2, max_length=200)
+    manual_signature_note: str | None = Field(default=None, max_length=500)
 
 
 class ToolboxTalkDeclineRequest(BaseModel):

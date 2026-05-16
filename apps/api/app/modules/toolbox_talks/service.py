@@ -27,6 +27,7 @@ from app.modules.toolbox_talks.schemas import (
     ToolboxTalkDeclineRequest,
     ToolboxTalkDetailResponse,
     ToolboxTalkPatchRequest,
+    ToolboxTalkManualSignRequest,
     ToolboxTalkSignRequest,
     ToolboxTalkSummaryResponse,
     ToolboxTopicOption,
@@ -131,6 +132,14 @@ def _attendee_row_to_schema(
     is_self = viewer.id == row.user_id
     hide_peer_decline = viewer.system_role == SystemRole.EMPLOYEE and not is_self
     has_sig = bool((row.signature_image_path or "").strip())
+    method = row.signature_method
+    if not method:
+        if has_sig:
+            method = "app_signature"
+        elif row.status == "signed":
+            method = "manual_paper"
+        else:
+            method = "not_signed"
     return ToolboxTalkAttendeeResponse(
         user_id=row.user_id,
         user_email=email if is_self or viewer.system_role != SystemRole.EMPLOYEE else None,
@@ -138,6 +147,8 @@ def _attendee_row_to_schema(
         status=row.status,
         signed_at=row.signed_at,
         signature_name=row.signature_name if row.status == "signed" else None,
+        signature_method=method,
+        manual_signature_note=row.manual_signature_note if viewer.system_role != SystemRole.EMPLOYEE or is_self else None,
         has_signature=has_sig,
         declined_reason=None if hide_peer_decline else row.declined_reason,
     )
@@ -487,6 +498,8 @@ def add_attendees(
             user_id=uid,
             status="pending",
             signature_name=None,
+            signature_method=None,
+            manual_signature_note=None,
             signature_image_path=None,
             signed_at=None,
             declined_reason=None,
@@ -572,6 +585,8 @@ def sign_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalkSig
     backend.write_bytes(rel, png)
     att.status = "signed"
     att.signature_name = name
+    att.signature_method = "app_signature"
+    att.manual_signature_note = None
     att.signature_image_path = rel
     att.signed_at = _utc_now()
     att.updated_at = _utc_now()
@@ -608,6 +623,8 @@ def decline_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalk
     reason = body.reason.strip()
     att.status = "declined"
     att.declined_reason = reason
+    att.signature_method = None
+    att.manual_signature_note = None
     att.updated_at = _utc_now()
     if att.signature_image_path:
         try:
@@ -630,6 +647,58 @@ def decline_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalk
     return build_talk_detail(db, actor, talk)
 
 
+def manual_sign_attendee(
+    db: Session,
+    actor: User,
+    talk_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: ToolboxTalkManualSignRequest,
+) -> ToolboxTalkDetailResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise ToolboxTalkPermissionError()
+    talk = tt_repo.get_talk(db, talk_id)
+    if talk is None:
+        raise ToolboxTalkNotFoundError()
+    if not _can_admin_manage_company(actor, talk.company_id):
+        raise ToolboxTalkNotFoundError()
+    if talk.status == "archived":
+        raise ToolboxTalkValidationError("This talk is archived.")
+    att = tt_repo.get_attendee(db, talk_id, user_id)
+    if att is None:
+        raise ToolboxTalkNotFoundError()
+    if att.company_id != talk.company_id:
+        raise ToolboxTalkNotFoundError()
+    if att.signature_image_path:
+        try:
+            get_storage_backend().delete_file(att.signature_image_path)
+        except Exception:
+            pass
+    att.status = "signed"
+    att.signature_name = body.signature_name.strip()
+    att.signature_method = "manual_paper"
+    att.manual_signature_note = body.manual_signature_note.strip() if body.manual_signature_note else "Signed on paper"
+    att.signature_image_path = None
+    att.signed_at = _utc_now()
+    att.declined_reason = None
+    att.updated_at = _utc_now()
+    tt_repo.save_attendee(db, att)
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="toolbox_talk.manual_signature_recorded",
+        entity_type="toolbox_talk_attendee",
+        entity_id=str(att.id),
+        company_id=talk.company_id,
+        details={
+            "talk_id": str(talk.id),
+            "subject_user_id": str(user_id),
+            "actor_user_id": str(actor.id),
+            "signature_method": att.signature_method,
+        },
+    )
+    return build_talk_detail(db, actor, talk)
+
+
 def render_print_html(db: Session, actor: User, talk_id: uuid.UUID) -> str:
     detail = get_talk_for_viewer(db, actor, talk_id)
 
@@ -646,13 +715,18 @@ def render_print_html(db: Session, actor: User, talk_id: uuid.UUID) -> str:
 
     rows_html = []
     for a in detail.attendees:
+        signature_label = {
+            "app_signature": "App signature",
+            "manual_paper": "Manual/paper record",
+        }.get(a.signature_method, "Not signed")
+        note = a.declined_reason or a.manual_signature_note or "—"
         if actor.system_role == SystemRole.EMPLOYEE and a.user_id != actor.id:
             rows_html.append(
                 "<tr>"
                 f"<td>{html.escape(a.display_name or 'Employee')}</td>"
                 f"<td>{html.escape(a.status)}</td>"
                 f"<td>{html.escape(a.signed_at.isoformat() if a.signed_at else '—')}</td>"
-                f"<td>{html.escape(a.signature_name or ('Yes' if a.has_signature else '—'))}</td>"
+                f"<td>{html.escape(signature_label)}</td>"
                 "<td>—</td>"
                 "</tr>",
             )
@@ -662,8 +736,8 @@ def render_print_html(db: Session, actor: User, talk_id: uuid.UUID) -> str:
                 f"<td>{html.escape(a.display_name or '')} ({html.escape(a.user_email or '')})</td>"
                 f"<td>{html.escape(a.status)}</td>"
                 f"<td>{html.escape(a.signed_at.isoformat() if a.signed_at else '—')}</td>"
-                f"<td>{html.escape(a.signature_name or ('Yes' if a.has_signature else '—'))}</td>"
-                f"<td>{html.escape(a.declined_reason or '—')}</td>"
+                f"<td>{html.escape(signature_label)}</td>"
+                f"<td>{html.escape(note)}</td>"
                 "</tr>",
             )
 
@@ -693,9 +767,7 @@ def render_print_html(db: Session, actor: User, talk_id: uuid.UUID) -> str:
 <div class="tt-body">{body_html}</div>
 <p class="tt-note">TimIQ operational record — not legal advice. Use Print to save as PDF.</p>
 </section>"""
-    hdr = (
-        "<tr><th>Employee</th><th>Status</th><th>Signed at</th><th>Signature name</th><th>Declined reason</th></tr>"
-    )
+    hdr = "<tr><th>Employee</th><th>Status</th><th>Signed at</th><th>Signature method</th><th>Notes</th></tr>"
     att_sec = f"""
 <section class="tt-page tt-page-last">
 <h2>Attendees / signatures</h2>
@@ -846,7 +918,10 @@ def export_talk_pdf_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple
                 a.status,
                 a.signed_at.isoformat() if a.signed_at else "—",
                 (a.signature_name or "—")[:120],
-                "Yes" if a.has_signature else "No",
+                {
+                    "app_signature": "App signature",
+                    "manual_paper": "Manual/paper record",
+                }.get(a.signature_method, "Not signed"),
                 (a.declined_reason or "—")[:200],
             ],
         )

@@ -91,6 +91,8 @@ class ToolboxTalkAttendee(Base):
     )
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
     signature_name: Mapped[str] = mapped_column(String(200), nullable=True)
+    signature_method: Mapped[str] = mapped_column(String(32), nullable=True)
+    manual_signature_note: Mapped[str] = mapped_column(String(500), nullable=True)
     signature_image_path: Mapped[str] = mapped_column(String(512), nullable=True)
     signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     declined_reason: Mapped[str] = mapped_column(String(2000), nullable=True)

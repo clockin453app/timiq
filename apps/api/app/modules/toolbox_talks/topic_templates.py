@@ -99,6 +99,21 @@ TOOLBOX_TOPIC_TEMPLATES: list[ToolboxTopicTemplateDict] = [
         ["Safety footwear with good grip", "Hi-vis"],
     ),
     _tpl(
+        "ladder_safety",
+        "Access equipment",
+        "Toolbox talk: Ladder safety",
+        "Ladders should only be used where the task is low risk, short duration, and a safer platform is not reasonably practicable.\n\n"
+        "Check the ladder condition, footing, angle, tie/security, and the work area before climbing.",
+        [
+            "Carry out pre-use checks for stiles, rungs, feet, locking bars, and contamination.",
+            "Set ladders on firm level ground and secure them where possible.",
+            "Maintain three points of contact and keep belt buckle between the stiles.",
+        ],
+        ["Safety footwear", "Hard hat where site rules require", "Task-specific gloves"],
+        do_list=["Use the right ladder for the job", "Keep both hands free when climbing"],
+        dont_list=["Do not overreach", "Do not work from damaged or makeshift access"],
+    ),
+    _tpl(
         "site_housekeeping",
         "Housekeeping",
         "Toolbox talk: Site housekeeping",
@@ -151,6 +166,21 @@ TOOLBOX_TOPIC_TEMPLATES: list[ToolboxTopicTemplateDict] = [
         ["Insulated tools where specified", "Safety footwear"],
     ),
     _tpl(
+        "excavations",
+        "Groundworks",
+        "Toolbox talk: Excavation and underground services",
+        "Excavations can collapse without warning and underground services can kill. Permits, service drawings, CAT scanning, and safe access must be in place before work starts.\n\n"
+        "Confirm the permit/check process, scan records, edge protection, spoil placement, and emergency arrangements.",
+        [
+            "Check drawings and scan before breaking ground; rescan as work progresses.",
+            "Keep spoil, plant, and materials away from excavation edges.",
+            "Provide safe access and egress; inspect after weather changes or vibration.",
+        ],
+        ["Hard hat", "Safety boots", "Hi-vis", "Gloves", "Eye protection as required"],
+        do_list=["Stop work if unknown services are found", "Report signs of collapse or water ingress immediately"],
+        dont_list=["Do not enter unsupported excavations", "Do not assume services are exactly where drawings show"],
+    ),
+    _tpl(
         "plant_and_machinery",
         "Plant",
         "Toolbox talk: Plant and machinery",
@@ -201,6 +231,36 @@ TOOLBOX_TOPIC_TEMPLATES: list[ToolboxTopicTemplateDict] = [
             "Wash hands before eating; do not use solvents to clean skin.",
         ],
         ["Chemical-resistant gloves", "Eye protection", "RPE where assessment requires"],
+    ),
+    _tpl(
+        "first_aid_incident_reporting",
+        "Emergency",
+        "Toolbox talk: First aid and incident reporting",
+        "Prompt reporting helps people get treatment and helps the site prevent repeat incidents. Near misses matter as much as injuries.\n\n"
+        "Confirm first aid arrangements, emergency contacts, and how to report accidents, damage, hazards, and near misses.",
+        [
+            "Know the first aider, first aid kit location, and emergency contact route.",
+            "Report accidents and near misses as soon as possible.",
+            "Preserve the scene where needed unless someone is at immediate risk.",
+        ],
+        ["Site minimum PPE"],
+        do_list=["Tell your supervisor early if you are injured or feel unwell", "Record near misses accurately"],
+        dont_list=["Do not ignore small injuries", "Do not move evidence unless needed to make the area safe"],
+    ),
+    _tpl(
+        "site_induction_refresher",
+        "Site rules",
+        "Toolbox talk: Site induction refresher",
+        "A refresher keeps core site rules visible: welfare, emergencies, access routes, signing in/out, and hazard reporting.\n\n"
+        "Use this talk when site arrangements change or when teams need a quick reminder of the basics.",
+        [
+            "Follow site access routes and sign in/out requirements.",
+            "Know welfare, emergency arrangements, assembly points, and reporting routes.",
+            "Report hazards, unsafe acts, or changes in conditions immediately.",
+        ],
+        ["Site minimum PPE", "Task-specific PPE"],
+        do_list=["Ask if any rule is unclear", "Check notice boards and daily briefings"],
+        dont_list=["Do not bypass site access controls", "Do not start work without understanding the local rules"],
     ),
     _tpl(
         "emergency_procedures",
