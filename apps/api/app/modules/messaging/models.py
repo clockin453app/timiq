@@ -137,6 +137,31 @@ class ConversationParticipant(Base):
     last_read_at = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class MessageConversationPresence(Base):
+    __tablename__ = "message_conversation_presence"
+    __table_args__ = (
+        UniqueConstraint("user_id", "conversation_id", name="uq_message_conversation_presence_user_conversation"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    last_active_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    active_until: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class Message(Base):
     __tablename__ = "messages"
 

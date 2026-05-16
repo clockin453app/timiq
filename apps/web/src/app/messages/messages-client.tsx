@@ -14,6 +14,7 @@ import {
   fetchConversations,
   markAnnouncementRead,
   markConversationRead,
+  postConversationPresence,
   postConversationMessage,
   type AnnouncementListItem,
   type Colleague,
@@ -305,6 +306,21 @@ export function MessagesClient() {
     if (tab !== "messages" || !selectedConvId) {
       return undefined;
     }
+    const heartbeat = () => {
+      if (document.visibilityState !== "visible") {
+        return;
+      }
+      void postConversationPresence(selectedConvId).catch(() => undefined);
+    };
+    heartbeat();
+    const id = window.setInterval(heartbeat, 30_000);
+    return () => window.clearInterval(id);
+  }, [tab, selectedConvId]);
+
+  useEffect(() => {
+    if (tab !== "messages" || !selectedConvId) {
+      return undefined;
+    }
     const id = window.setInterval(() => {
       if (document.visibilityState !== "visible") {
         return;
@@ -322,6 +338,7 @@ export function MessagesClient() {
       if (tab === "messages") {
         void loadConversations();
         if (selectedConvId) {
+          void postConversationPresence(selectedConvId).catch(() => undefined);
           void loadMessages(selectedConvId, { silent: true });
         }
       }
@@ -335,6 +352,7 @@ export function MessagesClient() {
       if (tab === "messages") {
         void loadConversations();
         if (selectedConvId) {
+          void postConversationPresence(selectedConvId).catch(() => undefined);
           void loadMessages(selectedConvId, { silent: true });
         }
       }

@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import Select, and_, false, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
@@ -13,6 +14,7 @@ from app.modules.messaging.models import (
     Conversation,
     ConversationParticipant,
     Message,
+    MessageConversationPresence,
 )
 
 
@@ -108,6 +110,46 @@ def get_participant(
         ConversationParticipant.user_id == user_id,
     )
     return db_session.scalar(stmt)
+
+
+def upsert_conversation_presence(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    last_active_at: datetime,
+    active_until: datetime,
+) -> None:
+    stmt = (
+        insert(MessageConversationPresence)
+        .values(
+            id=uuid.uuid4(),
+            user_id=user_id,
+            conversation_id=conversation_id,
+            last_active_at=last_active_at,
+            active_until=active_until,
+        )
+        .on_conflict_do_update(
+            constraint="uq_message_conversation_presence_user_conversation",
+            set_={"last_active_at": last_active_at, "active_until": active_until},
+        )
+    )
+    db_session.execute(stmt)
+
+
+def is_user_active_in_conversation(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    now: datetime,
+) -> bool:
+    stmt = select(MessageConversationPresence.id).where(
+        MessageConversationPresence.user_id == user_id,
+        MessageConversationPresence.conversation_id == conversation_id,
+        MessageConversationPresence.active_until >= now,
+    )
+    return db_session.scalar(stmt) is not None
 
 
 def list_participants_for_conversation(db_session: Session, conversation_id: uuid.UUID) -> list[ConversationParticipant]:

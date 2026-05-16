@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
@@ -25,6 +25,7 @@ from app.modules.messaging.repository import (
     get_conversation,
     get_last_message,
     get_participant,
+    is_user_active_in_conversation,
     list_announcement_reads,
     list_announcement_recipient_users,
     list_announcements_visible,
@@ -37,6 +38,7 @@ from app.modules.messaging.repository import (
     save_message,
     touch_conversation_updated,
     upsert_announcement_read,
+    upsert_conversation_presence,
 )
 from app.modules.notifications.events import record_announcement_published, record_message_received
 from app.modules.messaging.schemas import (
@@ -56,6 +58,7 @@ from app.modules.messaging.schemas import (
 )
 
 _TAG_RE = re.compile(r"<[^>]+>")
+_MESSAGE_PRESENCE_TTL_SECONDS = 90
 
 
 def _strip_html(s: str) -> str:
@@ -124,6 +127,19 @@ def _record_message_received_events(
     message: Message,
     recipient_user_ids: list[uuid.UUID],
 ) -> None:
+    now = _now()
+    active_recipient_ids = {
+        recipient_id
+        for recipient_id in dict.fromkeys(recipient_user_ids)
+        if recipient_id != actor.id
+        and is_user_active_in_conversation(
+            db_session,
+            user_id=recipient_id,
+            conversation_id=conversation.id,
+            now=now,
+        )
+    }
+    push_recipient_ids = [recipient_id for recipient_id in recipient_user_ids if recipient_id not in active_recipient_ids]
     record_message_received(
         db_session,
         company_id=conversation.company_id,
@@ -131,7 +147,7 @@ def _record_message_received_events(
         message_id=message.id,
         sender_user_id=actor.id,
         sender_display_name=_peer_display_name(db_session, actor.id),
-        recipient_user_ids=recipient_user_ids,
+        recipient_user_ids=push_recipient_ids,
     )
 
 
@@ -813,6 +829,24 @@ def mark_conversation_read(
     part.last_read_at = _now()
     db_session.add(part)
     db_session.flush()
+    db_session.commit()
+
+
+def record_conversation_presence(
+    db_session: Session,
+    actor: User,
+    conversation_id: uuid.UUID,
+) -> None:
+    if get_participant(db_session, conversation_id=conversation_id, user_id=actor.id) is None:
+        raise MessagingPermissionError("You are not part of this conversation.")
+    now = _now()
+    upsert_conversation_presence(
+        db_session,
+        user_id=actor.id,
+        conversation_id=conversation_id,
+        last_active_at=now,
+        active_until=now + timedelta(seconds=_MESSAGE_PRESENCE_TTL_SECONDS),
+    )
     db_session.commit()
 
 

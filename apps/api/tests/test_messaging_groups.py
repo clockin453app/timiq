@@ -8,6 +8,7 @@ from app.main import app
 def test_messaging_participants_route_registered() -> None:
     paths = [getattr(r, "path", "") for r in app.routes if hasattr(r, "path")]
     assert "/api/messaging/conversations/{conversation_id}/participants" in paths
+    assert "/api/messaging/conversations/{conversation_id}/presence" in paths
 
 
 def test_messaging_participants_requires_auth() -> None:

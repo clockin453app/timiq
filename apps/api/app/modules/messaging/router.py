@@ -37,6 +37,7 @@ from .service import (
     mark_conversation_read,
     patch_announcement,
     patch_group_conversation_title,
+    record_conversation_presence,
 )
 
 router = APIRouter(prefix="/api/messaging", tags=["messaging"])
@@ -244,5 +245,17 @@ def post_conversation_mark_read(
 ) -> None:
     try:
         mark_conversation_read(db_session, current_user, conversation_id)
+    except MessagingPermissionError as exc:
+        raise _perm(exc) from exc
+
+
+@router.post("/conversations/{conversation_id}/presence", status_code=status.HTTP_204_NO_CONTENT)
+def post_conversation_presence(
+    conversation_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> None:
+    try:
+        record_conversation_presence(db_session, current_user, conversation_id)
     except MessagingPermissionError as exc:
         raise _perm(exc) from exc

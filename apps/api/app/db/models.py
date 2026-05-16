@@ -15,6 +15,7 @@ from app.modules.messaging.models import (
     Conversation,
     ConversationParticipant,
     Message,
+    MessageConversationPresence,
 )
 from app.modules.leave.models import LeaveBalanceAdjustment, LeavePolicy, LeaveRequest
 from app.modules.notifications.models import NotificationRecord, NotificationSeen, PushSubscription
@@ -47,6 +48,7 @@ __all__ = [
     "Conversation",
     "ConversationParticipant",
     "Message",
+    "MessageConversationPresence",
     "CompanyTimePolicy",
     "EmployeeProfile",
     "EmployeeJobRole",

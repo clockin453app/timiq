@@ -245,3 +245,13 @@ export async function markConversationRead(conversationId: string): Promise<void
     await parseError(response, "Could not update read state.");
   }
 }
+
+export async function postConversationPresence(conversationId: string): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/messaging/conversations/${encodeURIComponent(conversationId)}/presence`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not update conversation presence.");
+  }
+}
