@@ -4,6 +4,11 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
 import {
+  getAttendanceNotificationSettings,
+  patchAttendanceNotificationSettings,
+  type AttendanceNotificationSettings,
+} from "../../features/attendance-notifications/api";
+import {
   canAccessManagement,
   changeMyPassword,
   isAdministrator,
@@ -57,8 +62,10 @@ export function SettingsClient() {
   const [loadError, setLoadError] = useState("");
   const [savingMy, setSavingMy] = useState(false);
   const [savingCompany, setSavingCompany] = useState(false);
+  const [savingAttendance, setSavingAttendance] = useState(false);
   const [myMessage, setMyMessage] = useState("");
   const [companyMessage, setCompanyMessage] = useState("");
+  const [attendanceMessage, setAttendanceMessage] = useState("");
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [adminCompanyId, setAdminCompanyId] = useState<string | null>(null);
@@ -86,6 +93,22 @@ export function SettingsClient() {
   const [coNotifPush, setCoNotifPush] = useState(false);
   const [coBrandColor, setCoBrandColor] = useState("");
 
+  const [attLateEnabled, setAttLateEnabled] = useState(false);
+  const [attLateGrace, setAttLateGrace] = useState(15);
+  const [attLateNotifyEmployee, setAttLateNotifyEmployee] = useState(false);
+  const [attLateNotifyAdmins, setAttLateNotifyAdmins] = useState(true);
+  const [attForgotInEnabled, setAttForgotInEnabled] = useState(false);
+  const [attForgotInTime, setAttForgotInTime] = useState("09:30");
+  const [attForgotInNotifyEmployee, setAttForgotInNotifyEmployee] = useState(true);
+  const [attForgotInNotifyAdmins, setAttForgotInNotifyAdmins] = useState(true);
+  const [attForgotOutEnabled, setAttForgotOutEnabled] = useState(false);
+  const [attForgotOutThreshold, setAttForgotOutThreshold] = useState(12);
+  const [attForgotOutRepeat, setAttForgotOutRepeat] = useState("");
+  const [attForgotOutNotifyEmployee, setAttForgotOutNotifyEmployee] = useState(true);
+  const [attForgotOutNotifyAdmins, setAttForgotOutNotifyAdmins] = useState(true);
+  const [attIgnoreLeave, setAttIgnoreLeave] = useState(true);
+  const [attActiveWeekdays, setAttActiveWeekdays] = useState<number[]>([0, 1, 2, 3, 4]);
+
   const previewDate = new Date(2026, 4, 11, 14, 30, 0);
 
   useEffect(() => {
@@ -110,6 +133,7 @@ export function SettingsClient() {
     setLoadError("");
     setMyMessage("");
     setCompanyMessage("");
+    setAttendanceMessage("");
     try {
       let companyIdForEffective: string | null = null;
       let companyIdForCompanyApi: string | null = null;
@@ -141,6 +165,8 @@ export function SettingsClient() {
         } else {
           const co = await getSettingsCompany(companyIdForCompanyApi);
           applyCompany(co);
+          const attendance = await getAttendanceNotificationSettings(companyIdForCompanyApi);
+          applyAttendance(attendance);
         }
       }
     } catch (e) {
@@ -170,6 +196,24 @@ export function SettingsClient() {
     setCoNotifEmail(co.email_notifications_enabled);
     setCoNotifPush(co.push_notifications_enabled);
     setCoBrandColor(co.brand_primary_color ?? "");
+  }
+
+  function applyAttendance(settings: AttendanceNotificationSettings) {
+    setAttLateEnabled(settings.late_arrival_enabled);
+    setAttLateGrace(settings.late_arrival_grace_minutes);
+    setAttLateNotifyEmployee(settings.late_arrival_notify_employee);
+    setAttLateNotifyAdmins(settings.late_arrival_notify_admins);
+    setAttForgotInEnabled(settings.forgot_clock_in_enabled);
+    setAttForgotInTime(settings.forgot_clock_in_check_time.slice(0, 5));
+    setAttForgotInNotifyEmployee(settings.forgot_clock_in_notify_employee);
+    setAttForgotInNotifyAdmins(settings.forgot_clock_in_notify_admins);
+    setAttForgotOutEnabled(settings.forgot_clock_out_enabled);
+    setAttForgotOutThreshold(settings.forgot_clock_out_threshold_hours);
+    setAttForgotOutRepeat(settings.forgot_clock_out_repeat_hours ? String(settings.forgot_clock_out_repeat_hours) : "");
+    setAttForgotOutNotifyEmployee(settings.forgot_clock_out_notify_employee);
+    setAttForgotOutNotifyAdmins(settings.forgot_clock_out_notify_admins);
+    setAttIgnoreLeave(settings.ignore_approved_leave);
+    setAttActiveWeekdays(settings.active_weekdays);
   }
 
   useEffect(() => {
@@ -238,8 +282,64 @@ export function SettingsClient() {
     }
   }
 
+  async function onSaveAttendance(e: FormEvent) {
+    e.preventDefault();
+    if (platformAdmin && !adminCompanyId) {
+      setAttendanceMessage(t("settings.select_company_first", "Select a company first."));
+      return;
+    }
+    setSavingAttendance(true);
+    setAttendanceMessage("");
+    try {
+      const repeat = attForgotOutRepeat.trim();
+      const saved = await patchAttendanceNotificationSettings(
+        {
+          late_arrival_enabled: attLateEnabled,
+          late_arrival_grace_minutes: attLateGrace,
+          late_arrival_notify_employee: attLateNotifyEmployee,
+          late_arrival_notify_admins: attLateNotifyAdmins,
+          forgot_clock_in_enabled: attForgotInEnabled,
+          forgot_clock_in_check_time: attForgotInTime,
+          forgot_clock_in_notify_employee: attForgotInNotifyEmployee,
+          forgot_clock_in_notify_admins: attForgotInNotifyAdmins,
+          forgot_clock_out_enabled: attForgotOutEnabled,
+          forgot_clock_out_threshold_hours: attForgotOutThreshold,
+          forgot_clock_out_repeat_hours: repeat ? Number(repeat) : null,
+          forgot_clock_out_notify_employee: attForgotOutNotifyEmployee,
+          forgot_clock_out_notify_admins: attForgotOutNotifyAdmins,
+          ignore_approved_leave: attIgnoreLeave,
+          active_weekdays: attActiveWeekdays,
+        },
+        platformAdmin ? adminCompanyId : null,
+      );
+      applyAttendance(saved);
+      setAttendanceMessage(t("settings.attendance_notifications_saved", "Attendance notification settings were saved."));
+    } catch (err) {
+      setAttendanceMessage(err instanceof Error ? err.message : t("settings.save_failed", "Save failed."));
+    } finally {
+      setSavingAttendance(false);
+    }
+  }
+
   const brandPreview =
     coBrandColor && /^#[0-9A-Fa-f]{6}$/.test(coBrandColor) ? coBrandColor : "#64748b";
+  const weekdays = [
+    { id: 0, label: "Mon" },
+    { id: 1, label: "Tue" },
+    { id: 2, label: "Wed" },
+    { id: 3, label: "Thu" },
+    { id: 4, label: "Fri" },
+    { id: 5, label: "Sat" },
+    { id: 6, label: "Sun" },
+  ];
+
+  function toggleAttendanceWeekday(day: number, checked: boolean) {
+    setAttActiveWeekdays((prev) => {
+      const next = checked ? [...prev, day] : prev.filter((item) => item !== day);
+      const unique = Array.from(new Set(next)).sort((a, b) => a - b);
+      return unique.length > 0 ? unique : prev;
+    });
+  }
 
   return (
     <Sheet>
@@ -715,6 +815,159 @@ export function SettingsClient() {
                   </Button>
                   {companyMessage ? (
                     <span className="text-sm text-[var(--color-text-muted)]">{companyMessage}</span>
+                  ) : null}
+                </div>
+              </>
+            )}
+          </form>
+        ) : null}
+
+        {showCompany ? (
+          <form className={cardClass()} onSubmit={onSaveAttendance}>
+            <h2 className="text-base font-semibold text-[var(--color-text)]">
+              {t("settings.attendance_notifications_title", "Attendance notifications")}
+            </h2>
+            {platformAdmin && !adminCompanyId ? (
+              <p className="text-sm text-[var(--color-text-muted)]">
+                {t("settings.create_select_company", "Create or select a company to edit defaults.")}
+              </p>
+            ) : (
+              <>
+                <p className="max-w-3xl text-sm text-[var(--color-text-muted)]">
+                  {t(
+                    "settings.attendance_notifications_hint",
+                    "Late arrival and forgot clock-in use company/site default start time until rota scheduling is available. Sound alerts play only when TimIQ is open; in-app notifications are created in the background.",
+                  )}
+                </p>
+
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-3 space-y-3">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+                      <input type="checkbox" checked={attLateEnabled} onChange={(ev) => setAttLateEnabled(ev.target.checked)} />
+                      {t("settings.att_late_enabled", "Late arrival")}
+                    </label>
+                    <label className={labelClass()} htmlFor="att-late-grace">
+                      {t("settings.att_late_grace", "Grace period minutes")}
+                      <input
+                        id="att-late-grace"
+                        className={fieldClass()}
+                        min={0}
+                        max={240}
+                        type="number"
+                        value={attLateGrace}
+                        onChange={(ev) => setAttLateGrace(Number(ev.target.value))}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                      <input type="checkbox" checked={attLateNotifyEmployee} onChange={(ev) => setAttLateNotifyEmployee(ev.target.checked)} />
+                      {t("settings.att_notify_employee", "Notify employee")}
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                      <input type="checkbox" checked={attLateNotifyAdmins} onChange={(ev) => setAttLateNotifyAdmins(ev.target.checked)} />
+                      {t("settings.att_notify_admins", "Notify company admins")}
+                    </label>
+                  </div>
+
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-3 space-y-3">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+                      <input type="checkbox" checked={attForgotInEnabled} onChange={(ev) => setAttForgotInEnabled(ev.target.checked)} />
+                      {t("settings.att_forgot_in_enabled", "Forgot clock-in")}
+                    </label>
+                    <label className={labelClass()} htmlFor="att-forgot-in-time">
+                      {t("settings.att_forgot_in_time", "Check time")}
+                      <input
+                        id="att-forgot-in-time"
+                        className={fieldClass()}
+                        type="time"
+                        value={attForgotInTime}
+                        onChange={(ev) => setAttForgotInTime(ev.target.value)}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                      <input type="checkbox" checked={attForgotInNotifyEmployee} onChange={(ev) => setAttForgotInNotifyEmployee(ev.target.checked)} />
+                      {t("settings.att_notify_employee", "Notify employee")}
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                      <input type="checkbox" checked={attForgotInNotifyAdmins} onChange={(ev) => setAttForgotInNotifyAdmins(ev.target.checked)} />
+                      {t("settings.att_notify_admins", "Notify company admins")}
+                    </label>
+                  </div>
+
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] p-3 space-y-3">
+                    <label className="flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+                      <input type="checkbox" checked={attForgotOutEnabled} onChange={(ev) => setAttForgotOutEnabled(ev.target.checked)} />
+                      {t("settings.att_forgot_out_enabled", "Forgot clock-out")}
+                    </label>
+                    <label className={labelClass()} htmlFor="att-forgot-out-threshold">
+                      {t("settings.att_forgot_out_threshold", "Open shift threshold hours")}
+                      <input
+                        id="att-forgot-out-threshold"
+                        className={fieldClass()}
+                        min={1}
+                        max={48}
+                        type="number"
+                        value={attForgotOutThreshold}
+                        onChange={(ev) => setAttForgotOutThreshold(Number(ev.target.value))}
+                      />
+                    </label>
+                    <label className={labelClass()} htmlFor="att-forgot-out-repeat">
+                      {t("settings.att_forgot_out_repeat", "Repeat reminder hours (optional)")}
+                      <input
+                        id="att-forgot-out-repeat"
+                        className={fieldClass()}
+                        min={1}
+                        max={48}
+                        type="number"
+                        value={attForgotOutRepeat}
+                        onChange={(ev) => setAttForgotOutRepeat(ev.target.value)}
+                      />
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                      <input type="checkbox" checked={attForgotOutNotifyEmployee} onChange={(ev) => setAttForgotOutNotifyEmployee(ev.target.checked)} />
+                      {t("settings.att_notify_employee", "Notify employee")}
+                    </label>
+                    <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                      <input type="checkbox" checked={attForgotOutNotifyAdmins} onChange={(ev) => setAttForgotOutNotifyAdmins(ev.target.checked)} />
+                      {t("settings.att_notify_admins", "Notify company admins")}
+                    </label>
+                  </div>
+                </div>
+
+                <div className="border-t border-[var(--color-border-dark)] pt-3 space-y-2">
+                  <h3 className="text-sm font-semibold text-[var(--color-text)]">
+                    {t("settings.att_general_rules", "General rules")}
+                  </h3>
+                  <label className="flex items-center gap-2 text-sm text-[var(--color-text)]">
+                    <input type="checkbox" checked={attIgnoreLeave} onChange={(ev) => setAttIgnoreLeave(ev.target.checked)} />
+                    {t("settings.att_ignore_leave", "Ignore employees on approved leave")}
+                  </label>
+                  <div>
+                    <p className="text-sm font-medium text-[var(--color-text-muted)]">
+                      {t("settings.att_active_weekdays", "Active weekdays")}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      {weekdays.map((day) => (
+                        <label key={day.id} className="flex items-center gap-1.5 text-sm text-[var(--color-text)]">
+                          <input
+                            type="checkbox"
+                            checked={attActiveWeekdays.includes(day.id)}
+                            onChange={(ev) => toggleAttendanceWeekday(day.id, ev.target.checked)}
+                          />
+                          {day.label}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="submit" disabled={savingAttendance || (platformAdmin && !adminCompanyId)}>
+                    {savingAttendance
+                      ? t("settings.saving", "Saving…")
+                      : t("settings.save_attendance_notifications", "Save attendance notifications")}
+                  </Button>
+                  {attendanceMessage ? (
+                    <span className="text-sm text-[var(--color-text-muted)]">{attendanceMessage}</span>
                   ) : null}
                 </div>
               </>

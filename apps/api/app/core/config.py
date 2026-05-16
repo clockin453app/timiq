@@ -164,6 +164,13 @@ class Settings(BaseSettings):
             "timiq_web_app_url",
         ),
     )
+    timiq_attendance_notification_job_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices(
+            "TIMIQ_ATTENDANCE_NOTIFICATION_JOB_ENABLED",
+            "timiq_attendance_notification_job_enabled",
+        ),
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

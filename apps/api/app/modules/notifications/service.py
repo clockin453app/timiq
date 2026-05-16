@@ -39,6 +39,14 @@ _SEEN_ALLOWED_KINDS = frozenset(
     },
 )
 
+_PERSISTENT_RECORD_KINDS = frozenset(
+    {
+        "attendance_late_arrival",
+        "attendance_forgot_clock_in",
+        "attendance_forgot_clock_out",
+    }
+)
+
 
 def _now_for_announcements(db: Session) -> datetime:
     return datetime.now(timezone.utc)
@@ -69,7 +77,13 @@ def _category_for_kind(kind: str) -> str:
         return "safety"
     if kind in ("payroll_pending", "payslip_ready"):
         return "payroll"
-    if kind in ("week_report_ready", "time_review"):
+    if kind in (
+        "week_report_ready",
+        "time_review",
+        "attendance_late_arrival",
+        "attendance_forgot_clock_in",
+        "attendance_forgot_clock_out",
+    ):
         return "time"
     if kind in ("leave_approved", "leave_rejected"):
         return "leave"
@@ -154,6 +168,13 @@ def _week_report_target_key(db: Session, actor: User) -> str | None:
 
 def mark_notification_seen(db: Session, actor: User, body: NotificationMarkSeenRequest) -> None:
     kind = body.kind.strip()
+    if kind in _PERSISTENT_RECORD_KINDS:
+        key = (body.target_key or "").strip()[:512]
+        if not key:
+            raise ValueError("target_key is required for this notification kind.")
+        notif_seen_repo.mark_record_seen(db, user_id=actor.id, kind=kind, dedupe_key=key)
+        db.flush()
+        return
     if kind not in _SEEN_ALLOWED_KINDS:
         return
     company_scope = body.company_id
@@ -192,6 +213,7 @@ def mark_notification_seen(db: Session, actor: User, body: NotificationMarkSeenR
     if not key:
         raise ValueError("target_key is required for this notification kind.")
     notif_seen_repo.upsert_seen(db, user_id=actor.id, kind=kind, target_key=key)
+    notif_seen_repo.mark_all_records_seen_for_user(db, user_id=actor.id, company_id=body.company_id)
     db.flush()
 
 
@@ -258,6 +280,19 @@ def get_notification_summary(
                 description=mb.description,
                 href=mb.href,
                 count=mb.count,
+            ),
+        )
+
+    for record in notif_seen_repo.list_unseen_records_for_user(db, user_id=actor.id, company_id=company_id):
+        items.append(
+            _item(
+                kind=record.kind,
+                target_key=record.dedupe_key,
+                title=record.title,
+                description=record.description,
+                href=record.href,
+                count=1,
+                priority=record.priority,
             ),
         )
 

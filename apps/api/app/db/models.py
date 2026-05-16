@@ -3,6 +3,7 @@ from app.modules.accounting.models import (
     AccountingExportSettings,
     CompanyAccountingSettings,
 )
+from app.modules.attendance_notifications.models import AttendanceNotificationSettings
 from app.modules.audit.models import AuditEvent
 from app.modules.auth.models import AccountActionToken, EmployeeJobRole, User
 from app.modules.budgets.models import BudgetExpense, BudgetProject
@@ -16,7 +17,7 @@ from app.modules.messaging.models import (
     Message,
 )
 from app.modules.leave.models import LeaveBalanceAdjustment, LeavePolicy, LeaveRequest
-from app.modules.notifications.models import NotificationSeen
+from app.modules.notifications.models import NotificationRecord, NotificationSeen
 from app.modules.locations.models import Location
 from app.modules.site_access.models import EmployeeLocationAccess
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
@@ -33,6 +34,7 @@ from app.modules.work_progress.models import WorkProgressAttachment, WorkProgres
 
 __all__ = [
     "AuditEvent",
+    "AttendanceNotificationSettings",
     "BudgetExpense",
     "BudgetProject",
     "Company",
@@ -54,6 +56,7 @@ __all__ = [
     "LeaveRequest",
     "Location",
     "NotificationSeen",
+    "NotificationRecord",
     "CompanyAppSettings",
     "ClockSelfie",
     "TimeShift",

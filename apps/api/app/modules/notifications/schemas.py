@@ -22,6 +22,9 @@ NotificationKind = Literal[
     "leave_approved",
     "leave_rejected",
     "face_check_setup",
+    "attendance_late_arrival",
+    "attendance_forgot_clock_in",
+    "attendance_forgot_clock_out",
 ]
 
 NotificationCategory = Literal["messages", "safety", "payroll", "time", "leave", "admin", "account"]

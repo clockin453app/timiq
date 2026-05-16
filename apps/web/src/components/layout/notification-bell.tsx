@@ -25,6 +25,9 @@ const SEEN_MARK_KINDS = new Set([
   "leave_approved",
   "leave_rejected",
   "announcement",
+  "attendance_late_arrival",
+  "attendance_forgot_clock_in",
+  "attendance_forgot_clock_out",
 ]);
 
 const GROUP_ORDER = ["account", "messages", "safety", "payroll", "time", "leave", "admin"];
