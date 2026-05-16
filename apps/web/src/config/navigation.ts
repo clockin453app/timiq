@@ -457,19 +457,13 @@ export type MobileDrawerNavigation = {
   groups: NavigationGroupDefinition[];
 };
 
-const MOBILE_MANAGEMENT_SHORTCUTS: NavigationItem[] = [
-  MESSAGES,
-  OVERVIEW,
-  TIME_RECORDS,
-  LIVE_ATTENDANCE,
-  EMPLOYEES,
-  LOCATIONS,
-  PAYROLL_REPORT,
-];
-
-const MOBILE_EMPLOYEE_SHORTCUTS: NavigationItem[] = [MESSAGES, TIME_RECORDS, PAY_HISTORY];
-
 const MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS: NavigationGroupDefinition[] = [
+  {
+    id: "mobile-mgmt-general",
+    label: "General",
+    groupLabelKey: "nav.group.general",
+    items: [OVERVIEW, MESSAGES, TIME_RECORDS, LIVE_ATTENDANCE],
+  },
   {
     id: "mobile-mgmt-people",
     label: "People",
@@ -486,13 +480,13 @@ const MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mobile-mgmt-attendance",
     label: "Attendance",
     groupLabelKey: "nav.group.mgmt_attendance",
-    items: [LIVE_ATTENDANCE, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
+    items: [TIMESHEETS, WEEK_REPORT],
   },
   {
     id: "mobile-mgmt-payroll",
     label: "Payroll",
     groupLabelKey: "nav.group.mgmt_payroll",
-    items: [PAYROLL_REPORT, BUDGET_CALCULATOR, ACCOUNTING_LINK],
+    items: [PAYROLL_REPORT, PAY_HISTORY, BUDGET_CALCULATOR, ACCOUNTING_LINK],
   },
   {
     id: "mobile-mgmt-work",
@@ -514,24 +508,52 @@ const MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mobile-mgmt-system",
     label: "System",
     groupLabelKey: "nav.group.mgmt_system",
-    items: [SETTINGS, HELP_CENTRE, SYSTEM_HEALTH, AUDIT_LOG],
+    items: [HELP_CENTRE, SYSTEM_HEALTH, AUDIT_LOG],
   },
 ];
 
 const MOBILE_DRAWER_EMPLOYEE_GROUP_DEFS: NavigationGroupDefinition[] = [
   {
-    id: "mobile-emp-work",
-    label: "Work",
-    groupLabelKey: "nav.group.emp_work",
-    items: [STARTER_FORM, SITE_PROGRESS, LEAVE, FORMS, TOOLBOX_TALKS, RAMS],
-  },
-  {
-    id: "mobile-emp-account",
-    label: "Account",
-    groupLabelKey: "nav.group.emp_profile",
-    items: [HELP_CENTRE, PRIVACY_PORTAL],
+    id: "mobile-emp-general",
+    label: "General",
+    groupLabelKey: "nav.group.general",
+    items: [MESSAGES, TIME_RECORDS, PAY_HISTORY, STARTER_FORM, SITE_PROGRESS, LEAVE, RAMS, TOOLBOX_TALKS, FORMS, HELP_CENTRE],
   },
 ];
+
+const MOBILE_DRAWER_FOOTER_HREFS = new Set<string>(["/profile", "/settings"]);
+const MOBILE_DRAWER_DEPRECATED_HREFS = new Set<string>(["/workplaces"]);
+
+function filterMobileDrawerGroups(
+  role: SystemRole,
+  groups: NavigationGroupDefinition[],
+): NavigationGroupDefinition[] {
+  const seen = new Set<string>();
+  return groups
+    .map((group) => {
+      const items = group.items.filter((item) => {
+        if (!itemVisibleForRole(item, role)) {
+          return false;
+        }
+        if (MOBILE_DRAWER_FOOTER_HREFS.has(item.href)) {
+          return false;
+        }
+        if (MOBILE_DRAWER_DEPRECATED_HREFS.has(item.href)) {
+          return false;
+        }
+        if ((role === "admin" || role === "administrator") && item.href === "/dashboard") {
+          return false;
+        }
+        if (seen.has(item.href)) {
+          return false;
+        }
+        seen.add(item.href);
+        return true;
+      });
+      return { ...group, items };
+    })
+    .filter((group) => group.items.length > 0);
+}
 
 export function getMobileDrawerNavigationGroups(
   role: SystemRole,
@@ -540,28 +562,23 @@ export function getMobileDrawerNavigationGroups(
   if (options?.limitedAccess && role === "employee") {
     return {
       shortcuts: [],
-      groups: LIMITED_ACCESS_NAV_GROUP_DEFS.filter((group) => group.id !== "limited-profile")
-        .map((group) => filterGroup(role, group))
-        .filter(
-        (g): g is NavigationGroupDefinition => g !== null,
+      groups: filterMobileDrawerGroups(
+        role,
+        LIMITED_ACCESS_NAV_GROUP_DEFS.filter((group) => group.id !== "limited-profile"),
       ),
     };
   }
 
   if (role === "administrator" || role === "admin") {
     return {
-      shortcuts: MOBILE_MANAGEMENT_SHORTCUTS.filter((item) => itemVisibleForRole(item, role)),
-      groups: MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS.map((group) => filterGroup(role, group)).filter(
-        (g): g is NavigationGroupDefinition => g !== null,
-      ),
+      shortcuts: [],
+      groups: filterMobileDrawerGroups(role, MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS),
     };
   }
 
   return {
-    shortcuts: MOBILE_EMPLOYEE_SHORTCUTS.filter((item) => itemVisibleForRole(item, role)),
-    groups: MOBILE_DRAWER_EMPLOYEE_GROUP_DEFS.map((group) => filterGroup(role, group)).filter(
-      (g): g is NavigationGroupDefinition => g !== null,
-    ),
+    shortcuts: [],
+    groups: filterMobileDrawerGroups(role, MOBILE_DRAWER_EMPLOYEE_GROUP_DEFS),
   };
 }
 

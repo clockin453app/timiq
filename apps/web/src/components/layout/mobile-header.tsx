@@ -10,23 +10,13 @@ import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { employeeRoleLabel } from "../../lib/i18n/display-labels";
 import { useT } from "../../lib/i18n";
 
-import { GroupedNavBlock, navItemMatchesActive } from "./grouped-nav";
+import { GroupedNavBlock } from "./grouped-nav";
 import { MessagesHeaderButton } from "./messages-header-button";
-import { NavItemIcon } from "./nav-item-icon";
 import { NotificationBell } from "./notification-bell";
 
 type MobileHeaderProps = {
   activeHref?: string;
 };
-
-function mobileDrawerLinkClass(active: boolean): string {
-  const base =
-    "flex min-h-[44px] min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-3 py-2.5 text-sm font-medium text-[#1f2937]";
-  if (active) {
-    return `${base} border-[var(--color-border-dark)] bg-[#e5e7eb] font-semibold text-[#111827]`;
-  }
-  return `${base} border-transparent hover:border-[var(--color-border)] hover:bg-[#e5e7eb] hover:text-[#111827]`;
-}
 
 export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const user = useCurrentUser();
@@ -131,31 +121,6 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
               aria-label={t("shell.drawer_nav", "More navigation")}
               className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-2 text-sm [-webkit-overflow-scrolling:touch]"
             >
-              {drawerNavigation.shortcuts.length > 0 ? (
-                <div className="mb-3 border-b border-[var(--color-border)] pb-3">
-                  <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                    {t("nav.group.desk_more", "Shortcuts")}
-                  </p>
-                  <ul className="space-y-0.5">
-                    {drawerNavigation.shortcuts.map((item) => {
-                    const active = navItemMatchesActive(item.href, activeHref);
-                    return (
-                      <li key={item.href}>
-                        <Link
-                          className={mobileDrawerLinkClass(active)}
-                          href={item.href}
-                          onClick={closeMenu}
-                        >
-                          <NavItemIcon className="h-4 w-4 shrink-0" labelKey={item.labelKey} />
-                          <span className="min-w-0 flex-1">{t(item.labelKey, item.label)}</span>
-                        </Link>
-                      </li>
-                    );
-                    })}
-                  </ul>
-                </div>
-              ) : null}
-
               {drawerNavigation.groups.length > 0 ? (
                 <GroupedNavBlock
                   activeHref={activeHref}
@@ -165,11 +130,11 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                   variant="drawer"
                   onNavigate={closeMenu}
                 />
-              ) : drawerNavigation.shortcuts.length === 0 ? (
+              ) : (
                 <p className="px-2 py-2 text-xs text-[var(--color-text-muted)]">
                   {t("nav.drawer_hint_primary", "All primary pages are on the bottom bar.")}
                 </p>
-              ) : null}
+              )}
             </nav>
 
             <div className="shrink-0 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2 pb-[max(0.75rem,calc(var(--layout-mobile-bottom-nav-height)+env(safe-area-inset-bottom,0px)))]">
