@@ -17,7 +17,7 @@ from app.modules.messaging.models import (
     Message,
 )
 from app.modules.leave.models import LeaveBalanceAdjustment, LeavePolicy, LeaveRequest
-from app.modules.notifications.models import NotificationRecord, NotificationSeen
+from app.modules.notifications.models import NotificationRecord, NotificationSeen, PushSubscription
 from app.modules.locations.models import Location
 from app.modules.site_access.models import EmployeeLocationAccess
 from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
@@ -57,6 +57,7 @@ __all__ = [
     "Location",
     "NotificationSeen",
     "NotificationRecord",
+    "PushSubscription",
     "CompanyAppSettings",
     "ClockSelfie",
     "TimeShift",

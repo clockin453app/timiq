@@ -16,6 +16,19 @@ import {
 } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
 import {
+  fetchPushPublicKey,
+  postPushSubscribe,
+  postPushTest,
+  postPushUnsubscribe,
+} from "../../features/notifications/api";
+import {
+  createBrowserPushSubscription,
+  getActivePushSubscription,
+  isPushSupported,
+  notificationPermission,
+  unsubscribeBrowserPush,
+} from "../../features/notifications/push";
+import {
   getSettingsCompany,
   getSettingsEffective,
   getSettingsMe,
@@ -66,6 +79,13 @@ export function SettingsClient() {
   const [myMessage, setMyMessage] = useState("");
   const [companyMessage, setCompanyMessage] = useState("");
   const [attendanceMessage, setAttendanceMessage] = useState("");
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushMessage, setPushMessage] = useState("");
+  const [pushPublicKey, setPushPublicKey] = useState("");
+  const [pushServerEnabled, setPushServerEnabled] = useState(false);
+  const [pushSupported, setPushSupported] = useState(false);
+  const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">("unsupported");
+  const [pushSubscribed, setPushSubscribed] = useState(false);
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [adminCompanyId, setAdminCompanyId] = useState<string | null>(null);
@@ -122,6 +142,27 @@ export function SettingsClient() {
     window.addEventListener("timiq:sound-notifications-pref", onPref);
     return () => window.removeEventListener("timiq:sound-notifications-pref", onPref);
   }, []);
+
+  const refreshPushStatus = useCallback(async () => {
+    const supported = isPushSupported();
+    setPushSupported(supported);
+    setPushPermission(notificationPermission());
+    try {
+      const config = await fetchPushPublicKey();
+      setPushServerEnabled(config.enabled);
+      setPushPublicKey(config.public_key);
+      if (supported) {
+        setPushSubscribed(Boolean(await getActivePushSubscription()));
+        setPushPermission(notificationPermission());
+      }
+    } catch (err) {
+      setPushMessage(err instanceof Error ? err.message : "Could not load push notification status.");
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshPushStatus();
+  }, [refreshPushStatus]);
 
   const [pwCurrent, setPwCurrent] = useState("");
   const [pwNew, setPwNew] = useState("");
@@ -341,6 +382,64 @@ export function SettingsClient() {
     });
   }
 
+  async function onEnablePush() {
+    setPushBusy(true);
+    setPushMessage("");
+    try {
+      if (!pushServerEnabled || !pushPublicKey) {
+        setPushMessage("Push notifications are not enabled on the server yet.");
+        return;
+      }
+      const subscription = await createBrowserPushSubscription(pushPublicKey);
+      await postPushSubscribe(subscription);
+      setPushSubscribed(true);
+      setPushPermission(notificationPermission());
+      setPushMessage("Push notifications are enabled for this browser/device.");
+    } catch (err) {
+      setPushMessage(err instanceof Error ? err.message : "Could not enable push notifications.");
+      setPushPermission(notificationPermission());
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function onDisablePush() {
+    setPushBusy(true);
+    setPushMessage("");
+    try {
+      const endpoint = await unsubscribeBrowserPush();
+      if (endpoint) {
+        await postPushUnsubscribe(endpoint);
+      }
+      setPushSubscribed(false);
+      setPushPermission(notificationPermission());
+      setPushMessage("Push notifications are disabled for this browser/device.");
+    } catch (err) {
+      setPushMessage(err instanceof Error ? err.message : "Could not disable push notifications.");
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
+  async function onSendTestPush() {
+    setPushBusy(true);
+    setPushMessage("");
+    try {
+      const result = await postPushTest();
+      if (!result.enabled) {
+        setPushMessage("Push notifications are not enabled on the server yet.");
+      } else if (result.sent > 0) {
+        setPushMessage("Test push sent. Delivery can still be blocked by browser or device settings.");
+      } else {
+        setPushMessage("No active push subscription was found for this account/device.");
+      }
+    } catch (err) {
+      setPushMessage(err instanceof Error ? err.message : "Could not send a test push notification.");
+    } finally {
+      setPushBusy(false);
+    }
+  }
+
   return (
     <Sheet>
       <PageHeader
@@ -558,6 +657,49 @@ export function SettingsClient() {
             {myMessage ? <span className="text-sm text-[var(--color-text-muted)]">{myMessage}</span> : null}
           </div>
         </form>
+
+        <section className={cardClass()}>
+          <h2 className="text-base font-semibold text-[var(--color-text)]">
+            {t("settings.push_title", "Push notifications")}
+          </h2>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {t(
+              "settings.push_closed_help",
+              "Push notifications can appear even when TimIQ is closed, if your browser/device allows them.",
+            )}
+          </p>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {t(
+              "settings.push_ios_help",
+              "On iPhone/iPad, install TimIQ to the Home Screen first, then enable push notifications.",
+            )}
+          </p>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            {pushSupported
+              ? `Status: ${pushSubscribed ? "enabled on this device" : "not enabled on this device"}; permission ${pushPermission}.`
+              : "Status: push notifications are not supported in this browser context."}
+          </p>
+          {!pushServerEnabled ? (
+            <p className="text-xs text-amber-700">
+              Push delivery is currently disabled on the server. A Render environment update is required before sends work.
+            </p>
+          ) : null}
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Push delivery is not guaranteed. OS/browser focus modes, muted devices, and denied permissions can block it.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="button" onClick={onEnablePush} disabled={pushBusy || !pushSupported || pushSubscribed}>
+              {pushBusy ? "Working..." : "Enable push notifications"}
+            </Button>
+            <Button type="button" variant="secondary" onClick={onDisablePush} disabled={pushBusy || !pushSubscribed}>
+              Disable push notifications
+            </Button>
+            <Button type="button" variant="secondary" onClick={onSendTestPush} disabled={pushBusy || !pushSubscribed}>
+              Send test push
+            </Button>
+          </div>
+          {pushMessage ? <p className="text-sm text-[var(--color-text-muted)]">{pushMessage}</p> : null}
+        </section>
 
         <form
           className={cardClass()}

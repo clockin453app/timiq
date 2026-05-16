@@ -77,3 +77,57 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+
+self.addEventListener("push", (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = {};
+  }
+
+  const title = typeof payload.title === "string" && payload.title.trim() ? payload.title : "TimIQ notification";
+  const body = typeof payload.body === "string" ? payload.body : "Open TimIQ to view details.";
+  const rawUrl = typeof payload.url === "string" ? payload.url : "/";
+  const safeUrl = rawUrl.startsWith("/") && !rawUrl.startsWith("//") ? rawUrl : "/";
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: "/icons/timiq-icon-192.svg",
+      badge: "/icons/timiq-icon-192.svg",
+      data: {
+        url: safeUrl,
+        kind: typeof payload.kind === "string" ? payload.kind : "",
+        notificationId: typeof payload.notification_id === "string" ? payload.notification_id : "",
+      },
+    }),
+  );
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const data = event.notification.data || {};
+  const rawUrl = typeof data.url === "string" ? data.url : "/";
+  const safePath = rawUrl.startsWith("/") && !rawUrl.startsWith("//") ? rawUrl : "/";
+  const targetUrl = new URL(safePath, self.location.origin).href;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        try {
+          const clientUrl = new URL(client.url);
+          if (clientUrl.origin === self.location.origin && "focus" in client) {
+            if ("navigate" in client && client.url !== targetUrl) {
+              return client.navigate(targetUrl).then((navigated) => (navigated || client).focus());
+            }
+            return client.focus();
+          }
+        } catch {
+          /* ignore malformed client URLs */
+        }
+      }
+      return self.clients.openWindow(targetUrl);
+    }),
+  );
+});

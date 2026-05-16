@@ -171,6 +171,22 @@ class Settings(BaseSettings):
             "timiq_attendance_notification_job_enabled",
         ),
     )
+    timiq_web_push_enabled: bool = Field(
+        default=False,
+        validation_alias=AliasChoices("TIMIQ_WEB_PUSH_ENABLED", "timiq_web_push_enabled"),
+    )
+    timiq_web_push_vapid_public_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_WEB_PUSH_VAPID_PUBLIC_KEY", "timiq_web_push_vapid_public_key"),
+    )
+    timiq_web_push_vapid_private_key: str = Field(
+        default="",
+        validation_alias=AliasChoices("TIMIQ_WEB_PUSH_VAPID_PRIVATE_KEY", "timiq_web_push_vapid_private_key"),
+    )
+    timiq_web_push_subject: str = Field(
+        default="mailto:admin@example.com",
+        validation_alias=AliasChoices("TIMIQ_WEB_PUSH_SUBJECT", "timiq_web_push_subject"),
+    )
 
     model_config = SettingsConfigDict(
         env_file=".env",

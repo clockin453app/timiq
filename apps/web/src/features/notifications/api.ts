@@ -94,3 +94,63 @@ export async function postNotificationMarkAllSeen(body: NotificationMarkAllSeenB
   }
   return response.json() as Promise<{ ok: boolean }>;
 }
+
+export type PushPublicKeyResponse = {
+  enabled: boolean;
+  public_key: string;
+};
+
+export async function fetchPushPublicKey(): Promise<PushPublicKeyResponse> {
+  const response = await fetch(`${API_URL}/api/push/public-key`, { credentials: "include" });
+  if (!response.ok) {
+    await parseError(response, "Could not load push notification settings.");
+  }
+  return response.json() as Promise<PushPublicKeyResponse>;
+}
+
+export type PushSubscriptionPayload = {
+  endpoint: string;
+  keys: {
+    p256dh: string;
+    auth: string;
+  };
+  user_agent?: string | null;
+  device_label?: string | null;
+};
+
+export async function postPushSubscribe(body: PushSubscriptionPayload): Promise<{ ok: boolean; enabled: boolean }> {
+  const response = await fetch(`${API_URL}/api/push/subscribe`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not enable push notifications.");
+  }
+  return response.json() as Promise<{ ok: boolean; enabled: boolean }>;
+}
+
+export async function postPushUnsubscribe(endpoint: string): Promise<{ ok: boolean; enabled: boolean }> {
+  const response = await fetch(`${API_URL}/api/push/unsubscribe`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint }),
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not disable push notifications.");
+  }
+  return response.json() as Promise<{ ok: boolean; enabled: boolean }>;
+}
+
+export async function postPushTest(): Promise<{ ok: boolean; sent: number; enabled: boolean }> {
+  const response = await fetch(`${API_URL}/api/push/test`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not send a test push notification.");
+  }
+  return response.json() as Promise<{ ok: boolean; sent: number; enabled: boolean }>;
+}

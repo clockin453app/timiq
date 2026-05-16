@@ -59,6 +59,7 @@ _PERSISTENT_RECORD_KINDS = frozenset(
         "attendance_late_arrival",
         "attendance_forgot_clock_in",
         "attendance_forgot_clock_out",
+        "push_test",
     }
 )
 
@@ -98,6 +99,7 @@ def _category_for_kind(kind: str) -> str:
         "attendance_late_arrival",
         "attendance_forgot_clock_in",
         "attendance_forgot_clock_out",
+        "push_test",
     ):
         return "time"
     if kind in ("leave_approved", "leave_rejected"):

@@ -25,6 +25,7 @@ NotificationKind = Literal[
     "attendance_late_arrival",
     "attendance_forgot_clock_in",
     "attendance_forgot_clock_out",
+    "push_test",
 ]
 
 NotificationCategory = Literal["messages", "safety", "payroll", "time", "leave", "admin", "account"]
@@ -93,3 +94,35 @@ class NotificationMarkAllSeenRequest(BaseModel):
 
 class NotificationMarkAllSeenResponse(BaseModel):
     ok: bool = True
+
+
+class PushPublicKeyResponse(BaseModel):
+    enabled: bool
+    public_key: str = ""
+
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str = Field(min_length=1, max_length=512)
+    auth: str = Field(min_length=1, max_length=512)
+
+
+class PushSubscriptionBody(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2048)
+    keys: PushSubscriptionKeys
+    user_agent: str | None = Field(default=None, max_length=500)
+    device_label: str | None = Field(default=None, max_length=120)
+
+
+class PushSubscriptionResponse(BaseModel):
+    ok: bool = True
+    enabled: bool = True
+
+
+class PushUnsubscribeBody(BaseModel):
+    endpoint: str = Field(min_length=1, max_length=2048)
+
+
+class PushTestResponse(BaseModel):
+    ok: bool = True
+    sent: int = 0
+    enabled: bool = True

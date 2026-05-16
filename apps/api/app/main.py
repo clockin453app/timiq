@@ -24,7 +24,7 @@ from app.modules.time_records.router import time_records_router, timesheets_rout
 from app.modules.workplaces.router import router as workplaces_router
 from app.modules.budgets.router import router as budgets_router
 from app.modules.messaging.router import router as messaging_router
-from app.modules.notifications.router import router as notifications_router
+from app.modules.notifications.router import push_router, router as notifications_router
 from app.modules.privacy.router import router as privacy_router
 from app.modules.payroll_policies.router import router as payroll_policies_router
 from app.modules.settings.router import router as settings_router
@@ -75,6 +75,7 @@ app.include_router(work_progress_router)
 app.include_router(budgets_router)
 app.include_router(messaging_router)
 app.include_router(notifications_router)
+app.include_router(push_router)
 app.include_router(privacy_router)
 app.include_router(payroll_policies_router)
 app.include_router(settings_router)
