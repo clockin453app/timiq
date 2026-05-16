@@ -10,13 +10,23 @@ import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { employeeRoleLabel } from "../../lib/i18n/display-labels";
 import { useT } from "../../lib/i18n";
 
-import { GroupedNavBlock } from "./grouped-nav";
+import { GroupedNavBlock, navItemMatchesActive } from "./grouped-nav";
 import { MessagesHeaderButton } from "./messages-header-button";
+import { NavItemIcon } from "./nav-item-icon";
 import { NotificationBell } from "./notification-bell";
 
 type MobileHeaderProps = {
   activeHref?: string;
 };
+
+function mobileDrawerLinkClass(active: boolean): string {
+  const base =
+    "flex min-h-[44px] min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-3 py-2.5 text-sm font-medium text-[#1f2937]";
+  if (active) {
+    return `${base} border-[var(--color-border-dark)] bg-[#e5e7eb] font-semibold text-[#111827]`;
+  }
+  return `${base} border-transparent hover:border-[var(--color-border)] hover:bg-[#e5e7eb] hover:text-[#111827]`;
+}
 
 export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const user = useCurrentUser();
@@ -32,6 +42,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     () => getMobileDrawerNavigationGroups(user.system_role, { limitedAccess: limited }),
     [user.system_role, limited],
   );
+  const renderDirectEmployeeLinks = user.system_role === "employee" && drawerNavigation.groups.length === 1;
 
   useEffect(() => {
     closeMenu();
@@ -121,7 +132,21 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
               aria-label={t("shell.drawer_nav", "More navigation")}
               className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-2 text-sm [-webkit-overflow-scrolling:touch]"
             >
-              {drawerNavigation.groups.length > 0 ? (
+              {renderDirectEmployeeLinks ? (
+                <ul className="space-y-0.5">
+                  {drawerNavigation.groups[0].items.map((item) => {
+                    const active = navItemMatchesActive(item.href, activeHref);
+                    return (
+                      <li key={item.href}>
+                        <Link className={mobileDrawerLinkClass(active)} href={item.href} onClick={closeMenu}>
+                          <NavItemIcon className="h-4 w-4 shrink-0" labelKey={item.labelKey} />
+                          <span className="min-w-0 flex-1">{t(item.labelKey, item.label)}</span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : drawerNavigation.groups.length > 0 ? (
                 <GroupedNavBlock
                   activeHref={activeHref}
                   groups={drawerNavigation.groups}

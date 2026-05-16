@@ -460,8 +460,8 @@ export type MobileDrawerNavigation = {
 const MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS: NavigationGroupDefinition[] = [
   {
     id: "mobile-mgmt-general",
-    label: "General",
-    groupLabelKey: "nav.group.general",
+    label: "Main",
+    groupLabelKey: "nav.group.main",
     items: [OVERVIEW, MESSAGES, TIME_RECORDS, LIVE_ATTENDANCE],
   },
   {
