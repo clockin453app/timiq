@@ -42,10 +42,10 @@ function formatDate(iso: string | null | undefined) {
 
 function signatureMethodLabel(method: string | null | undefined) {
   if (method === "app_signature") {
-    return "App signature";
+    return "Signed in app";
   }
   if (method === "manual_paper") {
-    return "Manual/paper record";
+    return "Manual/paper signed";
   }
   return "Not signed";
 }

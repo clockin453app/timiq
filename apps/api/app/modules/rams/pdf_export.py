@@ -21,6 +21,18 @@ def _p(text: str, style: ParagraphStyle) -> Paragraph:
     return Paragraph(html.escape(text or "—").replace("\n", "<br/>"), style)
 
 
+def _row(values: list[str], style: ParagraphStyle) -> list[Paragraph]:
+    return [_p(v, style) for v in values]
+
+
+def _signature_status(status: str, method: str | None, has_signature: bool) -> str:
+    if method == "app_signature" or has_signature:
+        return "Signed in app"
+    if method == "manual_paper" or status == "acknowledged":
+        return "Manual/paper signed"
+    return "Not signed"
+
+
 def _band_fill(band: str) -> Any:
     b = (band or "").lower()
     if b == "low":
@@ -116,15 +128,21 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
     story += _section_title(styles, "Cover — risk assessment & method statement pack")
     story.append(
         _p(
-            f"<b>{html.escape(detail.title)}</b><br/>"
-            f"Reference: {html.escape(detail.reference or '—')}<br/>"
-            f"Revision: {html.escape(detail.revision or '01')}<br/>"
-            f"Status: {html.escape(detail.status)}<br/>"
-            f"Overall risk level: {html.escape(detail.risk_level)}<br/>"
-            f"Review due: {html.escape(str(detail.review_due_date) if detail.review_due_date else '—')}<br/>"
-            f"Issue / publish: {html.escape(issue)}<br/>"
-            f"Reviewed: {html.escape(reviewed)}<br/>"
-            f"Generated (UTC): {html.escape(gen)}",
+            f"{detail.title}\n"
+            f"Reference: {detail.reference or '—'}\n"
+            f"Revision: {detail.revision or '01'}\n"
+            f"Status: {detail.status}\n"
+            f"Overall risk level: {detail.risk_level}\n"
+            f"Review due: {str(detail.review_due_date) if detail.review_due_date else '—'}\n"
+            f"Issue / publish: {issue}\n"
+            f"Reviewed: {reviewed}\n"
+            f"Generated UTC: {gen}",
+            body,
+        ),
+    )
+    story.append(
+        _p(
+            "Professional template based on UK construction safety practice. A competent person must review and adapt it to the actual site and task before publishing.",
             body,
         ),
     )
@@ -164,9 +182,9 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
             body,
         ),
     )
-    story.append(_p("<b>Work activity</b>", body))
+    story.append(_p("Work activity", body))
     story.append(_p(detail.work_activity[:4000], body))
-    story.append(_p("<b>Description</b>", body))
+    story.append(_p("Description", body))
     story.append(_p((detail.description or "—")[:4000], body))
     story.append(PageBreak())
 
@@ -183,26 +201,26 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
             ],
         ),
     )
-    story.append(_p("<b>Emergency arrangements</b>", body))
+    story.append(_p("Emergency arrangements", body))
     story.append(_p((detail.emergency_arrangements or "—")[:3500], body))
-    story.append(_p("<i>Photo slot: emergency plan diagram (attach in TimIQ RAMS → Photos if available).</i>", body))
+    story.append(_p("Photo slot: emergency plan diagram (attach in TimIQ RAMS photos if available).", body))
     story.append(PageBreak())
 
     story += _section_title(styles, "Site security, welfare & public protection")
-    story.append(_p("<b>Site security</b>", body))
+    story.append(_p("Site security", body))
     story.append(_p((detail.site_security or "—")[:2500], body))
-    story.append(_p("<b>Welfare</b>", body))
+    story.append(_p("Welfare", body))
     story.append(_p((detail.welfare_arrangements or "—")[:2500], body))
-    story.append(_p("<b>Public protection & visitors</b>", body))
+    story.append(_p("Public protection & visitors", body))
     story.append(_p((detail.public_protection or "—")[:2500], body))
-    story.append(_p("<i>Photo slot: site layout / interface (attach in TimIQ if available).</i>", body))
+    story.append(_p("Photo slot: site layout / interface (attach in TimIQ if available).", body))
     story.append(PageBreak())
 
     story += _section_title(styles, "Deliveries, storage & logistics")
     story.append(_p((detail.deliveries_storage or "—")[:4000], body))
     story.append(
         _p(
-            "<i>Photo slots: delivery area, storage / COSHH segregation (attach in TimIQ if available).</i>",
+            "Photo slots: delivery area, storage / COSHH segregation (attach in TimIQ if available).",
             body,
         ),
     )
@@ -210,19 +228,19 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
 
     story += _section_title(styles, "PPE, gloves & COSHH interfaces")
     ppe = ", ".join(detail.ppe_json) if detail.ppe_json else "—"
-    story.append(_p(f"<b>PPE list:</b> {html.escape(ppe)}", body))
-    story.append(_p(f"<b>No special PPE flag:</b> {'yes' if detail.no_special_ppe else 'no'}", body))
+    story.append(_p(f"PPE list: {ppe}", body))
+    story.append(_p(f"No special PPE flag: {'yes' if detail.no_special_ppe else 'no'}", body))
     gloves = detail.glove_requirements or []
     if gloves:
-        story.append(_p("<b>Glove / task PPE requirements</b>", body))
+        story.append(_p("Glove / task PPE requirements", body))
         for g in gloves:
-            story.append(_p(f"• {html.escape(g)}", body))
+            story.append(_p(f"- {g}", body))
     coshh = detail.coshh_items or []
     if coshh:
-        story.append(_p("<b>COSHH / substances interfaces (summary)</b>", body))
+        story.append(_p("COSHH / substances interfaces (summary)", body))
         for c in coshh:
-            story.append(_p(f"• {html.escape(c)}", body))
-    story.append(_p("<i>Photo slot: PPE board / COSHH point (attach in TimIQ if available).</i>", body))
+            story.append(_p(f"- {c}", body))
+    story.append(_p("Photo slot: PPE board / COSHH point (attach in TimIQ if available).", body))
     story.append(PageBreak())
 
     story += _section_title(styles, "Pre-start checklist")
@@ -231,7 +249,7 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
         story.append(_p("—", body))
     else:
         for i, item in enumerate(pre, start=1):
-            story.append(_p(f"☐ {i}. {html.escape(item)}", body))
+            story.append(_p(f"[ ] {i}. {item}", body))
     story.append(PageBreak())
 
     story += _section_title(styles, "Scope of works")
@@ -262,22 +280,22 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
     plant = detail.plant_tools or []
     train = detail.training_requirements or []
     story.append(Spacer(1, 0.25 * cm))
-    story.append(_p("<b>Plant / tools</b>", body))
-    story.append(_p(html.escape(", ".join(plant)) if plant else "—", body))
-    story.append(_p("<b>Training requirements</b>", body))
-    story.append(_p(html.escape(", ".join(train)) if train else "—", body))
+    story.append(_p("Plant / tools", body))
+    story.append(_p(", ".join(plant) if plant else "—", body))
+    story.append(_p("Training requirements", body))
+    story.append(_p(", ".join(train) if train else "—", body))
     mss = detail.method_statement_sections or []
     if mss:
-        story.append(_p("<b>Method sections</b>", body))
+        story.append(_p("Method sections", body))
         for sec in mss:
-            story.append(_p(f"<b>{html.escape(str(sec.get('title', 'Section')))}</b>", body))
+            story.append(_p(str(sec.get("title", "Section")), body))
             story.append(_p(str(sec.get("body", "—"))[:3000], body))
     story.append(PageBreak())
 
-    story += _section_title(styles, "5×5 risk matrix (likelihood × severity)")
+    story += _section_title(styles, "5x5 risk matrix (likelihood x severity)")
     story.append(
         _p(
-            "Scores are likelihood × severity (1–5 each). Bands: low (1–5), medium (6–10), high (11–15), critical (16–25).",
+            "Scores are likelihood x severity (1-5 each). Bands: low (1-5), medium (6-10), high (11-15), critical (16-25).",
             body,
         ),
     )
@@ -298,8 +316,8 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
         ],
     ]
     for h in detail.hazards:
-        hi = f"{h.initial_likelihood}×{h.initial_severity}"
-        hr = f"{h.residual_likelihood}×{h.residual_severity}"
+        hi = f"{h.initial_likelihood}x{h.initial_severity}"
+        hr = f"{h.residual_likelihood}x{h.residual_severity}"
         warn = " (! residual > initial)" if h.residual_higher_than_initial else ""
         haz_rows.append(
             [
@@ -314,7 +332,7 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
         )
     if len(haz_rows) == 1:
         haz_rows.append(["—", "—", "—", "—", "—", "—", "—"])
-    ht = Table(haz_rows, colWidths=[3.2 * cm, 2.4 * cm, 1.5 * cm, 2.2 * cm, 4.8 * cm, 1.5 * cm, 2.2 * cm])
+    ht = Table([_row(r, body) for r in haz_rows], colWidths=[3.2 * cm, 2.4 * cm, 1.5 * cm, 2.2 * cm, 4.8 * cm, 1.5 * cm, 2.2 * cm], repeatRows=1)
     ht.setStyle(
         TableStyle(
             [
@@ -341,22 +359,22 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
 
     story += _section_title(styles, "Employee acknowledgement register")
     ack_rows: list[list[str]] = [
-        ["Employee", "Email", "Status", "Acknowledged at", "Printed name", "Signature captured"],
+        ["Employee", "Status", "Signed at", "Printed name", "Signature", "Notes"],
     ]
     for a in detail.acknowledgements:
         ack_rows.append(
             [
-                (a.display_name or str(a.user_id))[:80],
-                (a.user_email or "")[:120],
+                (a.display_name or a.user_email or str(a.user_id))[:100],
                 a.status,
                 a.acknowledged_at.isoformat() if a.acknowledged_at else "—",
                 (a.acknowledgement_name or "—")[:120],
-                "Yes" if a.has_signature else "No",
+                _signature_status(a.status, a.signature_method, a.has_signature),
+                (a.manual_signature_note or a.declined_reason or "—")[:160],
             ],
         )
     for _ in range(max(0, 5 - len(detail.acknowledgements))):
         ack_rows.append(["", "", "", "", "", ""])
-    at = Table(ack_rows, colWidths=[3 * cm, 3.6 * cm, 2.2 * cm, 3.2 * cm, 3 * cm, 2.2 * cm])
+    at = Table([_row(r, body) for r in ack_rows], colWidths=[3.5 * cm, 2 * cm, 3 * cm, 3 * cm, 2.6 * cm, 3 * cm], repeatRows=1)
     at.setStyle(
         TableStyle(
             [
@@ -371,12 +389,12 @@ def build_rams_assessment_pdf(detail: RamsAssessmentDetailResponse) -> bytes:
     story.append(Spacer(1, 0.35 * cm))
     story.append(
         _p(
-            "Drawn signatures are stored privately in TimIQ; this PDF lists acknowledgement metadata only (no file paths).",
+            "Drawn signatures are stored privately in TimIQ; this PDF lists signature metadata only and never file paths.",
             ParagraphStyle("F", parent=styles["Normal"], fontSize=8, textColor=colors.grey),
         ),
     )
     story.append(Spacer(1, 0.2 * cm))
-    story.append(_p(f"<i>TimIQ RAMS export — assessment id {html.escape(str(detail.id))}</i>", body))
+    story.append(_p(f"TimIQ RAMS export - assessment id {detail.id}", body))
 
     doc.build(story)
     return buf.getvalue()

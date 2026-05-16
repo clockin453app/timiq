@@ -166,6 +166,8 @@ class RamsAcknowledgementResponse(BaseModel):
     status: str
     acknowledged_at: datetime | None
     acknowledgement_name: str | None
+    signature_method: str = "not_signed"
+    manual_signature_note: str | None = None
     declined_reason: str | None
     has_signature: bool = False
 
@@ -182,6 +184,11 @@ class RamsAcknowledgeRequest(BaseModel):
         min_length=50,
         description="PNG data URL. Stored privately; never returned in JSON.",
     )
+
+
+class RamsManualSignRequest(BaseModel):
+    acknowledgement_name: str = Field(min_length=1, max_length=200)
+    manual_signature_note: str | None = Field(default=None, max_length=500)
 
 
 class RamsDeclineRequest(BaseModel):

@@ -716,8 +716,8 @@ def render_print_html(db: Session, actor: User, talk_id: uuid.UUID) -> str:
     rows_html = []
     for a in detail.attendees:
         signature_label = {
-            "app_signature": "App signature",
-            "manual_paper": "Manual/paper record",
+            "app_signature": "Signed in app",
+            "manual_paper": "Manual/paper signed",
         }.get(a.signature_method, "Not signed")
         note = a.declined_reason or a.manual_signature_note or "—"
         if actor.system_role == SystemRole.EMPLOYEE and a.user_id != actor.id:
@@ -919,8 +919,8 @@ def export_talk_pdf_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple
                 a.signed_at.isoformat() if a.signed_at else "—",
                 (a.signature_name or "—")[:120],
                 {
-                    "app_signature": "App signature",
-                    "manual_paper": "Manual/paper record",
+                    "app_signature": "Signed in app",
+                    "manual_paper": "Manual/paper signed",
                 }.get(a.signature_method, "Not signed"),
                 (a.declined_reason or "—")[:200],
             ],

@@ -43,6 +43,7 @@ from app.modules.rams.schemas import (
     RamsHazardCreateRequest,
     RamsHazardPatchRequest,
     RamsHazardResponse,
+    RamsManualSignRequest,
     RamsPresetsResponse,
     RamsSignoffProgress,
 )
@@ -211,6 +212,15 @@ def _ack_to_response(
     display = _display_name(db, row.user_id)
     is_self = viewer.id == row.user_id
     hide_peer_decline = viewer.system_role == SystemRole.EMPLOYEE and not is_self
+    has_sig = bool((row.signature_image_path or "").strip())
+    method = row.signature_method
+    if not method:
+        if has_sig:
+            method = "app_signature"
+        elif row.status == "acknowledged":
+            method = "manual_paper"
+        else:
+            method = "not_signed"
     return RamsAcknowledgementResponse(
         user_id=row.user_id,
         user_email=email if is_self or viewer.system_role != SystemRole.EMPLOYEE else None,
@@ -218,8 +228,10 @@ def _ack_to_response(
         status=row.status,
         acknowledged_at=row.acknowledged_at,
         acknowledgement_name=row.acknowledgement_name if row.status == "acknowledged" and (is_self or viewer.system_role != SystemRole.EMPLOYEE) else None,
+        signature_method=method,
+        manual_signature_note=row.manual_signature_note if is_self or viewer.system_role != SystemRole.EMPLOYEE else None,
         declined_reason=None if hide_peer_decline else row.declined_reason,
-        has_signature=bool((row.signature_image_path or "").strip()),
+        has_signature=has_sig,
     )
 
 
@@ -1050,6 +1062,8 @@ def add_acknowledgements(
             acknowledgement_name=None,
             acknowledged_at=None,
             declined_reason=None,
+            signature_method=None,
+            manual_signature_note=None,
             signature_image_path=None,
             created_at=now,
             updated_at=now,
@@ -1107,6 +1121,8 @@ def acknowledge_assessment(db: Session, actor: User, assessment_id: uuid.UUID, b
             pass
     backend.write_bytes(rel, png)
     att.signature_image_path = rel
+    att.signature_method = "app_signature"
+    att.manual_signature_note = None
     att.status = "acknowledged"
     att.acknowledgement_name = name
     att.acknowledged_at = _utc_now()
@@ -1150,6 +1166,8 @@ def decline_assessment(db: Session, actor: User, assessment_id: uuid.UUID, body:
     att.declined_reason = reason
     att.acknowledgement_name = None
     att.acknowledged_at = None
+    att.signature_method = None
+    att.manual_signature_note = None
     att.updated_at = _utc_now()
     rams_repo.save_acknowledgement(db, att)
     create_internal_audit_event(
@@ -1160,6 +1178,56 @@ def decline_assessment(db: Session, actor: User, assessment_id: uuid.UUID, body:
         entity_id=str(att.id),
         company_id=row.company_id,
         details={"assessment_id": str(row.id), "actor_user_id": str(actor.id), "status": att.status},
+    )
+    return _build_detail(db, row, actor)
+
+
+def manual_sign_acknowledgement(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: RamsManualSignRequest,
+) -> RamsAssessmentDetailResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_admin_manage_company(actor, row.company_id):
+        raise RamsNotFoundError()
+    if row.status == "archived":
+        raise RamsValidationError("This RAMS is archived.")
+    att = rams_repo.get_acknowledgement(db, assessment_id, user_id)
+    if att is None or att.company_id != row.company_id:
+        raise RamsNotFoundError()
+    if att.signature_image_path:
+        try:
+            get_storage_backend().delete_file(att.signature_image_path)
+        except Exception:
+            pass
+    att.status = "acknowledged"
+    att.acknowledgement_name = body.acknowledgement_name.strip()
+    att.acknowledged_at = _utc_now()
+    att.declined_reason = None
+    att.signature_method = "manual_paper"
+    att.manual_signature_note = body.manual_signature_note.strip() if body.manual_signature_note else "Signed on paper"
+    att.signature_image_path = None
+    att.updated_at = _utc_now()
+    rams_repo.save_acknowledgement(db, att)
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="rams.manual_signature_recorded",
+        entity_type="rams_acknowledgement",
+        entity_id=str(att.id),
+        company_id=row.company_id,
+        details={
+            "assessment_id": str(row.id),
+            "subject_user_id": str(user_id),
+            "actor_user_id": str(actor.id),
+            "signature_method": att.signature_method,
+        },
     )
     return _build_detail(db, row, actor)
 

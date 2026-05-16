@@ -82,7 +82,7 @@ def build_toolbox_talk_pdf(
         story.append(Spacer(1, 0.35 * cm))
 
     story.append(_p("Attendee sign-off register", h2))
-    hdr = [["Employee", "Status", "Signed at", "Printed name", "Signature method", "Declined / manual note"]]
+    hdr = [["Employee", "Status", "Signed at", "Printed name", "Signature", "Notes"]]
     table_rows = [_row(hdr[0], body)] + [_row(r, body) for r in attendees_rows]
     t = Table(table_rows, colWidths=[3.4 * cm, 1.8 * cm, 2.5 * cm, 2.8 * cm, 2.8 * cm, 3.7 * cm], repeatRows=1)
     t.setStyle(

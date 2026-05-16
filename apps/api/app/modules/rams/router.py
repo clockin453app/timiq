@@ -32,6 +32,7 @@ from app.modules.rams.schemas import (
     RamsHazardCreateRequest,
     RamsHazardPatchRequest,
     RamsHazardResponse,
+    RamsManualSignRequest,
     RamsPresetsResponse,
 )
 from app.modules.rams.service import (
@@ -59,6 +60,7 @@ from app.modules.rams.service import (
     list_hazards,
     list_me,
     list_rams_attachments_service,
+    manual_sign_acknowledgement,
     patch_assessment,
     patch_hazard,
     publish_assessment,
@@ -311,6 +313,20 @@ def post_rams_acknowledge(
 ) -> RamsAssessmentDetailResponse:
     try:
         return acknowledge_assessment(db_session, current_user, assessment_id, body)
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.post("/{assessment_id}/acknowledgements/{user_id}/manual-sign", response_model=RamsAssessmentDetailResponse)
+def post_rams_manual_signature(
+    assessment_id: uuid.UUID,
+    user_id: uuid.UUID,
+    body: RamsManualSignRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> RamsAssessmentDetailResponse:
+    try:
+        return manual_sign_acknowledgement(db_session, current_user, assessment_id, user_id, body)
     except RamsError as exc:
         _raise_http(exc)
 

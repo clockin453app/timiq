@@ -37,8 +37,8 @@ function formatDate(iso: string | null | undefined) {
 }
 
 function signatureMethodLabel(method: string | null | undefined) {
-  if (method === "app_signature") return "App signature";
-  if (method === "manual_paper") return "Manual/paper record";
+  if (method === "app_signature") return "Signed in app";
+  if (method === "manual_paper") return "Manual/paper signed";
   return "Not signed";
 }
 
@@ -241,8 +241,8 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
         title={editing ? "Edit toolbox talk" : "Create toolbox talk"}
       />
       <SheetBody className="min-w-0 space-y-5">
-        <Link className="text-sm text-[var(--color-text-muted)] underline" href="/toolbox-talks/manage">
-          Back to toolbox talks
+        <Link className="text-sm text-[var(--color-text-muted)] underline" href={detail ? `/toolbox-talks/manage/${detail.id}` : "/toolbox-talks/manage"}>
+          {detail ? "Back to talk record" : "Back to toolbox talks"}
         </Link>
         {error ? <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
         {notice ? <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{notice}</div> : null}

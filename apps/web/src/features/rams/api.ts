@@ -123,6 +123,8 @@ export type RamsAcknowledgement = {
   status: string;
   acknowledged_at: string | null;
   acknowledgement_name: string | null;
+  signature_method: string;
+  manual_signature_note: string | null;
   declined_reason: string | null;
   has_signature: boolean;
 };
@@ -259,6 +261,11 @@ export type RamsAcknowledgeBody = {
   read_understood_ack: boolean;
   acknowledgement_name: string;
   signature_image_data: string;
+};
+
+export type RamsManualSignBody = {
+  acknowledgement_name: string;
+  manual_signature_note?: string | null;
 };
 
 export async function getRamsPresets(): Promise<RamsPresets> {
@@ -518,6 +525,23 @@ export async function acknowledgeRams(assessmentId: string, body: RamsAcknowledg
   });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, "Could not acknowledge RAMS."));
+  }
+  return response.json() as Promise<RamsAssessmentDetail>;
+}
+
+export async function manualSignRamsAcknowledgement(
+  assessmentId: string,
+  userId: string,
+  body: RamsManualSignBody,
+): Promise<RamsAssessmentDetail> {
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/acknowledgements/${userId}/manual-sign`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not record manual signature."));
   }
   return response.json() as Promise<RamsAssessmentDetail>;
 }

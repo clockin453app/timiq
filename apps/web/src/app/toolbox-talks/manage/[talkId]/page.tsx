@@ -1,7 +1,7 @@
 import { AppShell } from "../../../../components/layout";
 import { AuthGuard, RoleGuard } from "../../../../features/auth";
 
-import { ToolboxTalkEditorClient } from "../toolbox-talk-editor-client";
+import { ToolboxTalkDetailClient } from "../toolbox-talk-detail-client";
 
 type PageProps = {
   params: Promise<{ talkId: string }>;
@@ -13,7 +13,7 @@ export default async function ToolboxTalkDetailPage({ params }: PageProps) {
     <AuthGuard>
       <AppShell activeHref="/toolbox-talks/manage">
         <RoleGuard allowedRoles={["admin", "administrator"]}>
-          <ToolboxTalkEditorClient talkId={talkId} />
+          <ToolboxTalkDetailClient talkId={talkId} />
         </RoleGuard>
       </AppShell>
     </AuthGuard>

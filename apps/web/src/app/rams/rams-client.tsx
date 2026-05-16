@@ -478,7 +478,7 @@ export function RamsClient() {
                       <form className="space-y-3" onSubmit={submitAck}>
                         <label className="flex items-start gap-2">
                           <input type="checkbox" checked={readAck} onChange={(e) => setReadAck(e.target.checked)} className="mt-1" />
-                          <span>{t("rams.read_ack", "I have read and understood this RAMS / risk assessment.")}</span>
+                          <span>{t("rams.read_ack", "I have read and understood this RAMS and agree to follow the controls.")}</span>
                         </label>
                         <Input
                           label={t("signature.printed_name_label", "Printed name")}

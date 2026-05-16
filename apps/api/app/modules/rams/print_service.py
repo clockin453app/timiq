@@ -262,25 +262,32 @@ def build_professional_rams_print_html(detail: RamsAssessmentDetailResponse) -> 
   <p class='rams-muted'>Operational placeholders only — not pre-filled medical or exposure data.</p>
 </section>"""
 
-    ack_hdr = "<tr><th>Person</th><th>Status</th><th>Acknowledged at</th><th>Name given</th><th>Declined reason</th></tr>"
+    ack_hdr = "<tr><th>Person</th><th>Status</th><th>Signed at</th><th>Printed name</th><th>Signature</th><th>Notes</th></tr>"
     ack_rows = []
     for a in detail.acknowledgements:
+        if a.signature_method == "app_signature" or a.has_signature:
+            sig = "Signed in app"
+        elif a.signature_method == "manual_paper" or a.status == "acknowledged":
+            sig = "Manual/paper signed"
+        else:
+            sig = "Not signed"
         ack_rows.append(
             "<tr>"
             f"<td>{_esc(a.display_name or '—')}</td>"
             f"<td>{_esc(a.status)}</td>"
             f"<td>{_esc(a.acknowledged_at.isoformat() if a.acknowledged_at else None)}</td>"
             f"<td>{_esc(a.acknowledgement_name)}</td>"
-            f"<td>{_esc(a.declined_reason)}</td>"
+            f"<td>{_esc(sig)}</td>"
+            f"<td>{_esc(a.manual_signature_note or a.declined_reason)}</td>"
             "</tr>",
         )
     for _ in range(4):
-        ack_rows.append("<tr><td colspan='5' style='height:24px'>&nbsp;</td></tr>")
+        ack_rows.append("<tr><td colspan='6' style='height:24px'>&nbsp;</td></tr>")
     ack_sec = f"""
 <section class='rams-page'>
   <h2>Employee acknowledgement / signature register</h2>
   <table class='rams-table'><thead>{ack_hdr}</thead><tbody>{"".join(ack_rows)}</tbody></table>
-  <p class='rams-note'>Printed names are recorded in TimIQ when employees acknowledge electronically.</p>
+  <p class='rams-note'>Signature images are stored privately. This record shows only safe signature status and notes.</p>
 </section>"""
 
     footer = f"""

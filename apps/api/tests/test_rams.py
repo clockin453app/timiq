@@ -16,6 +16,7 @@ def test_rams_routes_registered() -> None:
     assert "/api/rams/{assessment_id}/pdf" in paths
     assert "/api/rams/{assessment_id}/attachments" in paths
     assert "/api/rams/{assessment_id}/print" in paths
+    assert "/api/rams/{assessment_id}/acknowledgements/{user_id}/manual-sign" in paths
 
 
 def test_rams_presets_requires_authentication() -> None:
@@ -53,3 +54,27 @@ def test_presets_include_brickwork_template() -> None:
     assert brick is not None
     assert brick.hazard_count >= 10
     assert len(brick.ppe) >= 1
+
+
+def test_presets_include_professional_activity_templates() -> None:
+    p = get_presets()
+    ids = {x.id for x in p.document_presets}
+    expected = {
+        "brickwork_masonry",
+        "general_construction",
+        "excavation_groundworks",
+        "concrete_works",
+        "roofing_works",
+        "working_at_height",
+        "scaffold_access",
+        "demolition_stripout",
+        "electrical_works",
+        "plumbing_hot_works",
+        "painting_decorating",
+        "carpentry_joinery",
+        "plant_machinery",
+        "lifting_operations",
+        "roadworks_traffic_management",
+        "cleaning_welfare_maintenance",
+    }
+    assert expected.issubset(ids)

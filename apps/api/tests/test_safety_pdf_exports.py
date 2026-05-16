@@ -47,6 +47,8 @@ def _minimal_rams_detail() -> RamsAssessmentDetailResponse:
         status="acknowledged",
         acknowledged_at=now,
         acknowledgement_name="Signed Name",
+        signature_method="app_signature",
+        manual_signature_note=None,
         declined_reason=None,
         has_signature=True,
     )
@@ -111,6 +113,9 @@ def test_rams_pdf_is_pdf_and_has_cover_and_matrix() -> None:
     assert raw[:4] == b"%PDF"
     assert len(raw) > 4000
     assert b"storage_path" not in raw.lower()
+    assert b"app_signature" not in raw
+    assert b"&lt;b&gt;" not in raw
+    assert b"&lt;i&gt;" not in raw
 
 
 def test_toolbox_talk_pdf_is_pdf() -> None:
@@ -127,12 +132,13 @@ def test_toolbox_talk_pdf_is_pdf() -> None:
         do_list=["Do this"],
         dont_list=["Do not that"],
         ppe_reminders=["Boots"],
-        attendees_rows=[["User (u@e.com)", "signed", "2026-01-02", "Printed", "App signature", "—"]],
+        attendees_rows=[["User (u@e.com)", "signed", "2026-01-02", "Printed", "Signed in app", "—"]],
     )
     assert raw[:4] == b"%PDF"
     assert b"storage_path" not in raw.lower()
     assert b"&lt;i&gt;" not in raw
     assert b"<i>Generated" not in raw
+    assert b"app_signature" not in raw
 
 
 def test_smart_form_pdf_is_pdf() -> None:
