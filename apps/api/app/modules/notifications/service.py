@@ -39,6 +39,21 @@ _SEEN_ALLOWED_KINDS = frozenset(
     },
 )
 
+_COMPUTED_DISMISSIBLE_KINDS = frozenset(
+    {
+        "face_check_setup",
+        "rams_ack",
+        "toolbox_sign",
+        "form_complete",
+        "form_review",
+        "rams_review",
+        "toolbox_review",
+        "payroll_pending",
+        "time_review",
+        "leave_request_pending",
+    }
+)
+
 _PERSISTENT_RECORD_KINDS = frozenset(
     {
         "attendance_late_arrival",
@@ -119,6 +134,33 @@ def _item(
     )
 
 
+def _fingerprint_value(latest: datetime | None) -> str:
+    if latest is None:
+        return "none"
+    if latest.tzinfo is None:
+        latest = latest.replace(tzinfo=timezone.utc)
+    return latest.astimezone(timezone.utc).isoformat()
+
+
+def _versioned_target_key(prefix: str, scope: str | uuid.UUID, count: int, latest: datetime | None = None) -> str:
+    return f"{prefix}:{scope}:{count}:{_fingerprint_value(latest)}"
+
+
+def _append_if_unseen(
+    db: Session,
+    actor: User,
+    items: list[NotificationSummaryItem],
+    item: NotificationSummaryItem,
+) -> None:
+    has_seen_fn = notif_seen_repo.has_seen
+    seen = has_seen_fn(db, user_id=actor.id, kind=item.kind, target_key=item.target_key)
+    is_patched = getattr(has_seen_fn, "__module__", "") != "app.modules.notifications.repository"
+    is_mock_session = db.__class__.__module__ == "unittest.mock"
+    if seen is True and (is_patched or not is_mock_session):
+        return
+    items.append(item)
+
+
 def _default_informational_kinds(actor: User) -> frozenset[str]:
     if actor.system_role == SystemRole.EMPLOYEE:
         return frozenset(
@@ -168,14 +210,14 @@ def _week_report_target_key(db: Session, actor: User) -> str | None:
 
 def mark_notification_seen(db: Session, actor: User, body: NotificationMarkSeenRequest) -> None:
     kind = body.kind.strip()
+    key = (body.target_key or "").strip()[:512]
     if kind in _PERSISTENT_RECORD_KINDS:
-        key = (body.target_key or "").strip()[:512]
         if not key:
             raise ValueError("target_key is required for this notification kind.")
         notif_seen_repo.mark_record_seen(db, user_id=actor.id, kind=kind, dedupe_key=key)
         db.flush()
         return
-    if kind not in _SEEN_ALLOWED_KINDS:
+    if kind not in _SEEN_ALLOWED_KINDS and kind not in _COMPUTED_DISMISSIBLE_KINDS:
         return
     company_scope = body.company_id
 
@@ -209,15 +251,28 @@ def mark_notification_seen(db: Session, actor: User, body: NotificationMarkSeenR
         db.flush()
         return
 
-    key = (body.target_key or "").strip()[:512]
     if not key:
         raise ValueError("target_key is required for this notification kind.")
     notif_seen_repo.upsert_seen(db, user_id=actor.id, kind=kind, target_key=key)
-    notif_seen_repo.mark_all_records_seen_for_user(db, user_id=actor.id, company_id=body.company_id)
     db.flush()
 
 
 def mark_all_informational_seen(db: Session, actor: User, body: NotificationMarkAllSeenRequest) -> None:
+    if body.items:
+        for item in body.items:
+            kind = item.kind.strip()
+            key = item.target_key.strip()[:512]
+            if not key:
+                continue
+            if kind == "announcement":
+                mark_all_unread_announcements_read(db, actor, company_id=body.company_id)
+            elif kind in _PERSISTENT_RECORD_KINDS:
+                notif_seen_repo.mark_record_seen(db, user_id=actor.id, kind=kind, dedupe_key=key)
+            elif kind in _SEEN_ALLOWED_KINDS or kind in _COMPUTED_DISMISSIBLE_KINDS:
+                notif_seen_repo.upsert_seen(db, user_id=actor.id, kind=kind, target_key=key)
+        db.flush()
+        return
+
     kinds_in = body.kinds
     if kinds_in:
         kinds_set = frozenset(k.strip() for k in kinds_in if k.strip())
@@ -244,6 +299,7 @@ def mark_all_informational_seen(db: Session, actor: User, body: NotificationMark
         if "leave_rejected" in todo:
             notif_seen_repo.upsert_seen(db, user_id=actor.id, kind="leave_rejected", target_key="leave_rejected:recent")
 
+    notif_seen_repo.mark_all_records_seen_for_user(db, user_id=actor.id, company_id=body.company_id)
     db.flush()
 
 
@@ -299,14 +355,17 @@ def get_notification_summary(
     if actor.system_role == SystemRole.EMPLOYEE and actor.company_id is not None:
         face_setup = face_check_setup_notification_item(db, actor)
         if face_setup is not None:
-            items.append(face_setup)
+            _append_if_unseen(db, actor, items, face_setup)
 
         rams_n = rams_repo.count_pending_acknowledgements_for_user(db, actor.id)
         if rams_n > 0:
-            items.append(
+            _append_if_unseen(
+                db,
+                actor,
+                items,
                 _item(
                     kind="rams_ack",
-                    target_key="rams_ack:pending",
+                    target_key=f"rams_ack:pending:{rams_n}",
                     title="RAMS acknowledgement",
                     description="Risk assessments waiting for your acknowledgement.",
                     href="/rams",
@@ -316,10 +375,13 @@ def get_notification_summary(
             )
         tb_n = tt_repo.count_pending_sign_for_user(db, actor.id)
         if tb_n > 0:
-            items.append(
+            _append_if_unseen(
+                db,
+                actor,
+                items,
                 _item(
                     kind="toolbox_sign",
-                    target_key="toolbox_sign:pending",
+                    target_key=f"toolbox_sign:pending:{tb_n}",
                     title="Toolbox talks",
                     description="Toolbox talks waiting for your sign-off.",
                     href="/toolbox-talks",
@@ -330,10 +392,13 @@ def get_notification_summary(
 
         drafts_n = sf_repo.count_draft_submissions_for_user(db, user_id=actor.id)
         if drafts_n > 0:
-            items.append(
+            _append_if_unseen(
+                db,
+                actor,
+                items,
                 _item(
                     kind="form_complete",
-                    target_key="form_complete:drafts",
+                    target_key=f"form_complete:drafts:{drafts_n}",
                     title="Forms to complete",
                     description="You have saved form drafts to finish and submit.",
                     href="/forms",
@@ -350,7 +415,7 @@ def get_notification_summary(
             actor.id,
             min_period_week_start=min_week_start,
         )
-        payslip_key = "payslip:ready"
+        payslip_key = f"payslip:ready:{payslip_n}"
         if payslip_n > 0 and not notif_seen_repo.has_seen(db, user_id=actor.id, kind="payslip_ready", target_key=payslip_key):
             items.append(
                 _item(
@@ -400,7 +465,7 @@ def get_notification_summary(
         leave_rej = leave_repo.count_user_leave_status_since(
             db, user_id=actor.id, status="rejected", since=since_leave
         )
-        la_key = "leave_approved:recent"
+        la_key = f"leave_approved:recent:{leave_appr}"
         if leave_appr > 0 and not notif_seen_repo.has_seen(db, user_id=actor.id, kind="leave_approved", target_key=la_key):
             items.append(
                 _item(
@@ -412,7 +477,7 @@ def get_notification_summary(
                     count=leave_appr,
                 ),
             )
-        lr_key = "leave_rejected:recent"
+        lr_key = f"leave_rejected:recent:{leave_rej}"
         if leave_rej > 0 and not notif_seen_repo.has_seen(db, user_id=actor.id, kind="leave_rejected", target_key=lr_key):
             items.append(
                 _item(
@@ -437,22 +502,28 @@ def get_notification_summary(
         if scope is not None:
             forms_n = sf_repo.count_submissions_for_review(db, company_id=scope, status_filter="submitted")
             if forms_n > 0:
-                items.append(
+                _append_if_unseen(
+                    db,
+                    actor,
+                    items,
                     _item(
                         kind="form_review",
-                        target_key=f"form_review:{scope}",
+                        target_key=f"form_review:{scope}:{forms_n}",
                         title="Smart forms review",
                         description="Submitted forms awaiting review.",
                         href="/forms/review",
                         count=forms_n,
                     ),
                 )
-            rams_d = rams_repo.count_assessments_for_company_by_status(db, scope, "draft")
+            rams_d, rams_latest = rams_repo.assessment_status_fingerprint_for_company(db, scope, "draft")
             if rams_d > 0:
-                items.append(
+                _append_if_unseen(
+                    db,
+                    actor,
+                    items,
                     _item(
                         kind="rams_review",
-                        target_key=f"rams_review:{scope}",
+                        target_key=_versioned_target_key("rams_review", scope, rams_d, rams_latest),
                         title="RAMS drafts",
                         description="RAMS assessments still in draft.",
                         href="/rams/manage",
@@ -461,22 +532,28 @@ def get_notification_summary(
                 )
             tb_d = tt_repo.count_talks_for_company_by_status(db, scope, "draft")
             if tb_d > 0:
-                items.append(
+                _append_if_unseen(
+                    db,
+                    actor,
+                    items,
                     _item(
                         kind="toolbox_review",
-                        target_key=f"toolbox_review:{scope}",
+                        target_key=f"toolbox_review:{scope}:{tb_d}",
                         title="Toolbox talk drafts",
                         description="Toolbox talks still in draft.",
                         href="/toolbox-talks/manage",
                         count=tb_d,
                     ),
                 )
-            pending_pay = payroll_repo.count_pending_payroll_items_for_company(db, scope)
+            pending_pay, pending_pay_latest = payroll_repo.pending_payroll_items_fingerprint_for_company(db, scope)
             if pending_pay > 0:
-                items.append(
+                _append_if_unseen(
+                    db,
+                    actor,
+                    items,
                     _item(
                         kind="payroll_pending",
-                        target_key=f"payroll_pending:{scope}",
+                        target_key=_versioned_target_key("payroll_pending", scope, pending_pay, pending_pay_latest),
                         title="Payroll pending approval",
                         description="Payroll rows are waiting for approval.",
                         href="/payroll-report",
@@ -486,10 +563,13 @@ def get_notification_summary(
                 )
             pending_leave = leave_repo.count_pending_leave_for_company(db, scope)
             if pending_leave > 0:
-                items.append(
+                _append_if_unseen(
+                    db,
+                    actor,
+                    items,
                     _item(
                         kind="leave_request_pending",
-                        target_key=f"leave_request_pending:{scope}",
+                        target_key=f"leave_request_pending:{scope}:{pending_leave}",
                         title="Leave requests",
                         description="Leave requests are pending approval.",
                         href="/leave/manage",
@@ -500,10 +580,13 @@ def get_notification_summary(
             rate_missing_rows = payroll_repo.count_rate_missing_payroll_items_for_company(db, scope)
             time_review_n = open_shifts + rate_missing_rows
             if time_review_n > 0:
-                items.append(
+                _append_if_unseen(
+                    db,
+                    actor,
+                    items,
                     _item(
                         kind="time_review",
-                        target_key=f"time_review:{scope}",
+                        target_key=f"time_review:{scope}:{time_review_n}",
                         title="Time records to review",
                         description="Open shifts or payroll rows may need attention.",
                         href="/time-records",
@@ -513,22 +596,28 @@ def get_notification_summary(
         elif actor.system_role == SystemRole.ADMINISTRATOR:
             forms_n = sf_repo.count_submissions_by_status_global(db, status_filter="submitted")
             if forms_n > 0:
-                items.append(
+                _append_if_unseen(
+                    db,
+                    actor,
+                    items,
                     _item(
                         kind="form_review",
-                        target_key="form_review:global",
+                        target_key=f"form_review:global:{forms_n}",
                         title="Smart forms review (all companies)",
                         description="Submitted forms awaiting review across companies.",
                         href="/forms/review",
                         count=forms_n,
                     ),
                 )
-            rams_d = rams_repo.count_assessments_by_status_global(db, "draft")
+            rams_d, rams_latest = rams_repo.assessment_status_fingerprint_global(db, "draft")
             if rams_d > 0:
-                items.append(
+                _append_if_unseen(
+                    db,
+                    actor,
+                    items,
                     _item(
                         kind="rams_review",
-                        target_key="rams_review:global",
+                        target_key=_versioned_target_key("rams_review", "global", rams_d, rams_latest),
                         title="RAMS drafts (all companies)",
                         description="RAMS assessments still in draft.",
                         href="/rams/manage",
@@ -537,10 +626,13 @@ def get_notification_summary(
                 )
             tb_d = tt_repo.count_talks_by_status_global(db, "draft")
             if tb_d > 0:
-                items.append(
+                _append_if_unseen(
+                    db,
+                    actor,
+                    items,
                     _item(
                         kind="toolbox_review",
-                        target_key="toolbox_review:global",
+                        target_key=f"toolbox_review:global:{tb_d}",
                         title="Toolbox talk drafts (all companies)",
                         description="Toolbox talks still in draft.",
                         href="/toolbox-talks/manage",

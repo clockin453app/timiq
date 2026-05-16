@@ -247,6 +247,19 @@ def count_pending_payroll_items_for_company(db_session: Session, company_id: uui
     return int(db_session.scalar(statement) or 0)
 
 
+def pending_payroll_items_fingerprint_for_company(
+    db_session: Session,
+    company_id: uuid.UUID,
+) -> tuple[int, datetime | None]:
+    statement = (
+        select(func.count(PayrollItem.id), func.max(PayrollItem.updated_at))
+        .where(PayrollItem.company_id == company_id)
+        .where(PayrollItem.status == "pending")
+    )
+    count, latest = db_session.execute(statement).one()
+    return int(count or 0), latest
+
+
 def count_rate_missing_payroll_items_for_company(db_session: Session, company_id: uuid.UUID) -> int:
     statement = (
         select(func.count())

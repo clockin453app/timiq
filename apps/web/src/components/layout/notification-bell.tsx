@@ -25,6 +25,16 @@ const SEEN_MARK_KINDS = new Set([
   "leave_approved",
   "leave_rejected",
   "announcement",
+  "face_check_setup",
+  "rams_ack",
+  "toolbox_sign",
+  "form_complete",
+  "form_review",
+  "rams_review",
+  "toolbox_review",
+  "payroll_pending",
+  "time_review",
+  "leave_request_pending",
   "attendance_late_arrival",
   "attendance_forgot_clock_in",
   "attendance_forgot_clock_out",
@@ -143,8 +153,27 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
     }
   }
 
+  async function onDismissItem(it: NotificationSummaryItem) {
+    const key = (it.target_key ?? "").trim();
+    if (!key || !SEEN_MARK_KINDS.has(it.kind)) {
+      return;
+    }
+    await postNotificationMarkSeen({
+      kind: it.kind,
+      target_key: key,
+      company_id: scopeCompany,
+    }).catch(() => undefined);
+    void load();
+  }
+
   async function onMarkAllSeen() {
-    await postNotificationMarkAllSeen({ company_id: scopeCompany }).catch(() => undefined);
+    const visibleItems = sortedItems
+      .map((it) => ({ kind: it.kind, target_key: (it.target_key ?? "").trim() }))
+      .filter((it) => it.target_key);
+    await postNotificationMarkAllSeen({ company_id: scopeCompany, items: visibleItems }).catch(() => undefined);
+    const empty = { total_count: 0, items: [] };
+    setData(empty);
+    window.dispatchEvent(new CustomEvent("timiq:notification-summary", { detail: empty }));
     void load();
   }
 
@@ -220,34 +249,45 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
                             {gh}
                           </p>
                         ) : null}
-                        <Link
-                          className="block px-3 py-2.5 text-left hover:bg-[var(--color-cell)]"
-                          href={it.href}
-                          onClick={() => void onItemNavigate(it)}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div className="flex min-w-0 flex-1 items-start gap-2">
-                              <span
-                                className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                                  it.priority === "high" ? "bg-red-500" : "bg-[var(--color-border-dark)]"
-                                }`}
-                                aria-hidden
-                              />
-                              <span className="min-w-0 text-sm font-medium text-[var(--color-text)]">{it.title}</span>
-                            </div>
-                            <div className="flex shrink-0 flex-col items-end gap-0.5">
-                              {it.priority === "high" ? (
-                                <span className="rounded bg-red-100 px-1 py-0.5 text-[10px] font-bold uppercase text-red-900">
-                                  {t("notifications.priority_high", "High")}
+                        <div className="flex items-stretch hover:bg-[var(--color-cell)]">
+                          <Link
+                            className="block min-w-0 flex-1 px-3 py-2.5 text-left"
+                            href={it.href}
+                            onClick={() => void onItemNavigate(it)}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex min-w-0 flex-1 items-start gap-2">
+                                <span
+                                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                                    it.priority === "high" ? "bg-red-500" : "bg-[var(--color-border-dark)]"
+                                  }`}
+                                  aria-hidden
+                                />
+                                <span className="min-w-0 text-sm font-medium text-[var(--color-text)]">{it.title}</span>
+                              </div>
+                              <div className="flex shrink-0 flex-col items-end gap-0.5">
+                                {it.priority === "high" ? (
+                                  <span className="rounded bg-red-100 px-1 py-0.5 text-[10px] font-bold uppercase text-red-900">
+                                    {t("notifications.priority_high", "High")}
+                                  </span>
+                                ) : null}
+                                <span className="rounded bg-[var(--color-header)] px-1.5 py-0.5 text-xs font-semibold text-[var(--color-text)]">
+                                  {it.count}
                                 </span>
-                              ) : null}
-                              <span className="rounded bg-[var(--color-header)] px-1.5 py-0.5 text-xs font-semibold text-[var(--color-text)]">
-                                {it.count}
-                              </span>
+                              </div>
                             </div>
-                          </div>
-                          <p className="mt-0.5 pl-4 text-xs text-[var(--color-text-muted)]">{it.description}</p>
-                        </Link>
+                            <p className="mt-0.5 pl-4 text-xs text-[var(--color-text-muted)]">{it.description}</p>
+                          </Link>
+                          {SEEN_MARK_KINDS.has(it.kind) && (it.target_key ?? "").trim() ? (
+                            <button
+                              className="shrink-0 px-2 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                              type="button"
+                              onClick={() => void onDismissItem(it)}
+                            >
+                              {t("notifications.dismiss", "Dismiss")}
+                            </button>
+                          ) : null}
+                        </div>
                       </li>
                     );
                   })}

@@ -71,10 +71,19 @@ class NotificationMarkSeenResponse(BaseModel):
     ok: bool = True
 
 
+class NotificationMarkAllSeenItem(BaseModel):
+    kind: str = Field(min_length=1, max_length=64)
+    target_key: str = Field(min_length=1, max_length=512)
+
+
 class NotificationMarkAllSeenRequest(BaseModel):
     kinds: list[str] | None = Field(
         default=None,
         description="If omitted, all dismissible informational kinds for this actor are marked.",
+    )
+    items: list[NotificationMarkAllSeenItem] | None = Field(
+        default=None,
+        description="Visible notification rows to mark seen by exact kind and target_key.",
     )
     company_id: uuid.UUID | None = Field(
         default=None,

@@ -147,9 +147,35 @@ def count_assessments_for_company_by_status(db: Session, company_id: uuid.UUID, 
     return int(db.scalar(stmt) or 0)
 
 
+def assessment_status_fingerprint_for_company(
+    db: Session,
+    company_id: uuid.UUID,
+    assessment_status: str,
+) -> tuple[int, datetime | None]:
+    stmt = (
+        select(func.count(RamsAssessment.id), func.max(RamsAssessment.updated_at))
+        .where(RamsAssessment.company_id == company_id)
+        .where(RamsAssessment.status == assessment_status)
+    )
+    count, latest = db.execute(stmt).one()
+    return int(count or 0), latest
+
+
 def count_assessments_by_status_global(db: Session, assessment_status: str) -> int:
     stmt = select(func.count()).select_from(RamsAssessment).where(RamsAssessment.status == assessment_status)
     return int(db.scalar(stmt) or 0)
+
+
+def assessment_status_fingerprint_global(
+    db: Session,
+    assessment_status: str,
+) -> tuple[int, datetime | None]:
+    stmt = (
+        select(func.count(RamsAssessment.id), func.max(RamsAssessment.updated_at))
+        .where(RamsAssessment.status == assessment_status)
+    )
+    count, latest = db.execute(stmt).one()
+    return int(count or 0), latest
 
 
 def save_acknowledgement(db: Session, row: RamsAcknowledgement) -> RamsAcknowledgement:

@@ -74,6 +74,7 @@ export async function postNotificationMarkSeen(body: NotificationMarkSeenBody): 
 
 export type NotificationMarkAllSeenBody = {
   kinds?: string[] | null;
+  items?: Array<{ kind: string; target_key: string }>;
   company_id?: string | null;
 };
 
@@ -84,6 +85,7 @@ export async function postNotificationMarkAllSeen(body: NotificationMarkAllSeenB
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       kinds: body.kinds ?? null,
+      items: body.items ?? null,
       company_id: body.company_id ?? null,
     }),
   });
