@@ -11,12 +11,13 @@ from app.core.storage.factory import get_storage_backend
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.limited_access import has_limited_access
 from app.modules.auth.models import User
+from app.modules.auth.repository import get_user_by_id
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.employee_profiles.repository import (
     get_employee_profile_by_user_id,
     update_employee_profile,
 )
-from app.modules.employee_profiles.service import get_or_create_profile_for_user
+from app.modules.employee_profiles.service import can_manage_profile, get_or_create_profile_for_user
 from app.modules.face_check.image_validation import (
     FaceImageValidationError,
     normalize_face_image,
@@ -29,6 +30,10 @@ class FaceReferenceError(ValueError):
 
 
 class FaceReferencePermissionError(FaceReferenceError):
+    pass
+
+
+class FaceReferenceNotFoundError(FaceReferenceError):
     pass
 
 
@@ -58,6 +63,58 @@ def _write_reference_file(actor_id: uuid.UUID, extension: str, file_bytes: bytes
     relative_path = f"face-references/{actor_id}/{uuid.uuid4().hex}{extension}"
     get_storage_backend().write_bytes(relative_path, file_bytes)
     return relative_path
+
+
+def _image_content_type_from_path(path: str) -> str:
+    cleaned = path.lower().split("?", 1)[0]
+    if cleaned.endswith(".png"):
+        return "image/png"
+    if cleaned.endswith(".webp"):
+        return "image/webp"
+    return "image/jpeg"
+
+
+def resolve_face_reference_image(
+    db_session: Session,
+    actor: User,
+    subject_user_id: uuid.UUID,
+) -> tuple[bytes, str, str, User]:
+    subject = get_user_by_id(db_session, subject_user_id)
+    if subject is None:
+        raise FaceReferenceNotFoundError("Face reference photo not found.")
+    if not can_manage_profile(actor, subject):
+        raise FaceReferencePermissionError("You cannot view this face reference photo.")
+
+    profile = get_employee_profile_by_user_id(db_session, subject.id)
+    if not face_reference_configured(profile):
+        raise FaceReferenceNotFoundError("Face reference photo not found.")
+    assert profile is not None
+    key = (profile.face_reference_storage_path or "").strip()
+    if not key:
+        raise FaceReferenceNotFoundError("Face reference photo not found.")
+
+    storage = get_storage_backend()
+    if not storage.exists(key):
+        raise FaceReferenceNotFoundError("Face reference photo not found.")
+    try:
+        data = storage.read_bytes(key)
+    except FileNotFoundError:
+        raise FaceReferenceNotFoundError("Face reference photo not found.") from None
+
+    create_internal_audit_event(
+        db_session,
+        actor,
+        action="face_reference.viewed",
+        entity_type="employee_profile",
+        entity_id=str(profile.id),
+        company_id=subject.company_id,
+        details={
+            "actor_user_id": str(actor.id),
+            "subject_user_id": str(subject.id),
+            "image_kind": "reference",
+        },
+    )
+    return data, _image_content_type_from_path(key), f"face-reference-{subject.id}", subject
 
 
 def enroll_face_reference(

@@ -52,3 +52,16 @@ export async function fetchFaceReviewImage(shiftId: string, kind: FaceReviewImag
   }
   return response.blob();
 }
+
+export async function fetchFaceReferenceImage(userId: string): Promise<Blob> {
+  const response = await fetch(
+    `${API_URL}/api/employee-profiles/users/${encodeURIComponent(userId)}/face-reference-image`,
+    {
+      credentials: "include",
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await readJsonError(response, "Could not load face reference image."));
+  }
+  return response.blob();
+}

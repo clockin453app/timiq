@@ -45,6 +45,7 @@ import {
 } from "../../features/payroll/format";
 import { listAdminTimeRecords, type TimeRecordShiftRow } from "../../features/time-records/api";
 import { leaveTypeLabel } from "../../features/leave/labels";
+import { FaceReferenceAvatar } from "../../features/face-check/face-reference-avatar";
 import {
   addDaysIsoYmd,
   browserDefaultTimeZone,
@@ -170,11 +171,30 @@ function payrollEmployeeDisplayLines(row: {
 }
 
 function PayrollEmployeeIdentity(props: {
+  user_id?: string | null;
   employee_name: string | null;
   employee_email: string | null;
   className?: string;
+  withAvatar?: boolean;
 }) {
   const { primary, secondary } = payrollEmployeeDisplayLines(props);
+  if (props.withAvatar && props.user_id) {
+    return (
+      <div className={`flex min-w-0 items-center gap-2 ${props.className ?? ""}`}>
+        <FaceReferenceAvatar
+          employeeEmail={props.employee_email}
+          employeeName={props.employee_name}
+          userId={props.user_id}
+        />
+        <div className="min-w-0">
+          <div className="truncate font-medium leading-snug text-[#111827]">{primary}</div>
+          {secondary ? (
+            <div className="mt-0.5 truncate text-[11px] leading-snug text-[var(--color-text-muted)]">{secondary}</div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={props.className}>
       <div className="font-medium leading-snug text-[#111827]">{primary}</div>
@@ -728,7 +748,7 @@ export function PayrollReportClient() {
     if (hasCompany && payrollNeedsRecalculation && paidRowCount > 0) {
       chips.push({ label: "Payroll locked", tone: "danger" });
     } else if (hasCompany && payrollNeedsRecalculation && approvedRowCount > 0) {
-      chips.push({ label: "Pending approval unlock", tone: "warning" });
+      chips.push({ label: "Approved rows available to unlock", tone: "warning" });
     } else if (hasCompany && payrollNeedsRecalculation) {
       chips.push({ label: "Needs recalculation", tone: "warning" });
     }
@@ -736,7 +756,7 @@ export function PayrollReportClient() {
       chips.push({ label: "Late shift detected", tone: "warning" });
     }
     if (hasCompany && (alerts?.zero_rounded_hours_employees_count ?? 0) > 0) {
-      chips.push({ label: "Zero-hours employee", tone: "info" });
+      chips.push({ label: "Employee with zero hours", tone: "info" });
     }
     if (hasCompany && (alerts?.pending_approval_count ?? 0) > 0) {
       chips.push({ label: "Pending approval", tone: "warning" });
@@ -769,16 +789,6 @@ export function PayrollReportClient() {
         titleClassName="text-xl font-bold tracking-tight text-[#111827] md:text-2xl"
       />
       <SheetBody className="min-w-0 space-y-5">
-        {statusChips.length > 0 ? (
-          <div className="flex flex-wrap gap-2" aria-label="Payroll status">
-            {statusChips.map((chip) => (
-              <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
-                {chip.label}
-              </span>
-            ))}
-          </div>
-        ) : null}
-
         <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-sm">
           <div className="space-y-4">
             {isAdministrator(user) ? (
@@ -940,6 +950,18 @@ export function PayrollReportClient() {
           <div className="min-w-0 w-full space-y-5">
             <div className="w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-sm">
               <p className="mb-1 text-sm font-semibold text-[#111827]">Weekly payroll review</p>
+              {statusChips.length > 0 ? (
+                <div className="mb-2 flex flex-wrap items-center gap-2" aria-label="Payroll needs attention">
+                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                    Needs attention:
+                  </span>
+                  {statusChips.map((chip) => (
+                    <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
+                      {chip.label}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
               <p className="mb-3 text-xs text-[var(--color-text-muted)]">
                 Summary by employee for this payroll week. Use + to open employee payroll details (shift lines).
               </p>
@@ -1015,6 +1037,8 @@ export function PayrollReportClient() {
                               <PayrollEmployeeIdentity
                                 employee_email={row.employee_email}
                                 employee_name={row.employee_name}
+                                user_id={row.user_id}
+                                withAvatar
                               />
                             </TableCell>
                             <TableCell className="max-w-[8rem] truncate align-top text-xs text-[var(--color-text-muted)]">

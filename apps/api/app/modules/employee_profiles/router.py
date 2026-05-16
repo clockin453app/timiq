@@ -1,8 +1,10 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.core.storage.file_response import protected_file_response
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import (
     get_current_user,
@@ -13,9 +15,11 @@ from app.modules.auth.dependencies import (
 from app.modules.auth.models import User
 from app.modules.employee_profiles.face_reference_service import (
     FaceReferenceError,
+    FaceReferenceNotFoundError,
     FaceReferencePermissionError,
     enroll_face_reference,
     remove_face_reference,
+    resolve_face_reference_image,
 )
 from app.modules.employee_profiles.schemas import (
     EmployeeProfileResponse,
@@ -77,6 +81,25 @@ def delete_my_face_reference(
     except FaceReferencePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     return _face_reference_status_response(profile)
+
+
+@router.get("/users/{user_id}/face-reference-image")
+def read_user_face_reference_image(
+    user_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        data, media_type, filename, _subject = resolve_face_reference_image(
+            db_session,
+            current_user,
+            user_id,
+        )
+    except FaceReferencePermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except FaceReferenceNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    return protected_file_response(body=data, media_type=media_type, download_filename=filename)
 
 
 @router.get("/me", response_model=EmployeeProfileResponse)
