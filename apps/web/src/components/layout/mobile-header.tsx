@@ -4,13 +4,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 
-import { getMobileMoreMenuItems } from "../../config/navigation";
+import { getMobileDrawerNavigationGroups } from "../../config/navigation";
 import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { employeeRoleLabel } from "../../lib/i18n/display-labels";
 import { useT } from "../../lib/i18n";
 
-import { navItemMatchesActive } from "./grouped-nav";
+import { GroupedNavBlock, navItemMatchesActive } from "./grouped-nav";
 import { MessagesHeaderButton } from "./messages-header-button";
 import { NavItemIcon } from "./nav-item-icon";
 import { NotificationBell } from "./notification-bell";
@@ -38,8 +38,8 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const closeMenu = useCallback(() => setMenuOpen(false), []);
   const toggleMenu = useCallback(() => setMenuOpen((open) => !open), []);
 
-  const moreItems = useMemo(
-    () => getMobileMoreMenuItems(user.system_role, { limitedAccess: limited }),
+  const drawerNavigation = useMemo(
+    () => getMobileDrawerNavigationGroups(user.system_role, { limitedAccess: limited }),
     [user.system_role, limited],
   );
 
@@ -131,9 +131,13 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
               aria-label={t("shell.drawer_nav", "More navigation")}
               className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain p-2 text-sm [-webkit-overflow-scrolling:touch]"
             >
-              {moreItems.length > 0 ? (
-                <ul className="space-y-0.5">
-                  {moreItems.map((item) => {
+              {drawerNavigation.shortcuts.length > 0 ? (
+                <div className="mb-3 border-b border-[var(--color-border)] pb-3">
+                  <p className="px-2 pb-1 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                    {t("nav.group.desk_more", "Shortcuts")}
+                  </p>
+                  <ul className="space-y-0.5">
+                    {drawerNavigation.shortcuts.map((item) => {
                     const active = navItemMatchesActive(item.href, activeHref);
                     return (
                       <li key={item.href}>
@@ -147,13 +151,25 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                         </Link>
                       </li>
                     );
-                  })}
-                </ul>
-              ) : (
+                    })}
+                  </ul>
+                </div>
+              ) : null}
+
+              {drawerNavigation.groups.length > 0 ? (
+                <GroupedNavBlock
+                  activeHref={activeHref}
+                  groups={drawerNavigation.groups}
+                  role={user.system_role}
+                  storageScope="mobile-drawer"
+                  variant="drawer"
+                  onNavigate={closeMenu}
+                />
+              ) : drawerNavigation.shortcuts.length === 0 ? (
                 <p className="px-2 py-2 text-xs text-[var(--color-text-muted)]">
                   {t("nav.drawer_hint_primary", "All primary pages are on the bottom bar.")}
                 </p>
-              )}
+              ) : null}
             </nav>
 
             <div className="shrink-0 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2 pb-[max(0.75rem,calc(var(--layout-mobile-bottom-nav-height)+env(safe-area-inset-bottom,0px)))]">

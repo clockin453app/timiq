@@ -452,7 +452,120 @@ export function filterNavGroupsForMobileQuickNav(
     .filter((group) => group.items.length > 0);
 }
 
-/** Flat “More” drawer links — not desktop top-nav groups or management accordions. */
+export type MobileDrawerNavigation = {
+  shortcuts: NavigationItem[];
+  groups: NavigationGroupDefinition[];
+};
+
+const MOBILE_MANAGEMENT_SHORTCUTS: NavigationItem[] = [
+  MESSAGES,
+  OVERVIEW,
+  TIME_RECORDS,
+  LIVE_ATTENDANCE,
+  EMPLOYEES,
+  LOCATIONS,
+  PAYROLL_REPORT,
+];
+
+const MOBILE_EMPLOYEE_SHORTCUTS: NavigationItem[] = [MESSAGES, TIME_RECORDS, PAY_HISTORY];
+
+const MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS: NavigationGroupDefinition[] = [
+  {
+    id: "mobile-mgmt-people",
+    label: "People",
+    groupLabelKey: "nav.group.mgmt_people",
+    items: [EMPLOYEES, LEAVE_MANAGE, ONBOARDING_REVIEW, CLOCK_SELFIES, PRIVACY_REQUESTS],
+  },
+  {
+    id: "mobile-mgmt-sites",
+    label: "Sites",
+    groupLabelKey: "nav.group.mgmt_sites",
+    items: [COMPANIES, LOCATIONS, SITE_ACCESS, SITE_PAYROLL_RULES],
+  },
+  {
+    id: "mobile-mgmt-attendance",
+    label: "Attendance",
+    groupLabelKey: "nav.group.mgmt_attendance",
+    items: [LIVE_ATTENDANCE, TIME_RECORDS, TIMESHEETS, WEEK_REPORT],
+  },
+  {
+    id: "mobile-mgmt-payroll",
+    label: "Payroll",
+    groupLabelKey: "nav.group.mgmt_payroll",
+    items: [PAYROLL_REPORT, BUDGET_CALCULATOR, ACCOUNTING_LINK],
+  },
+  {
+    id: "mobile-mgmt-work",
+    label: "Work",
+    groupLabelKey: "nav.group.mgmt_work",
+    items: [
+      SITE_PROGRESS,
+      WORK_PROGRESS_REVIEW,
+      FORMS,
+      FORMS_MANAGE,
+      FORMS_REVIEW,
+      RAMS,
+      RAMS_MANAGE,
+      TOOLBOX_TALKS,
+      TOOLBOX_TALKS_MANAGE,
+    ],
+  },
+  {
+    id: "mobile-mgmt-system",
+    label: "System",
+    groupLabelKey: "nav.group.mgmt_system",
+    items: [SETTINGS, HELP_CENTRE, SYSTEM_HEALTH, AUDIT_LOG],
+  },
+];
+
+const MOBILE_DRAWER_EMPLOYEE_GROUP_DEFS: NavigationGroupDefinition[] = [
+  {
+    id: "mobile-emp-work",
+    label: "Work",
+    groupLabelKey: "nav.group.emp_work",
+    items: [STARTER_FORM, SITE_PROGRESS, LEAVE, FORMS, TOOLBOX_TALKS, RAMS],
+  },
+  {
+    id: "mobile-emp-account",
+    label: "Account",
+    groupLabelKey: "nav.group.emp_profile",
+    items: [HELP_CENTRE, PRIVACY_PORTAL],
+  },
+];
+
+export function getMobileDrawerNavigationGroups(
+  role: SystemRole,
+  options?: { limitedAccess?: boolean },
+): MobileDrawerNavigation {
+  if (options?.limitedAccess && role === "employee") {
+    return {
+      shortcuts: [],
+      groups: LIMITED_ACCESS_NAV_GROUP_DEFS.filter((group) => group.id !== "limited-profile")
+        .map((group) => filterGroup(role, group))
+        .filter(
+        (g): g is NavigationGroupDefinition => g !== null,
+      ),
+    };
+  }
+
+  if (role === "administrator" || role === "admin") {
+    return {
+      shortcuts: MOBILE_MANAGEMENT_SHORTCUTS.filter((item) => itemVisibleForRole(item, role)),
+      groups: MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS.map((group) => filterGroup(role, group)).filter(
+        (g): g is NavigationGroupDefinition => g !== null,
+      ),
+    };
+  }
+
+  return {
+    shortcuts: MOBILE_EMPLOYEE_SHORTCUTS.filter((item) => itemVisibleForRole(item, role)),
+    groups: MOBILE_DRAWER_EMPLOYEE_GROUP_DEFS.map((group) => filterGroup(role, group)).filter(
+      (g): g is NavigationGroupDefinition => g !== null,
+    ),
+  };
+}
+
+/** Flat “More” drawer links — legacy compact shortlist; prefer getMobileDrawerNavigationGroups. */
 const MOBILE_MORE_LIMITED: NavigationItem[] = [TIMESHEETS, PAY_HISTORY];
 
 const MOBILE_MORE_EMPLOYEE: NavigationItem[] = [MESSAGES, TIME_RECORDS];
