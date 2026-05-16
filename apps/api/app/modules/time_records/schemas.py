@@ -34,6 +34,27 @@ class TimeRecordShiftRow(BaseModel):
     face_check_reason: str | None = None
 
 
+class TimeRecordFaceReviewEmployee(BaseModel):
+    user_id: uuid.UUID
+    display_name: str
+    email: str | None = None
+
+
+class TimeRecordFaceReviewResponse(BaseModel):
+    shift_id: uuid.UUID
+    employee: TimeRecordFaceReviewEmployee
+    location_name: str
+    clock_in_at: datetime
+    clock_out_at: datetime | None = None
+    shift_status: str
+    face_check_status: str | None = None
+    face_match_confidence: float | None = None
+    face_check_reason: str | None = None
+    has_reference_photo: bool = False
+    has_clock_in_selfie: bool = False
+    has_clock_out_selfie: bool = False
+
+
 class TimeRecordQueryParams(BaseModel):
     """Parsed query helpers (built in service)."""
 

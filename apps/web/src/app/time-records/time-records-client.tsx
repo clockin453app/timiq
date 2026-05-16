@@ -32,6 +32,7 @@ import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
 import { shiftStatusLabel, useT } from "../../lib/i18n";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import { FaceCheckCell } from "../../features/face-check/face-check-cell";
+import { FaceCheckReviewModal } from "../../features/face-check/face-check-review-modal";
 import {
   adminCreateCompletedShift,
   adminForceClockOut,
@@ -139,6 +140,7 @@ export function TimeRecordsClient() {
   const [addOpen, setAddOpen] = useState(false);
   const [editRow, setEditRow] = useState<TimeRecordShiftRow | null>(null);
   const [forceRow, setForceRow] = useState<TimeRecordShiftRow | null>(null);
+  const [faceReviewShiftId, setFaceReviewShiftId] = useState<string | null>(null);
   const [modalBusy, setModalBusy] = useState(false);
   const [modalError, setModalError] = useState("");
   const [actionBanner, setActionBanner] = useState("");
@@ -683,10 +685,24 @@ export function TimeRecordsClient() {
                       />
                     </TableCell>
                     <TableCell className="text-xs">
-                      <FaceCheckCell
-                        status={row.face_check_status}
-                        confidence={row.face_match_confidence}
-                      />
+                      <div className="flex flex-col items-start gap-1">
+                        <FaceCheckCell
+                          status={row.face_check_status}
+                          confidence={row.face_match_confidence}
+                        />
+                        {adminMode && management ? (
+                          <Button
+                            className="min-h-7 px-2 py-0.5 text-[11px]"
+                            onClick={() => setFaceReviewShiftId(row.shift_id)}
+                            type="button"
+                            variant="secondary"
+                          >
+                            {row.face_check_status
+                              ? t("face_check.review", "Review")
+                              : t("face_check.details", "Details")}
+                          </Button>
+                        ) : null}
+                      </div>
                     </TableCell>
                     {adminMode && management ? (
                       <TableCell className="align-top text-xs">
@@ -989,6 +1005,10 @@ export function TimeRecordsClient() {
           </div>
         ) : null}
       </SheetBody>
+      <FaceCheckReviewModal
+        onClose={() => setFaceReviewShiftId(null)}
+        shiftId={faceReviewShiftId}
+      />
     </Sheet>
   );
 }

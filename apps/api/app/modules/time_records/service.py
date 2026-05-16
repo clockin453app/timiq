@@ -6,9 +6,11 @@ from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.export_csv import format_dt_local, safe_export_filename, seconds_to_hours_csv
+from app.core.storage.factory import get_storage_backend
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
@@ -25,7 +27,10 @@ from app.modules.payroll_policies.service import (
 from app.modules.leave import repository as leave_repo
 from app.modules.leave.schemas import WeekLeaveRow
 from app.modules.locations.models import Location
+from app.modules.face_check.service import face_reference_configured
 from app.modules.time_clock.models import TimeShift
+from app.modules.time_clock.permissions import can_view_shift_owner_selfies
+from app.modules.time_clock.repository import get_clock_selfie_for_shift_phase
 from app.modules.time_records.calculation import compute_shift_metrics
 from app.modules.time_records.permissions import can_view_time_record_shift_owner
 from app.modules.time_records.repository import (
@@ -41,6 +46,8 @@ from app.modules.time_records.schemas import (
     AdminWeekReportAllEmployeesResponse,
     AdminWeekReportCompanyTotals,
     AdminWeekReportEmployeeSummary,
+    TimeRecordFaceReviewEmployee,
+    TimeRecordFaceReviewResponse,
     TimeRecordShiftRow,
     TimesheetDayTotals,
     TimesheetOpenShiftSummary,
@@ -52,6 +59,10 @@ MAX_PAGE_LIMIT = 100
 
 
 class TimeRecordsPermissionError(ValueError):
+    pass
+
+
+class TimeRecordsFaceReviewNotFoundError(ValueError):
     pass
 
 
@@ -332,6 +343,120 @@ def list_time_records_admin(
         )
 
     return visible
+
+
+def _load_face_review_shift_context(
+    db_session: Session,
+    actor: User,
+    shift_id: uuid.UUID,
+) -> tuple[TimeShift, Location, User, EmployeeProfile | None]:
+    statement = (
+        select(TimeShift, Location, User, EmployeeProfile)
+        .join(Location, TimeShift.location_id == Location.id)
+        .join(User, TimeShift.user_id == User.id)
+        .outerjoin(EmployeeProfile, EmployeeProfile.user_id == User.id)
+        .where(TimeShift.id == shift_id)
+        .limit(1)
+    )
+    row = db_session.execute(statement).first()
+    if row is None:
+        raise TimeRecordsFaceReviewNotFoundError("Face review shift not found.")
+    shift, location, owner, profile = row
+    if not can_view_time_record_shift_owner(actor, owner):
+        raise TimeRecordsPermissionError("You cannot view this shift.")
+    return shift, location, owner, profile
+
+
+def get_time_record_face_review(
+    db_session: Session,
+    actor: User,
+    shift_id: uuid.UUID,
+) -> TimeRecordFaceReviewResponse:
+    shift, location, owner, profile = _load_face_review_shift_context(db_session, actor, shift_id)
+    clock_in_selfie = get_clock_selfie_for_shift_phase(db_session, shift.id, "clock_in")
+    clock_out_selfie = get_clock_selfie_for_shift_phase(db_session, shift.id, "clock_out")
+    return TimeRecordFaceReviewResponse(
+        shift_id=shift.id,
+        employee=TimeRecordFaceReviewEmployee(
+            user_id=owner.id,
+            display_name=_employee_primary_label(profile, owner),
+            email=owner.email,
+        ),
+        location_name=location.name,
+        clock_in_at=shift.clock_in_at,
+        clock_out_at=shift.clock_out_at,
+        shift_status=shift.status,
+        face_check_status=shift.face_check_status,
+        face_match_confidence=shift.face_match_confidence,
+        face_check_reason=shift.face_check_reason,
+        has_reference_photo=face_reference_configured(profile),
+        has_clock_in_selfie=clock_in_selfie is not None,
+        has_clock_out_selfie=clock_out_selfie is not None,
+    )
+
+
+def _image_content_type_from_path(path: str) -> str:
+    cleaned = path.lower().split("?", 1)[0]
+    if cleaned.endswith(".png"):
+        return "image/png"
+    if cleaned.endswith(".webp"):
+        return "image/webp"
+    return "image/jpeg"
+
+
+def resolve_time_record_face_review_image(
+    db_session: Session,
+    actor: User,
+    shift_id: uuid.UUID,
+    image_kind: str,
+) -> tuple[bytes, str, str, User]:
+    shift, _location, owner, profile = _load_face_review_shift_context(db_session, actor, shift_id)
+    if not can_view_shift_owner_selfies(actor, owner):
+        raise TimeRecordsPermissionError("You cannot view this image.")
+
+    storage_path: str | None
+    content_type: str
+    if image_kind == "reference":
+        if not face_reference_configured(profile):
+            raise TimeRecordsFaceReviewNotFoundError("Reference photo not found.")
+        assert profile is not None
+        storage_path = profile.face_reference_storage_path
+        content_type = _image_content_type_from_path(storage_path or "")
+    elif image_kind in ("clock_in", "clock_out"):
+        selfie = get_clock_selfie_for_shift_phase(db_session, shift.id, image_kind)
+        if selfie is None:
+            raise TimeRecordsFaceReviewNotFoundError("Clock selfie not found.")
+        storage_path = selfie.storage_path
+        content_type = selfie.content_type or _image_content_type_from_path(storage_path)
+    else:
+        raise TimeRecordsFaceReviewNotFoundError("Face review image not found.")
+
+    key = (storage_path or "").strip()
+    if not key:
+        raise TimeRecordsFaceReviewNotFoundError("Face review image not found.")
+    storage = get_storage_backend()
+    if not storage.exists(key):
+        raise TimeRecordsFaceReviewNotFoundError("Face review image not found.")
+    try:
+        data = storage.read_bytes(key)
+    except FileNotFoundError:
+        raise TimeRecordsFaceReviewNotFoundError("Face review image not found.") from None
+
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="time_records.face_review_image_viewed",
+        entity_type="time_shift",
+        entity_id=str(shift.id),
+        company_id=owner.company_id,
+        details={
+            "actor_user_id": str(actor.id),
+            "subject_user_id": str(owner.id),
+            "shift_id": str(shift.id),
+            "image_kind": image_kind,
+        },
+    )
+    return data, content_type, f"face-review-{shift.id}-{image_kind}", owner
 
 
 def _week_bounds_utc(policy: CompanyTimePolicy, week_start: date) -> tuple[datetime, datetime]:

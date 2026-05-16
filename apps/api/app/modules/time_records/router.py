@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.core.storage.file_response import content_disposition_attachment
+from app.core.storage.file_response import content_disposition_attachment, protected_file_response
 
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import (
@@ -21,10 +21,12 @@ from app.modules.time_records.schemas import (
     AdminPatchCompletedShiftRequest,
     AdminTimesheetWeekAllEmployeesResponse,
     AdminWeekReportAllEmployeesResponse,
+    TimeRecordFaceReviewResponse,
     TimeRecordShiftRow,
     TimesheetWeekResponse,
 )
 from app.modules.time_records.service import (
+    TimeRecordsFaceReviewNotFoundError,
     TimeRecordsPermissionError,
     export_admin_company_timesheet_week_csv,
     export_admin_company_week_report_csv,
@@ -32,6 +34,8 @@ from app.modules.time_records.service import (
     export_timesheet_week_shifts_csv,
     list_time_records_admin,
     list_time_records_me,
+    get_time_record_face_review,
+    resolve_time_record_face_review_image,
     timesheet_week_all_employees_for_company,
     timesheet_week_for_user,
     week_report_all_employees_for_company,
@@ -130,6 +134,83 @@ def read_admin_time_records(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(exc),
         ) from exc
+
+
+@time_records_router.get("/{shift_id}/face-review", response_model=TimeRecordFaceReviewResponse)
+def read_time_record_face_review(
+    shift_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> TimeRecordFaceReviewResponse:
+    try:
+        return get_time_record_face_review(db_session, current_user, shift_id)
+    except TimeRecordsFaceReviewNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+
+
+def _face_review_image_response(
+    *,
+    shift_id: uuid.UUID,
+    image_kind: str,
+    db_session: Session,
+    current_user: User,
+) -> Response:
+    try:
+        data, content_type, filename, _owner = resolve_time_record_face_review_image(
+            db_session,
+            current_user,
+            shift_id,
+            image_kind,
+        )
+    except TimeRecordsFaceReviewNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return protected_file_response(body=data, media_type=content_type, download_filename=filename)
+
+
+@time_records_router.get("/{shift_id}/face-review/reference-image")
+def read_time_record_face_review_reference_image(
+    shift_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    return _face_review_image_response(
+        shift_id=shift_id,
+        image_kind="reference",
+        db_session=db_session,
+        current_user=current_user,
+    )
+
+
+@time_records_router.get("/{shift_id}/face-review/clock-in-selfie")
+def read_time_record_face_review_clock_in_selfie(
+    shift_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    return _face_review_image_response(
+        shift_id=shift_id,
+        image_kind="clock_in",
+        db_session=db_session,
+        current_user=current_user,
+    )
+
+
+@time_records_router.get("/{shift_id}/face-review/clock-out-selfie")
+def read_time_record_face_review_clock_out_selfie(
+    shift_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    return _face_review_image_response(
+        shift_id=shift_id,
+        image_kind="clock_out",
+        db_session=db_session,
+        current_user=current_user,
+    )
 
 
 @time_records_router.post("/admin/shifts", response_model=AdminManualShiftMutationResponse)
