@@ -113,6 +113,20 @@ function statusBadgeClass(status: string): string {
   return "bg-[var(--color-cell)] text-[var(--color-text)] border border-[var(--color-border-dark)]";
 }
 
+function payrollStatusChipClass(tone: "info" | "warning" | "danger" | "success"): string {
+  const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold";
+  if (tone === "danger") {
+    return `${base} border-red-800/25 bg-red-50 text-red-900`;
+  }
+  if (tone === "warning") {
+    return `${base} border-amber-800/25 bg-amber-50 text-amber-950`;
+  }
+  if (tone === "success") {
+    return `${base} border-emerald-800/25 bg-emerald-50 text-emerald-900`;
+  }
+  return `${base} border-slate-300 bg-slate-50 text-slate-800`;
+}
+
 function normalizePaymentMode(value: string | null | undefined): "net_payment" | "gross_payment" {
   const raw = (value ?? "").trim().toLowerCase();
   if (raw === "gross_payment" || raw === "gross") {
@@ -671,6 +685,46 @@ export function PayrollReportClient() {
   const lateDetectedCount = report?.late_shift_count_detected ?? report?.late_shift_count ?? 0;
   const canAdjustLateShiftsGlobally =
     report?.has_payable_late_unpaid_shifts === true || (report?.late_unpaid_total_rounded_seconds ?? 0) > 0;
+  const statusChips = useMemo(() => {
+    const chips: Array<{ label: string; tone: "info" | "warning" | "danger" | "success" }> = [];
+    if (!hasCompany && isAdministrator(user)) {
+      chips.push({ label: "Select company", tone: "info" });
+    }
+    if (hasCompany && payrollPeriodNotCalculated) {
+      chips.push({ label: "Pending calculation", tone: "warning" });
+    }
+    if (hasCompany && payrollNeedsRecalculation && paidRowCount > 0) {
+      chips.push({ label: "Payroll locked", tone: "danger" });
+    } else if (hasCompany && payrollNeedsRecalculation && approvedRowCount > 0) {
+      chips.push({ label: "Pending approval unlock", tone: "warning" });
+    } else if (hasCompany && payrollNeedsRecalculation) {
+      chips.push({ label: "Needs recalculation", tone: "warning" });
+    }
+    if (hasCompany && lateShiftDetected) {
+      chips.push({ label: "Late shift detected", tone: "warning" });
+    }
+    if (hasCompany && (alerts?.zero_rounded_hours_employees_count ?? 0) > 0) {
+      chips.push({ label: "Zero-hours employee", tone: "info" });
+    }
+    if (hasCompany && (alerts?.pending_approval_count ?? 0) > 0) {
+      chips.push({ label: "Pending approval", tone: "warning" });
+    }
+    if (hasCompany && report && !payrollPeriodNotCalculated && !payrollNeedsRecalculation && !lateShiftDetected) {
+      chips.push({ label: "Ready for review", tone: "success" });
+    }
+    return chips;
+  }, [
+    alerts?.pending_approval_count,
+    alerts?.zero_rounded_hours_employees_count,
+    approvedRowCount,
+    hasCompany,
+    lateShiftDetected,
+    paidRowCount,
+    payrollNeedsRecalculation,
+    payrollPeriodNotCalculated,
+    report,
+    user,
+  ]);
 
   return (
     <Sheet>
@@ -683,6 +737,16 @@ export function PayrollReportClient() {
         titleClassName="text-xl font-bold tracking-tight text-[#111827] md:text-2xl"
       />
       <SheetBody className="min-w-0 space-y-5">
+        {statusChips.length > 0 ? (
+          <div className="flex flex-wrap gap-2" aria-label="Payroll status">
+            {statusChips.map((chip) => (
+              <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
+                {chip.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+
         <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-sm">
           <div className="space-y-4">
             {isAdministrator(user) ? (
@@ -709,8 +773,8 @@ export function PayrollReportClient() {
               </p>
             )}
 
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-stretch">
-              <div className="min-w-0">
+            <div className="flex flex-col gap-3 lg:flex-row lg:flex-wrap lg:items-end">
+              <div className="min-w-0 flex-1">
                 <WeekPickerBar
                   disabled={loading}
                   onWeekChange={setWeekStart}
@@ -719,11 +783,11 @@ export function PayrollReportClient() {
                   weekStartIso={weekStart}
                 />
               </div>
-              <div className="flex shrink-0 flex-col justify-center rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-3 py-2.5 text-xs lg:max-w-[16rem]">
-                <span className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
-                  {t("payroll.report.date_range", "Date range")}
+              <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-3 py-2 text-xs">
+                <span className="font-bold uppercase tracking-wide text-[#374151]">
+                  {t("payroll.report.date_range", "Date range")}:{" "}
                 </span>
-                <span className="mt-1 leading-snug font-medium text-[#111827]">{weekRangeLabel}</span>
+                <span className="font-medium text-[#111827]">{weekRangeLabel}</span>
               </div>
             </div>
 
@@ -773,7 +837,7 @@ export function PayrollReportClient() {
                   {t("payroll.report.approve_all_pending", "Approve all pending")}
                 </Button>
                 <Button disabled={loading || !activeCompanyId} onClick={handleCsv} type="button" variant="secondary">
-                  {t("payroll.report.export_csv", "Export CSV")}
+                  {t("payroll.report.export_csv", "Export payroll CSV")}
                 </Button>
                 <Button
                   disabled={loading || !activeCompanyId}
@@ -781,7 +845,7 @@ export function PayrollReportClient() {
                   type="button"
                   variant="secondary"
                 >
-                  {t("payroll.report.print_report", "Print report")}
+                  {t("payroll.report.print_report", "Print")}
                 </Button>
                 <Button
                   disabled={loading || !activeCompanyId}
@@ -789,9 +853,14 @@ export function PayrollReportClient() {
                   type="button"
                   variant="secondary"
                 >
-                  {t("payroll.report.export_pdf", "Download PDF report")}
+                  {t("payroll.report.export_pdf", "Download payroll PDF")}
                 </Button>
               </div>
+              {paidRowCount > 0 ? (
+                <p className="mt-2 text-xs font-medium text-slate-700">
+                  Payroll locked — paid rows cannot be rebuilt.
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
@@ -820,238 +889,13 @@ export function PayrollReportClient() {
           </div>
         ) : null}
 
-        {hasCompany && lateShiftDetected ? (
-          <div
-            className="rounded-[var(--radius-md)] border border-amber-800/30 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-            role="status"
-          >
-            <p className="font-semibold">
-              {t("payroll.report.late_shifts_title", "Late completed shifts after payroll was paid")}
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
-              {canAdjustLateShiftsGlobally ? (
-                <>
-                  {lateDetectedCount} shift
-                  {lateDetectedCount === 1 ? "" : "s"} detected (
-                  {formatHoursFromSeconds(report?.late_unpaid_total_rounded_seconds ?? 0)} unpaid rounded hours). Use{" "}
-                  <span className="font-medium">Adjustment</span> on the paid row to create a pending supplemental payroll
-                  item. Paid rows stay frozen.
-                </>
-              ) : lateDetectedCount === 1 ? (
-                <>
-                  1 late shift was detected, but it has 0 payroll-rounded hours, so no adjustment is required. Paid rows
-                  stay frozen.
-                </>
-              ) : (
-                <>
-                  {lateDetectedCount} late shifts were detected, but they have 0 payroll-rounded hours, so no adjustment
-                  is required. Paid rows stay frozen.
-                </>
-              )}
-            </p>
-          </div>
-        ) : null}
-
-        {hasCompany && payrollPeriodNotCalculated ? (
-          <div
-            className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-3 text-sm text-[#1f2937]"
-            role="region"
-          >
-            <p className="font-semibold text-[#111827]">
-              {t("payroll.report.not_calculated_title", "Payroll not calculated for this week yet")}
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
-              {t(
-                "payroll.report.not_calculated_body",
-                "Rows are built on the server from time records. Use Calculate payroll or Refresh if this message persists.",
-              )}
-            </p>
-            <div className="mt-3">
-              <Button disabled={loading} onClick={runRecalculate} type="button">
-                {loading ? "Working…" : "Calculate payroll"}
-              </Button>
-            </div>
-          </div>
-        ) : null}
-
-        {hasCompany && payrollNeedsRecalculation && !payrollPeriodNotCalculated && paidRowCount > 0 ? (
-          <div
-            className="rounded-[var(--radius-md)] border border-slate-600/25 bg-slate-100 px-4 py-3 text-sm text-slate-950"
-            role="status"
-          >
-            <p className="font-semibold">{t("payroll.report.locked_title", "Payroll locked")}</p>
-            <p className="mt-1 text-xs leading-relaxed text-slate-800/90">
-              Paid payroll rows are locked and cannot be rebuilt.
-            </p>
-          </div>
-        ) : null}
-
-        {hasCompany &&
-        payrollNeedsRecalculation &&
-        !payrollPeriodNotCalculated &&
-        paidRowCount === 0 &&
-        approvedRowCount > 0 ? (
-          <div
-            className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-            role="status"
-          >
-            <p className="font-semibold">
-              {t("payroll.report.recalc_blocked_title", "Recalculation blocked")}
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
-              Some payroll rows are approved. Unlock them before recalculating.
-            </p>
-          </div>
-        ) : null}
-
-        {hasCompany &&
-        payrollNeedsRecalculation &&
-        !payrollPeriodNotCalculated &&
-        paidRowCount === 0 &&
-        approvedRowCount === 0 ? (
-          <div
-            className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-4 py-3 text-sm text-amber-950"
-            role="status"
-          >
-            <p className="font-semibold">
-              {t("payroll.report.needs_recalc_title", "Needs recalculation")}
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-amber-900/90">
-              {t(
-                "payroll.report.needs_recalc_body",
-                "Time records in this week changed after the last payroll run. Use Refresh or Recalculate to update pending rows.",
-              )}
-            </p>
-          </div>
-        ) : null}
-
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-5">
-          <div className="min-w-0 w-full flex-1 space-y-5 xl:min-w-0">
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
-                  {t("payroll.report.total_hours", "Total hours")}
-                </p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
-                  {showMetricFigures ? formatHoursFromSeconds(totalHoursSeconds) : "—"}
-                </p>
-              </div>
-              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
-                  {t("payroll.report.gross_pay", "Gross pay")}
-                </p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
-                  {showMetricFigures ? formatMoneyGBP(report?.period.total_gross) : "—"}
-                </p>
-              </div>
-              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
-                  {t("payroll.report.cis_tax", "CIS tax")}
-                </p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
-                  {showMetricFigures ? formatMoneyGBP(report?.period.total_tax) : "—"}
-                </p>
-              </div>
-              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
-                  {t("payroll.report.net_pay", "Net pay")}
-                </p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
-                  {showMetricFigures ? formatMoneyGBP(report?.period.total_net) : "—"}
-                </p>
-              </div>
-            </div>
-            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
-                Monthly payroll summary
-              </p>
-              {!hasCompany ? (
-                <p className="mt-2 text-xs text-[var(--color-text-muted)]">Choose a company in the toolbar first.</p>
-              ) : null}
-              {hasCompany && monthLoading ? (
-                <p className="mt-2 text-xs text-[var(--color-text-muted)]">Loading month totals…</p>
-              ) : null}
-              {hasCompany && !monthLoading && monthSummary ? (
-                <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2 lg:grid-cols-3">
-                  <p className="text-[var(--color-text-muted)]">
-                    <span className="font-semibold text-[var(--color-text)]">Month: </span>
-                    {monthSummary.year}-{String(monthSummary.month).padStart(2, "0")}
-                  </p>
-                  <p className="text-[var(--color-text-muted)]">
-                    <span className="font-semibold text-[var(--color-text)]">Payroll weeks: </span>
-                    {monthSummary.payroll_weeks}
-                  </p>
-                  <p className="text-[var(--color-text-muted)]">
-                    <span className="font-semibold text-[var(--color-text)]">Employees: </span>
-                    {monthSummary.distinct_employees}
-                  </p>
-                  <p className="text-[var(--color-text-muted)]">
-                    <span className="font-semibold text-[var(--color-text)]">Total hours: </span>
-                    {formatHoursFromSeconds(monthSummary.total_rounded_seconds)}
-                  </p>
-                  <p className="text-[var(--color-text-muted)]">
-                    <span className="font-semibold text-[var(--color-text)]">Gross: </span>
-                    {formatMoneyGBP(monthSummary.total_gross)}
-                  </p>
-                  <p className="text-[var(--color-text-muted)]">
-                    <span className="font-semibold text-[var(--color-text)]">CIS tax: </span>
-                    {formatMoneyGBP(monthSummary.total_tax)}
-                  </p>
-                  <p className="text-[var(--color-text-muted)]">
-                    <span className="font-semibold text-[var(--color-text)]">Net: </span>
-                    {formatMoneyGBP(monthSummary.total_net)}
-                  </p>
-                </div>
-              ) : null}
-              {hasCompany && !monthLoading && !monthSummary ? (
-                <p className="mt-2 text-xs text-[var(--color-text-muted)]">No month data loaded.</p>
-              ) : null}
-            </div>
-
+        <div className="space-y-5">
+          <div className="min-w-0 w-full space-y-5">
             <div className="w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-sm">
               <p className="mb-1 text-sm font-semibold text-[#111827]">Weekly payroll review</p>
               <p className="mb-3 text-xs text-[var(--color-text-muted)]">
                 Summary by employee for this payroll week. Use + to open employee payroll details (shift lines).
               </p>
-              {report ? (
-                <div className="mb-3 rounded-[var(--radius-md)] border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-xs text-slate-900">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600">Approved leave (review)</p>
-                  <p className="mt-1 leading-relaxed text-slate-700">
-                    {report.payroll_leave_review_note ??
-                      "Leave is shown for review only. Automatic paid leave in gross totals is not enabled in this batch."}
-                  </p>
-                  {(report.approved_leave_in_week?.length ?? 0) > 0 ? (
-                    <div className="mt-2 overflow-x-auto">
-                      <table className="w-full min-w-[520px] border-collapse text-left text-[11px]">
-                        <thead>
-                          <tr className="border-b border-slate-300 text-slate-600">
-                            <th className="py-1 pr-2 font-semibold">Employee</th>
-                            <th className="py-1 pr-2 font-semibold">Type</th>
-                            <th className="py-1 pr-2 font-semibold">Dates</th>
-                            <th className="py-1 pr-2 font-semibold">Days</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(report.approved_leave_in_week ?? []).map((lv) => (
-                            <tr className="border-b border-slate-200/80" key={`${lv.user_id}-${lv.date_from}-${lv.date_to}-${lv.leave_type}`}>
-                              <td className="py-1 pr-2">
-                                {lv.employee_name?.trim() || lv.employee_email || lv.user_id}
-                              </td>
-                              <td className="py-1 pr-2">{leaveTypeLabel(lv.leave_type)}</td>
-                              <td className="py-1 pr-2 tabular-nums text-slate-600">
-                                {lv.date_from} → {lv.date_to}
-                              </td>
-                              <td className="py-1 pr-2 tabular-nums">{lv.total_days}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-[11px] text-slate-600">No approved leave overlaps this payroll week.</p>
-                  )}
-                </div>
-              ) : null}
               <div className="timiq-scroll-x w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[#111827]">
                 <Table className="min-w-full">
                 <TableHeader>
@@ -1110,8 +954,10 @@ export function PayrollReportClient() {
                           <TableRow>
                             <TableCell className="align-top">
                               <Button
+                                aria-label="View shift details"
                                 className="min-h-8 px-1 py-0 text-xs"
                                 onClick={() => toggleExpandShifts(row.user_id)}
+                                title="View shift details"
                                 type="button"
                                 variant="secondary"
                               >
@@ -1387,6 +1233,141 @@ export function PayrollReportClient() {
               </div>
             </div>
 
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
+                  {t("payroll.report.total_hours", "Total hours")}
+                </p>
+                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
+                  {showMetricFigures ? formatHoursFromSeconds(totalHoursSeconds) : "—"}
+                </p>
+              </div>
+              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
+                  {t("payroll.report.gross_pay", "Gross pay")}
+                </p>
+                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
+                  {showMetricFigures ? formatMoneyGBP(report?.period.total_gross) : "—"}
+                </p>
+              </div>
+              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
+                  {t("payroll.report.cis_tax", "CIS tax")}
+                </p>
+                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
+                  {showMetricFigures ? formatMoneyGBP(report?.period.total_tax) : "—"}
+                </p>
+              </div>
+              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
+                  {t("payroll.report.net_pay", "Net pay")}
+                </p>
+                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
+                  {showMetricFigures ? formatMoneyGBP(report?.period.total_net) : "—"}
+                </p>
+              </div>
+              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">Employees</p>
+                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
+                  {showMetricFigures ? period?.total_items : "—"}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
+                Supporting details
+              </p>
+              <div className="mt-3 grid gap-3 xl:grid-cols-2">
+                <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
+                    Monthly payroll summary
+                  </p>
+                  {!hasCompany ? (
+                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">Choose a company in the toolbar first.</p>
+                  ) : null}
+                  {hasCompany && monthLoading ? (
+                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">Loading month totals…</p>
+                  ) : null}
+                  {hasCompany && !monthLoading && monthSummary ? (
+                    <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
+                      <p className="text-[var(--color-text-muted)]">
+                        <span className="font-semibold text-[var(--color-text)]">Month: </span>
+                        {monthSummary.year}-{String(monthSummary.month).padStart(2, "0")}
+                      </p>
+                      <p className="text-[var(--color-text-muted)]">
+                        <span className="font-semibold text-[var(--color-text)]">Payroll weeks: </span>
+                        {monthSummary.payroll_weeks}
+                      </p>
+                      <p className="text-[var(--color-text-muted)]">
+                        <span className="font-semibold text-[var(--color-text)]">Employees: </span>
+                        {monthSummary.distinct_employees}
+                      </p>
+                      <p className="text-[var(--color-text-muted)]">
+                        <span className="font-semibold text-[var(--color-text)]">Total hours: </span>
+                        {formatHoursFromSeconds(monthSummary.total_rounded_seconds)}
+                      </p>
+                      <p className="text-[var(--color-text-muted)]">
+                        <span className="font-semibold text-[var(--color-text)]">Gross: </span>
+                        {formatMoneyGBP(monthSummary.total_gross)}
+                      </p>
+                      <p className="text-[var(--color-text-muted)]">
+                        <span className="font-semibold text-[var(--color-text)]">CIS tax: </span>
+                        {formatMoneyGBP(monthSummary.total_tax)}
+                      </p>
+                      <p className="text-[var(--color-text-muted)]">
+                        <span className="font-semibold text-[var(--color-text)]">Net: </span>
+                        {formatMoneyGBP(monthSummary.total_net)}
+                      </p>
+                    </div>
+                  ) : null}
+                  {hasCompany && !monthLoading && !monthSummary ? (
+                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">No month data loaded.</p>
+                  ) : null}
+                </div>
+
+                {report ? (
+                  <div className="rounded-[var(--radius-md)] border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-xs text-slate-900">
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600">Approved leave (review)</p>
+                    <p className="mt-1 leading-relaxed text-slate-700">
+                      {report.payroll_leave_review_note ??
+                        "Leave is shown for review only. Automatic paid leave in gross totals is not enabled in this batch."}
+                    </p>
+                    {(report.approved_leave_in_week?.length ?? 0) > 0 ? (
+                      <div className="mt-2 overflow-x-auto">
+                        <table className="w-full min-w-[520px] border-collapse text-left text-[11px]">
+                          <thead>
+                            <tr className="border-b border-slate-300 text-slate-600">
+                              <th className="py-1 pr-2 font-semibold">Employee</th>
+                              <th className="py-1 pr-2 font-semibold">Type</th>
+                              <th className="py-1 pr-2 font-semibold">Dates</th>
+                              <th className="py-1 pr-2 font-semibold">Days</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(report.approved_leave_in_week ?? []).map((lv) => (
+                              <tr className="border-b border-slate-200/80" key={`${lv.user_id}-${lv.date_from}-${lv.date_to}-${lv.leave_type}`}>
+                                <td className="py-1 pr-2">
+                                  {lv.employee_name?.trim() || lv.employee_email || lv.user_id}
+                                </td>
+                                <td className="py-1 pr-2">{leaveTypeLabel(lv.leave_type)}</td>
+                                <td className="py-1 pr-2 tabular-nums text-slate-600">
+                                  {lv.date_from} → {lv.date_to}
+                                </td>
+                                <td className="py-1 pr-2 tabular-nums">{lv.total_days}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-[11px] text-slate-600">No approved leave overlaps this payroll week.</p>
+                    )}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
             {report && hasCompany ? (
               <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)]/40 px-3 py-3 text-sm">
                 <p className="font-semibold text-[#111827]">Employee payroll details</p>
@@ -1398,7 +1379,7 @@ export function PayrollReportClient() {
             ) : null}
           </div>
 
-          <aside className="w-full min-w-0 max-w-full shrink-0 space-y-3 lg:w-64 lg:max-w-[min(20rem,calc(100vw-2rem))] xl:w-72">
+          <section className="grid gap-3 lg:grid-cols-3">
             <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 text-sm shadow-sm">
               <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Payroll summary</p>
               {!hasCompany ? (
@@ -1492,6 +1473,24 @@ export function PayrollReportClient() {
               <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3 text-sm shadow-sm">
                 <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Alerts</p>
                 <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-[#374151]">
+                  {lateShiftDetected ? (
+                    <li>
+                      {canAdjustLateShiftsGlobally ? (
+                        <>
+                          {lateDetectedCount} late shift
+                          {lateDetectedCount === 1 ? "" : "s"} detected (
+                          {formatHoursFromSeconds(report?.late_unpaid_total_rounded_seconds ?? 0)} unpaid rounded
+                          hours). Use Adjustment on the paid row to create a pending supplemental payroll item.
+                        </>
+                      ) : (
+                        <>
+                          {lateDetectedCount} late shift
+                          {lateDetectedCount === 1 ? "" : "s"} detected with 0 payroll-rounded hours. Paid rows stay
+                          frozen.
+                        </>
+                      )}
+                    </li>
+                  ) : null}
                   {alerts.pending_approval_count > 0 ? (
                     <li>
                       {alerts.pending_approval_count} row
@@ -1542,7 +1541,8 @@ export function PayrollReportClient() {
                   alerts.rate_missing_employees_count === 0 &&
                   alerts.zero_rounded_hours_employees_count === 0 &&
                   !alerts.payroll_period_not_calculated &&
-                  !alerts.payroll_needs_recalculation ? (
+                  !alerts.payroll_needs_recalculation &&
+                  !lateShiftDetected ? (
                     <li className="list-none">No issues flagged for this week.</li>
                   ) : null}
                 </ul>
@@ -1558,7 +1558,7 @@ export function PayrollReportClient() {
                 <p className="mt-2 text-xs">—</p>
               </div>
             )}
-          </aside>
+          </section>
         </div>
 
         {editRow ? (
