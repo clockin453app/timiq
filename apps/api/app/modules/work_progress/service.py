@@ -19,6 +19,7 @@ from app.modules.work_progress.image_processing import (
     detect_magic_file_kind,
     process_site_progress_photo,
 )
+from app.modules.work_progress.pdf_export import build_work_progress_report_pdf
 from app.modules.work_progress.repository import (
     count_attachments_for_entry,
     count_attachments_for_entry_ids,
@@ -75,6 +76,7 @@ ALLOWED_PROGRESS_STATUSES = frozenset(
 
 STATUS_SUBMITTED = "submitted"
 STATUS_REVIEWED = "reviewed"
+STATUS_ARCHIVED = "archived"
 
 STORED_JPEG_MEDIA = "image/jpeg"
 
@@ -769,6 +771,38 @@ def bulk_delete_review_attachments(
     )
 
 
+def archive_review_entry(
+    db_session: Session,
+    actor: User,
+    entry_id: uuid.UUID,
+) -> None:
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise WorkProgressPermissionError()
+    try:
+        entry, owner = _assert_review_access(db_session, actor, entry_id)
+    except WorkProgressPermissionError:
+        raise WorkProgressNotFoundError() from None
+
+    if entry.status == STATUS_ARCHIVED:
+        return
+    previous_status = entry.status
+    entry.status = STATUS_ARCHIVED
+    save_entry(db_session, entry)
+
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="work_progress.archived",
+        entity_type="work_progress_entry",
+        entity_id=str(entry.id),
+        company_id=entry.company_id,
+        details={
+            "owner_user_id": str(owner.id),
+            "previous_status": previous_status,
+        },
+    )
+
+
 def get_review_detail(db_session: Session, actor: User, entry_id: uuid.UUID) -> WorkProgressReviewDetailResponse:
     try:
         entry, owner = _assert_review_access(db_session, actor, entry_id)
@@ -962,3 +996,134 @@ def export_review_entries_csv(
     )
     fname = safe_export_filename("work-progress-review", str(audit_company or "export")) + ".csv"
     return buf.getvalue(), fname
+
+
+def export_review_entries_pdf(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    user_id: uuid.UUID | None,
+    location_id: uuid.UUID | None,
+    status_filter: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+) -> tuple[bytes, str]:
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise WorkProgressPermissionError("You do not have permission to export work progress reviews.")
+
+    company_filter, uid, loc_id, status_f, d_from, d_to = _resolve_review_list_filters(
+        db_session,
+        actor,
+        company_id=company_id,
+        user_id=user_id,
+        location_id=location_id,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    entries = list_review_entries_for_export(
+        db_session,
+        company_id_filter=company_filter,
+        user_id_filter=uid,
+        location_id_filter=loc_id,
+        status_filter=status_f,
+        date_from=d_from,
+        date_to=d_to,
+        title_search=title_search,
+    )
+    grouped_atts = list_attachments_for_entry_ids(db_session, [e.id for e in entries])
+    backend = get_storage_backend()
+
+    report_entries: list[dict] = []
+    submitted_count = reviewed_count = 0
+    total_attachments = 0
+    for entry in entries:
+        if entry.status == STATUS_SUBMITTED:
+            submitted_count += 1
+        if entry.status == STATUS_REVIEWED:
+            reviewed_count += 1
+        owner = get_user_by_id(db_session, entry.user_id)
+        profile = get_employee_profile_by_user_id(db_session, entry.user_id)
+        attachments = []
+        for att in grouped_atts.get(entry.id, []):
+            total_attachments += 1
+            image_bytes: bytes | None = None
+            unavailable = False
+            media_type = work_progress_attachment_response_media_type(att)
+            if media_type.lower().startswith("image/"):
+                try:
+                    image_bytes = backend.read_bytes(att.storage_path)
+                except Exception:
+                    unavailable = True
+            attachments.append(
+                {
+                    "filename": att.original_filename,
+                    "content_type": media_type,
+                    "image_bytes": image_bytes,
+                    "unavailable": unavailable,
+                }
+            )
+        report_entries.append(
+            {
+                "employee": _display_name(profile) or (owner.email if owner else "Unknown"),
+                "employee_email": owner.email if owner else "",
+                "site": _location_name(db_session, entry.location_id),
+                "work_date": entry.work_date,
+                "title": entry.title,
+                "progress_status": entry.progress_status,
+                "status": entry.status,
+                "percent_complete": entry.percent_complete,
+                "notes": entry.notes,
+                "review_note": entry.review_note,
+                "attachments": attachments,
+            }
+        )
+
+    company_name = "All companies"
+    if company_filter is not None:
+        company = get_company_by_id(db_session, company_filter)
+        company_name = company.name if company else "Selected company"
+    elif actor.company_id is not None:
+        company = get_company_by_id(db_session, actor.company_id)
+        company_name = company.name if company else "Company"
+
+    body = build_work_progress_report_pdf(
+        company_name=company_name,
+        date_from=d_from,
+        date_to=d_to,
+        filters={
+            "status": status_f or "Any active status",
+            "employee": "Selected" if uid else "Any",
+            "site": "Selected" if loc_id else "Any",
+            "title": title_search.strip() if title_search and title_search.strip() else "Any",
+        },
+        summary={
+            "total_submissions": len(entries),
+            "total_attachments": total_attachments,
+            "submitted_count": submitted_count,
+            "reviewed_count": reviewed_count,
+        },
+        entries=report_entries,
+    )
+
+    audit_company = company_filter or (entries[0].company_id if entries else actor.company_id)
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="work_progress.report_exported",
+        entity_type="work_progress_review_export",
+        entity_id=None,
+        company_id=audit_company,
+        details={
+            "export_type": "review_pdf",
+            "row_count": len(entries),
+            "attachment_count": total_attachments,
+        },
+    )
+
+    from_s = d_from.isoformat() if d_from else "all"
+    to_s = d_to.isoformat() if d_to else "all"
+    fname = f"timiq-work-progress-report-{from_s}-to-{to_s}.pdf"
+    return body, fname

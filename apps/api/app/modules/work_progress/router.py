@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status as http_status
 from fastapi.responses import Response
 
 from app.core.storage.file_response import content_disposition_attachment, protected_file_response
@@ -29,10 +29,12 @@ from app.modules.work_progress.service import (
     WorkProgressValidationError,
     acknowledge_review,
     add_review_comment,
+    archive_review_entry,
     bulk_delete_review_attachments,
     bulk_download_review_attachments_zip,
     create_my_entry,
     download_work_progress_file,
+    export_review_entries_pdf,
     export_review_entries_csv,
     get_me_options,
     get_my_entry_detail,
@@ -75,7 +77,7 @@ def get_work_progress_me_list(
     return list_my_entries(db_session, current_user, limit=limit, offset=offset)
 
 
-@router.post("/me", response_model=WorkProgressEntryDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/me", response_model=WorkProgressEntryDetailResponse, status_code=http_status.HTTP_201_CREATED)
 def post_work_progress_me(
     body: WorkProgressCreateRequest,
     db_session: Session = Depends(get_db_session),
@@ -84,7 +86,7 @@ def post_work_progress_me(
     try:
         return create_my_entry(db_session, current_user, body)
     except WorkProgressValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/me/{progress_id}", response_model=WorkProgressEntryDetailResponse)
@@ -96,7 +98,7 @@ def get_work_progress_me_detail(
     try:
         return get_my_entry_detail(db_session, current_user, progress_id)
     except WorkProgressNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
 
 
 @router.post("/me/{progress_id}/files", response_model=WorkProgressEntryDetailResponse)
@@ -117,9 +119,9 @@ async def post_work_progress_me_file(
             file_bytes=raw,
         )
     except WorkProgressNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
     except WorkProgressValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/review", response_model=WorkProgressReviewListResponse)
@@ -151,9 +153,9 @@ def get_work_progress_review_list(
             offset=offset,
         )
     except WorkProgressPermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/review/export.csv")
@@ -181,12 +183,47 @@ def get_work_progress_review_export_csv(
             title_search=title_search,
         )
     except WorkProgressPermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": content_disposition_attachment(fname)},
+    )
+
+
+@router.get("/review/report.pdf")
+def get_work_progress_review_report_pdf(
+    company_id: uuid.UUID | None = Query(default=None),
+    user_id: uuid.UUID | None = Query(default=None),
+    location_id: uuid.UUID | None = Query(default=None),
+    status: str | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    title_search: str | None = Query(default=None, max_length=300),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+):
+    try:
+        body, fname = export_review_entries_pdf(
+            db_session,
+            current_user,
+            company_id=company_id,
+            user_id=user_id,
+            location_id=location_id,
+            status_filter=status,
+            date_from=date_from,
+            date_to=date_to,
+            title_search=title_search,
+        )
+    except WorkProgressPermissionError as exc:
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except WorkProgressValidationError as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return Response(
+        content=body,
+        media_type="application/pdf",
         headers={"Content-Disposition": content_disposition_attachment(fname)},
     )
 
@@ -220,9 +257,9 @@ def get_work_progress_review_attachment_gallery(
             offset=offset,
         )
     except WorkProgressPermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/review/attachments/bulk-download")
@@ -234,14 +271,14 @@ def post_work_progress_review_attachments_bulk_download(
     try:
         data = bulk_download_review_attachments_zip(db_session, current_user, body.file_ids)
     except WorkProgressPermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
     headers = {"Content-Disposition": 'attachment; filename="work-progress-attachments.zip"'}
     return Response(content=data, media_type="application/zip", headers=headers)
 
 
-@router.post("/review/attachments/bulk-delete", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/review/attachments/bulk-delete", status_code=http_status.HTTP_204_NO_CONTENT)
 def post_work_progress_review_attachments_bulk_delete(
     body: WorkProgressBulkFileIdsBody,
     db_session: Session = Depends(get_db_session),
@@ -250,12 +287,12 @@ def post_work_progress_review_attachments_bulk_delete(
     try:
         bulk_delete_review_attachments(db_session, current_user, body.file_ids)
     except WorkProgressPermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
     except WorkProgressValidationError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return Response(status_code=http_status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/review/{progress_id}", response_model=WorkProgressReviewDetailResponse)
@@ -267,7 +304,22 @@ def get_work_progress_review_detail(
     try:
         return get_review_detail(db_session, current_user, progress_id)
     except WorkProgressNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+
+
+@router.delete("/review/{progress_id}", status_code=http_status.HTTP_204_NO_CONTENT)
+def delete_work_progress_review_entry(
+    progress_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        archive_review_entry(db_session, current_user, progress_id)
+    except WorkProgressPermissionError as exc:
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except WorkProgressNotFoundError:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+    return Response(status_code=http_status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/review/{progress_id}/acknowledge", response_model=WorkProgressReviewDetailResponse)
@@ -280,9 +332,9 @@ def post_work_progress_acknowledge(
     try:
         return acknowledge_review(db_session, current_user, progress_id, body.note)
     except WorkProgressNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
     except WorkProgressStateError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.post("/review/{progress_id}/comment", response_model=WorkProgressReviewDetailResponse)
@@ -295,9 +347,9 @@ def post_work_progress_review_comment(
     try:
         return add_review_comment(db_session, current_user, progress_id, body.comment)
     except WorkProgressNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
     except WorkProgressStateError as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
 
 
 @router.get("/files/{file_id}/file")
@@ -309,7 +361,7 @@ def get_work_progress_file(
     try:
         data, att = download_work_progress_file(db_session, current_user, file_id)
     except WorkProgressNotFoundError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
 
     return protected_file_response(
         body=data,

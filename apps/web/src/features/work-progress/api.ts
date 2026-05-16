@@ -327,6 +327,50 @@ export async function downloadWorkProgressReviewCsv(params?: WorkProgressReviewQ
   URL.revokeObjectURL(href);
 }
 
+function appendReviewQuery(search: URLSearchParams, params?: WorkProgressReviewQuery): void {
+  if (params?.company_id) {
+    search.set("company_id", params.company_id);
+  }
+  if (params?.user_id) {
+    search.set("user_id", params.user_id);
+  }
+  if (params?.location_id) {
+    search.set("location_id", params.location_id);
+  }
+  if (params?.status) {
+    search.set("status", params.status);
+  }
+  if (params?.date_from) {
+    search.set("date_from", params.date_from);
+  }
+  if (params?.date_to) {
+    search.set("date_to", params.date_to);
+  }
+  if (params?.title_search?.trim()) {
+    search.set("title_search", params.title_search.trim());
+  }
+}
+
+export async function downloadWorkProgressReviewPdf(params?: WorkProgressReviewQuery): Promise<void> {
+  const search = new URLSearchParams();
+  appendReviewQuery(search, params);
+  const q = search.toString();
+  const response = await fetch(
+    `${API_URL}/api/work-progress/review/report.pdf${q ? `?${q}` : ""}`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "PDF report download failed."));
+  }
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = "timiq-work-progress-report.pdf";
+  anchor.click();
+  URL.revokeObjectURL(href);
+}
+
 export async function listWorkProgressReviewGallery(
   params?: WorkProgressReviewQuery,
 ): Promise<WorkProgressReviewGalleryResponse> {
@@ -391,6 +435,16 @@ export async function bulkDeleteWorkProgressAttachments(fileIds: string[]): Prom
   });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, "Could not delete selected files."));
+  }
+}
+
+export async function archiveWorkProgressReviewEntry(progressId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/work-progress/review/${encodeURIComponent(progressId)}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Submission delete failed."));
   }
 }
 

@@ -80,6 +80,8 @@ def _apply_review_entry_filters(
         stmt = stmt.where(WorkProgressEntry.location_id == location_id_filter)
     if status_filter is not None:
         stmt = stmt.where(WorkProgressEntry.status == status_filter)
+    else:
+        stmt = stmt.where(WorkProgressEntry.status != "archived")
     if date_from is not None:
         stmt = stmt.where(WorkProgressEntry.work_date >= date_from)
     if date_to is not None:

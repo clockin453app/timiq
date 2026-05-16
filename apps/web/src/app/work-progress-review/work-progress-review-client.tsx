@@ -19,15 +19,15 @@ import { isAdministrator, RoleGuard, useCurrentUser } from "../../features/auth"
 import { listCompanies, type Company } from "../../features/companies/api";
 import {
   acknowledgeWorkProgress,
+  archiveWorkProgressReviewEntry,
   bulkDeleteWorkProgressAttachments,
   bulkDownloadWorkProgressAttachments,
   commentWorkProgress,
-  downloadWorkProgressReviewCsv,
+  downloadWorkProgressReviewPdf,
   fetchWorkProgressFileBlob,
   getWorkProgressReviewDetail,
   listWorkProgressReview,
   listWorkProgressReviewGallery,
-  workProgressFileUrl,
   type WorkProgressAttachmentMeta,
   type WorkProgressReviewDetail,
   type WorkProgressReviewGalleryItem,
@@ -73,29 +73,25 @@ function GalleryThumb({ att, compact }: { att: WorkProgressAttachmentMeta; compa
   }
   if (compact) {
     return (
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
-        alt=""
-        className="h-12 w-12 rounded border border-[var(--color-border)] object-cover"
-        height={48}
-        loading="lazy"
-        src={workProgressFileUrl(att.id)}
-        width={48}
-      />
+      <div className="flex h-12 w-12 items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-header)] text-[10px] font-bold text-[var(--color-text-soft)]">
+        Image
+      </div>
     );
   }
   return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      alt=""
-      className="h-28 w-full rounded border border-[var(--color-border)] object-cover"
-      height={112}
-      loading="lazy"
-      src={workProgressFileUrl(att.id)}
-      width={200}
-    />
+    <div className="flex h-28 w-full items-center justify-center rounded border border-[var(--color-border)] bg-[var(--color-header)] text-xs font-bold text-[var(--color-text-soft)]">
+      Open image
+    </div>
   );
 }
+
+type AttachmentViewerItem = {
+  attachment: WorkProgressAttachmentMeta;
+  employee: string;
+  site: string;
+  workDate: string;
+  title: string;
+};
 
 function ReviewAdminBody() {
   const user = useCurrentUser();
@@ -122,8 +118,9 @@ function ReviewAdminBody() {
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [galleryBulkError, setGalleryBulkError] = useState("");
-  const [exportCsvBusy, setExportCsvBusy] = useState(false);
-  const [exportCsvError, setExportCsvError] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportError, setReportError] = useState("");
+  const [galleryMessage, setGalleryMessage] = useState("");
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<WorkProgressReviewDetail | null>(null);
@@ -134,6 +131,12 @@ function ReviewAdminBody() {
   const [commentText, setCommentText] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [viewerItems, setViewerItems] = useState<AttachmentViewerItem[]>([]);
+  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [viewerUrl, setViewerUrl] = useState<string | null>(null);
+  const [viewerLoading, setViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState("");
 
   const loadCompanies = useCallback(async () => {
     if (!adminAllCompanies) {
@@ -258,14 +261,83 @@ function ReviewAdminBody() {
     }
   }
 
-  async function openFile(fileId: string) {
+  const viewerItem = viewerIndex === null ? null : viewerItems[viewerIndex] ?? null;
+
+  useEffect(() => {
+    if (!viewerItem) {
+      setViewerUrl(null);
+      setViewerError("");
+      setViewerLoading(false);
+      return undefined;
+    }
+    let revoked = false;
+    let objectUrl: string | null = null;
+    setViewerUrl(null);
+    setViewerError("");
+    setViewerLoading(true);
+    void fetchWorkProgressFileBlob(viewerItem.attachment.id)
+      .then((blob) => {
+        if (revoked) {
+          return;
+        }
+        objectUrl = URL.createObjectURL(blob);
+        setViewerUrl(objectUrl);
+      })
+      .catch((err) => {
+        if (!revoked) {
+          setViewerError(err instanceof Error ? err.message : "Could not load image.");
+        }
+      })
+      .finally(() => {
+        if (!revoked) {
+          setViewerLoading(false);
+        }
+      });
+    return () => {
+      revoked = true;
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
+    };
+  }, [viewerItem]);
+
+  function openViewer(itemsToView: AttachmentViewerItem[], index: number) {
+    setViewerItems(itemsToView);
+    setViewerIndex(index);
+  }
+
+  function closeViewer() {
+    setViewerIndex(null);
+    setViewerItems([]);
+  }
+
+  useEffect(() => {
+    if (!viewerItem) {
+      return undefined;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeViewer();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [viewerItem]);
+
+  async function downloadFile(fileId: string, filename: string) {
     try {
       const blob = await fetchWorkProgressFileBlob(fileId);
       const url = URL.createObjectURL(blob);
-      window.open(url, "_blank", "noopener,noreferrer");
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename || "work-progress-image.jpg";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch {
-      // ignore
+      setViewerError("Could not download image.");
     }
   }
 
@@ -287,6 +359,7 @@ function ReviewAdminBody() {
     }
     setBulkBusy(true);
     setGalleryBulkError("");
+    setGalleryMessage("");
     try {
       const blob = await bulkDownloadWorkProgressAttachments(Array.from(selectedFileIds));
       const url = URL.createObjectURL(blob);
@@ -314,6 +387,7 @@ function ReviewAdminBody() {
     }
     setBulkBusy(true);
     setGalleryBulkError("");
+    setGalleryMessage("");
     try {
       await bulkDeleteWorkProgressAttachments(Array.from(selectedFileIds));
       setSelectedFileIds(new Set());
@@ -321,6 +395,7 @@ function ReviewAdminBody() {
       if (selectedId) {
         await openDetail(selectedId);
       }
+      setGalleryMessage("Selected pictures deleted.");
     } catch (err) {
       setGalleryBulkError(err instanceof Error ? err.message : "Delete failed.");
     } finally {
@@ -330,9 +405,9 @@ function ReviewAdminBody() {
 
   const selectedCount = selectedFileIds.size;
 
-  const exportReviewCsv = useCallback(async () => {
-    setExportCsvError("");
-    setExportCsvBusy(true);
+  const downloadPdfReport = useCallback(async () => {
+    setReportError("");
+    setReportBusy(true);
     const params = {
       company_id: adminAllCompanies && companyFilter ? companyFilter : undefined,
       user_id: userIdFilter.trim() || undefined,
@@ -343,11 +418,11 @@ function ReviewAdminBody() {
       title_search: titleSearch.trim() || undefined,
     };
     try {
-      await downloadWorkProgressReviewCsv(params);
+      await downloadWorkProgressReviewPdf(params);
     } catch (err) {
-      setExportCsvError(err instanceof Error ? err.message : "Export failed.");
+      setReportError(err instanceof Error ? err.message : "PDF report download failed.");
     } finally {
-      setExportCsvBusy(false);
+      setReportBusy(false);
     }
   }, [
     adminAllCompanies,
@@ -359,6 +434,24 @@ function ReviewAdminBody() {
     titleSearch,
     userIdFilter,
   ]);
+
+  async function handleArchiveSubmission(progressId: string) {
+    if (!window.confirm("Delete this work progress submission?\n\nThis removes it from review lists and reports. Existing audit history is kept.")) {
+      return;
+    }
+    setArchiveBusy(true);
+    setActionError("");
+    try {
+      await archiveWorkProgressReviewEntry(progressId);
+      setSelectedId(null);
+      setDetail(null);
+      await refreshListAndGallery();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Submission delete failed.");
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -429,16 +522,16 @@ function ReviewAdminBody() {
             Apply filters
           </Button>
           <Button
-            disabled={exportCsvBusy || total === 0}
-            onClick={() => void exportReviewCsv()}
+            disabled={reportBusy || total === 0}
+            onClick={() => void downloadPdfReport()}
             type="button"
             variant="secondary"
           >
-            {exportCsvBusy ? "Exporting…" : "Export CSV"}
+            {reportBusy ? "Preparing PDF…" : "Download PDF report"}
           </Button>
         </div>
-        {exportCsvError ? (
-          <p className="mt-2 text-sm text-[var(--color-danger-700)]">{exportCsvError}</p>
+        {reportError ? (
+          <p className="mt-2 text-sm text-[var(--color-danger-700)]">{reportError}</p>
         ) : null}
       </div>
 
@@ -468,24 +561,22 @@ function ReviewAdminBody() {
                   <TableHead>Site</TableHead>
                   <TableHead>Title</TableHead>
                   <TableHead>Review</TableHead>
+                  <TableHead>Action</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {items.map((row) => (
                   <TableRow key={row.id}>
                     <TableCell>{formatDate(row.work_date)}</TableCell>
-                    <TableCell>
-                      <button
-                        className="text-left font-medium text-[var(--color-action-text)] underline decoration-[var(--color-border-dark)] underline-offset-2"
-                        onClick={() => void openDetail(row.id)}
-                        type="button"
-                      >
-                        {row.employee_name || row.user_email}
-                      </button>
-                    </TableCell>
+                    <TableCell className="font-medium">{row.employee_name || row.user_email}</TableCell>
                     <TableCell>{row.location_name}</TableCell>
                     <TableCell>{row.title}</TableCell>
                     <TableCell>{row.status}</TableCell>
+                    <TableCell>
+                      <Button onClick={() => void openDetail(row.id)} size="sm" type="button" variant="secondary">
+                        Review
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -526,6 +617,11 @@ function ReviewAdminBody() {
             {galleryBulkError}
           </p>
         ) : null}
+        {galleryMessage ? (
+          <p className="border-b border-[var(--color-border)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+            {galleryMessage}
+          </p>
+        ) : null}
         <div className="p-3">
           {galleryLoading ? <p className="text-sm text-[var(--color-text-muted)]">Loading gallery…</p> : null}
           {!galleryLoading && galleryItems.length === 0 ? (
@@ -533,9 +629,16 @@ function ReviewAdminBody() {
           ) : null}
           {!galleryLoading && galleryItems.length > 0 ? (
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-              {galleryItems.map((row) => {
+              {galleryItems.map((row, idx) => {
                 const id = row.attachment.id;
                 const checked = selectedFileIds.has(id);
+                const viewerList = galleryItems.map((g) => ({
+                  attachment: g.attachment,
+                  employee: g.employee_name || g.user_email,
+                  site: g.location_name,
+                  workDate: g.work_date,
+                  title: g.title,
+                }));
                 return (
                   <div
                     className="relative overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2 text-xs"
@@ -551,7 +654,7 @@ function ReviewAdminBody() {
                     </label>
                     <button
                       className="block w-full text-left"
-                      onClick={() => void openFile(id)}
+                      onClick={() => openViewer(viewerList, idx)}
                       type="button"
                     >
                       <GalleryThumb att={row.attachment} />
@@ -631,7 +734,15 @@ function ReviewAdminBody() {
                 <div>
                   <p className="text-xs font-bold text-[var(--color-text-soft)]">Attachments</p>
                   <ul className="mt-1 divide-y divide-[var(--color-border)] border border-[var(--color-border)]">
-                    {detail.attachments.map((a) => (
+                    {detail.attachments.map((a, idx) => {
+                      const detailViewerList = detail.attachments.map((att) => ({
+                        attachment: att,
+                        employee: detail.employee_name || detail.user_email,
+                        site: detail.location_name,
+                        workDate: detail.work_date,
+                        title: detail.title,
+                      }));
+                      return (
                       <li className="flex flex-wrap items-center justify-between gap-2 px-2 py-1.5" key={a.id}>
                         <div className="flex min-w-0 flex-1 items-center gap-2">
                           <div className="shrink-0">
@@ -647,14 +758,28 @@ function ReviewAdminBody() {
                             </p>
                           </div>
                         </div>
-                        <Button onClick={() => void openFile(a.id)} size="sm" type="button" variant="secondary">
+                        <Button onClick={() => openViewer(detailViewerList, idx)} size="sm" type="button" variant="secondary">
                           Open
                         </Button>
                       </li>
-                    ))}
+                      );
+                    })}
                   </ul>
                 </div>
                 {actionError ? <p className="text-[var(--color-danger-700)]">{actionError}</p> : null}
+                <div className="border-t border-[var(--color-border)] pt-3">
+                  <Button
+                    disabled={archiveBusy}
+                    onClick={() => void handleArchiveSubmission(detail.id)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {archiveBusy ? "Deleting…" : "Delete submission"}
+                  </Button>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    Removes this submission and its pictures from review lists and reports. Audit history is kept.
+                  </p>
+                </div>
                 {detail.status === "submitted" ? (
                   <form className="space-y-2 border-t border-[var(--color-border)] pt-3" onSubmit={handleAcknowledge}>
                     <p className="text-xs font-bold text-[var(--color-text-soft)]">Acknowledge</p>
@@ -685,6 +810,87 @@ function ReviewAdminBody() {
                 ) : null}
               </>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {viewerItem ? (
+        <div
+          aria-modal="true"
+          className="fixed inset-0 z-[2200] flex items-center justify-center bg-black/60 p-3"
+          role="dialog"
+          onClick={closeViewer}
+        >
+          <div
+            className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-5xl flex-col overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate font-semibold text-[var(--color-text)]">{viewerItem.title}</p>
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  {viewerItem.employee} · {viewerItem.site} · {formatDate(viewerItem.workDate)}
+                </p>
+                <p className="truncate text-xs text-[var(--color-text-muted)]">
+                  {viewerItem.attachment.original_filename}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {viewerItems.length > 1 ? (
+                  <>
+                    <Button
+                      disabled={viewerIndex === 0}
+                      onClick={() => setViewerIndex((idx) => (idx == null ? idx : Math.max(0, idx - 1)))}
+                      size="sm"
+                      type="button"
+                      variant="secondary"
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      disabled={viewerIndex === viewerItems.length - 1}
+                      onClick={() =>
+                        setViewerIndex((idx) => (idx == null ? idx : Math.min(viewerItems.length - 1, idx + 1)))
+                      }
+                      size="sm"
+                      type="button"
+                      variant="secondary"
+                    >
+                      Next
+                    </Button>
+                  </>
+                ) : null}
+                <Button
+                  onClick={() =>
+                    void downloadFile(viewerItem.attachment.id, viewerItem.attachment.original_filename)
+                  }
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  Download
+                </Button>
+                <Button onClick={closeViewer} size="sm" type="button" variant="secondary">
+                  Close
+                </Button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto bg-[var(--color-cell)] p-3">
+              {viewerLoading ? (
+                <p className="text-sm text-[var(--color-text-muted)]">Loading image…</p>
+              ) : null}
+              {viewerError ? (
+                <p className="text-sm text-[var(--color-danger-700)]">{viewerError}</p>
+              ) : null}
+              {viewerUrl && !viewerError ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  alt={viewerItem.attachment.original_filename}
+                  className="mx-auto max-h-[calc(100dvh-10rem)] max-w-full rounded border border-[var(--color-border-dark)] bg-white object-contain"
+                  src={viewerUrl}
+                />
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
