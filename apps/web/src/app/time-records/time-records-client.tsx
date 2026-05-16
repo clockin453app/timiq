@@ -33,6 +33,7 @@ import { shiftStatusLabel, useT } from "../../lib/i18n";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import { FaceCheckCell } from "../../features/face-check/face-check-cell";
 import { FaceCheckReviewModal } from "../../features/face-check/face-check-review-modal";
+import { FaceReferenceAvatar } from "../../features/face-check/face-reference-avatar";
 import {
   adminCreateCompletedShift,
   adminForceClockOut,
@@ -648,14 +649,24 @@ export function TimeRecordsClient() {
                   <TableRow key={row.shift_id}>
                     {adminMode ? (
                       <TableCell className="max-w-[14rem] text-xs">
-                        <span className="font-medium text-[var(--color-text)]">
-                          {row.employee_name ?? row.employee_email ?? t("common.employee", "Employee")}
-                        </span>
-                        {row.employee_job_title ? (
-                          <span className="mt-0.5 block truncate text-[var(--color-text-muted)]">
-                            {row.employee_job_title}
+                        <div className="flex min-w-0 items-center gap-2">
+                          <FaceReferenceAvatar
+                            employeeEmail={row.employee_email}
+                            employeeName={row.employee_name}
+                            sizeClassName="h-8 w-8"
+                            userId={row.user_id}
+                          />
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium text-[var(--color-text)]">
+                              {row.employee_name ?? row.employee_email ?? t("common.employee", "Employee")}
+                            </span>
+                            {row.employee_job_title ? (
+                              <span className="mt-0.5 block truncate text-[var(--color-text-muted)]">
+                                {row.employee_job_title}
+                              </span>
+                            ) : null}
                           </span>
-                        ) : null}
+                        </div>
                       </TableCell>
                     ) : null}
                     <TableCell>{row.location_name}</TableCell>
