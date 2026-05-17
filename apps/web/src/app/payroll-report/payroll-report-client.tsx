@@ -3,6 +3,7 @@
 import { FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { WeekPickerBar } from "../../components/week-picker-bar";
+import { NavDropdownPortal, navDropdownMenuContains } from "../../components/layout/nav-dropdown-portal";
 import {
   Button,
   PageHeader,
@@ -104,6 +105,12 @@ function canShowLateAdjustmentForPaidRow(
     report?.has_payable_late_unpaid_shifts === true || (report?.late_unpaid_total_rounded_seconds ?? 0) > 0
   );
 }
+
+type RowActionMenuState = {
+  row: PayrollItemRow;
+  lateBlock: PayrollLateUnpaidEmployee | null;
+  anchor: HTMLButtonElement;
+};
 
 function statusBadgeClass(status: string): string {
   if (status === "pending") {
@@ -269,6 +276,7 @@ export function PayrollReportClient() {
   const [shiftEditReason, setShiftEditReason] = useState("");
   const [shiftEditError, setShiftEditError] = useState("");
   const [shiftEditBusy, setShiftEditBusy] = useState(false);
+  const [rowActionMenu, setRowActionMenu] = useState<RowActionMenuState | null>(null);
 
   const editOpenRef = useRef(false);
   const busyRef = useRef<string | null>(null);
@@ -318,6 +326,10 @@ export function PayrollReportClient() {
       .slice()
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [locations, activeCompanyId, shiftEditRow]);
+
+  const closeRowActionMenu = useCallback(() => {
+    setRowActionMenu(null);
+  }, []);
 
   useEffect(() => {
     if (!isAdministrator(user)) {
@@ -392,6 +404,33 @@ export function PayrollReportClient() {
   useEffect(() => {
     editOpenRef.current = editRow !== null || shiftEditRow !== null;
   }, [editRow, shiftEditRow]);
+
+  useEffect(() => {
+    if (!rowActionMenu) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeRowActionMenu();
+      }
+    };
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (rowActionMenu.anchor.contains(target)) {
+        return;
+      }
+      if (navDropdownMenuContains(target)) {
+        return;
+      }
+      closeRowActionMenu();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("mousedown", onPointerDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("mousedown", onPointerDown);
+    };
+  }, [rowActionMenu, closeRowActionMenu]);
 
   useEffect(() => {
     busyRef.current = busyId;
@@ -533,6 +572,7 @@ export function PayrollReportClient() {
   }, [payrollSaveMessage]);
 
   function openEdit(row: PayrollItemRow) {
+    closeRowActionMenu();
     setPayrollSaveMessage("");
     setEditRow(row);
     setEditNotes(row.notes ?? "");
@@ -542,6 +582,14 @@ export function PayrollReportClient() {
     );
     setEditDispNet(row.display_net_amount ?? row.net_amount ?? "");
     setEditPaymentMode(normalizePaymentMode(row.payment_mode));
+  }
+
+  function openRowActionMenu(
+    row: PayrollItemRow,
+    lateBlock: PayrollLateUnpaidEmployee | null,
+    anchor: HTMLButtonElement,
+  ) {
+    setRowActionMenu((prev) => (prev?.row.id === row.id ? null : { row, lateBlock, anchor }));
   }
 
   function openShiftEdit(row: TimeRecordShiftRow) {
@@ -1243,52 +1291,7 @@ export function PayrollReportClient() {
                               </span>
                             </TableCell>
                             <TableCell className="align-top">
-                              <div className="flex flex-wrap gap-1">
-                                <Button
-                                  className="min-h-8 px-2 py-1 text-xs"
-                                  disabled={busyId === row.id}
-                                  onClick={() => openEdit(row)}
-                                  type="button"
-                                >
-                                  {t("payroll.report.payroll_adjustments", "Payroll adjustments")}
-                                </Button>
-                                {row.status === "paid" ? (
-                                  <>
-                                    <Button
-                                      className="min-h-8 px-2 py-1 text-xs"
-                                      disabled={busyId === row.id}
-                                      onClick={() => openPayrollItemPayslip(row.id)}
-                                      type="button"
-                                      variant="secondary"
-                                    >
-                                      {t("payroll.report.payslip", "Payslip")}
-                                    </Button>
-                                    <Button
-                                      className="min-h-8 px-2 py-1 text-xs"
-                                      disabled={busyId === row.id}
-                                      onClick={() => {
-                                        setUndoPaidRow(row);
-                                        setUndoPaidReason("");
-                                        setUndoPaidAckExport(false);
-                                      }}
-                                      type="button"
-                                      variant="secondary"
-                                    >
-                                      {t("payroll.report.undo_paid", "Undo paid")}
-                                    </Button>
-                                    {canShowLateAdjustmentForPaidRow(row, lateBlock, report) ? (
-                                      <Button
-                                        className="min-h-8 px-2 py-1 text-xs"
-                                        disabled={busyId === row.id}
-                                        onClick={() => void runCreateLateAdjustment(row.id)}
-                                        type="button"
-                                        variant="secondary"
-                                      >
-                                        {t("payroll.report.adjustment", "Adjustment")}
-                                      </Button>
-                                    ) : null}
-                                  </>
-                                ) : null}
+                              <div className="flex flex-nowrap gap-1">
                                 {row.status === "pending" ? (
                                   <Button
                                     className="min-h-8 px-2 py-1 text-xs"
@@ -1319,6 +1322,20 @@ export function PayrollReportClient() {
                                     </Button>
                                   </>
                                 ) : null}
+                                <Button
+                                  aria-controls={`payroll-row-actions-${row.id}`}
+                                  aria-expanded={rowActionMenu?.row.id === row.id}
+                                  aria-haspopup="menu"
+                                  aria-label={t("payroll.report.row_more_actions", "More payroll row actions")}
+                                  className="min-h-8 px-2 py-1 text-xs"
+                                  disabled={busyId === row.id}
+                                  onClick={(event) => openRowActionMenu(row, lateBlock, event.currentTarget)}
+                                  title={t("payroll.report.row_more_actions", "More payroll row actions")}
+                                  type="button"
+                                  variant="secondary"
+                                >
+                                  ⋯
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -1807,6 +1824,68 @@ export function PayrollReportClient() {
             )}
           </section>
         </div>
+
+        {rowActionMenu ? (
+          <NavDropdownPortal
+            anchorEl={rowActionMenu.anchor}
+            menuId={`payroll-row-actions-${rowActionMenu.row.id}`}
+            open
+          >
+            <button
+              className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+              onClick={() => {
+                openEdit(rowActionMenu.row);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              {t("payroll.report.payroll_adjustments", "Payroll adjustments")}
+            </button>
+            {rowActionMenu.row.status === "paid" ? (
+              <>
+                <button
+                  className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+                  onClick={() => {
+                    const itemId = rowActionMenu.row.id;
+                    closeRowActionMenu();
+                    openPayrollItemPayslip(itemId);
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  {t("payroll.report.payslip", "Payslip")}
+                </button>
+                <button
+                  className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+                  onClick={() => {
+                    setUndoPaidRow(rowActionMenu.row);
+                    setUndoPaidReason("");
+                    setUndoPaidAckExport(false);
+                    closeRowActionMenu();
+                  }}
+                  role="menuitem"
+                  type="button"
+                >
+                  {t("payroll.report.undo_paid", "Undo paid")}
+                </button>
+                {canShowLateAdjustmentForPaidRow(rowActionMenu.row, rowActionMenu.lateBlock, report) ? (
+                  <button
+                    className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+                    onClick={() => {
+                      const itemId = rowActionMenu.row.id;
+                      closeRowActionMenu();
+                      void runCreateLateAdjustment(itemId);
+                    }}
+                    role="menuitem"
+                    type="button"
+                  >
+                    {t("payroll.report.adjustment", "Adjustment")}
+                  </button>
+                ) : null}
+              </>
+            ) : null}
+          </NavDropdownPortal>
+        ) : null}
 
         {editRow ? (
           <div
