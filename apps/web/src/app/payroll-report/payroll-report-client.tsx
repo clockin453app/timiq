@@ -18,6 +18,7 @@ import {
 import { isAdministrator, listManagedUsers, useCurrentUser, type AuthUser } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
 import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
+import { listLocations, type Location } from "../../features/locations/api";
 import {
   approveAllPending,
   approvePayrollItem,
@@ -43,7 +44,11 @@ import {
   formatHoursFromSeconds,
   formatMoneyGBP,
 } from "../../features/payroll/format";
-import { listAdminTimeRecords, type TimeRecordShiftRow } from "../../features/time-records/api";
+import {
+  adminPatchCompletedShift,
+  listAdminTimeRecords,
+  type TimeRecordShiftRow,
+} from "../../features/time-records/api";
 import { leaveTypeLabel } from "../../features/leave/labels";
 import { FaceReferenceAvatar } from "../../features/face-check/face-reference-avatar";
 import {
@@ -153,6 +158,23 @@ function formatShiftDateTime(iso: string, timeZone: string): string {
   }).format(d);
 }
 
+function toDatetimeLocalValue(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return "";
+  }
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function fromDatetimeLocalToIso(localValue: string): string {
+  const d = new Date(localValue);
+  if (Number.isNaN(d.getTime())) {
+    return "";
+  }
+  return d.toISOString();
+}
+
 const UUID_LIKE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -209,6 +231,7 @@ export function PayrollReportClient() {
   const t = useT();
   const user = useCurrentUser();
   const [companies, setCompanies] = useState<Company[]>([]);
+  const [locations, setLocations] = useState<Location[]>([]);
   const companyScope = useAdministratorCompanyScope(user, companies);
   const [weekStart, setWeekStart] = useState(() =>
     mondayWeekStartIso(new Date(), browserDefaultTimeZone()),
@@ -238,6 +261,14 @@ export function PayrollReportClient() {
   const [undoPaidRow, setUndoPaidRow] = useState<PayrollItemRow | null>(null);
   const [undoPaidReason, setUndoPaidReason] = useState("");
   const [undoPaidAckExport, setUndoPaidAckExport] = useState(false);
+  const [shiftEditRow, setShiftEditRow] = useState<TimeRecordShiftRow | null>(null);
+  const [shiftEditClockInLocal, setShiftEditClockInLocal] = useState("");
+  const [shiftEditClockOutLocal, setShiftEditClockOutLocal] = useState("");
+  const [shiftEditBreakMinutes, setShiftEditBreakMinutes] = useState("0");
+  const [shiftEditLocationId, setShiftEditLocationId] = useState("");
+  const [shiftEditReason, setShiftEditReason] = useState("");
+  const [shiftEditError, setShiftEditError] = useState("");
+  const [shiftEditBusy, setShiftEditBusy] = useState(false);
 
   const editOpenRef = useRef(false);
   const busyRef = useRef<string | null>(null);
@@ -277,6 +308,16 @@ export function PayrollReportClient() {
       .slice()
       .sort((a, b) => (a.email || "").localeCompare(b.email || ""));
   }, [managedUsers, activeCompanyId]);
+
+  const shiftEditLocationOptions = useMemo(() => {
+    if (!activeCompanyId) {
+      return [];
+    }
+    return locations
+      .filter((location) => location.company_id === activeCompanyId && (location.is_active || location.id === shiftEditRow?.location_id))
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [locations, activeCompanyId, shiftEditRow]);
 
   useEffect(() => {
     if (!isAdministrator(user)) {
@@ -326,8 +367,31 @@ export function PayrollReportClient() {
   }, [user, activeCompanyId]);
 
   useEffect(() => {
-    editOpenRef.current = editRow !== null;
-  }, [editRow]);
+    if (!activeCompanyId) {
+      setLocations([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listLocations(activeCompanyId);
+        if (!cancelled) {
+          setLocations(list);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocations([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCompanyId]);
+
+  useEffect(() => {
+    editOpenRef.current = editRow !== null || shiftEditRow !== null;
+  }, [editRow, shiftEditRow]);
 
   useEffect(() => {
     busyRef.current = busyId;
@@ -480,6 +544,23 @@ export function PayrollReportClient() {
     setEditPaymentMode(normalizePaymentMode(row.payment_mode));
   }
 
+  function openShiftEdit(row: TimeRecordShiftRow) {
+    setPayrollSaveMessage("");
+    setShiftEditError("");
+    setShiftEditRow(row);
+    setShiftEditClockInLocal(toDatetimeLocalValue(row.clock_in_at));
+    setShiftEditClockOutLocal(row.clock_out_at ? toDatetimeLocalValue(row.clock_out_at) : "");
+    setShiftEditBreakMinutes(String(Math.round(row.break_seconds / 60)));
+    setShiftEditLocationId(row.location_id);
+    setShiftEditReason("");
+  }
+
+  function closeShiftEdit() {
+    setShiftEditRow(null);
+    setShiftEditError("");
+    setShiftEditBusy(false);
+  }
+
   async function saveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editRow) {
@@ -507,6 +588,51 @@ export function PayrollReportClient() {
     } catch (err) {
       setError(err instanceof Error ? err.message : t("payroll.report.save_error", "Could not save payroll row."));
     } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function saveShiftEdit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!shiftEditRow) {
+      return;
+    }
+    setShiftEditError("");
+    setPayrollSaveMessage("");
+    const clockInAt = fromDatetimeLocalToIso(shiftEditClockInLocal);
+    const clockOutAt = fromDatetimeLocalToIso(shiftEditClockOutLocal);
+    if (!clockInAt || !clockOutAt) {
+      setShiftEditError("Clock in and clock out are required.");
+      return;
+    }
+    const breakMinutes = Number(shiftEditBreakMinutes);
+    if (Number.isNaN(breakMinutes) || breakMinutes < 0) {
+      setShiftEditError("Break minutes must be a non-negative number.");
+      return;
+    }
+    if (!shiftEditReason.trim()) {
+      setShiftEditError("Reason is required.");
+      return;
+    }
+    setShiftEditBusy(true);
+    setBusyId(shiftEditRow.shift_id);
+    try {
+      await adminPatchCompletedShift(shiftEditRow.shift_id, {
+        clock_in_at: clockInAt,
+        clock_out_at: clockOutAt,
+        location_id: shiftEditLocationId !== shiftEditRow.location_id ? shiftEditLocationId : undefined,
+        break_minutes: breakMinutes,
+        reason: shiftEditReason.trim(),
+      });
+      const userId = shiftEditRow.user_id;
+      closeShiftEdit();
+      await reloadShiftRows(userId);
+      await loadReport();
+      setPayrollSaveMessage("Shift updated. Payroll needs recalculation.");
+    } catch (err) {
+      setShiftEditError(err instanceof Error ? err.message : "Could not update shift.");
+    } finally {
+      setShiftEditBusy(false);
       setBusyId(null);
     }
   }
@@ -699,16 +825,8 @@ export function PayrollReportClient() {
     setAppliedEmployeeId(draftEmployeeId);
   }
 
-  async function toggleExpandShifts(userId: string) {
-    if (expandedUserId === userId) {
-      setExpandedUserId(null);
-      return;
-    }
+  async function reloadShiftRows(userId: string) {
     if (!activeCompanyId) {
-      return;
-    }
-    setExpandedUserId(userId);
-    if (shiftRowsByUser[userId] && shiftRowsByUser[userId] !== "loading") {
       return;
     }
     setShiftRowsByUser((prev) => ({ ...prev, [userId]: "loading" }));
@@ -724,6 +842,21 @@ export function PayrollReportClient() {
     } catch {
       setShiftRowsByUser((prev) => ({ ...prev, [userId]: [] }));
     }
+  }
+
+  async function toggleExpandShifts(userId: string) {
+    if (expandedUserId === userId) {
+      setExpandedUserId(null);
+      return;
+    }
+    if (!activeCompanyId) {
+      return;
+    }
+    setExpandedUserId(userId);
+    if (shiftRowsByUser[userId] && shiftRowsByUser[userId] !== "loading") {
+      return;
+    }
+    await reloadShiftRows(userId);
   }
 
   const period = report?.period;
@@ -1117,9 +1250,7 @@ export function PayrollReportClient() {
                                   onClick={() => openEdit(row)}
                                   type="button"
                                 >
-                                  {row.status === "paid"
-                                    ? t("payroll.report.edit_notes", "Edit notes")
-                                    : t("payroll.report.edit", "Edit")}
+                                  {t("payroll.report.payroll_adjustments", "Payroll adjustments")}
                                 </Button>
                                 {row.status === "paid" ? (
                                   <>
@@ -1203,7 +1334,8 @@ export function PayrollReportClient() {
                                     employee_name={row.employee_name}
                                   />
                                   <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
-                                    Read-only clock and policy-rounded durations for this employee.
+                                    Shift times come from Time Records. Editing a completed shift marks payroll as
+                                    needing recalculation.
                                   </p>
                                 </div>
                                 {shiftRowsByUser[row.user_id] === "loading" ? (
@@ -1222,6 +1354,7 @@ export function PayrollReportClient() {
                                           <th className="py-1 pr-2">Clock out</th>
                                           <th className="py-1 pr-2">Rounded</th>
                                           <th className="py-1 pr-2">Status</th>
+                                          <th className="py-1 pr-2">Action</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -1263,6 +1396,21 @@ export function PayrollReportClient() {
                                                     </span>
                                                   ) : (
                                                     <span className="text-[var(--color-text-muted)]">{s.status}</span>
+                                                  )}
+                                                </td>
+                                                <td className="py-1 pr-2">
+                                                  {!isOpen ? (
+                                                    <Button
+                                                      className="min-h-7 px-2 py-0.5 text-[11px]"
+                                                      disabled={busyId === s.shift_id}
+                                                      onClick={() => openShiftEdit(s)}
+                                                      type="button"
+                                                      variant="secondary"
+                                                    >
+                                                      Edit shift
+                                                    </Button>
+                                                  ) : (
+                                                    <span className="text-[var(--color-text-muted)]">—</span>
                                                   )}
                                                 </td>
                                               </tr>
@@ -1669,7 +1817,7 @@ export function PayrollReportClient() {
             <div className="timiq-sheet mx-auto my-4 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md sm:max-w-[min(42rem,calc(100vw-3rem))]">
               <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
                 <p className="text-sm font-bold text-[var(--color-text)]">
-                  {editRow.status === "paid" ? "Edit paid payroll row (notes only)" : "Edit payroll row"}
+                  {editRow.status === "paid" ? "Payroll adjustments (paid row notes only)" : "Payroll adjustments"}
                 </p>
                 <Button onClick={() => setEditRow(null)} type="button">
                   Close
@@ -1684,6 +1832,10 @@ export function PayrollReportClient() {
                   />
                   <p className="mt-1.5">
                     Total rounded h: {formatHoursFromSeconds(editRow.rounded_total_seconds)}
+                  </p>
+                  <p className="mt-2 rounded border border-slate-300 bg-slate-50 px-2 py-1.5 text-[11px] font-medium text-slate-900">
+                    This modal edits payroll notes, deductions, payment mode, and display fields only. To change
+                    hours, expand the employee row and use Edit shift.
                   </p>
                   {editRow.status === "paid" ? (
                     <p className="mt-2 rounded border border-slate-600/20 bg-slate-100 px-2 py-1.5 text-[11px] font-medium text-slate-900">
@@ -1747,6 +1899,110 @@ export function PayrollReportClient() {
                 </label>
                 <Button disabled={busyId === editRow.id} type="submit">
                   {busyId === editRow.id ? "Saving…" : "Save edits"}
+                </Button>
+              </form>
+            </div>
+          </div>
+        ) : null}
+
+        {shiftEditRow ? (
+          <div
+            aria-modal="true"
+            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6"
+            role="dialog"
+          >
+            <div className="timiq-sheet mx-auto my-4 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md sm:max-w-[min(42rem,calc(100vw-3rem))]">
+              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
+                <div>
+                  <p className="text-sm font-bold text-[var(--color-text)]">Edit shift</p>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    Saves through Time Records and marks payroll as needing recalculation.
+                  </p>
+                </div>
+                <Button onClick={closeShiftEdit} type="button">
+                  Close
+                </Button>
+              </div>
+              <form className="mt-4 space-y-2 text-sm" onSubmit={saveShiftEdit}>
+                {shiftEditError ? (
+                  <p className="rounded border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-2 py-1 text-xs text-[var(--color-danger-700)]">
+                    {shiftEditError}
+                  </p>
+                ) : null}
+                <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-1.5 text-xs text-[var(--color-text-muted)]">
+                  <p>
+                    Employee:{" "}
+                    <span className="font-medium text-[var(--color-text)]">
+                      {shiftEditRow.employee_name ?? shiftEditRow.employee_email ?? shiftEditRow.user_id}
+                    </span>
+                  </p>
+                  <p className="mt-1">
+                    Current rounded hours:{" "}
+                    <span className="font-medium text-[var(--color-text)]">
+                      {shiftEditRow.rounded_seconds != null ? formatHoursFromSeconds(shiftEditRow.rounded_seconds) : "—"}
+                    </span>
+                  </p>
+                </div>
+                <label className="block text-xs font-bold">
+                  Location
+                  <select
+                    className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    onChange={(event) => setShiftEditLocationId(event.target.value)}
+                    value={shiftEditLocationId}
+                  >
+                    {shiftEditLocationOptions.length === 0 ? (
+                      <option value={shiftEditRow.location_id}>{shiftEditRow.location_name}</option>
+                    ) : (
+                      shiftEditLocationOptions.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+                <label className="block text-xs font-bold">
+                  Clock in
+                  <input
+                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    onChange={(event) => setShiftEditClockInLocal(event.target.value)}
+                    required
+                    type="datetime-local"
+                    value={shiftEditClockInLocal}
+                  />
+                </label>
+                <label className="block text-xs font-bold">
+                  Clock out
+                  <input
+                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    onChange={(event) => setShiftEditClockOutLocal(event.target.value)}
+                    required
+                    type="datetime-local"
+                    value={shiftEditClockOutLocal}
+                  />
+                </label>
+                <label className="block text-xs font-bold">
+                  Break minutes
+                  <input
+                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    inputMode="numeric"
+                    min={0}
+                    onChange={(event) => setShiftEditBreakMinutes(event.target.value)}
+                    type="number"
+                    value={shiftEditBreakMinutes}
+                  />
+                </label>
+                <label className="block text-xs font-bold">
+                  Reason
+                  <textarea
+                    className="mt-1 min-h-[4rem] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1 text-sm"
+                    onChange={(event) => setShiftEditReason(event.target.value)}
+                    required
+                    value={shiftEditReason}
+                  />
+                </label>
+                <Button disabled={shiftEditBusy} type="submit">
+                  {shiftEditBusy ? "Saving…" : "Save shift"}
                 </Button>
               </form>
             </div>
