@@ -993,8 +993,13 @@ export function PayrollReportClient() {
     if (hasCompany && zeroHoursCount > 0) {
       chips.push({ label: `Zero-hour employees: ${zeroHoursCount}`, tone: "info" });
     }
+    const pendingApprovalCount = alerts?.pending_approval_count ?? 0;
+    if (hasCompany && pendingApprovalCount > 0) {
+      chips.push({ label: `Pending approval: ${pendingApprovalCount}`, tone: "warning" });
+    }
     return { attention: chips };
   }, [
+    alerts?.pending_approval_count,
     alerts?.missing_payroll_setup_employees_count,
     alerts?.open_shifts_started_in_week_count,
     alerts?.rate_missing_employees_count,
