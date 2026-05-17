@@ -723,6 +723,21 @@ def _item_has_actionable_pending_payroll_value(item: PayrollItem) -> bool:
     return any(value is not None and value > 0 for value in money_values)
 
 
+def _missing_profile_hourly_rate_count(db_session: Session, all_items: list[PayrollItem]) -> int:
+    missing = 0
+    seen_user_ids: set[uuid.UUID] = set()
+    for item in all_items:
+        user_id = getattr(item, "user_id", None)
+        if user_id is None or user_id in seen_user_ids:
+            continue
+        seen_user_ids.add(user_id)
+        profile = get_employee_profile_by_user_id(db_session, user_id)
+        hourly = _decimal_or_none(getattr(profile, "hourly_rate", None)) if profile is not None else None
+        if hourly is None or hourly <= 0:
+            missing += 1
+    return missing
+
+
 def _missing_tax_identifier_counts(db_session: Session, all_items: list[PayrollItem]) -> tuple[int, int]:
     utr_missing = 0
     nino_missing = 0
@@ -757,7 +772,7 @@ def _build_report_alerts(
         week_end_utc=week_end_utc,
     )
     pending = sum(1 for i in all_items if _item_has_actionable_pending_payroll_value(i))
-    rate_missing = sum(1 for i in all_items if _item_missing_hourly_rate_for_approval(i))
+    rate_missing = _missing_profile_hourly_rate_count(db_session, all_items)
     missing_setup = sum(1 for i in all_items if _item_missing_required_payroll_setup(i))
     utr_missing, nino_missing = _missing_tax_identifier_counts(db_session, all_items)
     zero_hours = sum(1 for i in all_items if i.rounded_total_seconds == 0)

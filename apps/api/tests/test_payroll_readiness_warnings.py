@@ -62,10 +62,15 @@ def _item(
     )
 
 
+def _profile(hourly_rate: float | None) -> SimpleNamespace:
+    return SimpleNamespace(hourly_rate=hourly_rate)
+
+
 def test_missing_payroll_setup_appears_in_report_alerts() -> None:
     with (
         patch("app.modules.payroll.service.count_open_shifts_started_in_week", return_value=0),
         patch("app.modules.payroll.service._employee_tax_identifiers_for_payroll", return_value=("AB123456C", "1234567890")),
+        patch("app.modules.payroll.service.get_employee_profile_by_user_id", return_value=_profile(20)),
     ):
         alerts = _build_report_alerts(
             MagicMock(),
@@ -86,6 +91,7 @@ def test_empty_pending_rows_do_not_count_as_pending_approval_alerts() -> None:
     with (
         patch("app.modules.payroll.service.count_open_shifts_started_in_week", return_value=0),
         patch("app.modules.payroll.service._employee_tax_identifiers_for_payroll", return_value=("AB123456C", "1234567890")),
+        patch("app.modules.payroll.service.get_employee_profile_by_user_id", return_value=_profile(20)),
     ):
         alerts = _build_report_alerts(
             MagicMock(),
@@ -114,6 +120,7 @@ def test_actionable_pending_rows_count_as_pending_approval_alerts() -> None:
     with (
         patch("app.modules.payroll.service.count_open_shifts_started_in_week", return_value=0),
         patch("app.modules.payroll.service._employee_tax_identifiers_for_payroll", return_value=("AB123456C", "1234567890")),
+        patch("app.modules.payroll.service.get_employee_profile_by_user_id", return_value=_profile(20)),
     ):
         alerts = _build_report_alerts(
             MagicMock(),
@@ -139,10 +146,24 @@ def test_actionable_pending_rows_count_as_pending_approval_alerts() -> None:
     assert alerts.pending_approval_count == 2
 
 
-def test_zero_and_negative_hourly_rates_appear_in_report_alerts() -> None:
+def test_profile_null_zero_and_negative_hourly_rates_appear_in_report_alerts() -> None:
+    missing_user_id = uuid.uuid4()
+    zero_user_id = uuid.uuid4()
+    negative_user_id = uuid.uuid4()
+    valid_user_id = uuid.uuid4()
+
     with (
         patch("app.modules.payroll.service.count_open_shifts_started_in_week", return_value=0),
         patch("app.modules.payroll.service._employee_tax_identifiers_for_payroll", return_value=("AB123456C", "1234567890")),
+        patch(
+            "app.modules.payroll.service.get_employee_profile_by_user_id",
+            side_effect=[
+                _profile(None),
+                _profile(0),
+                _profile(-1),
+                _profile(20),
+            ],
+        ),
     ):
         alerts = _build_report_alerts(
             MagicMock(),
@@ -151,13 +172,61 @@ def test_zero_and_negative_hourly_rates_appear_in_report_alerts() -> None:
             week_start=date(2026, 5, 11),
             period=SimpleNamespace(id=uuid.uuid4(), calculated_at=None),
             all_items=[
-                _item(hourly_rate_snapshot=0),
-                _item(hourly_rate_snapshot=-1),
-                _item(hourly_rate_snapshot=20),
+                _item(user_id=missing_user_id),
+                _item(user_id=zero_user_id),
+                _item(user_id=negative_user_id),
+                _item(user_id=valid_user_id),
             ],
         )
 
-    assert alerts.rate_missing_employees_count == 2
+    assert alerts.rate_missing_employees_count == 3
+
+
+def test_missing_profile_counts_as_missing_hourly_rate() -> None:
+    with (
+        patch("app.modules.payroll.service.count_open_shifts_started_in_week", return_value=0),
+        patch("app.modules.payroll.service._employee_tax_identifiers_for_payroll", return_value=("AB123456C", "1234567890")),
+        patch("app.modules.payroll.service.get_employee_profile_by_user_id", return_value=None),
+    ):
+        alerts = _build_report_alerts(
+            MagicMock(),
+            company_id=uuid.uuid4(),
+            policy=SimpleNamespace(timezone_name="UTC"),
+            week_start=date(2026, 5, 11),
+            period=SimpleNamespace(id=uuid.uuid4(), calculated_at=None),
+            all_items=[_item()],
+        )
+
+    assert alerts.rate_missing_employees_count == 1
+
+
+def test_zero_hour_employee_with_zero_profile_rate_counts_as_missing_rate() -> None:
+    with (
+        patch("app.modules.payroll.service.count_open_shifts_started_in_week", return_value=0),
+        patch("app.modules.payroll.service._employee_tax_identifiers_for_payroll", return_value=("AB123456C", "1234567890")),
+        patch("app.modules.payroll.service.get_employee_profile_by_user_id", return_value=_profile(0)),
+    ):
+        alerts = _build_report_alerts(
+            MagicMock(),
+            company_id=uuid.uuid4(),
+            policy=SimpleNamespace(timezone_name="UTC"),
+            week_start=date(2026, 5, 11),
+            period=SimpleNamespace(id=uuid.uuid4(), calculated_at=None),
+            all_items=[
+                _item(
+                    regular_seconds=0,
+                    overtime_seconds=0,
+                    rounded_total_seconds=0,
+                    gross_amount=0,
+                    tax_amount=0,
+                    net_amount=0,
+                    other_deductions_amount=0,
+                ),
+            ],
+        )
+
+    assert alerts.rate_missing_employees_count == 1
+    assert alerts.zero_rounded_hours_employees_count == 1
 
 
 def test_missing_utr_and_nino_appear_in_report_alerts() -> None:
@@ -170,6 +239,7 @@ def test_missing_utr_and_nino_appear_in_report_alerts() -> None:
             "app.modules.payroll.service._employee_tax_identifiers_for_payroll",
             side_effect=[(None, None), ("AB123456C", None)],
         ),
+        patch("app.modules.payroll.service.get_employee_profile_by_user_id", return_value=_profile(20)),
     ):
         alerts = _build_report_alerts(
             MagicMock(),
