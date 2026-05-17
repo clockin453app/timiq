@@ -131,6 +131,15 @@ function statusBadgeClass(status: string): string {
   return "bg-[var(--color-cell)] text-[var(--color-text)] border border-[var(--color-border-dark)]";
 }
 
+function payrollSplitBarPercent(value: string | null | undefined, total: string | null | undefined): number {
+  const amount = Number(value ?? 0);
+  const gross = Number(total ?? 0);
+  if (!Number.isFinite(amount) || !Number.isFinite(gross) || gross <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, (amount / gross) * 100));
+}
+
 function payrollStatusChipClass(tone: "info" | "warning" | "danger" | "success"): string {
   const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold";
   if (tone === "danger") {
@@ -1855,191 +1864,86 @@ export function PayrollReportClient() {
                     )}
                   </div>
                 ) : null}
+
+                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-sheet)] p-3 text-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Payroll summary</p>
+                  {!hasCompany ? (
+                    <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">—</p>
+                  ) : null}
+                  {hasCompany && period ? (
+                    <ul className="mt-2 space-y-1.5 text-xs text-[#111827]">
+                      <li className="flex justify-between gap-2">
+                        <span className="text-[var(--color-text-muted)]">Employees</span>
+                        <span className="font-semibold tabular-nums">{period.total_items}</span>
+                      </li>
+                      <li className="flex justify-between gap-2">
+                        <span className="text-[var(--color-text-muted)]">Total hours</span>
+                        <span className="font-semibold tabular-nums">
+                          {formatHoursFromSeconds(totalHoursSeconds)}
+                        </span>
+                      </li>
+                      <li className="flex justify-between gap-2">
+                        <span className="text-[var(--color-text-muted)]">Gross pay</span>
+                        <span className="font-semibold tabular-nums">{formatMoneyGBP(period.total_gross)}</span>
+                      </li>
+                      <li className="flex justify-between gap-2">
+                        <span className="text-[var(--color-text-muted)]">CIS tax</span>
+                        <span className="font-semibold tabular-nums">{formatMoneyGBP(period.total_tax)}</span>
+                      </li>
+                      <li className="flex justify-between gap-2">
+                        <span className="text-[var(--color-text-muted)]">Net pay</span>
+                        <span className="font-semibold tabular-nums">{formatMoneyGBP(period.total_net)}</span>
+                      </li>
+                    </ul>
+                  ) : null}
+                  {hasCompany && !period ? (
+                    <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
+                      Load a report to see totals.
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-sheet)] p-3 text-sm">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
+                    Payroll split (pre-tax wages)
+                  </p>
+                  {!hasCompany ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">—</p> : null}
+                  {hasCompany && split ? (
+                    <div className="mt-3 space-y-3 text-xs">
+                      {[
+                        { label: "Regular wages", value: split.regular_pay, tone: "bg-slate-700" },
+                        { label: "Overtime wages", value: split.overtime_pay, tone: "bg-slate-500" },
+                        { label: "Other pay", value: split.other_pay, tone: "bg-slate-400" },
+                        { label: "Total gross (payroll)", value: split.total_gross, tone: "bg-[var(--color-accent)]" },
+                      ].map((row) => (
+                        <div key={row.label}>
+                          <div className="flex justify-between gap-2 text-[var(--color-text)]">
+                            <span className="text-[var(--color-text-muted)]">{row.label}</span>
+                            <span className="font-semibold tabular-nums">{formatMoneyGBP(row.value)}</span>
+                          </div>
+                          <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-2 rounded-full ${row.tone}`}
+                              style={{ width: `${payrollSplitBarPercent(row.value, split.total_gross)}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                      <p className="border-t border-[var(--color-border)] pt-2 text-[10px] leading-snug text-[var(--color-text-muted)]">
+                        Regular and overtime lines are derived from stored hours and rate snapshots; total
+                        gross matches summed payroll item gross.
+                      </p>
+                    </div>
+                  ) : null}
+                  {hasCompany && !split ? (
+                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">Load payroll to view split.</p>
+                  ) : null}
+                </div>
               </div>
             </div>
 
           </div>
 
-          <section className="grid gap-3 lg:grid-cols-3">
-            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 text-sm shadow-sm">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Payroll summary</p>
-              {!hasCompany ? (
-                <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">—</p>
-              ) : null}
-              {hasCompany && period ? (
-                <ul className="mt-2 space-y-1.5 text-xs text-[#111827]">
-                  <li className="flex justify-between gap-2">
-                    <span className="text-[var(--color-text-muted)]">Employees</span>
-                    <span className="font-semibold tabular-nums">{period.total_items}</span>
-                  </li>
-                  <li className="flex justify-between gap-2">
-                    <span className="text-[var(--color-text-muted)]">Total hours</span>
-                    <span className="font-semibold tabular-nums">
-                      {formatHoursFromSeconds(totalHoursSeconds)}
-                    </span>
-                  </li>
-                  <li className="flex justify-between gap-2">
-                    <span className="text-[var(--color-text-muted)]">Gross pay</span>
-                    <span className="font-semibold tabular-nums">{formatMoneyGBP(period.total_gross)}</span>
-                  </li>
-                  <li className="flex justify-between gap-2">
-                    <span className="text-[var(--color-text-muted)]">CIS tax</span>
-                    <span className="font-semibold tabular-nums">{formatMoneyGBP(period.total_tax)}</span>
-                  </li>
-                  <li className="flex justify-between gap-2">
-                    <span className="text-[var(--color-text-muted)]">Net pay</span>
-                    <span className="font-semibold tabular-nums">{formatMoneyGBP(period.total_net)}</span>
-                  </li>
-                </ul>
-              ) : null}
-              {hasCompany && !period ? (
-                <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
-                  Load a report to see totals.
-                </p>
-              ) : null}
-            </div>
-
-            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 text-sm shadow-sm">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
-                Payroll split (pre-tax wages)
-              </p>
-              {!hasCompany ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">—</p> : null}
-              {hasCompany && split ? (
-                <div className="mt-2 space-y-2 text-xs">
-                  <div className="flex justify-between gap-2 text-[var(--color-text)]">
-                    <span className="text-[var(--color-text-muted)]">Regular wages</span>
-                    <span className="font-semibold tabular-nums">{formatMoneyGBP(split.regular_pay)}</span>
-                  </div>
-                  <div className="flex justify-between gap-2 text-[var(--color-text)]">
-                    <span className="text-[var(--color-text-muted)]">Overtime wages</span>
-                    <span className="font-semibold tabular-nums">{formatMoneyGBP(split.overtime_pay)}</span>
-                  </div>
-                  <div className="flex justify-between gap-2 text-[var(--color-text)]">
-                    <span className="text-[var(--color-text-muted)]">Other pay</span>
-                    <span className="font-semibold tabular-nums">{formatMoneyGBP(split.other_pay)}</span>
-                  </div>
-                  <div className="mt-1 border-t border-[var(--color-border-dark)] pt-2">
-                    <div className="flex justify-between gap-2 font-bold text-[var(--color-text)]">
-                      <span>Total gross (payroll)</span>
-                      <span className="tabular-nums">{formatMoneyGBP(split.total_gross)}</span>
-                    </div>
-                    <p className="mt-1 text-[10px] leading-snug text-[var(--color-text-muted)]">
-                      Regular and overtime lines are derived from stored hours and rate snapshots; total
-                      gross matches summed payroll item gross.
-                    </p>
-                  </div>
-                  {split.total_gross != null && Number(split.regular_pay) + Number(split.overtime_pay) > 0 ? (
-                    <div className="h-2 w-full overflow-hidden rounded bg-[var(--color-border)]">
-                      <div
-                        className="h-2 bg-[var(--color-text-soft)]"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            (Number(split.regular_pay) /
-                              (Number(split.regular_pay) + Number(split.overtime_pay))) *
-                              100,
-                          )}%`,
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-              {hasCompany && !split ? (
-                <p className="mt-2 text-xs text-[var(--color-text-muted)]">Load payroll to view split.</p>
-              ) : null}
-            </div>
-
-            {alerts ? (
-              <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Alerts</p>
-                <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-[#374151]">
-                  {lateShiftDetected ? (
-                    <li>
-                      {canAdjustLateShiftsGlobally ? (
-                        <>
-                          {lateDetectedCount} late shift
-                          {lateDetectedCount === 1 ? "" : "s"} detected (
-                          {formatHoursFromSeconds(report?.late_unpaid_total_rounded_seconds ?? 0)} unpaid rounded
-                          hours). Use Adjustment on the paid row to create a pending supplemental payroll item.
-                        </>
-                      ) : (
-                        <>
-                          {lateDetectedCount} late shift
-                          {lateDetectedCount === 1 ? "" : "s"} detected with 0 payroll-rounded hours. Paid rows stay
-                          frozen.
-                        </>
-                      )}
-                    </li>
-                  ) : null}
-                  {alerts.pending_approval_count > 0 ? (
-                    <li>
-                      {alerts.pending_approval_count} row
-                      {alerts.pending_approval_count === 1 ? "" : "s"} pending approval.
-                    </li>
-                  ) : null}
-                  {alerts.open_shifts_started_in_week_count > 0 ? (
-                    <li>
-                      {alerts.open_shifts_started_in_week_count} open shift
-                      {alerts.open_shifts_started_in_week_count === 1 ? "" : "s"} started this week (missing
-                      clock-out).
-                    </li>
-                  ) : null}
-                  {alerts.rate_missing_employees_count > 0 ? (
-                    <li>
-                      {alerts.rate_missing_employees_count} employee
-                      {alerts.rate_missing_employees_count === 1 ? "" : "s"} missing hourly rate.
-                    </li>
-                  ) : null}
-                  {alerts.zero_rounded_hours_employees_count > 0 ? (
-                    <li>
-                      {alerts.zero_rounded_hours_employees_count} employee
-                      {alerts.zero_rounded_hours_employees_count === 1 ? "" : "s"} with zero rounded hours this
-                      week.
-                    </li>
-                  ) : null}
-                  {alerts.payroll_period_not_calculated ? (
-                    <li>Payroll for this week has not been calculated yet. Use Calculate payroll or Refresh.</li>
-                  ) : null}
-                  {alerts.payroll_needs_recalculation && (period?.paid_count ?? 0) > 0 ? (
-                    <li>Paid payroll rows are locked and cannot be rebuilt.</li>
-                  ) : null}
-                  {alerts.payroll_needs_recalculation &&
-                  (period?.paid_count ?? 0) === 0 &&
-                  (period?.approved_count ?? 0) > 0 ? (
-                    <li>Some payroll rows are approved. Unlock them before recalculating.</li>
-                  ) : null}
-                  {alerts.payroll_needs_recalculation &&
-                  (period?.paid_count ?? 0) === 0 &&
-                  (period?.approved_count ?? 0) === 0 ? (
-                    <li>
-                      Time records in this week changed after the last payroll calculation. Use Refresh or
-                      Recalculate to update pending rows.
-                    </li>
-                  ) : null}
-                  {alerts.pending_approval_count === 0 &&
-                  alerts.open_shifts_started_in_week_count === 0 &&
-                  alerts.rate_missing_employees_count === 0 &&
-                  alerts.zero_rounded_hours_employees_count === 0 &&
-                  !alerts.payroll_period_not_calculated &&
-                  !alerts.payroll_needs_recalculation &&
-                  !lateShiftDetected ? (
-                    <li className="list-none">No issues flagged for this week.</li>
-                  ) : null}
-                </ul>
-              </div>
-            ) : hasCompany ? (
-              <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3 text-sm text-[var(--color-text-muted)]">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Alerts</p>
-                <p className="mt-2 text-xs">Load payroll to see alerts.</p>
-              </div>
-            ) : (
-              <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3 text-sm text-[var(--color-text-muted)]">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Alerts</p>
-                <p className="mt-2 text-xs">—</p>
-              </div>
-            )}
-          </section>
         </div>
 
         {editRow ? (
