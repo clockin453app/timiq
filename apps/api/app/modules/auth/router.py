@@ -13,7 +13,11 @@ from app.modules.auth.dependencies import (
     require_administrator,
 )
 from app.modules.auth.models import SystemRole, User
-from app.modules.auth.repository import list_users_visible_to_user_with_profile_names
+from app.modules.auth.repository import (
+    get_user_by_id,
+    list_users_visible_to_user_with_profile_names,
+    set_user_active_session_id,
+)
 from app.modules.auth.schemas import (
     AcceptInviteRequest,
     AdminCreateUserRequest,
@@ -52,7 +56,12 @@ from app.modules.auth.user_lifecycle import (
     delete_user_hard_by_administrator,
 )
 from app.core.config import settings
-from app.modules.auth.session_tokens import SESSION_COOKIE_NAME, create_session_token
+from app.modules.auth.session_tokens import (
+    InvalidSessionTokenError,
+    SESSION_COOKIE_NAME,
+    create_session_token,
+    read_session_token,
+)
 from app.modules.auth.account_access_service import (
     accept_user_invite,
     change_my_password,
@@ -99,7 +108,9 @@ def login(
             detail="Invalid email or password.",
         )
 
-    session_token = create_session_token(user.id)
+    session_id = uuid.uuid4()
+    user = set_user_active_session_id(db_session, user, session_id)
+    session_token = create_session_token(user.id, session_id)
 
     cookie_kw = _session_cookie_params()
     response.set_cookie(
@@ -244,7 +255,20 @@ def me(current_user: User = Depends(get_authenticated_user)) -> UserResponse:
 
 
 @router.post("/logout")
-def logout(response: Response) -> dict[str, str]:
+def logout(
+    request: Request,
+    response: Response,
+    db_session: Session = Depends(get_db_session),
+) -> dict[str, str]:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if token:
+        try:
+            claims = read_session_token(token)
+            user = get_user_by_id(db_session, claims.user_id)
+            if user is not None and user.active_session_id == claims.session_id:
+                set_user_active_session_id(db_session, user, None)
+        except InvalidSessionTokenError:
+            pass
     cookie_kw = _session_cookie_params()
     response.delete_cookie(
         key=SESSION_COOKIE_NAME,

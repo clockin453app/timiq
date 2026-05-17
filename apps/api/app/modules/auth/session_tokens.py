@@ -4,6 +4,7 @@ import hmac
 import json
 import time
 import uuid
+from dataclasses import dataclass
 
 from app.core.config import settings
 
@@ -14,6 +15,12 @@ SESSION_DURATION_SECONDS = 60 * 60 * 10
 
 class InvalidSessionTokenError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class SessionTokenClaims:
+    user_id: uuid.UUID
+    session_id: uuid.UUID
 
 
 def _get_session_secret() -> bytes:
@@ -28,11 +35,12 @@ def _get_session_secret() -> bytes:
     return secret.encode("utf-8")
 
 
-def create_session_token(user_id: uuid.UUID) -> str:
+def create_session_token(user_id: uuid.UUID, session_id: uuid.UUID) -> str:
     expires_at = int(time.time()) + SESSION_DURATION_SECONDS
 
     payload = {
         "sub": str(user_id),
+        "sid": str(session_id),
         "exp": expires_at,
     }
 
@@ -50,7 +58,7 @@ def create_session_token(user_id: uuid.UUID) -> str:
     return f"{payload_b64}.{signature_b64}"
 
 
-def read_session_token(token: str) -> uuid.UUID:
+def read_session_token(token: str) -> SessionTokenClaims:
     try:
         payload_b64, signature_b64 = token.split(".", maxsplit=1)
     except ValueError as exc:
@@ -75,4 +83,10 @@ def read_session_token(token: str) -> uuid.UUID:
     if expires_at < int(time.time()):
         raise InvalidSessionTokenError("Session token has expired.")
 
-    return uuid.UUID(payload["sub"])
+    try:
+        user_id = uuid.UUID(payload["sub"])
+        session_id = uuid.UUID(payload["sid"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise InvalidSessionTokenError("Invalid session token claims.") from exc
+
+    return SessionTokenClaims(user_id=user_id, session_id=session_id)

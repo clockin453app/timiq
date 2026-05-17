@@ -216,5 +216,6 @@ def reset_user_password_by_admin(
 
     user.password_hash = hash_password(request.password)
     user.password_changed_at = datetime.now(timezone.utc)
+    user.active_session_id = None
 
     return update_user(db_session, user)

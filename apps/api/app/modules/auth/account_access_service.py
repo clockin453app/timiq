@@ -130,6 +130,7 @@ def change_my_password(
     now = datetime.now(timezone.utc)
     actor.password_hash = hash_password(body.new_password)
     actor.password_changed_at = now
+    actor.active_session_id = None
     update_user(db_session, actor)
     create_internal_audit_event(
         db_session,
@@ -217,6 +218,7 @@ def complete_password_reset_with_token(
 
     user.password_hash = hash_password(body.new_password)
     user.password_changed_at = now
+    user.active_session_id = None
     if user.email_verified_at is None:
         user.email_verified_at = now
     token_repo.mark_token_used(db_session, row)
@@ -357,6 +359,7 @@ def accept_user_invite(db_session: Session, body: AcceptInviteRequest) -> None:
     user.invite_accepted_at = now
     user.email_verified_at = now
     user.password_changed_at = now
+    user.active_session_id = None
     token_repo.mark_token_used(db_session, row)
 
     fn = (body.first_name or "").strip() or None

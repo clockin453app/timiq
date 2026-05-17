@@ -28,20 +28,28 @@ def get_authenticated_user(
         )
 
     try:
-        user_id = read_session_token(token)
+        claims = read_session_token(token)
     except InvalidSessionTokenError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid session.",
         ) from exc
 
-    user = get_user_by_id(db_session, user_id)
+    user = get_user_by_id(db_session, claims.user_id)
 
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated.",
         )
+
+    if user.active_session_id is None or user.active_session_id != claims.session_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid session.",
+        )
+
+    request.state.auth_session_id = claims.session_id
 
     return user
 

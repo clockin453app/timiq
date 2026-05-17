@@ -84,3 +84,12 @@ def update_user(db_session: Session, user: User) -> User:
     db_session.commit()
     db_session.refresh(user)
     return user
+
+
+def set_user_active_session_id(
+    db_session: Session,
+    user: User,
+    session_id: uuid.UUID | None,
+) -> User:
+    user.active_session_id = session_id
+    return update_user(db_session, user)

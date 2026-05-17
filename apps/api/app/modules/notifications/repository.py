@@ -7,6 +7,7 @@ from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from app.modules.auth.models import User
 from app.modules.notifications.models import NotificationRecord, NotificationSeen, PushSubscription
 
 
@@ -176,6 +177,7 @@ def upsert_push_subscription(
     endpoint: str,
     p256dh: str,
     auth: str,
+    session_id: uuid.UUID,
     user_agent: str | None,
     device_label: str | None,
 ) -> PushSubscription:
@@ -187,6 +189,7 @@ def upsert_push_subscription(
             endpoint=endpoint,
             p256dh=p256dh,
             auth=auth,
+            session_id=session_id,
             user_agent=user_agent,
             device_label=device_label,
             is_active=True,
@@ -199,6 +202,7 @@ def upsert_push_subscription(
     else:
         row.p256dh = p256dh
         row.auth = auth
+        row.session_id = session_id
         row.user_agent = user_agent
         row.device_label = device_label
         row.is_active = True
@@ -234,8 +238,10 @@ def list_active_push_subscriptions_for_user(
 ) -> list[PushSubscription]:
     stmt = (
         select(PushSubscription)
+        .join(User, User.id == PushSubscription.user_id)
         .where(PushSubscription.user_id == user_id)
         .where(PushSubscription.is_active.is_(True))
+        .where(PushSubscription.session_id == User.active_session_id)
         .order_by(PushSubscription.updated_at.desc())
     )
     return list(db.scalars(stmt).all())

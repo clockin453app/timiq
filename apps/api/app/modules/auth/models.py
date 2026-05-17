@@ -80,6 +80,7 @@ class User(Base):
     invited_at = mapped_column(DateTime(timezone=True), nullable=True)
     invite_accepted_at = mapped_column(DateTime(timezone=True), nullable=True)
     password_changed_at = mapped_column(DateTime(timezone=True), nullable=True)
+    active_session_id = mapped_column(UUID(as_uuid=True), nullable=True)
 
 
 class AccountActionToken(Base):

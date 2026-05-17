@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -84,15 +84,20 @@ def read_push_public_key() -> PushPublicKeyResponse:
 @push_router.post("/subscribe", response_model=PushSubscriptionResponse)
 def subscribe_push(
     body: PushSubscriptionBody,
+    request: Request,
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_authenticated_employee),
 ) -> PushSubscriptionResponse:
+    session_id = getattr(request.state, "auth_session_id", None)
+    if session_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid session.")
     row = notification_repo.upsert_push_subscription(
         db_session,
         user_id=current_user.id,
         endpoint=body.endpoint,
         p256dh=body.keys.p256dh,
         auth=body.keys.auth,
+        session_id=session_id,
         user_agent=body.user_agent,
         device_label=body.device_label,
     )
