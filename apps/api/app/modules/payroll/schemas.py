@@ -98,6 +98,8 @@ class PayrollReportAlerts(BaseModel):
     open_shifts_started_in_week_count: int
     rate_missing_employees_count: int
     missing_payroll_setup_employees_count: int = 0
+    utr_missing_employees_count: int = 0
+    nino_missing_employees_count: int = 0
     zero_rounded_hours_employees_count: int
     payroll_period_not_calculated: bool
     payroll_needs_recalculation: bool = False

@@ -693,7 +693,8 @@ def _item_missing_hourly_rate_for_approval(item: PayrollItem) -> bool:
         return True
     if not hasattr(item, "hourly_rate_snapshot"):
         return False
-    return _decimal_or_none(getattr(item, "hourly_rate_snapshot")) is None
+    hourly = _decimal_or_none(getattr(item, "hourly_rate_snapshot"))
+    return hourly is None or hourly <= 0
 
 
 def _item_missing_required_payroll_setup(item: PayrollItem) -> bool:
@@ -702,6 +703,23 @@ def _item_missing_required_payroll_setup(item: PayrollItem) -> bool:
     if normalize_payroll_payment_mode(getattr(item, "payment_mode", None)) != "net_payment":
         return False
     return _decimal_or_none(getattr(item, "tax_rate_snapshot")) is None
+
+
+def _missing_tax_identifier_counts(db_session: Session, all_items: list[PayrollItem]) -> tuple[int, int]:
+    utr_missing = 0
+    nino_missing = 0
+    seen_user_ids: set[uuid.UUID] = set()
+    for item in all_items:
+        user_id = getattr(item, "user_id", None)
+        if user_id is None or user_id in seen_user_ids:
+            continue
+        seen_user_ids.add(user_id)
+        ni, utr = _employee_tax_identifiers_for_payroll(db_session, user_id)
+        if not utr:
+            utr_missing += 1
+        if not ni:
+            nino_missing += 1
+    return utr_missing, nino_missing
 
 
 def _build_report_alerts(
@@ -721,8 +739,9 @@ def _build_report_alerts(
         week_end_utc=week_end_utc,
     )
     pending = sum(1 for i in all_items if i.status == "pending")
-    rate_missing = sum(1 for i in all_items if i.rate_missing)
+    rate_missing = sum(1 for i in all_items if _item_missing_hourly_rate_for_approval(i))
     missing_setup = sum(1 for i in all_items if _item_missing_required_payroll_setup(i))
+    utr_missing, nino_missing = _missing_tax_identifier_counts(db_session, all_items)
     zero_hours = sum(1 for i in all_items if i.rounded_total_seconds == 0)
     has_items = len(all_items) > 0
     not_calculated = period is None or (period.calculated_at is None and not has_items)
@@ -744,6 +763,8 @@ def _build_report_alerts(
         open_shifts_started_in_week_count=open_n,
         rate_missing_employees_count=rate_missing,
         missing_payroll_setup_employees_count=missing_setup,
+        utr_missing_employees_count=utr_missing,
+        nino_missing_employees_count=nino_missing,
         zero_rounded_hours_employees_count=zero_hours,
         payroll_period_not_calculated=not_calculated,
         payroll_needs_recalculation=needs_recalc,
@@ -794,7 +815,7 @@ def _assert_payroll_items_ready_for_approval(items: list[PayrollItem]) -> None:
     if missing_rate > 0:
         raise PayrollItemStateError(
             f"Cannot approve payroll: {missing_rate} pending row"
-            f"{'' if missing_rate == 1 else 's'} missing hourly rate."
+            f"{'' if missing_rate == 1 else 's'} missing or invalid hourly rate."
         )
     missing_setup = sum(1 for item in pending_items if _item_missing_required_payroll_setup(item))
     if missing_setup > 0:

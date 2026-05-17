@@ -110,7 +110,7 @@ def compute_money_bundle(
     ``payment_mode``: ``gross_payment`` means no CIS deduction (tax and display tax are zero);
     ``net_payment`` (default) applies ``tax_rate_percent`` to gross for CIS.
     """
-    if hourly_rate is None:
+    if hourly_rate is None or hourly_rate <= 0:
         return {
             "rate_missing": True,
             "gross_amount": None,

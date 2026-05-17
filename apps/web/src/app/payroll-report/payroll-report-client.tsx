@@ -985,6 +985,14 @@ export function PayrollReportClient() {
     if (hasCompany && missingSetupCount > 0) {
       chips.push({ label: `Missing payroll/CIS setup: ${missingSetupCount}`, tone: "danger" });
     }
+    const missingUtrCount = alerts?.utr_missing_employees_count ?? 0;
+    if (hasCompany && missingUtrCount > 0) {
+      chips.push({ label: `UTR missing: ${missingUtrCount}`, tone: "warning" });
+    }
+    const missingNinoCount = alerts?.nino_missing_employees_count ?? 0;
+    if (hasCompany && missingNinoCount > 0) {
+      chips.push({ label: `NiNo missing: ${missingNinoCount}`, tone: "warning" });
+    }
     const openShiftCount = alerts?.open_shifts_started_in_week_count ?? 0;
     if (hasCompany && openShiftCount > 0) {
       chips.push({ label: `Open shifts: ${openShiftCount}`, tone: "warning" });
@@ -1001,8 +1009,10 @@ export function PayrollReportClient() {
   }, [
     alerts?.pending_approval_count,
     alerts?.missing_payroll_setup_employees_count,
+    alerts?.nino_missing_employees_count,
     alerts?.open_shifts_started_in_week_count,
     alerts?.rate_missing_employees_count,
+    alerts?.utr_missing_employees_count,
     alerts?.zero_rounded_hours_employees_count,
     hasCompany,
     paidRowCount,
