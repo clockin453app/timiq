@@ -1167,28 +1167,6 @@ export function PayrollReportClient() {
                   Payroll locked — paid rows cannot be rebuilt.
                 </p>
               ) : null}
-              <div className="mt-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-sheet)] px-3 py-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
-                    Payroll readiness
-                  </span>
-                  {chipGroups.attention.length > 0 ? (
-                    chipGroups.attention.map((chip) => (
-                      <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
-                        {chip.label}
-                      </span>
-                    ))
-                  ) : chipGroups.status.length > 0 ? (
-                    chipGroups.status.map((chip) => (
-                      <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
-                        {chip.label}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-xs text-[var(--color-text-muted)]">Load payroll to see readiness.</span>
-                  )}
-                </div>
-              </div>
             </div>
           </div>
         </div>
