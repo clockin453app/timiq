@@ -688,6 +688,22 @@ def _build_pay_split(items: list[PayrollItem]) -> PayrollPaySplit:
     )
 
 
+def _item_missing_hourly_rate_for_approval(item: PayrollItem) -> bool:
+    if bool(getattr(item, "rate_missing", False)):
+        return True
+    if not hasattr(item, "hourly_rate_snapshot"):
+        return False
+    return _decimal_or_none(getattr(item, "hourly_rate_snapshot")) is None
+
+
+def _item_missing_required_payroll_setup(item: PayrollItem) -> bool:
+    if not hasattr(item, "tax_rate_snapshot"):
+        return False
+    if normalize_payroll_payment_mode(getattr(item, "payment_mode", None)) != "net_payment":
+        return False
+    return _decimal_or_none(getattr(item, "tax_rate_snapshot")) is None
+
+
 def _build_report_alerts(
     db_session: Session,
     *,
@@ -706,6 +722,7 @@ def _build_report_alerts(
     )
     pending = sum(1 for i in all_items if i.status == "pending")
     rate_missing = sum(1 for i in all_items if i.rate_missing)
+    missing_setup = sum(1 for i in all_items if _item_missing_required_payroll_setup(i))
     zero_hours = sum(1 for i in all_items if i.rounded_total_seconds == 0)
     has_items = len(all_items) > 0
     not_calculated = period is None or (period.calculated_at is None and not has_items)
@@ -726,6 +743,7 @@ def _build_report_alerts(
         pending_approval_count=pending,
         open_shifts_started_in_week_count=open_n,
         rate_missing_employees_count=rate_missing,
+        missing_payroll_setup_employees_count=missing_setup,
         zero_rounded_hours_employees_count=zero_hours,
         payroll_period_not_calculated=not_calculated,
         payroll_needs_recalculation=needs_recalc,
@@ -768,6 +786,22 @@ def _assert_payroll_period_not_stale_for_approval(
         all_items=all_items,
     ):
         raise PayrollItemStateError("Payroll needs recalculation before approval.")
+
+
+def _assert_payroll_items_ready_for_approval(items: list[PayrollItem]) -> None:
+    pending_items = [item for item in items if getattr(item, "status", None) == "pending"]
+    missing_rate = sum(1 for item in pending_items if _item_missing_hourly_rate_for_approval(item))
+    if missing_rate > 0:
+        raise PayrollItemStateError(
+            f"Cannot approve payroll: {missing_rate} pending row"
+            f"{'' if missing_rate == 1 else 's'} missing hourly rate."
+        )
+    missing_setup = sum(1 for item in pending_items if _item_missing_required_payroll_setup(item))
+    if missing_setup > 0:
+        raise PayrollItemStateError(
+            f"Cannot approve payroll: {missing_setup} pending row"
+            f"{'' if missing_setup == 1 else 's'} missing payroll/CIS setup."
+        )
 
 
 def _compute_late_unpaid_employees(
@@ -1447,6 +1481,7 @@ def approve_item(db_session: Session, actor: User, item_id: uuid.UUID) -> Payrol
         company_id=item.company_id,
         period=period,
     )
+    _assert_payroll_items_ready_for_approval([item])
     item.status = "approved"
     item.approved_at = datetime.now(timezone.utc)
     item.approved_by_user_id = actor.id
@@ -1711,6 +1746,7 @@ def approve_all_pending(
         period=period,
         all_items=items,
     )
+    _assert_payroll_items_ready_for_approval(items)
     for it in items:
         if it.status == "pending":
             it.status = "approved"

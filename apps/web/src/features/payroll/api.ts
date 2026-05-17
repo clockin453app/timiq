@@ -63,6 +63,7 @@ export type PayrollReportAlerts = {
   pending_approval_count: number;
   open_shifts_started_in_week_count: number;
   rate_missing_employees_count: number;
+  missing_payroll_setup_employees_count?: number;
   zero_rounded_hours_employees_count: number;
   payroll_period_not_calculated: boolean;
   payroll_needs_recalculation?: boolean;
