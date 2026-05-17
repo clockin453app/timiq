@@ -122,6 +122,24 @@ def test_payroll_pending_approval_appears_when_count_positive() -> None:
     assert item.target_key == f"payroll_pending:{cid}:2:{latest.isoformat()}"
 
 
+def test_payroll_pending_approval_hidden_when_actionable_count_zero() -> None:
+    cid = uuid.uuid4()
+    actor = _admin(cid)
+    with ExitStack() as stack:
+        _start_patches(
+            stack,
+            [
+                *_summary_base_patches(),
+                patch("app.modules.notifications.service.notif_seen_repo.has_seen", return_value=False),
+                patch("app.modules.notifications.service.rams_repo.assessment_status_fingerprint_for_company", return_value=(0, None)),
+                patch("app.modules.notifications.service.payroll_repo.pending_payroll_items_fingerprint_for_company", return_value=(0, None)),
+            ],
+        )
+        summary = get_notification_summary(MagicMock(), actor, company_id=None)
+
+    assert all(i.kind != "payroll_pending" for i in summary.items)
+
+
 def test_mark_seen_hides_current_payroll_pending_key() -> None:
     db = MagicMock()
     actor = _admin(uuid.uuid4())

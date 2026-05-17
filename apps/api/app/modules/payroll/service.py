@@ -705,6 +705,24 @@ def _item_missing_required_payroll_setup(item: PayrollItem) -> bool:
     return _decimal_or_none(getattr(item, "tax_rate_snapshot")) is None
 
 
+def _item_has_actionable_pending_payroll_value(item: PayrollItem) -> bool:
+    if getattr(item, "status", None) != "pending":
+        return False
+    if int(getattr(item, "rounded_total_seconds", 0) or 0) > 0:
+        return True
+    if int(getattr(item, "regular_seconds", 0) or 0) > 0:
+        return True
+    if int(getattr(item, "overtime_seconds", 0) or 0) > 0:
+        return True
+    money_values = (
+        _decimal_or_none(getattr(item, "gross_amount", None)),
+        _effective_tax_amount_for_item(item),
+        _effective_net_amount_for_item(item),
+        _decimal_or_none(getattr(item, "other_deductions_amount", None)),
+    )
+    return any(value is not None and value > 0 for value in money_values)
+
+
 def _missing_tax_identifier_counts(db_session: Session, all_items: list[PayrollItem]) -> tuple[int, int]:
     utr_missing = 0
     nino_missing = 0
@@ -738,7 +756,7 @@ def _build_report_alerts(
         week_start_utc=week_start_utc,
         week_end_utc=week_end_utc,
     )
-    pending = sum(1 for i in all_items if i.status == "pending")
+    pending = sum(1 for i in all_items if _item_has_actionable_pending_payroll_value(i))
     rate_missing = sum(1 for i in all_items if _item_missing_hourly_rate_for_approval(i))
     missing_setup = sum(1 for i in all_items if _item_missing_required_payroll_setup(i))
     utr_missing, nino_missing = _missing_tax_identifier_counts(db_session, all_items)

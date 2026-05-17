@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
@@ -280,12 +280,29 @@ def list_paid_items_for_company_payment_history(
     return [(item, period) for item, period in db_session.execute(statement).all()]
 
 
+def _actionable_pending_payroll_item_filter():
+    return (
+        PayrollItem.status == "pending",
+        or_(
+            PayrollItem.rounded_total_seconds > 0,
+            PayrollItem.regular_seconds > 0,
+            PayrollItem.overtime_seconds > 0,
+            PayrollItem.gross_amount > 0,
+            PayrollItem.tax_amount > 0,
+            PayrollItem.display_tax_amount > 0,
+            PayrollItem.net_amount > 0,
+            PayrollItem.display_net_amount > 0,
+            PayrollItem.other_deductions_amount > 0,
+        ),
+    )
+
+
 def count_pending_payroll_items_for_company(db_session: Session, company_id: uuid.UUID) -> int:
     statement = (
         select(func.count())
         .select_from(PayrollItem)
         .where(PayrollItem.company_id == company_id)
-        .where(PayrollItem.status == "pending")
+        .where(*_actionable_pending_payroll_item_filter())
     )
     return int(db_session.scalar(statement) or 0)
 
@@ -297,7 +314,7 @@ def pending_payroll_items_fingerprint_for_company(
     statement = (
         select(func.count(PayrollItem.id), func.max(PayrollItem.updated_at))
         .where(PayrollItem.company_id == company_id)
-        .where(PayrollItem.status == "pending")
+        .where(*_actionable_pending_payroll_item_filter())
     )
     count, latest = db_session.execute(statement).one()
     return int(count or 0), latest

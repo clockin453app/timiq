@@ -32,6 +32,13 @@ def _item(
     tax_rate_snapshot: float | None = 20,
     payment_mode: str | None = "net_payment",
     user_id: uuid.UUID | None = None,
+    regular_seconds: int = 3600,
+    overtime_seconds: int = 0,
+    rounded_total_seconds: int = 3600,
+    gross_amount: float | None = 20,
+    tax_amount: float | None = 4,
+    net_amount: float | None = 16,
+    other_deductions_amount: float = 0,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid.uuid4(),
@@ -43,7 +50,15 @@ def _item(
         hourly_rate_snapshot=hourly_rate_snapshot,
         tax_rate_snapshot=tax_rate_snapshot,
         payment_mode=payment_mode,
-        rounded_total_seconds=3600,
+        regular_seconds=regular_seconds,
+        overtime_seconds=overtime_seconds,
+        rounded_total_seconds=rounded_total_seconds,
+        gross_amount=gross_amount,
+        tax_amount=tax_amount,
+        net_amount=net_amount,
+        display_tax_amount=None,
+        display_net_amount=None,
+        other_deductions_amount=other_deductions_amount,
     )
 
 
@@ -65,6 +80,63 @@ def test_missing_payroll_setup_appears_in_report_alerts() -> None:
         )
 
     assert alerts.missing_payroll_setup_employees_count == 1
+
+
+def test_empty_pending_rows_do_not_count_as_pending_approval_alerts() -> None:
+    with (
+        patch("app.modules.payroll.service.count_open_shifts_started_in_week", return_value=0),
+        patch("app.modules.payroll.service._employee_tax_identifiers_for_payroll", return_value=("AB123456C", "1234567890")),
+    ):
+        alerts = _build_report_alerts(
+            MagicMock(),
+            company_id=uuid.uuid4(),
+            policy=SimpleNamespace(timezone_name="UTC"),
+            week_start=date(2026, 5, 11),
+            period=SimpleNamespace(id=uuid.uuid4(), calculated_at=None),
+            all_items=[
+                _item(
+                    regular_seconds=0,
+                    overtime_seconds=0,
+                    rounded_total_seconds=0,
+                    gross_amount=0,
+                    tax_amount=0,
+                    net_amount=0,
+                    other_deductions_amount=0,
+                ),
+            ],
+        )
+
+    assert alerts.pending_approval_count == 0
+    assert alerts.zero_rounded_hours_employees_count == 1
+
+
+def test_actionable_pending_rows_count_as_pending_approval_alerts() -> None:
+    with (
+        patch("app.modules.payroll.service.count_open_shifts_started_in_week", return_value=0),
+        patch("app.modules.payroll.service._employee_tax_identifiers_for_payroll", return_value=("AB123456C", "1234567890")),
+    ):
+        alerts = _build_report_alerts(
+            MagicMock(),
+            company_id=uuid.uuid4(),
+            policy=SimpleNamespace(timezone_name="UTC"),
+            week_start=date(2026, 5, 11),
+            period=SimpleNamespace(id=uuid.uuid4(), calculated_at=None),
+            all_items=[
+                _item(),
+                _item(
+                    regular_seconds=0,
+                    overtime_seconds=0,
+                    rounded_total_seconds=0,
+                    gross_amount=0,
+                    tax_amount=0,
+                    net_amount=0,
+                    other_deductions_amount=5,
+                ),
+                _item(status="approved"),
+            ],
+        )
+
+    assert alerts.pending_approval_count == 2
 
 
 def test_zero_and_negative_hourly_rates_appear_in_report_alerts() -> None:
