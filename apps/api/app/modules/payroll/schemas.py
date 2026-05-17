@@ -205,6 +205,24 @@ class PayrollMonthSummaryResponse(BaseModel):
     total_days: int | None = None
 
 
+class PayrollPaymentHistoryRow(BaseModel):
+    item_id: uuid.UUID
+    user_id: uuid.UUID
+    employee_email: str | None = None
+    employee_name: str | None = None
+    paid_at: datetime
+    week_start: date
+    week_end: date
+    gross_amount: Decimal | None
+    cis_tax_amount: Decimal | None
+    net_paid_amount: Decimal | None
+    payment_mode: str | None = None
+    payment_mode_label: str
+    status: str
+    can_open_payslip: bool = True
+    can_undo_paid: bool = True
+
+
 class PayHistoryEntry(BaseModel):
     id: uuid.UUID
     company_id: uuid.UUID

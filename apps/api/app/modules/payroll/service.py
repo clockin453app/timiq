@@ -61,6 +61,7 @@ from app.modules.payroll.repository import (
     list_completed_time_shifts_for_company_range,
     list_items_for_period,
     list_items_for_user_pay_history,
+    list_paid_items_for_company_payment_history,
     list_payroll_items_for_user_company_ytd_calendar_year,
     list_periods_for_company_month,
     max_employee_shift_updated_at_in_payroll_week,
@@ -83,6 +84,7 @@ from app.modules.payroll.schemas import (
     PayrollLateShiftRow,
     PayrollLateUnpaidEmployee,
     PayrollMonthSummaryResponse,
+    PayrollPaymentHistoryRow,
     PayrollPaySplit,
     PayrollPeriodSummary,
     PayrollReportAlerts,
@@ -1814,6 +1816,64 @@ def list_my_pay_history(db_session: Session, actor: User) -> list[PayHistoryEntr
             )
         )
     return result
+
+
+def list_payroll_payment_history(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    employee_user_id: uuid.UUID | None = None,
+) -> list[PayrollPaymentHistoryRow]:
+    assert_payroll_admin_or_administrator(actor)
+    assert_payroll_company_scope(actor, company_id)
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise PayrollError("date_from must be before or equal to date_to.")
+    _assert_valid_range_filter(
+        db_session,
+        company_id=company_id,
+        employee_user_id=employee_user_id,
+    )
+    paid_at_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
+    paid_at_before = (
+        datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
+        if date_to
+        else None
+    )
+    rows = list_paid_items_for_company_payment_history(
+        db_session,
+        company_id=company_id,
+        paid_at_from=paid_at_from,
+        paid_at_before=paid_at_before,
+        employee_user_id=employee_user_id,
+    )
+    out: list[PayrollPaymentHistoryRow] = []
+    for item, period in rows:
+        if item.status != "paid" or item.paid_at is None:
+            continue
+        email, name, _job_title = _employee_display(db_session, item.user_id)
+        out.append(
+            PayrollPaymentHistoryRow(
+                item_id=item.id,
+                user_id=item.user_id,
+                employee_email=email,
+                employee_name=name,
+                paid_at=item.paid_at,
+                week_start=period.week_start,
+                week_end=_week_end_display(period.week_start),
+                gross_amount=_decimal_or_none(item.gross_amount),
+                cis_tax_amount=_effective_tax_amount_for_item(item),
+                net_paid_amount=_effective_net_amount_for_item(item),
+                payment_mode=normalize_payroll_payment_mode(item.payment_mode),
+                payment_mode_label=_payment_mode_label(item.payment_mode),
+                status=item.status,
+                can_open_payslip=True,
+                can_undo_paid=True,
+            )
+        )
+    return out
 
 
 def _assert_valid_range_filter(

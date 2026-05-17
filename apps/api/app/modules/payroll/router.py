@@ -22,6 +22,7 @@ from app.modules.payroll.schemas import (
     PayrollItemSummaryResponse,
     PayrollLateAdjustmentRequest,
     PayrollMonthSummaryResponse,
+    PayrollPaymentHistoryRow,
     PayrollRecalculateRequest,
     PayrollReportResponse,
     PayrollUndoPaidRequest,
@@ -42,6 +43,7 @@ from app.modules.payroll.service import (
     get_payroll_item_summary,
     get_payroll_month_summary,
     get_payroll_report,
+    list_payroll_payment_history,
     list_my_pay_history,
     mark_paid_item,
     patch_payroll_item,
@@ -120,6 +122,33 @@ def payroll_month_summary(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(exc),
         ) from exc
+
+
+@router.get("/payment-history", response_model=list[PayrollPaymentHistoryRow])
+def payroll_payment_history(
+    company_id: uuid.UUID = Query(...),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    employee_user_id: uuid.UUID | None = Query(default=None),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> list[PayrollPaymentHistoryRow]:
+    try:
+        return list_payroll_payment_history(
+            db_session,
+            current_user,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
+        )
+    except PayrollPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except PayrollError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/recalculate", response_model=PayrollReportResponse)

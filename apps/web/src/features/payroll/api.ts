@@ -134,6 +134,24 @@ export type PayrollMonthSummary = {
   total_days: number | null;
 };
 
+export type PayrollPaymentHistoryRow = {
+  item_id: string;
+  user_id: string;
+  employee_email: string | null;
+  employee_name: string | null;
+  paid_at: string;
+  week_start: string;
+  week_end: string;
+  gross_amount: string | null;
+  cis_tax_amount: string | null;
+  net_paid_amount: string | null;
+  payment_mode: string | null;
+  payment_mode_label: string;
+  status: string;
+  can_open_payslip: boolean;
+  can_undo_paid: boolean;
+};
+
 export type PatchPayrollItemRequest = {
   notes?: string | null;
   other_deductions_amount?: string | null;
@@ -269,6 +287,33 @@ export async function fetchPayrollMonthSummary(
     );
   }
   return response.json() as Promise<PayrollMonthSummary>;
+}
+
+export async function fetchPayrollPaymentHistory(params: {
+  companyId: string;
+  dateFrom?: string;
+  dateTo?: string;
+  employeeUserId?: string | null;
+}): Promise<PayrollPaymentHistoryRow[]> {
+  const response = await fetch(
+    `${API_URL}/api/payroll/payment-history?${qs({
+      company_id: params.companyId,
+      date_from: params.dateFrom,
+      date_to: params.dateTo,
+      employee_user_id: params.employeeUserId ?? undefined,
+    })}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    const detail = await response.json().catch(() => ({}));
+    throw new Error(
+      fastApiDetailToMessage(
+        (detail as { detail?: unknown }).detail,
+        "Could not load payment history.",
+      ),
+    );
+  }
+  return response.json() as Promise<PayrollPaymentHistoryRow[]>;
 }
 
 export async function recalculatePayroll(

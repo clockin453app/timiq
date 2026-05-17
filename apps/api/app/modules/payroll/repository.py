@@ -255,6 +255,31 @@ def list_items_for_user_pay_history(
     return list(db_session.scalars(statement).all())
 
 
+def list_paid_items_for_company_payment_history(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    paid_at_from: datetime | None = None,
+    paid_at_before: datetime | None = None,
+    employee_user_id: uuid.UUID | None = None,
+) -> list[tuple[PayrollItem, PayrollPeriod]]:
+    statement = (
+        select(PayrollItem, PayrollPeriod)
+        .join(PayrollPeriod, PayrollItem.period_id == PayrollPeriod.id)
+        .where(PayrollItem.company_id == company_id)
+        .where(PayrollItem.status == "paid")
+        .where(PayrollItem.paid_at.is_not(None))
+    )
+    if paid_at_from is not None:
+        statement = statement.where(PayrollItem.paid_at >= paid_at_from)
+    if paid_at_before is not None:
+        statement = statement.where(PayrollItem.paid_at < paid_at_before)
+    if employee_user_id is not None:
+        statement = statement.where(PayrollItem.user_id == employee_user_id)
+    statement = statement.order_by(PayrollItem.paid_at.desc(), PayrollPeriod.week_start.desc())
+    return [(item, period) for item, period in db_session.execute(statement).all()]
+
+
 def count_pending_payroll_items_for_company(db_session: Session, company_id: uuid.UUID) -> int:
     statement = (
         select(func.count())

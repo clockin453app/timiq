@@ -26,6 +26,7 @@ import {
   downloadPayrollCsv,
   downloadPayrollPdfReport,
   fetchPayrollMonthSummary,
+  fetchPayrollPaymentHistory,
   fetchPayrollReport,
   markPayrollPaid,
   openPayrollItemPayslip,
@@ -37,6 +38,7 @@ import {
   type PayrollItemRow,
   type PayrollLateUnpaidEmployee,
   type PayrollMonthSummary,
+  type PayrollPaymentHistoryRow,
   type PayrollReportResponse,
 } from "../../features/payroll/api";
 import {
@@ -108,6 +110,12 @@ function canShowLateAdjustmentForPaidRow(
 type RowActionMenuState = {
   row: PayrollItemRow;
   lateBlock: PayrollLateUnpaidEmployee | null;
+};
+
+type PayrollUndoTarget = {
+  id: string;
+  employee_email: string | null;
+  employee_name: string | null;
 };
 
 function statusBadgeClass(status: string): string {
@@ -247,9 +255,11 @@ export function PayrollReportClient() {
   const [exportDateTo, setExportDateTo] = useState(() => addDaysIsoYmd(weekStart, 6));
   const [report, setReport] = useState<PayrollReportResponse | null>(null);
   const [monthSummary, setMonthSummary] = useState<PayrollMonthSummary | null>(null);
+  const [paymentHistory, setPaymentHistory] = useState<PayrollPaymentHistoryRow[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [monthLoading, setMonthLoading] = useState(false);
+  const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [payrollSaveMessage, setPayrollSaveMessage] = useState("");
   const [editRow, setEditRow] = useState<PayrollItemRow | null>(null);
@@ -263,7 +273,7 @@ export function PayrollReportClient() {
     {},
   );
   const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
-  const [undoPaidRow, setUndoPaidRow] = useState<PayrollItemRow | null>(null);
+  const [undoPaidRow, setUndoPaidRow] = useState<PayrollUndoTarget | null>(null);
   const [undoPaidReason, setUndoPaidReason] = useState("");
   const [undoPaidAckExport, setUndoPaidAckExport] = useState(false);
   const [shiftEditRow, setShiftEditRow] = useState<TimeRecordShiftRow | null>(null);
@@ -543,6 +553,27 @@ export function PayrollReportClient() {
     }
   }
 
+  async function loadPaymentHistory() {
+    if (!activeCompanyId) {
+      setPaymentHistory([]);
+      return;
+    }
+    setPaymentHistoryLoading(true);
+    try {
+      const rows = await fetchPayrollPaymentHistory({
+        companyId: activeCompanyId,
+        dateFrom: exportDateFrom || undefined,
+        dateTo: exportDateTo || undefined,
+        employeeUserId: appliedEmployeeId || null,
+      });
+      setPaymentHistory(rows);
+    } catch {
+      setPaymentHistory([]);
+    } finally {
+      setPaymentHistoryLoading(false);
+    }
+  }
+
   useEffect(() => {
     loadReport();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -557,6 +588,11 @@ export function PayrollReportClient() {
     loadMonthSummary();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeCompanyId, monthFromWeek.year, monthFromWeek.month]);
+
+  useEffect(() => {
+    loadPaymentHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCompanyId, exportDateFrom, exportDateTo, appliedEmployeeId]);
 
   useEffect(() => {
     if (!payrollSaveMessage) {
@@ -740,6 +776,9 @@ export function PayrollReportClient() {
         await markPayrollPaid(id);
       }
       await loadReport();
+      if (action === "paid") {
+        await loadPaymentHistory();
+      }
     } catch {
       setError(t("payroll.report.action_failed", "Action failed."));
     } finally {
@@ -791,6 +830,7 @@ export function PayrollReportClient() {
       setUndoPaidAckExport(false);
       setPayrollSaveMessage(t("payroll.report.undo_paid_success", "Payroll row moved back to Approved."));
       await loadReport();
+      await loadPaymentHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : t("payroll.report.undo_paid_failed", "Undo paid failed."));
     } finally {
@@ -1166,7 +1206,7 @@ export function PayrollReportClient() {
                 </div>
               ) : null}
               <p className="mb-3 text-xs text-[var(--color-text-muted)]">
-                Summary by employee for this payroll week. Use + to open employee payroll details (shift lines).
+                Summary by employee for this payroll week. Use + to view shift lines for this employee.
               </p>
               <div className="timiq-scroll-x w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[#111827]">
                 <Table className="min-w-full">
@@ -1595,6 +1635,135 @@ export function PayrollReportClient() {
               </div>
             </div>
 
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold text-[#111827]">Payment history</p>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    Paid payroll rows only. Uses the selected date range and employee filter.
+                  </p>
+                </div>
+                <Button
+                  disabled={!activeCompanyId || paymentHistoryLoading}
+                  onClick={() => void loadPaymentHistory()}
+                  type="button"
+                  variant="secondary"
+                >
+                  {paymentHistoryLoading ? "Loading…" : "Refresh history"}
+                </Button>
+              </div>
+              <div className="mt-3 timiq-scroll-x w-full min-w-0">
+                <table className="w-full min-w-[58rem] border-collapse text-left text-xs">
+                  <thead className="bg-[#d4d4d8] text-[#111827]">
+                    <tr>
+                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Paid date</th>
+                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Payroll week</th>
+                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Employee</th>
+                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Gross</th>
+                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">CIS</th>
+                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Net paid</th>
+                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Payment mode</th>
+                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Status</th>
+                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!hasCompany ? (
+                      <tr>
+                        <td className="border border-[var(--color-border)] px-2 py-6 text-center text-[#374151]" colSpan={9}>
+                          Select a company to load payment history.
+                        </td>
+                      </tr>
+                    ) : null}
+                    {hasCompany && paymentHistoryLoading ? (
+                      <tr>
+                        <td className="border border-[var(--color-border)] px-2 py-6 text-center text-[var(--color-text-muted)]" colSpan={9}>
+                          Loading payment history…
+                        </td>
+                      </tr>
+                    ) : null}
+                    {hasCompany && !paymentHistoryLoading && paymentHistory.length === 0 ? (
+                      <tr>
+                        <td className="border border-[var(--color-border)] px-2 py-6 text-center text-[#374151]" colSpan={9}>
+                          No paid payroll rows match the selected filters.
+                        </td>
+                      </tr>
+                    ) : null}
+                    {hasCompany && !paymentHistoryLoading
+                      ? paymentHistory.map((row) => (
+                          <tr className="border-b border-[var(--color-border)]" key={row.item_id}>
+                            <td className="border border-[var(--color-border)] px-2 py-1.5 tabular-nums">
+                              {formatShiftDateTime(row.paid_at, policyTimeZone)}
+                            </td>
+                            <td className="border border-[var(--color-border)] px-2 py-1.5 tabular-nums">
+                              {row.week_start} → {row.week_end}
+                            </td>
+                            <td className="border border-[var(--color-border)] px-2 py-1.5">
+                              <PayrollEmployeeIdentity
+                                employee_email={row.employee_email}
+                                employee_name={row.employee_name}
+                                user_id={row.user_id}
+                                withAvatar
+                              />
+                            </td>
+                            <td className="border border-[var(--color-border)] px-2 py-1.5">
+                              {formatMoneyGBP(row.gross_amount)}
+                            </td>
+                            <td className="border border-[var(--color-border)] px-2 py-1.5">
+                              {formatMoneyGBP(row.cis_tax_amount)}
+                            </td>
+                            <td className="border border-[var(--color-border)] px-2 py-1.5">
+                              {formatMoneyGBP(row.net_paid_amount)}
+                            </td>
+                            <td className="border border-[var(--color-border)] px-2 py-1.5">
+                              {row.payment_mode_label}
+                            </td>
+                            <td className="border border-[var(--color-border)] px-2 py-1.5">
+                              <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadgeClass(row.status)}`}>
+                                {statusBadgeLabel(t, row.status)}
+                              </span>
+                            </td>
+                            <td className="border border-[var(--color-border)] px-2 py-1.5">
+                              <div className="flex flex-wrap gap-1">
+                                {row.can_open_payslip ? (
+                                  <Button
+                                    className="min-h-8 px-2 py-1 text-xs"
+                                    onClick={() => openPayrollItemPayslip(row.item_id)}
+                                    type="button"
+                                    variant="secondary"
+                                  >
+                                    Payslip
+                                  </Button>
+                                ) : null}
+                                {row.can_undo_paid ? (
+                                  <Button
+                                    className="min-h-8 px-2 py-1 text-xs"
+                                    disabled={busyId === row.item_id}
+                                    onClick={() => {
+                                      setUndoPaidRow({
+                                        id: row.item_id,
+                                        employee_email: row.employee_email,
+                                        employee_name: row.employee_name,
+                                      });
+                                      setUndoPaidReason("");
+                                      setUndoPaidAckExport(false);
+                                    }}
+                                    type="button"
+                                    variant="secondary"
+                                  >
+                                    Undo paid
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
               <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
                 Supporting details
@@ -1689,15 +1858,6 @@ export function PayrollReportClient() {
               </div>
             </div>
 
-            {report && hasCompany ? (
-              <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)]/40 px-3 py-3 text-sm">
-                <p className="font-semibold text-[#111827]">Employee payroll details</p>
-                <p className="mt-1 text-xs leading-relaxed text-[var(--color-text-muted)]">
-                  Use the + control on a row in the weekly table to load shift-level clock data. Open shifts are
-                  highlighted as &quot;Open shift&quot;.
-                </p>
-              </div>
-            ) : null}
           </div>
 
           <section className="grid gap-3 lg:grid-cols-3">
