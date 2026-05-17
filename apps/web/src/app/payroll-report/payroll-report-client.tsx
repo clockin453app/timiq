@@ -967,19 +967,14 @@ export function PayrollReportClient() {
     report?.has_payable_late_unpaid_shifts === true || (report?.late_unpaid_total_rounded_seconds ?? 0) > 0;
   const chipGroups = useMemo(() => {
     const chips: Array<{ label: string; tone: "info" | "warning" | "danger" | "success" }> = [];
-    const status: Array<{ label: string; tone: "info" | "warning" | "danger" | "success" }> = [];
-    if (!hasCompany && isAdministrator(user)) {
-      chips.push({ label: "Select company", tone: "info" });
-    }
     if (hasCompany && payrollPeriodNotCalculated) {
       chips.push({ label: "Pending calculation", tone: "warning" });
     }
-    if (hasCompany && payrollNeedsRecalculation && paidRowCount > 0) {
+    if (hasCompany && payrollNeedsRecalculation) {
+      chips.push({ label: "Needs recalculation", tone: "warning" });
+    }
+    if (hasCompany && paidRowCount > 0) {
       chips.push({ label: `Paid rows locked: ${paidRowCount}`, tone: "danger" });
-    } else if (hasCompany && payrollNeedsRecalculation && approvedRowCount > 0) {
-      chips.push({ label: "Needs recalculation", tone: "warning" });
-    } else if (hasCompany && payrollNeedsRecalculation) {
-      chips.push({ label: "Needs recalculation", tone: "warning" });
     }
     const missingRateCount = alerts?.rate_missing_employees_count ?? 0;
     if (hasCompany && missingRateCount > 0) {
@@ -997,39 +992,35 @@ export function PayrollReportClient() {
     if (hasCompany && zeroHoursCount > 0) {
       chips.push({ label: `Zero-hour employees: ${zeroHoursCount}`, tone: "info" });
     }
-    const pendingApprovalCount = alerts?.pending_approval_count ?? 0;
-    if (hasCompany && pendingApprovalCount > 0) {
-      chips.push({ label: `Pending approval: ${pendingApprovalCount}`, tone: "warning" });
-    }
-    if (
-      hasCompany &&
-      report &&
-      report.items.length > 0 &&
-      chips.length === 0 &&
-      !payrollPeriodNotCalculated &&
-      !payrollNeedsRecalculation
-    ) {
-      status.push({ label: "Ready for review", tone: "success" });
-    }
-    return { attention: chips, status };
+    return { attention: chips };
   }, [
-    alerts?.pending_approval_count,
     alerts?.missing_payroll_setup_employees_count,
     alerts?.open_shifts_started_in_week_count,
     alerts?.rate_missing_employees_count,
     alerts?.zero_rounded_hours_employees_count,
-    approvedRowCount,
     hasCompany,
     paidRowCount,
     payrollNeedsRecalculation,
     payrollPeriodNotCalculated,
-    report,
-    user,
   ]);
 
   return (
     <Sheet>
       <PageHeader
+        action={
+          chipGroups.attention.length > 0 ? (
+            <div
+              aria-label="Payroll alerts"
+              className="flex max-w-full flex-wrap justify-end gap-1.5 sm:max-w-[34rem]"
+            >
+              {chipGroups.attention.map((chip) => (
+                <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
+                  {chip.label}
+                </span>
+              ))}
+            </div>
+          ) : undefined
+        }
         title={t("payroll.report.title", "Payroll report")}
         description={t(
           "payroll.report.subtitle",
