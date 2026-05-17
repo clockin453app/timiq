@@ -81,9 +81,6 @@ function outOrDurationLabel(row: LiveAttendanceEmployeeRow): string {
   if (row.status === "open_shift") {
     return durationLabelForRow(row);
   }
-  if (row.clock_out_at) {
-    return formatTimeShort(row.clock_out_at);
-  }
   return durationLabelForRow(row);
 }
 

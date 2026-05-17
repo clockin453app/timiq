@@ -19,6 +19,7 @@ from app.modules.locations.models import Location
 from app.modules.locations.repository import get_location_by_id
 from app.modules.payroll.models import PayrollItem
 from app.modules.payroll.repository import get_period_by_company_week, list_items_for_period
+from app.modules.payroll.service import mark_payroll_period_needs_recalculation
 from app.modules.site_access.repository import get_site_access, list_site_access_for_user
 from app.modules.time_clock.models import TimeShift, TimeShiftBreak
 from app.modules.time_clock.repository import (
@@ -97,16 +98,20 @@ def _assert_payroll_allows_time_edit_for_weeks(
         item = _payroll_item_for_user_week(db_session, company_id=company_id, user_id=user_id, week_start=ws)
         if item is None:
             continue
-        if item.status == "paid":
-            raise AdminTimeAdjustmentError(
-                "Cannot adjust time: payroll for this week is marked paid.",
-                http_status=409,
-            )
-        if item.status == "approved":
-            raise AdminTimeAdjustmentError(
-                "Unlock payroll row before editing time.",
-                http_status=409,
-            )
+
+
+def _mark_payroll_weeks_needing_recalculation(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_starts: set[date],
+) -> None:
+    for ws in sorted(week_starts):
+        mark_payroll_period_needs_recalculation(
+            db_session,
+            company_id=company_id,
+            week_start=ws,
+        )
 
 
 def _site_access_allows_location(db_session: Session, *, user_id: uuid.UUID, location_id: uuid.UUID) -> None:
@@ -280,6 +285,11 @@ def admin_create_completed_shift(
         break_seconds=brk,
     )
     save_shift(db_session, shift)
+    _mark_payroll_weeks_needing_recalculation(
+        db_session,
+        company_id=target.company_id,
+        week_starts={week_start},
+    )
 
     profile = get_employee_profile_by_user_id(db_session, user_id)
     row = _shift_to_response_row(db_session, shift, location, target, profile)
@@ -425,6 +435,11 @@ def admin_patch_completed_shift(
     shift.admin_actor_user_id = actor.id
     shift.updated_at = _utc_now()
     update_shift(db_session, shift)
+    _mark_payroll_weeks_needing_recalculation(
+        db_session,
+        company_id=owner.company_id,
+        week_starts={old_week, new_week},
+    )
 
     profile = get_employee_profile_by_user_id(db_session, owner.id)
     row = _shift_to_response_row(db_session, shift, location, owner, profile)
@@ -547,6 +562,11 @@ def admin_force_clock_out(
     shift.admin_actor_user_id = actor.id
     shift.updated_at = _utc_now()
     update_shift(db_session, shift)
+    _mark_payroll_weeks_needing_recalculation(
+        db_session,
+        company_id=owner.company_id,
+        week_starts={week_start},
+    )
 
     profile = get_employee_profile_by_user_id(db_session, owner.id)
     row = _shift_to_response_row(db_session, shift, location, owner, profile)

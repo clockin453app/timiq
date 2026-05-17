@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
@@ -36,6 +36,24 @@ def get_period_by_company_week(
         PayrollPeriod.week_start == week_start,
     )
     return db_session.scalar(statement)
+
+
+def invalidate_period_calculation_for_company_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start: date,
+) -> bool:
+    statement = (
+        update(PayrollPeriod)
+        .where(PayrollPeriod.company_id == company_id)
+        .where(PayrollPeriod.week_start == week_start)
+        .where(PayrollPeriod.calculated_at.is_not(None))
+        .values(calculated_at=None, calculated_by_user_id=None)
+    )
+    result = db_session.execute(statement)
+    db_session.commit()
+    return bool(result.rowcount)
 
 
 def save_period(db_session: Session, period: PayrollPeriod) -> PayrollPeriod:

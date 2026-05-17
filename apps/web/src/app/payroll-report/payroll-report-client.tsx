@@ -541,6 +541,10 @@ export function PayrollReportClient() {
   }
 
   async function runApproveAll() {
+    if (payrollNeedsRecalculation) {
+      setError(t("payroll.report.recalc_before_approval", "Payroll needs recalculation before approval."));
+      return;
+    }
     if (!activeCompanyId || !confirm(t("payroll.report.approve_all_confirm", "Approve all pending rows for this period?"))) {
       return;
     }
@@ -902,7 +906,7 @@ export function PayrollReportClient() {
                     ? t("payroll.report.calculate", "Calculate payroll")
                     : t("payroll.report.recalculate", "Recalculate")}
                 </Button>
-                <Button disabled={loading || !activeCompanyId} onClick={runApproveAll} type="button">
+                <Button disabled={loading || !activeCompanyId || payrollNeedsRecalculation} onClick={runApproveAll} type="button">
                   {t("payroll.report.approve_all_pending", "Approve all pending")}
                 </Button>
                 <Button disabled={loading || !activeCompanyId} onClick={handleCsv} type="button" variant="secondary">
@@ -1157,7 +1161,7 @@ export function PayrollReportClient() {
                                 {row.status === "pending" ? (
                                   <Button
                                     className="min-h-8 px-2 py-1 text-xs"
-                                    disabled={busyId === row.id}
+                                    disabled={busyId === row.id || payrollNeedsRecalculation}
                                     onClick={() => rowAction(row.id, "approve")}
                                     type="button"
                                   >

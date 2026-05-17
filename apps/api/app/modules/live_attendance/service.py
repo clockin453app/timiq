@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
@@ -10,6 +10,7 @@ from app.modules.auth.repository import get_user_by_id
 from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.locations.repository import get_location_by_id
+from app.modules.payroll.service import mark_payroll_period_needs_recalculation
 from app.modules.payroll_policies.service import effective_time_policy_for_shift
 from app.modules.time_clock.models import TimeShift
 from app.modules.time_clock.repository import (
@@ -81,6 +82,21 @@ def _parse_standard_time(value: str) -> time | None:
 def _is_late_clock_in(local_clock_in: datetime, standard: time) -> bool:
     t = local_clock_in.time()
     return t > standard
+
+
+def _payroll_week_start_for_instant(timezone_name: str, instant_utc: datetime) -> date:
+    try:
+        tz = ZoneInfo(timezone_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    local_date = instant_utc.astimezone(tz).date()
+    return local_date - timedelta(days=local_date.weekday())
+
+
+def _completed_worked_seconds(shift: TimeShift) -> int | None:
+    if shift.clock_out_at is None:
+        return None
+    return max(0, int((shift.clock_out_at - shift.clock_in_at).total_seconds()) - int(shift.break_seconds or 0))
 
 
 def get_live_attendance_snapshot(
@@ -187,7 +203,7 @@ def get_live_attendance_snapshot(
             c = completed_today[0]
             clock_in_at = c.clock_in_at
             clock_out_at = c.clock_out_at
-            today_worked = c.worked_seconds
+            today_worked = _completed_worked_seconds(c)
             clock_source = c.clock_source
             loc = get_location_by_id(db_session, c.location_id)
             loc_name = loc.name if loc is not None else None
@@ -389,6 +405,14 @@ def manual_clock_out(
 
     update_shift(db_session, open_shift, commit=True)
     db_session.refresh(open_shift)
+    if open_shift.company_id is not None:
+        policy = ensure_company_time_policy(db_session, open_shift.company_id)
+        week_start = _payroll_week_start_for_instant(policy.timezone_name, open_shift.clock_in_at)
+        mark_payroll_period_needs_recalculation(
+            db_session,
+            company_id=open_shift.company_id,
+            week_start=week_start,
+        )
 
     create_internal_audit_event(
         db_session=db_session,

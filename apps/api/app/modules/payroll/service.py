@@ -56,6 +56,7 @@ from app.modules.payroll.repository import (
     first_workplace_tax,
     get_item_by_id,
     get_period_by_company_week,
+    invalidate_period_calculation_for_company_week,
     list_employee_users_for_company,
     list_completed_time_shifts_for_company_range,
     list_items_for_period,
@@ -244,6 +245,20 @@ def _date_range_bounds_utc(timezone_name: str, date_from: date, date_to: date) -
 def _payroll_week_start_for_dt(dt_utc: datetime, timezone_name: str) -> date:
     local_date = dt_utc.astimezone(_policy_zone_name(timezone_name)).date()
     return local_date - timedelta(days=local_date.weekday())
+
+
+def mark_payroll_period_needs_recalculation(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start: date,
+) -> bool:
+    """Invalidate an existing payroll period without changing item money/status values."""
+    return invalidate_period_calculation_for_company_week(
+        db_session,
+        company_id=company_id,
+        week_start=week_start,
+    )
 
 
 def _complete_week_starts_in_range(date_from: date, date_to: date) -> list[date]:
@@ -690,8 +705,9 @@ def _build_report_alerts(
     pending = sum(1 for i in all_items if i.status == "pending")
     rate_missing = sum(1 for i in all_items if i.rate_missing)
     zero_hours = sum(1 for i in all_items if i.rounded_total_seconds == 0)
-    not_calculated = period is None or period.calculated_at is None
-    needs_recalc = False
+    has_items = len(all_items) > 0
+    not_calculated = period is None or (period.calculated_at is None and not has_items)
+    needs_recalc = bool(period is not None and period.calculated_at is None and has_items)
     if period is not None and period.calculated_at is not None:
         max_shift_updated = max_employee_shift_updated_at_in_payroll_week(
             db_session,
@@ -703,7 +719,7 @@ def _build_report_alerts(
             needs_recalc = True
     approved_n = sum(1 for i in all_items if i.status == "approved")
     paid_n = sum(1 for i in all_items if i.status == "paid")
-    can_auto = (not_calculated or needs_recalc) and approved_n == 0 and paid_n == 0
+    can_auto = not_calculated and approved_n == 0 and paid_n == 0
     return PayrollReportAlerts(
         pending_approval_count=pending,
         open_shifts_started_in_week_count=open_n,
@@ -713,6 +729,43 @@ def _build_report_alerts(
         payroll_needs_recalculation=needs_recalc,
         can_auto_recalculate=can_auto,
     )
+
+
+def _payroll_period_needs_recalculation(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_start: date,
+    period: PayrollPeriod,
+    all_items: list[PayrollItem] | None = None,
+) -> bool:
+    items = all_items if all_items is not None else list_items_for_period(db_session, period.id)
+    policy = ensure_company_time_policy(db_session, company_id)
+    return _build_report_alerts(
+        db_session,
+        company_id=company_id,
+        policy=policy,
+        week_start=week_start,
+        period=period,
+        all_items=items,
+    ).payroll_needs_recalculation
+
+
+def _assert_payroll_period_not_stale_for_approval(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    period: PayrollPeriod,
+    all_items: list[PayrollItem] | None = None,
+) -> None:
+    if _payroll_period_needs_recalculation(
+        db_session,
+        company_id=company_id,
+        week_start=period.week_start,
+        period=period,
+        all_items=all_items,
+    ):
+        raise PayrollItemStateError("Payroll needs recalculation before approval.")
 
 
 def _compute_late_unpaid_employees(
@@ -1384,6 +1437,14 @@ def approve_item(db_session: Session, actor: User, item_id: uuid.UUID) -> Payrol
     assert_payroll_company_scope(actor, item.company_id)
     if item.status != "pending":
         raise PayrollItemStateError("Only pending rows can be approved.")
+    period = db_session.get(PayrollPeriod, item.period_id)
+    if period is None:
+        raise PayrollError("Payroll period not found.")
+    _assert_payroll_period_not_stale_for_approval(
+        db_session,
+        company_id=item.company_id,
+        period=period,
+    )
     item.status = "approved"
     item.approved_at = datetime.now(timezone.utc)
     item.approved_by_user_id = actor.id
@@ -1642,6 +1703,12 @@ def approve_all_pending(
     if period is None:
         raise PayrollError("Payroll period not found. Run recalculate first.")
     items = list_items_for_period(db_session, period.id)
+    _assert_payroll_period_not_stale_for_approval(
+        db_session,
+        company_id=company_id,
+        period=period,
+        all_items=items,
+    )
     for it in items:
         if it.status == "pending":
             it.status = "approved"
