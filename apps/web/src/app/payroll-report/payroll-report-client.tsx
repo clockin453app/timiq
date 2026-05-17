@@ -3,6 +3,7 @@
 import { FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { WeekPickerBar } from "../../components/week-picker-bar";
+import { usePageLocationAction } from "../../components/layout/page-location-action-context";
 import {
   Button,
   PageHeader,
@@ -1003,24 +1004,32 @@ export function PayrollReportClient() {
     payrollNeedsRecalculation,
     payrollPeriodNotCalculated,
   ]);
+  const setPageLocationAction = usePageLocationAction();
+  const payrollAlertChips = useMemo(() => {
+    if (chipGroups.attention.length === 0) {
+      return null;
+    }
+    return (
+      <>
+        {chipGroups.attention.map((chip) => (
+          <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
+            {chip.label}
+          </span>
+        ))}
+      </>
+    );
+  }, [chipGroups.attention]);
+
+  useEffect(() => {
+    if (!payrollAlertChips) {
+      return undefined;
+    }
+    return setPageLocationAction(payrollAlertChips);
+  }, [payrollAlertChips, setPageLocationAction]);
 
   return (
     <Sheet>
       <PageHeader
-        action={
-          chipGroups.attention.length > 0 ? (
-            <div
-              aria-label="Payroll alerts"
-              className="flex max-w-full flex-wrap justify-end gap-1.5 sm:max-w-[34rem]"
-            >
-              {chipGroups.attention.map((chip) => (
-                <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
-                  {chip.label}
-                </span>
-              ))}
-            </div>
-          ) : undefined
-        }
         title={t("payroll.report.title", "Payroll report")}
         description={t(
           "payroll.report.subtitle",
