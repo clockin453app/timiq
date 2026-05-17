@@ -3,7 +3,6 @@
 import { FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { WeekPickerBar } from "../../components/week-picker-bar";
-import { NavDropdownPortal, navDropdownMenuContains } from "../../components/layout/nav-dropdown-portal";
 import {
   Button,
   PageHeader,
@@ -109,8 +108,32 @@ function canShowLateAdjustmentForPaidRow(
 type RowActionMenuState = {
   row: PayrollItemRow;
   lateBlock: PayrollLateUnpaidEmployee | null;
-  anchor: HTMLButtonElement;
+  anchorRect: DOMRect;
 };
+
+type RowActionMenuPosition = {
+  top: number;
+  left: number;
+  minWidth: number;
+  maxHeight: number;
+};
+
+function payrollRowMenuPosition(anchorRect: DOMRect): RowActionMenuPosition {
+  const viewportPad = 8;
+  const minWidth = 220;
+  const estimatedHeight = 180;
+  const maxHeight = Math.min(window.innerHeight - viewportPad * 2, 260);
+  const spaceBelow = window.innerHeight - anchorRect.bottom - viewportPad;
+  const openAbove = spaceBelow < estimatedHeight && anchorRect.top > spaceBelow;
+  const rawTop = openAbove ? anchorRect.top - estimatedHeight - 4 : anchorRect.bottom + 4;
+  const top = Math.max(
+    viewportPad,
+    Math.min(rawTop, window.innerHeight - viewportPad - Math.min(estimatedHeight, maxHeight)),
+  );
+  const rawLeft = anchorRect.right - minWidth;
+  const left = Math.max(viewportPad, Math.min(rawLeft, window.innerWidth - viewportPad - minWidth));
+  return { top, left, minWidth, maxHeight };
+}
 
 function statusBadgeClass(status: string): string {
   if (status === "pending") {
@@ -331,6 +354,11 @@ export function PayrollReportClient() {
     setRowActionMenu(null);
   }, []);
 
+  const rowActionMenuPosition = useMemo(
+    () => (rowActionMenu ? payrollRowMenuPosition(rowActionMenu.anchorRect) : null),
+    [rowActionMenu],
+  );
+
   useEffect(() => {
     if (!isAdministrator(user)) {
       return;
@@ -416,19 +444,23 @@ export function PayrollReportClient() {
     };
     const onPointerDown = (event: MouseEvent) => {
       const target = event.target as Node | null;
-      if (rowActionMenu.anchor.contains(target)) {
-        return;
-      }
-      if (navDropdownMenuContains(target)) {
+      if ((target as Element | null)?.closest?.("[data-payroll-row-menu]")) {
         return;
       }
       closeRowActionMenu();
     };
+    const onViewportChange = () => {
+      closeRowActionMenu();
+    };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("scroll", onViewportChange, true);
+    window.addEventListener("resize", onViewportChange);
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("scroll", onViewportChange, true);
+      window.removeEventListener("resize", onViewportChange);
     };
   }, [rowActionMenu, closeRowActionMenu]);
 
@@ -589,7 +621,8 @@ export function PayrollReportClient() {
     lateBlock: PayrollLateUnpaidEmployee | null,
     anchor: HTMLButtonElement,
   ) {
-    setRowActionMenu((prev) => (prev?.row.id === row.id ? null : { row, lateBlock, anchor }));
+    const anchorRect = anchor.getBoundingClientRect();
+    setRowActionMenu((prev) => (prev?.row.id === row.id ? null : { row, lateBlock, anchorRect }));
   }
 
   function openShiftEdit(row: TimeRecordShiftRow) {
@@ -1328,6 +1361,7 @@ export function PayrollReportClient() {
                                   aria-haspopup="menu"
                                   aria-label={t("payroll.report.row_more_actions", "More payroll row actions")}
                                   className="min-h-8 px-2 py-1 text-xs"
+                                  data-payroll-row-menu
                                   disabled={busyId === row.id}
                                   onClick={(event) => openRowActionMenu(row, lateBlock, event.currentTarget)}
                                   title={t("payroll.report.row_more_actions", "More payroll row actions")}
@@ -1825,11 +1859,22 @@ export function PayrollReportClient() {
           </section>
         </div>
 
-        {rowActionMenu ? (
-          <NavDropdownPortal
-            anchorEl={rowActionMenu.anchor}
-            menuId={`payroll-row-actions-${rowActionMenu.row.id}`}
-            open
+        {rowActionMenu && rowActionMenuPosition ? (
+          <div
+            className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]"
+            data-payroll-row-menu
+            id={`payroll-row-actions-${rowActionMenu.row.id}`}
+            role="menu"
+            style={{
+              position: "fixed",
+              top: rowActionMenuPosition.top,
+              left: rowActionMenuPosition.left,
+              minWidth: rowActionMenuPosition.minWidth,
+              maxWidth: "min(20rem, calc(100vw - 1rem))",
+              maxHeight: rowActionMenuPosition.maxHeight,
+              overflowY: "auto",
+              zIndex: 80,
+            }}
           >
             <button
               className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
@@ -1884,7 +1929,7 @@ export function PayrollReportClient() {
                 ) : null}
               </>
             ) : null}
-          </NavDropdownPortal>
+          </div>
         ) : null}
 
         {editRow ? (
