@@ -34,7 +34,7 @@ class CompanyAppSettings(Base):
     brand_logo_storage_path = mapped_column(String(512), nullable=True)
     notifications_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     email_notifications_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    push_notifications_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    push_notifications_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     updated_by_user_id = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
@@ -74,7 +74,7 @@ class UserPreference(Base):
     compact_mode: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     notification_email_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     notification_in_app_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    push_notifications_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    push_notifications_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

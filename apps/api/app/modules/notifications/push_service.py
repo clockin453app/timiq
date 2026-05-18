@@ -119,6 +119,8 @@ def send_push_for_notification_record(
 ) -> int:
     if not web_push_configured():
         return 0
+    if not notification_repo.push_delivery_enabled_for_user(db, user_id=recipient_user_id):
+        return 0
     payload = build_push_payload(
         notification_id=notification_id,
         title=title,

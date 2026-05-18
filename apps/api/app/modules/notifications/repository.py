@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.auth.models import User
 from app.modules.notifications.models import NotificationRecord, NotificationSeen, PushSubscription
+from app.modules.settings.models import CompanyAppSettings, UserPreference
 
 
 def has_seen(db: Session, *, user_id: uuid.UUID, kind: str, target_key: str) -> bool:
@@ -245,6 +246,31 @@ def list_active_push_subscriptions_for_user(
         .order_by(PushSubscription.updated_at.desc())
     )
     return list(db.scalars(stmt).all())
+
+
+def push_delivery_enabled_for_user(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+) -> bool:
+    user = db.get(User, user_id)
+    if user is None:
+        return False
+
+    pref = db.scalar(select(UserPreference).where(UserPreference.user_id == user_id))
+    user_push_enabled = True if pref is None else bool(pref.push_notifications_enabled)
+    if not user_push_enabled:
+        return False
+
+    if user.company_id is None:
+        return True
+
+    company_settings = db.scalar(
+        select(CompanyAppSettings).where(CompanyAppSettings.company_id == user.company_id),
+    )
+    if company_settings is None:
+        return True
+    return bool(company_settings.notifications_enabled) and bool(company_settings.push_notifications_enabled)
 
 
 def mark_push_subscription_inactive(

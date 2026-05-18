@@ -5,8 +5,11 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.messaging.models import Conversation, Message
 from app.modules.messaging.service import _record_message_received_events
 from app.modules.notifications import events
+from app.modules.notifications import repository as notification_repo
 from app.modules.notifications import push_service
 from app.modules.notifications.repository import create_notification_record_once
+from app.modules.settings.models import CompanyAppSettings, UserPreference
+from app.modules.settings.service import company_settings_to_response, compute_effective_settings, user_preferences_to_response
 
 
 def _user(user_id: uuid.UUID, company_id: uuid.UUID | None = None) -> User:
@@ -65,6 +68,87 @@ def test_disabled_push_does_not_list_or_send(monkeypatch) -> None:
 
     assert sent == 0
     list_subscriptions.assert_not_called()
+
+
+def test_missing_preferences_default_push_and_in_app_enabled() -> None:
+    user_id = uuid.uuid4()
+    prefs = user_preferences_to_response(user_id, None)
+    company = company_settings_to_response(uuid.uuid4(), None)
+    effective = compute_effective_settings(company_id=uuid.uuid4(), company_row=None, user_row=None)
+
+    assert prefs.notification_in_app_enabled is True
+    assert prefs.push_notifications_enabled is True
+    assert company.push_notifications_enabled is True
+    assert effective.notification_push_effective is True
+
+
+def test_explicit_saved_false_preferences_disable_push_delivery() -> None:
+    user_id = uuid.uuid4()
+    company_id = uuid.uuid4()
+    db = Mock()
+    db.get.return_value = _user(user_id, company_id)
+    db.scalar.side_effect = [
+        UserPreference(user_id=user_id, push_notifications_enabled=False),
+    ]
+
+    assert notification_repo.push_delivery_enabled_for_user(db, user_id=user_id) is False
+    assert db.scalar.call_count == 1
+
+    db = Mock()
+    db.get.return_value = _user(user_id, company_id)
+    db.scalar.side_effect = [
+        None,
+        CompanyAppSettings(company_id=company_id, notifications_enabled=True, push_notifications_enabled=False),
+    ]
+
+    assert notification_repo.push_delivery_enabled_for_user(db, user_id=user_id) is False
+
+
+def test_push_delivery_checks_user_and_company_preferences(monkeypatch) -> None:
+    monkeypatch.setattr(push_service.settings, "timiq_web_push_enabled", True)
+    monkeypatch.setattr(push_service.settings, "timiq_web_push_vapid_public_key", "public")
+    monkeypatch.setattr(push_service.settings, "timiq_web_push_vapid_private_key", "private")
+    monkeypatch.setattr(push_service, "webpush", Mock())
+    monkeypatch.setattr(push_service.notification_repo, "push_delivery_enabled_for_user", Mock(return_value=False))
+    list_subscriptions = Mock()
+    monkeypatch.setattr(push_service.notification_repo, "list_active_push_subscriptions_for_user", list_subscriptions)
+
+    sent = push_service.send_push_for_notification_record(
+        Mock(),
+        notification_id=uuid.uuid4(),
+        recipient_user_id=uuid.uuid4(),
+        title="Late arrival",
+        body="A safe notification body.",
+        href="/time-records",
+        kind="attendance_late_arrival",
+    )
+
+    assert sent == 0
+    list_subscriptions.assert_not_called()
+
+
+def test_push_delivery_sends_when_preferences_and_active_subscription_allow(monkeypatch) -> None:
+    sub = Mock()
+    monkeypatch.setattr(push_service.settings, "timiq_web_push_enabled", True)
+    monkeypatch.setattr(push_service.settings, "timiq_web_push_vapid_public_key", "public")
+    monkeypatch.setattr(push_service.settings, "timiq_web_push_vapid_private_key", "private")
+    monkeypatch.setattr(push_service, "webpush", Mock())
+    monkeypatch.setattr(push_service.notification_repo, "push_delivery_enabled_for_user", Mock(return_value=True))
+    monkeypatch.setattr(push_service.notification_repo, "list_active_push_subscriptions_for_user", Mock(return_value=[sub]))
+    monkeypatch.setattr(push_service, "send_payload_to_subscription", Mock(return_value=True))
+
+    sent = push_service.send_push_for_notification_record(
+        Mock(),
+        notification_id=uuid.uuid4(),
+        recipient_user_id=uuid.uuid4(),
+        title="Late arrival",
+        body="A safe notification body.",
+        href="/time-records",
+        kind="attendance_late_arrival",
+    )
+
+    assert sent == 1
+    push_service.send_payload_to_subscription.assert_called_once()
 
 
 def test_message_event_creates_records_for_recipients_not_sender() -> None:
@@ -251,3 +335,23 @@ def test_attendance_notification_record_still_triggers_push() -> None:
 
     assert created is True
     send.assert_called_once()
+
+
+def test_duplicate_attendance_notification_does_not_push_again() -> None:
+    db = Mock()
+    db.scalar.return_value = None
+
+    with patch("app.modules.notifications.push_service.send_push_for_notification_record") as send:
+        created = create_notification_record_once(
+            db,
+            recipient_user_id=uuid.uuid4(),
+            company_id=uuid.uuid4(),
+            kind="attendance_late_arrival",
+            dedupe_key="attendance:late:duplicate",
+            title="Late arrival",
+            description="A safe notification body.",
+            href="/time-records",
+        )
+
+    assert created is False
+    send.assert_not_called()

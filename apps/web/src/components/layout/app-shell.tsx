@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 import { LimitedAccessRouteGuard } from "../../features/auth/limited-access-route-guard";
 import { NotificationSoundListener } from "./notification-sound-listener";
+import { PushEnablePrompt } from "./push-enable-prompt";
 import { DesktopTopBar } from "./desktop-top-bar";
 import { MobileBottomNav } from "./mobile-bottom-nav";
 import { MobileHeader } from "./mobile-header";
@@ -17,6 +18,7 @@ export function AppShell({ activeHref = "/dashboard", children }: AppShellProps)
   return (
     <div className="flex min-h-dvh w-full max-w-[100vw] min-w-0 flex-col overflow-x-clip bg-[var(--color-page)] xl:h-dvh xl:max-h-dvh xl:min-h-0">
       <NotificationSoundListener />
+      <PushEnablePrompt />
       <DesktopTopBar activeHref={activeHref} />
       <MobileHeader activeHref={activeHref} />
 

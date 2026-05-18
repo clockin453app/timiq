@@ -96,7 +96,7 @@ def company_settings_to_response(
             brand_logo_configured=False,
             notifications_enabled=True,
             email_notifications_enabled=False,
-            push_notifications_enabled=False,
+            push_notifications_enabled=True,
         )
     path = row.brand_logo_storage_path
     logo_cfg = bool(path and str(path).strip())
@@ -127,7 +127,7 @@ def user_preferences_to_response(user_id: uuid.UUID, row: UserPreference | None)
             compact_mode=False,
             notification_email_enabled=True,
             notification_in_app_enabled=True,
-            push_notifications_enabled=False,
+            push_notifications_enabled=True,
         )
     return UserPreferencesResponse(
         user_id=user_id,
@@ -157,7 +157,7 @@ def compute_effective_settings(
     c_color = company_row.brand_primary_color if company_row else None
     c_master = True if company_row is None else bool(company_row.notifications_enabled)
     c_email = False if company_row is None else bool(company_row.email_notifications_enabled)
-    c_push = False if company_row is None else bool(company_row.push_notifications_enabled)
+    c_push = True if company_row is None else bool(company_row.push_notifications_enabled)
 
     u_loc = user_row.locale if user_row else None
     u_tz = user_row.timezone_name if user_row else None
@@ -166,7 +166,7 @@ def compute_effective_settings(
     u_compact = False if user_row is None else bool(user_row.compact_mode)
     u_in_app = True if user_row is None else bool(user_row.notification_in_app_enabled)
     u_email = True if user_row is None else bool(user_row.notification_email_enabled)
-    u_push = False if user_row is None else bool(user_row.push_notifications_enabled)
+    u_push = True if user_row is None else bool(user_row.push_notifications_enabled)
 
     tz = _coalesce_str(u_tz, _coalesce_str(c_tz, DEFAULT_TIMEZONE))
     df = _coalesce_str(u_df, _coalesce_str(c_df, DEFAULT_DATE_FORMAT))
