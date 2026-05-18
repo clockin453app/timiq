@@ -274,10 +274,10 @@ def build_payroll_item_payslip_pdf(
     doc = SimpleDocTemplate(
         buf,
         pagesize=A4,
-        rightMargin=1.15 * cm,
-        leftMargin=1.15 * cm,
-        topMargin=1.05 * cm,
-        bottomMargin=1.05 * cm,
+        rightMargin=1.35 * cm,
+        leftMargin=1.35 * cm,
+        topMargin=1.25 * cm,
+        bottomMargin=1.25 * cm,
         pageCompression=0,
     )
     story: list[Any] = []
@@ -291,7 +291,7 @@ def build_payroll_item_payslip_pdf(
         canvas.setFont("Helvetica", 7.4)
         canvas.setFillColor(muted)
         y = 0.62 * cm
-        canvas.drawString(doc_obj.leftMargin, y, "Please keep this statement with your tax records.")
+        canvas.drawString(doc_obj.leftMargin, y, "Please keep this for your records.")
         canvas.drawRightString(doc_obj.pagesize[0] - doc_obj.rightMargin, y, f"Page {doc_obj.page}")
         canvas.restoreState()
 
@@ -318,23 +318,23 @@ def build_payroll_item_payslip_pdf(
         data: list[list[Any]] = [[_p(title.upper(), card_title)]]
         for left, right_value in rows:
             data.append([_p(f"{left}: {right_value}", value_normal)])
-        table = Table(data, colWidths=[(full_width - 0.6 * cm) / 3])
+        table = Table(data, colWidths=[card_w])
         table.setStyle(
             TableStyle(
                 [
                     ("BACKGROUND", (0, 0), (-1, -1), card_bg),
                     ("BOX", (0, 0), (-1, -1), 0.7, border),
                     ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 7),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 9),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 9),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
                 ],
             ),
         )
         return table
 
-    card_gap = 0.3 * cm
+    card_gap = 0.35 * cm
     card_w = (full_width - (2 * card_gap)) / 3
     info_row = Table(
         [
@@ -348,6 +348,7 @@ def build_payroll_item_payslip_pdf(
                         ("UTR", utr_number or "Not provided"),
                     ],
                 ),
+                "",
                 _info_card(
                     "Pay period",
                     [
@@ -356,6 +357,7 @@ def build_payroll_item_payslip_pdf(
                         ("Generated", generated_at),
                     ],
                 ),
+                "",
                 _info_card(
                     "Payment",
                     [
@@ -366,7 +368,7 @@ def build_payroll_item_payslip_pdf(
                 ),
             ],
         ],
-        colWidths=[card_w, card_w, card_w],
+        colWidths=[card_w, card_gap, card_w, card_gap, card_w],
     )
     info_row.setStyle(
         TableStyle(
@@ -380,7 +382,8 @@ def build_payroll_item_payslip_pdf(
     story.append(info_row)
     story.append(Spacer(1, 0.34 * cm))
 
-    summary_w = (full_width - (3 * 0.24 * cm)) / 4
+    summary_gap = 0.25 * cm
+    summary_w = (full_width - (3 * summary_gap)) / 4
     def _summary_card(title: str, amount: str) -> Table:
         table = Table([[_p(title, small)], [_p(amount, money)]], colWidths=[summary_w])
         table.setStyle(
@@ -401,12 +404,15 @@ def build_payroll_item_payslip_pdf(
         [
             [
                 _summary_card("Gross pay", _money(gross_amount)),
+                "",
                 _summary_card("CIS / tax", _money(cis_tax_amount)),
+                "",
                 _summary_card("Deductions", _money(deductions)),
+                "",
                 _summary_card("Net pay", _money(net_amount)),
             ],
         ],
-        colWidths=[summary_w, summary_w, summary_w, summary_w],
+        colWidths=[summary_w, summary_gap, summary_w, summary_gap, summary_w, summary_gap, summary_w],
     )
     summary.setStyle(
         TableStyle(
@@ -414,6 +420,8 @@ def build_payroll_item_payslip_pdf(
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
             ],
         ),
     )

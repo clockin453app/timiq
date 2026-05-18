@@ -472,16 +472,14 @@ def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: 
     mode_label = html.escape(_payment_mode_label_for_item(item))
     paid_line_parts: list[str] = []
     if item.paid_at is not None:
-        paid_line_parts.append(f"<p><strong>Paid at:</strong> {_utc_dt_display_for_payslip(item.paid_at)}</p>")
+        paid_line_parts.append(f"<p><strong>Status:</strong> Paid at {_utc_dt_display_for_payslip(item.paid_at)}</p>")
     elif item.approved_at is not None:
         paid_line_parts.append(
-            f"<p><strong>Approved at:</strong> {_utc_dt_display_for_payslip(item.approved_at)}</p>",
+            f"<p><strong>Status:</strong> Approved at {_utc_dt_display_for_payslip(item.approved_at)}</p>",
         )
+    else:
+        paid_line_parts.append("<p><strong>Status:</strong> Not provided</p>")
     paid_line = "".join(paid_line_parts)
-
-    other_block = ""
-    if other_d != 0:
-        other_block = f'<tr><td>Other deductions</td><td class="num">£{other_d:.2f}</td></tr>'
 
     ni_block = tax_id_block
 
@@ -510,7 +508,7 @@ html {{ box-sizing: border-box; }}
 body {{
   margin: 0;
   padding: 0;
-  background: #f4f6f8;
+  background: #fff;
   color: #111827;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: clamp(14px, 2.8vw, 16px);
@@ -521,31 +519,28 @@ body {{
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  padding: 14px;
+  padding: 16px;
 }}
 @media (min-width: 768px) {{
-  .payslip-wrap {{ padding: 24px 28px 32px; }}
+  .payslip-wrap {{ padding: 34px 40px 42px; }}
 }}
 .payslip-card {{
-  max-width: 210mm;
+  width: min(100%, 980px);
   margin: 0 auto;
   background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 20px 16px 24px;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  padding: 0;
 }}
 @media (min-width: 768px) {{
-  .payslip-card {{ padding: 26px 28px 30px; }}
+  .payslip-card {{ padding: 0; }}
 }}
 .payslip-head {{
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  gap: 16px;
+  gap: 24px;
   flex-wrap: wrap;
-  padding-bottom: 14px;
-  margin-bottom: 16px;
+  padding-bottom: 18px;
+  margin-bottom: 22px;
   border-bottom: 1px solid #e5e7eb;
 }}
 .payslip-head-left {{ flex: 1 1 12rem; min-width: 0; }}
@@ -555,32 +550,40 @@ body {{
   font-weight: 700;
   word-break: break-word;
 }}
+@media (min-width: 768px) {{
+  .co-name {{ font-size: 1.45rem; }}
+}}
 .doc-type {{
   font-size: clamp(0.95rem, 2.6vw, 1.05rem);
   font-weight: 700;
   color: #374151;
   white-space: nowrap;
 }}
+@media (min-width: 768px) {{
+  .doc-type {{ font-size: 1.12rem; }}
+}}
 .meta-block p {{ margin: 0.35rem 0; }}
 .meta-block strong {{ color: #374151; }}
 .info-grid {{
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  gap: 0.75rem;
-  margin-top: 1.15rem;
+  align-items: stretch;
+  gap: 1rem;
+  margin-top: 0;
 }}
 @media (min-width: 900px) {{
   .info-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
 }}
 .info-panel {{
   border: 1px solid #e5e7eb;
-  border-radius: 9px;
+  border-radius: 12px;
   background: #f9fafb;
-  padding: 0.9rem;
+  min-height: 10.25rem;
+  padding: 1rem;
 }}
 .info-panel h2 {{
-  margin: 0 0 0.4rem;
-  font-size: 0.72rem;
+  margin: 0 0 0.7rem;
+  font-size: 0.74rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #374151;
@@ -588,17 +591,19 @@ body {{
 .summary-grid {{
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  gap: 0.7rem;
-  margin-top: 1.05rem;
+  align-items: stretch;
+  gap: 0.85rem;
+  margin-top: 1.25rem;
 }}
 @media (min-width: 900px) {{
   .summary-grid {{ grid-template-columns: repeat(4, minmax(0, 1fr)); }}
 }}
 .summary-card {{
   border: 1px solid #d1d5db;
-  border-radius: 9px;
+  border-radius: 12px;
   background: #f8fafc;
-  padding: 0.8rem;
+  min-height: 5.4rem;
+  padding: 0.95rem;
 }}
 .summary-card span {{
   display: block;
@@ -607,19 +612,19 @@ body {{
 }}
 .summary-card strong {{
   display: block;
-  margin-top: 0.2rem;
-  font-size: 1.05rem;
+  margin-top: 0.35rem;
+  font-size: 1.2rem;
   font-variant-numeric: tabular-nums;
 }}
 .pay-table {{
   width: 100%;
   border-collapse: collapse;
-  margin-top: 1.25rem;
+  margin-top: 1.45rem;
   table-layout: fixed;
 }}
 .pay-table td {{
   border: 1px solid #d1d5db;
-  padding: 0.68rem 0.72rem;
+  padding: 0.82rem 0.9rem;
   vertical-align: top;
   word-wrap: break-word;
   overflow-wrap: anywhere;
@@ -638,10 +643,17 @@ body {{
 .pay-table tr.section td:first-child {{
   background: #eef2f7;
 }}
+.payslip-footer {{
+  margin-top: 1.25rem;
+  color: #64748b;
+  font-size: 0.82rem;
+}}
 @media print {{
   body {{ background: #fff; font-size: 11pt; }}
   .payslip-wrap {{ max-width: none; padding: 0; }}
-  .payslip-card {{ max-width: none; border: none; box-shadow: none; border-radius: 0; padding: 0; }}
+  .payslip-card {{ width: 100%; border: none; box-shadow: none; border-radius: 0; padding: 0; }}
+  .info-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }}
+  .summary-grid {{ grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; }}
   .pay-table td {{ padding: 0.45rem 0.5rem; }}
   @page {{ size: A4; margin: 12mm; }}
 }}
@@ -673,6 +685,7 @@ body {{
         <h2>Payment</h2>
         <p><strong>Payment type:</strong> {mode_label}</p>
         <p><strong>Company:</strong> {cname}</p>
+        <p><strong>Period ending:</strong> {wk_end_esc}</p>
       </section>
     </div>
     <div class="summary-grid">
@@ -686,12 +699,12 @@ body {{
       <tr><td>Regular / overtime hours</td><td class="num">{reg_h:.2f} / {ot_h:.2f} h</td></tr>
       <tr class="section"><td>Gross pay</td><td class="num">{gross_display}</td></tr>
       <tr><td>CIS tax</td><td class="num">{cis_display}</td></tr>
-      {other_block}
       <tr><td>Additions</td><td class="num">£{additions:.2f}</td></tr>
       <tr class="section"><td>Total net pay</td><td class="num">{net_display}</td></tr>
       <tr><td>YTD taxable pay ({period.week_start.year})</td><td class="num">£{ytd_pay:.2f}</td></tr>
       <tr><td>YTD CIS deducted ({period.week_start.year})</td><td class="num">£{ytd_cis:.2f}</td></tr>
     </tbody></table>
+    <p class="payslip-footer">Please keep this for your records.</p>
   </div>
 </div>
 </body></html>"""
