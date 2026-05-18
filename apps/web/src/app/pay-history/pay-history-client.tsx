@@ -18,6 +18,7 @@ import {
 } from "../../features/payroll/format";
 import { payrollStatusLabel } from "../../lib/i18n/display-labels";
 import { useT } from "../../lib/i18n";
+import { getUkWeekNumber } from "../../lib/week-label";
 
 function periodLabel(row: PayHistoryEntry): string {
   const tz = row.timezone_name?.trim() || "UTC";
@@ -69,6 +70,23 @@ function hasVisiblePayValue(row: PayHistoryEntry): boolean {
     numericValue(row.other_deductions_amount) > 0 ||
     row.rounded_total_seconds > 0
   );
+}
+
+function taxYearLabelForWeek(weekStartIso: string): string {
+  const [year, month, day] = weekStartIso.split("-").map(Number);
+  if (!year || !month || !day) {
+    return "";
+  }
+  const startsThisYear = month > 4 || (month === 4 && day >= 6);
+  const startYear = startsThisYear ? year : year - 1;
+  return `${startYear}/${String(startYear + 1).slice(-2)}`;
+}
+
+function mobilePaymentWeekLabel(row: PayHistoryEntry): string {
+  const timeZone = row.timezone_name?.trim() || "UTC";
+  const taxYear = taxYearLabelForWeek(row.week_start);
+  const suffix = taxYear ? ` ${taxYear}` : "";
+  return `Week: ${getUkWeekNumber(row.week_start, timeZone)}${suffix}`;
 }
 
 function currentUkTaxYearValue(): string {
@@ -221,33 +239,45 @@ export function PayHistoryClient() {
         <div className="space-y-2 md:hidden">
           {!loading && visibleRows.length > 0 ? (
             <>
-              <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-[11px] font-medium text-[var(--color-text-muted)]">
+              <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
                 <span>Period</span>
                 <span className="text-right">Gross Earnings</span>
                 <span className="text-right">Download</span>
               </div>
               {visibleRows.map((row) => (
                 <div
-                  className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3 text-sm shadow-sm"
+                  className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3.5 shadow-sm"
                   key={row.id}
                 >
                   <Link
-                    className="min-w-0 font-semibold text-[var(--color-text)] hover:underline"
+                    className="min-w-0 text-base font-bold leading-tight text-[var(--color-text)] hover:underline"
                     href={`/pay-history/${encodeURIComponent(row.id)}`}
                   >
-                    {periodLabel(row)}
+                    {mobilePaymentWeekLabel(row)}
                   </Link>
-                  <span className="whitespace-nowrap text-right text-xs font-semibold tabular-nums text-[var(--color-text)]">
+                  <span className="whitespace-nowrap text-right text-sm font-bold tabular-nums text-[var(--color-text)]">
                     {row.rate_missing ? "—" : formatMoneyGBP(row.gross_amount)}
                   </span>
                   <button
                     aria-label={`Download payslip for ${periodLabel(row)}`}
-                    className="inline-flex h-9 min-w-9 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 text-xs font-semibold text-[var(--color-text)] hover:bg-[var(--color-cell)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="inline-flex h-10 min-w-10 items-center justify-center rounded-full border border-[var(--color-border-dark)] bg-[var(--color-header)] text-[var(--color-text)] hover:bg-[var(--color-cell)] disabled:cursor-not-allowed disabled:opacity-50"
                     disabled={!payslipAllowed(row) || downloadBusyId === row.id}
                     onClick={() => void downloadPayslip(row)}
                     type="button"
                   >
-                    {downloadBusyId === row.id ? "..." : "PDF"}
+                    {downloadBusyId === row.id ? (
+                      <span className="text-xs font-semibold">...</span>
+                    ) : (
+                      <svg aria-hidden="true" className="h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <path
+                          d="M12 3v11m0 0 4-4m-4 4-4-4M5 19h14"
+                          stroke="currentColor"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                        />
+                      </svg>
+                    )}
                   </button>
                 </div>
               ))}

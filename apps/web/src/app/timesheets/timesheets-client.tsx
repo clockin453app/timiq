@@ -32,7 +32,7 @@ import { formatDurationSeconds } from "../../features/time-records/format-durati
 import { PayrollRoundingHint } from "../../features/time-records/payroll-rounding-hint";
 import { formatMoneyGBP } from "../../features/payroll/format";
 import { useT } from "../../lib/i18n";
-import { formatPayrollWeekUkLabel } from "../../lib/week-label";
+import { formatPayrollWeekUkLabel, getUkWeekNumber } from "../../lib/week-label";
 import {
   downloadAdminCompanyTimesheetWeekCsv,
   downloadAdminTimesheetWeekCsv,
@@ -204,6 +204,22 @@ function hasVisibleTimesheetWeekActivity(row: TimesheetWeekSummaryRow): boolean 
     row.has_completed_shifts ||
     numericValue(row.gross_amount) > 0
   );
+}
+
+function taxYearLabelForWeek(weekStartIso: string): string {
+  const [year, month, day] = weekStartIso.split("-").map(Number);
+  if (!year || !month || !day) {
+    return "";
+  }
+  const startsThisYear = month > 4 || (month === 4 && day >= 6);
+  const startYear = startsThisYear ? year : year - 1;
+  return `${startYear}/${String(startYear + 1).slice(-2)}`;
+}
+
+function mobilePayrollWeekLabel(weekStartIso: string, timeZone: string): string {
+  const taxYear = taxYearLabelForWeek(weekStartIso);
+  const suffix = taxYear ? ` ${taxYear}` : "";
+  return `Week: ${getUkWeekNumber(weekStartIso, timeZone)}${suffix}`;
 }
 
 export function TimesheetsClient() {
@@ -649,26 +665,27 @@ export function TimesheetsClient() {
 
         {!adminMode && user.system_role === "employee" ? (
           <div className="space-y-2 md:hidden">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-[11px] font-medium text-[var(--color-text-muted)]">
+            <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
               <span>Period</span>
               <span className="text-right">Payment Date</span>
-              <span className="text-right">Gross / Hours</span>
+              <span className="text-right">Gross Earnings</span>
             </div>
             {visibleRecentWeeks.length > 0 ? (
               visibleRecentWeeks.map((row) => {
+                const rowTimeZone = timezoneLabel || browserDefaultTimeZone();
                 return (
                   <Link
-                    className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3 text-left text-sm shadow-sm hover:border-[var(--color-border-dark)] hover:bg-[var(--color-header)]"
+                    className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3.5 text-left shadow-sm hover:border-[var(--color-border-dark)] hover:bg-[var(--color-header)]"
                     href={`/timesheets/week?week_start=${encodeURIComponent(row.week_start)}`}
                     key={row.week_start}
                   >
-                    <span className="min-w-0 font-semibold text-[var(--color-text)]">
-                      {formatPayrollWeekUkLabel(row.week_start, timezoneLabel || browserDefaultTimeZone(), false)}
+                    <span className="min-w-0 text-base font-bold leading-tight text-[var(--color-text)]">
+                      {mobilePayrollWeekLabel(row.week_start, rowTimeZone)}
                     </span>
-                    <span className="whitespace-nowrap text-right text-xs text-[var(--color-text-muted)]">
+                    <span className="whitespace-nowrap text-right text-sm font-semibold text-[var(--color-text-muted)]">
                       {formatWhenShort(row.paid_at)}
                     </span>
-                    <span className="whitespace-nowrap text-right text-xs font-semibold tabular-nums text-[var(--color-text)]">
+                    <span className="whitespace-nowrap text-right text-sm font-bold tabular-nums text-[var(--color-text)]">
                       {row.gross_amount ? formatMoneyGBP(row.gross_amount) : formatDurationSeconds(row.payroll_seconds)}
                     </span>
                   </Link>
