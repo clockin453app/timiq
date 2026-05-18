@@ -102,6 +102,9 @@ export type MonthlyPayeItem = {
   student_loan_plan: string;
   postgraduate_loan: boolean;
   pension_enrolment_status: string;
+  bonus_pay: string;
+  commission_pay: string;
+  component_pay: string;
   gross_pay: string | null;
   taxable_pay: string | null;
   niable_pay: string | null;
@@ -122,6 +125,9 @@ export type MonthlyPayeItem = {
 export type MonthlyPayeSummary = {
   employees: number;
   total_gross: string;
+  bonus_pay: string;
+  commission_pay: string;
+  component_pay: string;
   taxable_pay: string;
   paye_tax: string;
   employee_ni: string;
@@ -135,6 +141,40 @@ export type MonthlyPayeSummary = {
   unsupported_count: number;
 };
 
+export type PayePayComponentType = "bonus" | "commission";
+
+export type PayePayComponent = {
+  id: string;
+  company_id: string;
+  user_id: string;
+  tax_year: string;
+  tax_month: number;
+  period_id: string | null;
+  item_id: string | null;
+  component_type: PayePayComponentType;
+  description: string | null;
+  amount: string;
+  taxable: boolean;
+  niable: boolean;
+  pensionable: boolean;
+  created_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PayePayComponentRequest = {
+  company_id?: string | null;
+  user_id: string;
+  tax_year: string;
+  tax_month: number;
+  component_type: PayePayComponentType;
+  description?: string | null;
+  amount: string | number;
+  taxable: boolean;
+  niable: boolean;
+  pensionable: boolean;
+};
+
 export type MonthlyPayeReport = {
   company_id: string;
   tax_year: string;
@@ -145,6 +185,27 @@ export type MonthlyPayeReport = {
   period: MonthlyPayePeriod | null;
   rows: MonthlyPayeItem[];
   summary: MonthlyPayeSummary;
+};
+
+export type EmployeePayePayHistoryEntry = {
+  id: string;
+  period_id: string;
+  company_id: string;
+  company_name: string;
+  tax_year: string;
+  tax_month: number;
+  period_start: string;
+  period_end: string;
+  pay_date: string;
+  gross_pay: string;
+  paye_tax: string;
+  employee_ni: string;
+  employee_pension: string;
+  student_loan: string;
+  postgraduate_loan_deduction: string;
+  net_pay: string;
+  status: "approved" | "paid" | string;
+  can_open_payslip: boolean;
 };
 
 export type PayeCapabilityStatus = "enabled" | "disabled" | "coming_soon" | "not_supported";
@@ -327,12 +388,104 @@ export async function markMonthlyPayePeriodPaid(periodId: string): Promise<Month
   return response.json() as Promise<MonthlyPayeReport>;
 }
 
+export async function fetchPayePayComponents(params: {
+  companyId?: string | null;
+  taxYear: string;
+  taxMonth: number;
+  userId?: string | null;
+}): Promise<PayePayComponent[]> {
+  const response = await fetch(
+    `${API_URL}/api/paye-payroll/pay-components${qs({
+      company_id: params.companyId || undefined,
+      tax_year: params.taxYear,
+      tax_month: String(params.taxMonth),
+      user_id: params.userId || undefined,
+    })}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not load PAYE pay components.");
+  }
+  return response.json() as Promise<PayePayComponent[]>;
+}
+
+export async function createPayePayComponent(request: PayePayComponentRequest): Promise<PayePayComponent> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/pay-components`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not save PAYE pay component.");
+  }
+  return response.json() as Promise<PayePayComponent>;
+}
+
+export async function patchPayePayComponent(
+  componentId: string,
+  request: Partial<Pick<PayePayComponentRequest, "description" | "amount" | "taxable" | "niable" | "pensionable">>,
+): Promise<PayePayComponent> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/pay-components/${componentId}`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not update PAYE pay component.");
+  }
+  return response.json() as Promise<PayePayComponent>;
+}
+
+export async function deletePayePayComponent(componentId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/pay-components/${componentId}`, {
+    method: "DELETE",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not delete PAYE pay component.");
+  }
+}
+
+export async function fetchMyPayePayHistory(): Promise<EmployeePayePayHistoryEntry[]> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/me/pay-history`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not load PAYE Pay History.");
+  }
+  return response.json() as Promise<EmployeePayePayHistoryEntry[]>;
+}
+
 export function openMonthlyPayePayslip(itemId: string): void {
   window.open(`${API_URL}/api/paye-payroll/items/${itemId}/payslip`, "_blank", "noopener,noreferrer");
 }
 
 export async function downloadMonthlyPayePayslipPdf(itemId: string): Promise<void> {
   const response = await fetch(`${API_URL}/api/paye-payroll/items/${itemId}/payslip.pdf`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not download PAYE payslip PDF.");
+  }
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `timiq-paye-payslip-${itemId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+export function openMyMonthlyPayePayslip(itemId: string): void {
+  window.open(`${API_URL}/api/paye-payroll/me/items/${itemId}/payslip`, "_blank", "noopener,noreferrer");
+}
+
+export async function downloadMyMonthlyPayePayslipPdf(itemId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/me/items/${itemId}/payslip.pdf`, {
     credentials: "include",
   });
   if (!response.ok) {

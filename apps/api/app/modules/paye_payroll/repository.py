@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
@@ -11,6 +11,7 @@ from app.modules.paye_payroll.models import (
     CompanyPayeSettings,
     EmployeePayeSettings,
     MonthlyPayeItem,
+    MonthlyPayePayComponent,
     MonthlyPayePeriod,
     PayeTaxYearRule,
 )
@@ -49,6 +50,57 @@ def get_monthly_item_by_id(db_session: Session, item_id: uuid.UUID) -> MonthlyPa
     return db_session.get(MonthlyPayeItem, item_id)
 
 
+def get_pay_component_by_id(db_session: Session, component_id: uuid.UUID) -> MonthlyPayePayComponent | None:
+    return db_session.get(MonthlyPayePayComponent, component_id)
+
+
+def list_pay_components(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    tax_year: str,
+    tax_month: int,
+    user_id: uuid.UUID | None = None,
+) -> list[MonthlyPayePayComponent]:
+    statement = (
+        select(MonthlyPayePayComponent)
+        .where(MonthlyPayePayComponent.company_id == company_id)
+        .where(MonthlyPayePayComponent.tax_year == tax_year)
+        .where(MonthlyPayePayComponent.tax_month == tax_month)
+        .order_by(MonthlyPayePayComponent.created_at.asc())
+    )
+    if user_id is not None:
+        statement = statement.where(MonthlyPayePayComponent.user_id == user_id)
+    return list(db_session.scalars(statement).all())
+
+
+def save_pay_component(db_session: Session, component: MonthlyPayePayComponent) -> MonthlyPayePayComponent:
+    db_session.add(component)
+    db_session.flush()
+    return component
+
+
+def delete_pay_component(db_session: Session, component: MonthlyPayePayComponent) -> None:
+    db_session.delete(component)
+    db_session.flush()
+
+
+def list_employee_paye_pay_history(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+) -> list[tuple[MonthlyPayeItem, MonthlyPayePeriod]]:
+    statement = (
+        select(MonthlyPayeItem, MonthlyPayePeriod)
+        .join(MonthlyPayePeriod, MonthlyPayePeriod.id == MonthlyPayeItem.period_id)
+        .where(MonthlyPayeItem.user_id == user_id)
+        .where(MonthlyPayeItem.status.in_(("approved", "paid")))
+        .where(or_(MonthlyPayeItem.unsupported_reason.is_(None), MonthlyPayeItem.unsupported_reason == ""))
+        .order_by(MonthlyPayePeriod.pay_date.desc(), MonthlyPayePeriod.tax_year.desc(), MonthlyPayePeriod.tax_month.desc())
+    )
+    return [(item, period) for item, period in db_session.execute(statement).all()]
+
+
 def list_items_for_period(db_session: Session, period_id: uuid.UUID) -> list[MonthlyPayeItem]:
     statement = (
         select(MonthlyPayeItem)
@@ -65,6 +117,14 @@ def delete_pending_items_for_period(db_session: Session, period_id: uuid.UUID) -
             MonthlyPayeItem.status == "pending",
         ),
     )
+
+
+def clear_component_item_links_for_period(db_session: Session, period_id: uuid.UUID) -> None:
+    components = db_session.scalars(
+        select(MonthlyPayePayComponent).where(MonthlyPayePayComponent.period_id == period_id)
+    ).all()
+    for component in components:
+        component.item_id = None
 
 
 def list_paye_candidates_for_company(

@@ -7,13 +7,17 @@ from sqlalchemy.orm import Session
 
 from app.core.storage.file_response import protected_file_response
 from app.db.session import get_db_session
-from app.modules.auth.dependencies import require_admin_or_administrator
+from app.modules.auth.dependencies import require_admin_or_administrator, require_authenticated_employee_self_service
 from app.modules.auth.models import User
 from app.modules.paye_payroll.schemas import (
     CompanyPayeSettingsPatchRequest,
     CompanyPayeSettingsResponse,
+    EmployeePayePayHistoryEntry,
     EmployeePayeSettingsPatchRequest,
     EmployeePayeSettingsResponse,
+    PayePayComponentCreateRequest,
+    PayePayComponentPatchRequest,
+    PayePayComponentResponse,
     PayeCapabilitiesResponse,
     MonthlyPayeRecalculateRequest,
     MonthlyPayeReportResponse,
@@ -23,17 +27,24 @@ from app.modules.paye_payroll.service import (
     PayePayrollNotFoundError,
     PayePayrollPermissionError,
     approve_monthly_paye_period,
+    create_pay_component,
+    delete_pay_component,
+    list_pay_components,
+    list_my_paye_pay_history,
     mark_monthly_paye_period_paid,
     monthly_paye_report,
     monthly_paye_report_shell,
     patch_company_paye_settings,
     patch_employee_paye_settings,
+    patch_pay_component,
     read_paye_capabilities,
     read_company_paye_settings,
     read_employee_paye_settings,
     recalculate_monthly_paye,
     render_monthly_paye_payslip_html,
     render_monthly_paye_payslip_pdf,
+    render_own_monthly_paye_payslip_html,
+    render_own_monthly_paye_payslip_pdf,
 )
 
 router = APIRouter(prefix="/api/paye-payroll", tags=["paye-payroll"])
@@ -94,6 +105,66 @@ def get_company_settings(
         raise _handle_error(exc) from exc
 
 
+@router.get("/pay-components", response_model=list[PayePayComponentResponse])
+def get_pay_components(
+    company_id: uuid.UUID | None = Query(default=None),
+    tax_year: str = Query(..., min_length=9, max_length=9),
+    tax_month: int = Query(..., ge=1, le=12),
+    user_id: uuid.UUID | None = Query(default=None),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> list[PayePayComponentResponse]:
+    try:
+        return list_pay_components(
+            db_session,
+            current_user,
+            company_id=company_id,
+            tax_year=tax_year,
+            tax_month=tax_month,
+            user_id=user_id,
+        )
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/pay-components", response_model=PayePayComponentResponse)
+def post_pay_component(
+    request: PayePayComponentCreateRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> PayePayComponentResponse:
+    try:
+        return create_pay_component(db_session, current_user, request)
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.patch("/pay-components/{component_id}", response_model=PayePayComponentResponse)
+def patch_pay_component_endpoint(
+    component_id: uuid.UUID,
+    request: PayePayComponentPatchRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> PayePayComponentResponse:
+    try:
+        return patch_pay_component(db_session, current_user, component_id, request)
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.delete("/pay-components/{component_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_pay_component_endpoint(
+    component_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        delete_pay_component(db_session, current_user, component_id)
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.patch("/company-settings", response_model=CompanyPayeSettingsResponse)
 def patch_company_settings(
     request: CompanyPayeSettingsPatchRequest,
@@ -133,6 +204,44 @@ def get_monthly_report(
         )
     except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
         raise _handle_error(exc) from exc
+
+
+@router.get("/me/pay-history", response_model=list[EmployeePayePayHistoryEntry])
+def get_my_paye_pay_history(
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_authenticated_employee_self_service),
+) -> list[EmployeePayePayHistoryEntry]:
+    return list_my_paye_pay_history(db_session, current_user)
+
+
+@router.get("/me/items/{item_id}/payslip")
+def get_my_monthly_paye_payslip(
+    item_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_authenticated_employee_self_service),
+) -> Response:
+    try:
+        body = render_own_monthly_paye_payslip_html(db_session, current_user, item_id)
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+    return Response(
+        content=body,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="paye-payslip-{item_id}.html"'},
+    )
+
+
+@router.get("/me/items/{item_id}/payslip.pdf")
+def get_my_monthly_paye_payslip_pdf(
+    item_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_authenticated_employee_self_service),
+) -> Response:
+    try:
+        body, filename = render_own_monthly_paye_payslip_pdf(db_session, current_user, item_id)
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+    return protected_file_response(body=body, download_filename=filename, media_type="application/pdf")
 
 
 @router.get("/items/{item_id}/payslip")

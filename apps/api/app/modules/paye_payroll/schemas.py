@@ -16,6 +16,7 @@ PensionBasis = Literal["qualifying_earnings", "total_earnings"]
 PensionReliefMethod = Literal["relief_at_source", "net_pay_arrangement", "salary_sacrifice"]
 RtiStatus = Literal["not_ready", "ready", "exported", "submitted", "accepted", "rejected"]
 CapabilityStatus = Literal["enabled", "disabled", "coming_soon", "not_supported"]
+PayePayComponentType = Literal["bonus", "commission"]
 
 
 class EmployeePayeSettingsPatchRequest(BaseModel):
@@ -158,6 +159,9 @@ class MonthlyPayeItemResponse(BaseModel):
     employer_pension_percent: Decimal | None = None
     pension_scheme_basis: str
     pension_relief_method: str
+    bonus_pay: Decimal = Decimal("0")
+    commission_pay: Decimal = Decimal("0")
+    component_pay: Decimal = Decimal("0")
     gross_pay: Decimal | None = None
     taxable_pay: Decimal | None = None
     niable_pay: Decimal | None = None
@@ -188,6 +192,7 @@ class MonthlyPayeItemResponse(BaseModel):
     approved_by_user_id: uuid.UUID | None = None
     paid_at: datetime | None = None
     paid_by_user_id: uuid.UUID | None = None
+    component_snapshot: list[dict] = Field(default_factory=list)
     calculation_snapshot: dict
     unsupported_reason: str | None = None
     created_at: datetime
@@ -197,6 +202,9 @@ class MonthlyPayeItemResponse(BaseModel):
 class MonthlyPayeSummaryResponse(BaseModel):
     employees: int
     total_gross: Decimal
+    bonus_pay: Decimal = Decimal("0")
+    commission_pay: Decimal = Decimal("0")
+    component_pay: Decimal = Decimal("0")
     taxable_pay: Decimal
     paye_tax: Decimal
     employee_ni: Decimal
@@ -220,6 +228,69 @@ class MonthlyPayeReportResponse(BaseModel):
     period: MonthlyPayePeriodResponse | None = None
     rows: list[MonthlyPayeItemResponse]
     summary: MonthlyPayeSummaryResponse
+
+
+class PayePayComponentCreateRequest(BaseModel):
+    company_id: uuid.UUID | None = None
+    user_id: uuid.UUID
+    tax_year: str = Field(..., max_length=9)
+    tax_month: int = Field(..., ge=1, le=12)
+    component_type: PayePayComponentType
+    description: str | None = Field(default=None, max_length=240)
+    amount: Decimal = Field(..., ge=0)
+    taxable: bool = True
+    niable: bool = True
+    pensionable: bool = True
+
+
+class PayePayComponentPatchRequest(BaseModel):
+    description: str | None = Field(default=None, max_length=240)
+    amount: Decimal | None = Field(default=None, ge=0)
+    taxable: bool | None = None
+    niable: bool | None = None
+    pensionable: bool | None = None
+
+
+class PayePayComponentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    company_id: uuid.UUID
+    user_id: uuid.UUID
+    tax_year: str
+    tax_month: int
+    period_id: uuid.UUID | None = None
+    item_id: uuid.UUID | None = None
+    component_type: str
+    description: str | None = None
+    amount: Decimal
+    taxable: bool
+    niable: bool
+    pensionable: bool
+    created_by_user_id: uuid.UUID | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class EmployeePayePayHistoryEntry(BaseModel):
+    id: uuid.UUID
+    period_id: uuid.UUID
+    company_id: uuid.UUID
+    company_name: str
+    tax_year: str
+    tax_month: int
+    period_start: date
+    period_end: date
+    pay_date: date
+    gross_pay: Decimal
+    paye_tax: Decimal
+    employee_ni: Decimal
+    employee_pension: Decimal
+    student_loan: Decimal
+    postgraduate_loan_deduction: Decimal
+    net_pay: Decimal
+    status: str
+    can_open_payslip: bool = True
 
 
 class PayeCapabilityResponse(BaseModel):

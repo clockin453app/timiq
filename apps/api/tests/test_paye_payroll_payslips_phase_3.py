@@ -15,8 +15,11 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.paye_payroll.models import MonthlyPayeItem, MonthlyPayePeriod
 from app.modules.paye_payroll.service import (
     PayePayrollPermissionError,
+    list_my_paye_pay_history,
     render_monthly_paye_payslip_html,
     render_monthly_paye_payslip_pdf,
+    render_own_monthly_paye_payslip_html,
+    render_own_monthly_paye_payslip_pdf,
 )
 
 
@@ -71,6 +74,9 @@ def _item(company_id: uuid.UUID, user_id: uuid.UUID, *, status: str = "approved"
         employer_pension_percent=Decimal("3"),
         pension_scheme_basis="qualifying_earnings",
         pension_relief_method="net_pay_arrangement",
+        bonus_pay=Decimal("100"),
+        commission_pay=Decimal("50"),
+        component_pay=Decimal("150"),
         gross_pay=Decimal("3000"),
         taxable_pay=Decimal("2876"),
         niable_pay=Decimal("3000"),
@@ -97,6 +103,10 @@ def _item(company_id: uuid.UUID, user_id: uuid.UUID, *, status: str = "approved"
         ytd_postgraduate_loan=Decimal("75.00"),
         ytd_net_pay=Decimal("2230.14"),
         status=status,
+        component_snapshot=[
+            {"type": "bonus", "description": "Safety bonus", "amount": "100.00"},
+            {"type": "commission", "description": "Sales commission", "amount": "50.00"},
+        ],
         calculation_snapshot={},
         unsupported_reason=unsupported_reason,
         created_at=now,
@@ -127,6 +137,8 @@ def test_administrator_can_view_html_paye_payslip_for_approved_item() -> None:
         body = render_monthly_paye_payslip_html(MagicMock(), _user(SystemRole.ADMINISTRATOR), item.id)
     assert "Monthly PAYE Payslip" in body
     assert "PAYE tax" in body
+    assert "Bonus pay" in body
+    assert "Commission pay" in body
     assert "National Insurance" in body
     assert "QQ123456C" in body
     assert "CIS" not in body
@@ -209,5 +221,94 @@ def test_pdf_endpoint_returns_application_pdf() -> None:
         assert response.status_code == 200
         assert response.headers["content-type"] == "application/pdf"
         assert response.content.startswith(b"%PDF")
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_employee_can_list_own_approved_and_paid_paye_items() -> None:
+    company_id = uuid.uuid4()
+    employee = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    approved = _item(company_id, employee.id, status="approved")
+    paid = _item(company_id, employee.id, status="paid")
+    period = _period(company_id)
+    approved.period_id = period.id
+    paid.period_id = period.id
+    with (
+        patch("app.modules.paye_payroll.repository.list_employee_paye_pay_history", return_value=[(approved, period), (paid, period)]),
+        patch("app.modules.paye_payroll.service.get_company_by_id", return_value=SimpleNamespace(id=company_id, name="Example Ltd")),
+    ):
+        rows = list_my_paye_pay_history(MagicMock(), employee)
+    assert [row.id for row in rows] == [approved.id, paid.id]
+    assert rows[0].company_name == "Example Ltd"
+    assert rows[0].tax_year == "2026-2027"
+
+
+def test_employee_pay_history_excludes_pending_and_unsupported_items() -> None:
+    company_id = uuid.uuid4()
+    employee = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    pending = _item(company_id, employee.id, status="pending")
+    unsupported = _item(company_id, employee.id, status="approved", unsupported_reason="Tax code BR is not supported.")
+    period = _period(company_id)
+    pending.period_id = period.id
+    unsupported.period_id = period.id
+    with (
+        patch("app.modules.paye_payroll.repository.list_employee_paye_pay_history", return_value=[(pending, period), (unsupported, period)]),
+        patch("app.modules.paye_payroll.service.get_company_by_id", return_value=SimpleNamespace(id=company_id, name="Example Ltd")),
+    ):
+        rows = list_my_paye_pay_history(MagicMock(), employee)
+    assert rows == []
+
+
+def test_employee_cannot_access_another_employee_paye_payslip() -> None:
+    company_id = uuid.uuid4()
+    employee = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    other = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    item = _item(company_id, other.id, status="approved")
+    period = _period(company_id)
+    item.period_id = period.id
+    with _patch_context(item, period, other):
+        try:
+            render_own_monthly_paye_payslip_html(MagicMock(), employee, item.id)
+            raise AssertionError("Expected own-item block")
+        except PayePayrollPermissionError:
+            pass
+
+
+def test_employee_can_view_own_html_paye_payslip() -> None:
+    company_id = uuid.uuid4()
+    employee = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    item = _item(company_id, employee.id, status="approved")
+    period = _period(company_id)
+    item.period_id = period.id
+    with _patch_context(item, period, employee):
+        body = render_own_monthly_paye_payslip_html(MagicMock(), employee, item.id)
+    assert "Monthly PAYE Payslip" in body
+    assert "PAYE tax" in body
+    assert "CIS" not in body
+    assert "subcontractor" not in body.lower()
+
+
+def test_employee_can_download_own_pdf_paye_payslip() -> None:
+    company_id = uuid.uuid4()
+    employee = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    item = _item(company_id, employee.id, status="approved")
+    period = _period(company_id)
+    item.period_id = period.id
+    with _patch_context(item, period, employee):
+        body, filename = render_own_monthly_paye_payslip_pdf(MagicMock(), employee, item.id)
+    assert body.startswith(b"%PDF")
+    assert b"PAYE" in body
+    assert b"CIS" not in body
+    assert filename == "timiq-paye-payslip-2026-2027-month-01.pdf"
+
+    client = TestClient(app)
+    app.dependency_overrides[get_authenticated_user] = lambda: employee
+    try:
+        with patch("app.modules.paye_payroll.router.render_own_monthly_paye_payslip_pdf", return_value=(b"%PDF-1.4\n", "test.pdf")):
+            response = client.get(f"/api/paye-payroll/me/items/{uuid.uuid4()}/payslip.pdf")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert response.content.startswith(b"%PDF")
+        assert b"CIS" not in response.content
     finally:
         app.dependency_overrides.clear()

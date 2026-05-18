@@ -26,6 +26,7 @@ from app.modules.paye_payroll.models import (
     CompanyPayeSettings,
     EmployeePayeSettings,
     MonthlyPayeItem,
+    MonthlyPayePayComponent,
     MonthlyPayePeriod,
     PayeTaxYearRule,
 )
@@ -34,6 +35,7 @@ from app.modules.paye_payroll.rules import SOURCE_NOTE, SUPPORTED_TAX_YEAR, paye
 from app.modules.paye_payroll.schemas import (
     CompanyPayeSettingsPatchRequest,
     CompanyPayeSettingsResponse,
+    EmployeePayePayHistoryEntry,
     EmployeePayeSettingsPatchRequest,
     EmployeePayeSettingsResponse,
     PayeCapabilitiesResponse,
@@ -45,6 +47,9 @@ from app.modules.paye_payroll.schemas import (
     MonthlyPayeReportShellResponse,
     MonthlyPayeReportShellRow,
     MonthlyPayeSummaryResponse,
+    PayePayComponentCreateRequest,
+    PayePayComponentPatchRequest,
+    PayePayComponentResponse,
 )
 
 
@@ -420,6 +425,9 @@ def _employee_item_response(
         employer_pension_percent=item.employer_pension_percent,
         pension_scheme_basis=item.pension_scheme_basis,
         pension_relief_method=item.pension_relief_method,
+        bonus_pay=_decimal_field(item, "bonus_pay"),
+        commission_pay=_decimal_field(item, "commission_pay"),
+        component_pay=_decimal_field(item, "component_pay"),
         gross_pay=item.gross_pay,
         taxable_pay=item.taxable_pay,
         niable_pay=item.niable_pay,
@@ -450,6 +458,7 @@ def _employee_item_response(
         approved_by_user_id=item.approved_by_user_id,
         paid_at=item.paid_at,
         paid_by_user_id=item.paid_by_user_id,
+        component_snapshot=item.component_snapshot or [],
         calculation_snapshot=item.calculation_snapshot or {},
         unsupported_reason=item.unsupported_reason,
         created_at=item.created_at,
@@ -462,6 +471,9 @@ def _summary(items: list[MonthlyPayeItem]) -> MonthlyPayeSummaryResponse:
     return MonthlyPayeSummaryResponse(
         employees=len(supported),
         total_gross=money(sum((_decimal_field(item, "gross_pay") for item in supported), Decimal("0.00"))),
+        bonus_pay=money(sum((_decimal_field(item, "bonus_pay") for item in supported), Decimal("0.00"))),
+        commission_pay=money(sum((_decimal_field(item, "commission_pay") for item in supported), Decimal("0.00"))),
+        component_pay=money(sum((_decimal_field(item, "component_pay") for item in supported), Decimal("0.00"))),
         taxable_pay=money(sum((_decimal_field(item, "taxable_pay") for item in supported), Decimal("0.00"))),
         paye_tax=money(sum((_decimal_field(item, "paye_tax") for item in supported), Decimal("0.00"))),
         employee_ni=money(sum((_decimal_field(item, "employee_ni") for item in supported), Decimal("0.00"))),
@@ -541,6 +553,32 @@ PAYE_PAYSLIP_REQUIRED_FIELDS = (
 )
 
 
+def _assert_paye_payslip_eligible(item: MonthlyPayeItem, period: MonthlyPayePeriod | None) -> MonthlyPayePeriod:
+    if period is None:
+        raise PayePayrollNotFoundError("Monthly PAYE period not found.")
+    if item.status not in {"approved", "paid"}:
+        raise PayePayrollPermissionError("PAYE payslips are available only for approved or paid items.")
+    if item.unsupported_reason:
+        raise PayePayrollPermissionError("PAYE payslips are not available for unsupported rows.")
+    missing = [field for field in PAYE_PAYSLIP_REQUIRED_FIELDS if getattr(item, field, None) is None]
+    if missing:
+        raise PayePayrollPermissionError("PAYE payslip is missing calculated values.")
+    return period
+
+
+def _paye_payslip_context_for_item(
+    db_session: Session,
+    item: MonthlyPayeItem,
+    period: MonthlyPayePeriod,
+) -> tuple[MonthlyPayeItem, MonthlyPayePeriod, User, EmployeeProfile | None, str]:
+    owner = get_user_by_id(db_session, item.user_id)
+    if owner is None:
+        raise PayePayrollNotFoundError("Employee not found.")
+    profile = get_employee_profile_by_user_id(db_session, item.user_id)
+    company = get_company_by_id(db_session, item.company_id)
+    return item, period, owner, profile, company.name if company is not None else "Company"
+
+
 def _load_paye_payslip_context(
     db_session: Session,
     actor: User,
@@ -551,23 +589,23 @@ def _load_paye_payslip_context(
     item = paye_repo.get_monthly_item_by_id(db_session, item_id)
     if item is None:
         raise PayePayrollNotFoundError("Monthly PAYE item not found.")
-    period = paye_repo.get_monthly_period_by_id(db_session, item.period_id)
-    if period is None:
-        raise PayePayrollNotFoundError("Monthly PAYE period not found.")
+    period = _assert_paye_payslip_eligible(item, paye_repo.get_monthly_period_by_id(db_session, item.period_id))
     _resolve_company_id(actor, item.company_id)
-    if item.status not in {"approved", "paid"}:
-        raise PayePayrollPermissionError("PAYE payslips are available only for approved or paid items.")
-    if item.unsupported_reason:
-        raise PayePayrollPermissionError("PAYE payslips are not available for unsupported rows.")
-    missing = [field for field in PAYE_PAYSLIP_REQUIRED_FIELDS if getattr(item, field, None) is None]
-    if missing:
-        raise PayePayrollPermissionError("PAYE payslip is missing calculated values.")
-    owner = get_user_by_id(db_session, item.user_id)
-    if owner is None:
-        raise PayePayrollNotFoundError("Employee not found.")
-    profile = get_employee_profile_by_user_id(db_session, item.user_id)
-    company = get_company_by_id(db_session, item.company_id)
-    return item, period, owner, profile, company.name if company is not None else "Company"
+    return _paye_payslip_context_for_item(db_session, item, period)
+
+
+def _load_own_paye_payslip_context(
+    db_session: Session,
+    actor: User,
+    item_id: uuid.UUID,
+) -> tuple[MonthlyPayeItem, MonthlyPayePeriod, User, EmployeeProfile | None, str]:
+    item = paye_repo.get_monthly_item_by_id(db_session, item_id)
+    if item is None:
+        raise PayePayrollNotFoundError("Monthly PAYE item not found.")
+    if item.user_id != actor.id:
+        raise PayePayrollPermissionError("You can only view your own PAYE payslips.")
+    period = _assert_paye_payslip_eligible(item, paye_repo.get_monthly_period_by_id(db_session, item.period_id))
+    return _paye_payslip_context_for_item(db_session, item, period)
 
 
 def _paye_employee_name(profile: EmployeeProfile | None, owner: User) -> str:
@@ -588,6 +626,9 @@ def _paye_period_label(period: MonthlyPayePeriod) -> str:
 def _paye_payslip_values(item: MonthlyPayeItem) -> dict[str, Decimal | None]:
     return {
         "gross_pay": _decimal_field(item, "gross_pay"),
+        "bonus_pay": _decimal_field(item, "bonus_pay"),
+        "commission_pay": _decimal_field(item, "commission_pay"),
+        "component_pay": _decimal_field(item, "component_pay"),
         "taxable_pay": _decimal_field(item, "taxable_pay"),
         "paye_tax": _decimal_field(item, "paye_tax"),
         "employee_ni": _decimal_field(item, "employee_ni"),
@@ -607,6 +648,46 @@ def _paye_payslip_values(item: MonthlyPayeItem) -> dict[str, Decimal | None]:
         "ytd_postgraduate_loan": _decimal_field(item, "ytd_postgraduate_loan"),
         "ytd_net_pay": _decimal_field(item, "ytd_net_pay"),
     }
+
+
+def _has_required_paye_payslip_values(item: MonthlyPayeItem) -> bool:
+    return all(getattr(item, field, None) is not None for field in PAYE_PAYSLIP_REQUIRED_FIELDS)
+
+
+def list_my_paye_pay_history(db_session: Session, actor: User) -> list[EmployeePayePayHistoryEntry]:
+    rows = paye_repo.list_employee_paye_pay_history(db_session, user_id=actor.id)
+    result: list[EmployeePayePayHistoryEntry] = []
+    company_names: dict[uuid.UUID, str] = {}
+    for item, period in rows:
+        if item.status not in {"approved", "paid"} or item.unsupported_reason:
+            continue
+        if not _has_required_paye_payslip_values(item):
+            continue
+        if item.company_id not in company_names:
+            company = get_company_by_id(db_session, item.company_id)
+            company_names[item.company_id] = company.name if company is not None else "Company"
+        result.append(
+            EmployeePayePayHistoryEntry(
+                id=item.id,
+                period_id=period.id,
+                company_id=item.company_id,
+                company_name=company_names[item.company_id],
+                tax_year=period.tax_year,
+                tax_month=period.tax_month,
+                period_start=period.period_start,
+                period_end=period.period_end,
+                pay_date=period.pay_date,
+                gross_pay=_decimal_field(item, "gross_pay"),
+                paye_tax=_decimal_field(item, "paye_tax"),
+                employee_ni=_decimal_field(item, "employee_ni"),
+                employee_pension=_decimal_field(item, "employee_pension"),
+                student_loan=_decimal_field(item, "student_loan"),
+                postgraduate_loan_deduction=_decimal_field(item, "postgraduate_loan_deduction"),
+                net_pay=_decimal_field(item, "net_pay"),
+                status=item.status,
+            )
+        )
+    return result
 
 
 def render_monthly_paye_payslip_html(db_session: Session, actor: User, item_id: uuid.UUID) -> str:
@@ -682,6 +763,9 @@ h2 {{ color: #2f6f9e; font-size: 13px; margin: 0 0 10px; text-transform: upperca
       <div class="section">
         <h2>Pay and deductions</h2>
         {row("Taxable pay", _money_html(values["taxable_pay"]))}
+        {row("Bonus pay", _money_html(values["bonus_pay"]))}
+        {row("Commission pay", _money_html(values["commission_pay"]))}
+        {row("Total additional pay", _money_html(values["component_pay"]))}
         {row("PAYE tax", _money_html(values["paye_tax"]))}
         {row("Employee NI", _money_html(values["employee_ni"]))}
         {row("Employee pension contribution", _money_html(values["employee_pension"]))}
@@ -711,6 +795,130 @@ h2 {{ color: #2f6f9e; font-size: 13px; margin: 0 0 10px; text-transform: upperca
 
 def render_monthly_paye_payslip_pdf(db_session: Session, actor: User, item_id: uuid.UUID) -> tuple[bytes, str]:
     item, period, owner, profile, company_name = _load_paye_payslip_context(db_session, actor, item_id)
+    employee_name = _paye_employee_name(profile, owner)
+    ni_number = (profile.national_insurance_number or "").strip() if profile is not None else None
+    values = _paye_payslip_values(item)
+    body = build_monthly_paye_payslip_pdf(
+        company_name=company_name,
+        employee_name=employee_name,
+        employee_email=owner.email,
+        national_insurance_number=ni_number,
+        tax_code=item.tax_code,
+        ni_category=item.ni_category,
+        pay_period=_paye_period_label(period),
+        pay_date=period.pay_date,
+        generated_at=_now().strftime("%Y-%m-%d %H:%M UTC"),
+        status_label="Paid" if item.status == "paid" else "Approved",
+        values=values,
+    )
+    return body, f"timiq-paye-payslip-{period.tax_year}-month-{period.tax_month:02d}.pdf"
+
+
+def render_own_monthly_paye_payslip_html(db_session: Session, actor: User, item_id: uuid.UUID) -> str:
+    item, period, owner, profile, company_name = _load_own_paye_payslip_context(db_session, actor, item_id)
+    values = _paye_payslip_values(item)
+    employee_name = _paye_employee_name(profile, owner)
+    generated = _now().strftime("%Y-%m-%d %H:%M UTC")
+    ni_number = (profile.national_insurance_number or "").strip() if profile is not None else ""
+    status = "Paid" if item.status == "paid" else "Approved"
+    ytd_loans = (values["ytd_student_loan"] or Decimal(0)) + (values["ytd_postgraduate_loan"] or Decimal(0))
+
+    def row(label: str, value: str) -> str:
+        return f"<div class=\"row\"><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>"
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<title>Monthly PAYE Payslip</title>
+<style>
+body {{ margin: 0; background: #f4f6f8; color: #111827; font-family: Arial, sans-serif; }}
+.wrap {{ max-width: 920px; margin: 0 auto; padding: 18px; }}
+.actions {{ display: flex; justify-content: space-between; margin-bottom: 12px; }}
+button {{ border: 1px solid #cbd5e1; background: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; }}
+.card {{ background: #fff; border: 1px solid #d9e0ea; border-radius: 16px; padding: 28px; box-shadow: 0 16px 34px rgba(15,23,42,.08); }}
+.head {{ display: grid; grid-template-columns: 1fr 1fr; gap: 18px; border-bottom: 1px solid #e5e7eb; padding-bottom: 16px; }}
+.right {{ text-align: right; }}
+.company {{ font-size: 20px; font-weight: 800; }}
+.doc {{ font-size: 22px; font-weight: 800; }}
+.muted {{ color: #64748b; font-size: 12px; }}
+.grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }}
+.section {{ border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; }}
+h2 {{ color: #2f6f9e; font-size: 13px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; }}
+.row {{ display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #f1f5f9; padding: 8px 0; font-size: 14px; }}
+.row:first-of-type {{ border-top: 0; }}
+.net {{ background: #f8fafc; border-color: #cbd5e1; }}
+@media print {{ .actions {{ display:none; }} body {{ background:white; }} .card {{ box-shadow:none; border:0; }} }}
+</style></head><body>
+<div class="wrap">
+  <div class="actions">
+    <button onclick="window.history.back()" type="button">Back</button>
+    <button onclick="window.print()" type="button">Save / Print Payslip</button>
+  </div>
+  <main class="card">
+    <header class="head">
+      <div>
+        <div class="company">{html.escape(company_name)}</div>
+        <p class="muted">Company</p>
+        <h1>{html.escape(employee_name)}</h1>
+        <p class="muted">{html.escape(owner.email)}</p>
+        <p class="muted">National Insurance: {html.escape(ni_number or "Not provided")}</p>
+      </div>
+      <div class="right">
+        <div class="doc">Monthly PAYE Payslip</div>
+        <p>{html.escape(_paye_period_label(period))}</p>
+        <p class="muted">Pay date: {html.escape(period.pay_date.isoformat())}</p>
+        <p class="muted">Generated: {html.escape(generated)}</p>
+      </div>
+    </header>
+    <section class="grid">
+      <div class="section">
+        <h2>Payroll details</h2>
+        {row("Status", status)}
+        {row("Tax code", item.tax_code or "Not provided")}
+        {row("NI category", item.ni_category or "Not provided")}
+        {row("Pay period", _paye_period_label(period))}
+        {row("Pay date", period.pay_date.isoformat())}
+      </div>
+      <div class="section net">
+        <h2>Net pay</h2>
+        {row("Gross pay", _money_html(values["gross_pay"]))}
+        {row("Total deductions", _money_html(_decimal_field(item, "total_deductions")))}
+        {row("Net pay", _money_html(values["net_pay"]))}
+      </div>
+      <div class="section">
+        <h2>Pay and deductions</h2>
+        {row("Taxable pay", _money_html(values["taxable_pay"]))}
+        {row("Bonus pay", _money_html(values["bonus_pay"]))}
+        {row("Commission pay", _money_html(values["commission_pay"]))}
+        {row("Total additional pay", _money_html(values["component_pay"]))}
+        {row("PAYE tax", _money_html(values["paye_tax"]))}
+        {row("Employee NI", _money_html(values["employee_ni"]))}
+        {row("Employee pension contribution", _money_html(values["employee_pension"]))}
+        {row("Student loan deduction", _money_html(values["student_loan"]))}
+        {row("Postgraduate loan deduction", _money_html(values["postgraduate_loan"]))}
+        {row("Other deductions", _money_html(values["other_deductions"]))}
+      </div>
+      <div class="section">
+        <h2>Year to date</h2>
+        {row("YTD gross pay", _money_html(values["ytd_gross_pay"]))}
+        {row("YTD taxable pay", _money_html(values["ytd_taxable_pay"]))}
+        {row("YTD PAYE tax", _money_html(values["ytd_paye_tax"]))}
+        {row("YTD employee NI", _money_html(values["ytd_employee_ni"]))}
+        {row("YTD employee pension", _money_html(values["ytd_employee_pension"]))}
+        {row("YTD student/postgraduate loan", _money_html(ytd_loans))}
+        {row("YTD net pay", _money_html(values["ytd_net_pay"]))}
+      </div>
+      <div class="section">
+        <h2>Employer information (employer cost only)</h2>
+        {row("Employer pension contribution", _money_html(_decimal_field(item, "employer_pension")))}
+        {row("Employer NI", _money_html(_decimal_field(item, "employer_ni")))}
+      </div>
+    </section>
+  </main>
+</div></body></html>"""
+
+
+def render_own_monthly_paye_payslip_pdf(db_session: Session, actor: User, item_id: uuid.UUID) -> tuple[bytes, str]:
+    item, period, owner, profile, company_name = _load_own_paye_payslip_context(db_session, actor, item_id)
     employee_name = _paye_employee_name(profile, owner)
     ni_number = (profile.national_insurance_number or "").strip() if profile is not None else None
     values = _paye_payslip_values(item)
@@ -767,6 +975,171 @@ def _unsupported_item(
     )
 
 
+def _component_response(component: MonthlyPayePayComponent) -> PayePayComponentResponse:
+    return PayePayComponentResponse.model_validate(component)
+
+
+def _assert_component_type(value: str) -> str:
+    if value not in {"bonus", "commission"}:
+        raise PayePayrollPermissionError("PAYE component type must be bonus or commission.")
+    return value
+
+
+def _component_period_locked(db_session: Session, *, company_id: uuid.UUID, tax_year: str, tax_month: int) -> bool:
+    period = paye_repo.get_monthly_period(db_session, company_id=company_id, tax_year=tax_year, tax_month=tax_month)
+    return bool(period is not None and period.status in {"approved", "paid"})
+
+
+def _assert_components_unlocked(db_session: Session, *, company_id: uuid.UUID, tax_year: str, tax_month: int) -> None:
+    if _component_period_locked(db_session, company_id=company_id, tax_year=tax_year, tax_month=tax_month):
+        raise PayePayrollPermissionError("PAYE components are locked once the period is approved or paid.")
+
+
+def _target_paye_employee_for_component(db_session: Session, actor: User, user_id: uuid.UUID, company_id: uuid.UUID) -> User:
+    target = _target_employee_for_actor(db_session, actor, user_id)
+    if target.company_id != company_id:
+        raise PayePayrollPermissionError("PAYE component employee must belong to the selected company.")
+    return target
+
+
+def list_pay_components(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    tax_year: str,
+    tax_month: int,
+    user_id: uuid.UUID | None,
+) -> list[PayePayComponentResponse]:
+    _assert_supported_tax_year(tax_year)
+    cid = _resolve_company_id(actor, company_id)
+    rows = paye_repo.list_pay_components(db_session, company_id=cid, tax_year=tax_year, tax_month=tax_month, user_id=user_id)
+    return [_component_response(row) for row in rows]
+
+
+def create_pay_component(
+    db_session: Session,
+    actor: User,
+    request: PayePayComponentCreateRequest,
+) -> PayePayComponentResponse:
+    _assert_supported_tax_year(request.tax_year)
+    cid = _resolve_company_id(actor, request.company_id)
+    _assert_components_unlocked(db_session, company_id=cid, tax_year=request.tax_year, tax_month=request.tax_month)
+    _target_paye_employee_for_component(db_session, actor, request.user_id, cid)
+    now = _now()
+    period = paye_repo.get_monthly_period(db_session, company_id=cid, tax_year=request.tax_year, tax_month=request.tax_month)
+    component = MonthlyPayePayComponent(
+        company_id=cid,
+        user_id=request.user_id,
+        tax_year=request.tax_year,
+        tax_month=request.tax_month,
+        period_id=period.id if period is not None else None,
+        component_type=_assert_component_type(request.component_type),
+        description=_trim_or_none(request.description),
+        amount=money(amount(request.amount)),
+        taxable=request.taxable,
+        niable=request.niable,
+        pensionable=request.pensionable,
+        created_by_user_id=actor.id,
+        created_at=now,
+        updated_at=now,
+    )
+    paye_repo.save_pay_component(db_session, component)
+    db_session.commit()
+    return _component_response(component)
+
+
+def patch_pay_component(
+    db_session: Session,
+    actor: User,
+    component_id: uuid.UUID,
+    request: PayePayComponentPatchRequest,
+) -> PayePayComponentResponse:
+    component = paye_repo.get_pay_component_by_id(db_session, component_id)
+    if component is None:
+        raise PayePayrollNotFoundError("PAYE component not found.")
+    _resolve_company_id(actor, component.company_id)
+    _target_paye_employee_for_component(db_session, actor, component.user_id, component.company_id)
+    _assert_components_unlocked(
+        db_session,
+        company_id=component.company_id,
+        tax_year=component.tax_year,
+        tax_month=component.tax_month,
+    )
+    if request.description is not None:
+        component.description = _trim_or_none(request.description)
+    if request.amount is not None:
+        component.amount = money(amount(request.amount))
+    if request.taxable is not None:
+        component.taxable = request.taxable
+    if request.niable is not None:
+        component.niable = request.niable
+    if request.pensionable is not None:
+        component.pensionable = request.pensionable
+    component.updated_at = _now()
+    db_session.commit()
+    return _component_response(component)
+
+
+def delete_pay_component(db_session: Session, actor: User, component_id: uuid.UUID) -> None:
+    component = paye_repo.get_pay_component_by_id(db_session, component_id)
+    if component is None:
+        raise PayePayrollNotFoundError("PAYE component not found.")
+    _resolve_company_id(actor, component.company_id)
+    _target_paye_employee_for_component(db_session, actor, component.user_id, component.company_id)
+    _assert_components_unlocked(
+        db_session,
+        company_id=component.company_id,
+        tax_year=component.tax_year,
+        tax_month=component.tax_month,
+    )
+    paye_repo.delete_pay_component(db_session, component)
+    db_session.commit()
+
+
+def _component_summary(components: list[MonthlyPayePayComponent]) -> dict[str, Decimal | list[dict]]:
+    bonus = Decimal("0.00")
+    commission = Decimal("0.00")
+    gross = Decimal("0.00")
+    taxable = Decimal("0.00")
+    niable = Decimal("0.00")
+    pensionable = Decimal("0.00")
+    snapshot: list[dict] = []
+    for component in components:
+        value = money(amount(component.amount))
+        if component.component_type == "bonus":
+            bonus += value
+        elif component.component_type == "commission":
+            commission += value
+        gross += value
+        if component.taxable:
+            taxable += value
+        if component.niable:
+            niable += value
+        if component.pensionable:
+            pensionable += value
+        snapshot.append(
+            {
+                "id": str(component.id),
+                "type": component.component_type,
+                "description": component.description,
+                "amount": str(value),
+                "taxable": bool(component.taxable),
+                "niable": bool(component.niable),
+                "pensionable": bool(component.pensionable),
+            }
+        )
+    return {
+        "bonus_pay": money(bonus),
+        "commission_pay": money(commission),
+        "component_pay": money(gross),
+        "taxable_additions": money(taxable),
+        "niable_additions": money(niable),
+        "pensionable_additions": money(pensionable),
+        "snapshot": snapshot,
+    }
+
+
 def _calculated_item(
     db_session: Session,
     *,
@@ -775,6 +1148,7 @@ def _calculated_item(
     profile: EmployeeProfile | None,
     settings: EmployeePayeSettings,
     company_settings: CompanyPayeSettings,
+    components: list[MonthlyPayePayComponent] | None = None,
 ) -> MonthlyPayeItem:
     now = _now()
     employee_percent = amount(
@@ -794,6 +1168,7 @@ def _calculated_item(
         tax_year=period.tax_year,
         before_tax_month=period.tax_month,
     )
+    component_summary = _component_summary(components or [])
     calculation = calculate_fixed_monthly_salary(
         monthly_salary=amount(settings.monthly_salary),
         tax_code=settings.tax_code,
@@ -807,6 +1182,10 @@ def _calculated_item(
         pension_relief_method=settings.pension_relief_method,
         student_loan_plan=settings.student_loan_plan,
         postgraduate_loan=settings.postgraduate_loan,
+        taxable_additions=amount(component_summary["taxable_additions"]),
+        niable_additions=amount(component_summary["niable_additions"]),
+        pensionable_additions=amount(component_summary["pensionable_additions"]),
+        gross_additions=amount(component_summary["component_pay"]),
         prior_ytd_taxable_pay=_sum_prior(prior_items, "taxable_pay"),
         prior_ytd_paye_tax=_sum_prior(prior_items, "paye_tax"),
     )
@@ -828,13 +1207,18 @@ def _calculated_item(
         employer_pension_percent=employer_percent,
         pension_scheme_basis=settings.pension_scheme_basis,
         pension_relief_method=settings.pension_relief_method,
+        bonus_pay=amount(component_summary["bonus_pay"]),
+        commission_pay=amount(component_summary["commission_pay"]),
+        component_pay=amount(component_summary["component_pay"]),
         status="pending",
+        component_snapshot=component_summary["snapshot"],
         calculation_snapshot={
             "phase": "2A",
             "tax_year": period.tax_year,
             "tax_month": period.tax_month,
             "rules_source": SOURCE_NOTE,
             "fixed_monthly_salary_only": True,
+            "pay_components_phase": "4A",
         },
         unsupported_reason=calculation["unsupported_reason"],
         created_at=now,
@@ -884,9 +1268,19 @@ def recalculate_monthly_paye(
         period.calculated_at = _now()
         period.calculated_by_user_id = actor.id
         period.updated_at = _now()
+        paye_repo.clear_component_item_links_for_period(db_session, period.id)
         paye_repo.delete_pending_items_for_period(db_session, period.id)
 
     for user, profile, employee_settings in paye_repo.list_paye_candidates_for_company(db_session, company_id=cid):
+        components = paye_repo.list_pay_components(
+            db_session,
+            company_id=cid,
+            tax_year=tax_year,
+            tax_month=tax_month,
+            user_id=user.id,
+        )
+        for component in components:
+            component.period_id = period.id
         if employee_settings is None:
             item = _unsupported_item(
                 period=period,
@@ -927,8 +1321,18 @@ def recalculate_monthly_paye(
                 profile=profile,
                 settings=employee_settings,
                 company_settings=settings,
+                components=components,
             )
+            db_session.add(item)
+            db_session.flush()
+            for component in components:
+                component.item_id = item.id
+            continue
         db_session.add(item)
+        db_session.flush()
+        if not item.unsupported_reason:
+            for component in components:
+                component.item_id = item.id
     db_session.commit()
     return monthly_paye_report(
         db_session,

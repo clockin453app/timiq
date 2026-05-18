@@ -59,10 +59,17 @@ const WEEK_REPORT: NavigationItem = {
 };
 
 const PAY_HISTORY: NavigationItem = {
-  label: "Pay History",
-  labelKey: "nav.pay_history",
+  label: "CIS Pay History",
+  labelKey: "nav.cis_pay_history",
   href: "/pay-history",
   allowedRoles: ["employee"],
+};
+
+const PAYE_PAY_HISTORY: NavigationItem = {
+  label: "PAYE Pay History",
+  labelKey: "nav.paye_pay_history",
+  href: "/paye-pay-history",
+  allowedRoles: ["administrator", "admin", "employee"],
 };
 
 const SITE_PROGRESS: NavigationItem = {
@@ -155,7 +162,7 @@ const LIMITED_ACCESS_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "limited-records",
     label: "Records",
     groupLabelKey: "nav.group.limited_records",
-    items: [TIMESHEETS, PAY_HISTORY],
+    items: [TIMESHEETS, PAY_HISTORY, PAYE_PAY_HISTORY],
   },
   {
     id: "limited-profile",
@@ -327,7 +334,7 @@ const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     groupLabelKey: "nav.group.emp_time",
     items: [CLOCK, TIME_RECORDS, TIMESHEETS],
   },
-  { id: "emp-pay", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
+  { id: "emp-pay", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY, PAYE_PAY_HISTORY] },
   { id: "emp-work", label: "Work", groupLabelKey: "nav.group.emp_work", items: [SITE_PROGRESS, FORMS, TOOLBOX_TALKS, RAMS] },
   {
     id: "emp-profile",
@@ -531,7 +538,7 @@ const MOBILE_DRAWER_EMPLOYEE_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mobile-emp-general",
     label: "General",
     groupLabelKey: "nav.group.general",
-    items: [MESSAGES, TIME_RECORDS, PAY_HISTORY, STARTER_FORM, SITE_PROGRESS, LEAVE, RAMS, TOOLBOX_TALKS, FORMS, HELP_CENTRE],
+    items: [MESSAGES, TIME_RECORDS, PAY_HISTORY, PAYE_PAY_HISTORY, STARTER_FORM, SITE_PROGRESS, LEAVE, RAMS, TOOLBOX_TALKS, FORMS, HELP_CENTRE],
   },
 ];
 
@@ -597,7 +604,7 @@ export function getMobileDrawerNavigationGroups(
 }
 
 /** Flat “More” drawer links — legacy compact shortlist; prefer getMobileDrawerNavigationGroups. */
-const MOBILE_MORE_LIMITED: NavigationItem[] = [TIMESHEETS, PAY_HISTORY];
+const MOBILE_MORE_LIMITED: NavigationItem[] = [TIMESHEETS, PAY_HISTORY, PAYE_PAY_HISTORY];
 
 const MOBILE_MORE_EMPLOYEE: NavigationItem[] = [MESSAGES, TIME_RECORDS];
 
@@ -636,14 +643,14 @@ export function getMobileMoreMenuItems(
 /** Desktop top bar: single-item groups render as direct links; multi-item groups use dropdowns. */
 const DESKTOP_TOP_NAV_LIMITED: NavigationGroupDefinition[] = [
   { id: "desk-timesheets", label: "Timesheets", groupLabelKey: "nav.timesheets", items: [TIMESHEETS] },
-  { id: "desk-pay-history", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
+  { id: "desk-pay-history", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY, PAYE_PAY_HISTORY] },
 ];
 
 const DESKTOP_TOP_NAV_EMPLOYEE: NavigationGroupDefinition[] = [
   { id: "desk-dashboard", label: "Dashboard", groupLabelKey: "nav.dashboard", items: [DASHBOARD] },
   { id: "desk-clock", label: "Clock", groupLabelKey: "nav.clock", items: [CLOCK] },
   { id: "desk-timesheets", label: "Timesheets", groupLabelKey: "nav.timesheets", items: [TIMESHEETS] },
-  { id: "desk-pay-history", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY] },
+  { id: "desk-pay-history", label: "Pay", groupLabelKey: "nav.group.emp_pay", items: [PAY_HISTORY, PAYE_PAY_HISTORY] },
   {
     id: "desk-work",
     label: "Work",
