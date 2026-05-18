@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { WeekPickerBar } from "../../components/week-picker-bar";
@@ -220,11 +221,12 @@ function PayrollEmployeeIdentity(props: {
   employee_name: string | null;
   employee_email: string | null;
   className?: string;
+  linked?: boolean;
   withAvatar?: boolean;
 }) {
   const { primary, secondary } = payrollEmployeeDisplayLines(props);
-  if (props.withAvatar && props.user_id) {
-    return (
+  const content =
+    props.withAvatar && props.user_id ? (
       <div className={`flex min-w-0 items-center gap-2 ${props.className ?? ""}`}>
         <FaceReferenceAvatar
           employeeEmail={props.employee_email}
@@ -238,16 +240,29 @@ function PayrollEmployeeIdentity(props: {
           ) : null}
         </div>
       </div>
+    ) : (
+      <div className={props.className}>
+        <div className="font-medium leading-snug text-[#111827]">{primary}</div>
+        {secondary ? (
+          <div className="mt-0.5 text-[11px] leading-snug text-[var(--color-text-muted)]">{secondary}</div>
+        ) : null}
+      </div>
+    );
+
+  if (props.linked && props.user_id) {
+    return (
+      <Link
+        aria-label={`Open employee profile for ${primary}`}
+        className="block rounded-sm hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-border-dark)]"
+        href={`/employees?employeeId=${encodeURIComponent(props.user_id)}`}
+        title={`Open employee profile for ${primary}`}
+      >
+        {content}
+      </Link>
     );
   }
-  return (
-    <div className={props.className}>
-      <div className="font-medium leading-snug text-[#111827]">{primary}</div>
-      {secondary ? (
-        <div className="mt-0.5 text-[11px] leading-snug text-[var(--color-text-muted)]">{secondary}</div>
-      ) : null}
-    </div>
-  );
+
+  return content;
 }
 
 export function PayrollReportClient() {
@@ -1289,6 +1304,7 @@ export function PayrollReportClient() {
                               <PayrollEmployeeIdentity
                                 employee_email={row.employee_email}
                                 employee_name={row.employee_name}
+                                linked
                                 user_id={row.user_id}
                                 withAvatar
                               />

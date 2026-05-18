@@ -1,5 +1,6 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
@@ -53,6 +54,7 @@ function getRoleOptions(currentUser: AuthUser): SystemRole[] {
 export function EmployeesClient() {
   const t = useT();
   const currentUser = useCurrentUser();
+  const searchParams = useSearchParams();
 
   const [users, setUsers] = useState<AuthUser[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -96,6 +98,16 @@ export function EmployeesClient() {
     }
     return users.find((item) => item.id === panelUserId) ?? null;
   }, [panelUserId, users]);
+
+  useEffect(() => {
+    const requestedUserId = (searchParams.get("employeeId") ?? "").trim();
+    if (!requestedUserId) {
+      return;
+    }
+    if (users.some((item) => item.id === requestedUserId)) {
+      setPanelUserId(requestedUserId);
+    }
+  }, [searchParams, users]);
 
   const filteredUsers = useMemo(() => {
     const query = employeeSearch.trim().toLowerCase();
