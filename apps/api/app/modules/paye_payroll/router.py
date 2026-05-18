@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
 
+from app.core.storage.file_response import protected_file_response
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import require_admin_or_administrator
 from app.modules.auth.models import User
@@ -31,6 +32,8 @@ from app.modules.paye_payroll.service import (
     read_company_paye_settings,
     read_employee_paye_settings,
     recalculate_monthly_paye,
+    render_monthly_paye_payslip_html,
+    render_monthly_paye_payslip_pdf,
 )
 
 router = APIRouter(prefix="/api/paye-payroll", tags=["paye-payroll"])
@@ -130,6 +133,36 @@ def get_monthly_report(
         )
     except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
         raise _handle_error(exc) from exc
+
+
+@router.get("/items/{item_id}/payslip")
+def get_monthly_paye_payslip(
+    item_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        body = render_monthly_paye_payslip_html(db_session, current_user, item_id)
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+    return Response(
+        content=body,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": f'inline; filename="paye-payslip-{item_id}.html"'},
+    )
+
+
+@router.get("/items/{item_id}/payslip.pdf")
+def get_monthly_paye_payslip_pdf(
+    item_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        body, filename = render_monthly_paye_payslip_pdf(db_session, current_user, item_id)
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+    return protected_file_response(body=body, download_filename=filename, media_type="application/pdf")
 
 
 @router.post("/monthly-report/recalculate", response_model=MonthlyPayeReportResponse)

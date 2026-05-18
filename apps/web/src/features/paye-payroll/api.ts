@@ -326,3 +326,25 @@ export async function markMonthlyPayePeriodPaid(periodId: string): Promise<Month
   }
   return response.json() as Promise<MonthlyPayeReport>;
 }
+
+export function openMonthlyPayePayslip(itemId: string): void {
+  window.open(`${API_URL}/api/paye-payroll/items/${itemId}/payslip`, "_blank", "noopener,noreferrer");
+}
+
+export async function downloadMonthlyPayePayslipPdf(itemId: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/items/${itemId}/payslip.pdf`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not download PAYE payslip PDF.");
+  }
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `timiq-paye-payslip-${itemId}.pdf`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}

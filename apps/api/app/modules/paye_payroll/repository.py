@@ -45,6 +45,10 @@ def get_monthly_period_by_id(db_session: Session, period_id: uuid.UUID) -> Month
     return db_session.get(MonthlyPayePeriod, period_id)
 
 
+def get_monthly_item_by_id(db_session: Session, item_id: uuid.UUID) -> MonthlyPayeItem | None:
+    return db_session.get(MonthlyPayeItem, item_id)
+
+
 def list_items_for_period(db_session: Session, period_id: uuid.UUID) -> list[MonthlyPayeItem]:
     statement = (
         select(MonthlyPayeItem)

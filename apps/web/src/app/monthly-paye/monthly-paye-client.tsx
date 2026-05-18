@@ -19,9 +19,11 @@ import { listCompanies, type Company } from "../../features/companies/api";
 import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import {
   approveMonthlyPayePeriod,
+  downloadMonthlyPayePayslipPdf,
   fetchPayeCapabilities,
   fetchMonthlyPayeReportShell,
   markMonthlyPayePeriodPaid,
+  openMonthlyPayePayslip,
   recalculateMonthlyPaye,
   type PayeCapabilitiesResponse,
   type MonthlyPayeItem,
@@ -97,6 +99,10 @@ function rowMoney(row: MonthlyPayeItem, field: keyof MonthlyPayeItem): string {
     return "Not supported";
   }
   return money(row[field] as string | null);
+}
+
+function canOpenPayePayslip(row: MonthlyPayeItem): boolean {
+  return !row.unsupported_reason && (row.status === "approved" || row.status === "paid");
 }
 
 export function MonthlyPayeClient() {
@@ -476,6 +482,23 @@ export function MonthlyPayeClient() {
                 <TableCell>
                   {row.unsupported_reason ? (
                     <span className="text-xs text-amber-950">{row.unsupported_reason}</span>
+                  ) : canOpenPayePayslip(row) ? (
+                    <div className="flex flex-col gap-1">
+                      <button
+                        className="text-left text-xs font-semibold text-[var(--color-accent)] underline"
+                        onClick={() => openMonthlyPayePayslip(row.id)}
+                        type="button"
+                      >
+                        View payslip
+                      </button>
+                      <button
+                        className="text-left text-xs font-semibold text-[var(--color-accent)] underline"
+                        onClick={() => void downloadMonthlyPayePayslipPdf(row.id).catch((e) => setError(e instanceof Error ? e.message : "Could not download PAYE payslip PDF."))}
+                        type="button"
+                      >
+                        Download PDF
+                      </button>
+                    </div>
                   ) : (
                     <span className="text-xs text-[var(--color-text-muted)]">Managed by period actions</span>
                   )}

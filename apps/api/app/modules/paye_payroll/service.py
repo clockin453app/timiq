@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -28,6 +29,7 @@ from app.modules.paye_payroll.models import (
     MonthlyPayePeriod,
     PayeTaxYearRule,
 )
+from app.modules.paye_payroll.pdf_export import build_monthly_paye_payslip_pdf
 from app.modules.paye_payroll.rules import SOURCE_NOTE, SUPPORTED_TAX_YEAR, paye_rules_2026_2027
 from app.modules.paye_payroll.schemas import (
     CompanyPayeSettingsPatchRequest,
@@ -513,6 +515,219 @@ def monthly_paye_report(
         rows=[_employee_item_response(db_session, item) for item in items],
         summary=_summary(items),
     )
+
+
+PAYE_PAYSLIP_REQUIRED_FIELDS = (
+    "gross_pay",
+    "taxable_pay",
+    "paye_tax",
+    "employee_ni",
+    "employer_ni",
+    "employee_pension",
+    "employer_pension",
+    "student_loan",
+    "postgraduate_loan_deduction",
+    "other_deductions",
+    "total_deductions",
+    "net_pay",
+    "ytd_gross_pay",
+    "ytd_taxable_pay",
+    "ytd_paye_tax",
+    "ytd_employee_ni",
+    "ytd_employee_pension",
+    "ytd_student_loan",
+    "ytd_postgraduate_loan",
+    "ytd_net_pay",
+)
+
+
+def _load_paye_payslip_context(
+    db_session: Session,
+    actor: User,
+    item_id: uuid.UUID,
+) -> tuple[MonthlyPayeItem, MonthlyPayePeriod, User, EmployeeProfile | None, str]:
+    if actor.system_role not in (SystemRole.ADMINISTRATOR, SystemRole.ADMIN):
+        raise PayePayrollPermissionError("PAYE payslips are available to Admin or Administrator only.")
+    item = paye_repo.get_monthly_item_by_id(db_session, item_id)
+    if item is None:
+        raise PayePayrollNotFoundError("Monthly PAYE item not found.")
+    period = paye_repo.get_monthly_period_by_id(db_session, item.period_id)
+    if period is None:
+        raise PayePayrollNotFoundError("Monthly PAYE period not found.")
+    _resolve_company_id(actor, item.company_id)
+    if item.status not in {"approved", "paid"}:
+        raise PayePayrollPermissionError("PAYE payslips are available only for approved or paid items.")
+    if item.unsupported_reason:
+        raise PayePayrollPermissionError("PAYE payslips are not available for unsupported rows.")
+    missing = [field for field in PAYE_PAYSLIP_REQUIRED_FIELDS if getattr(item, field, None) is None]
+    if missing:
+        raise PayePayrollPermissionError("PAYE payslip is missing calculated values.")
+    owner = get_user_by_id(db_session, item.user_id)
+    if owner is None:
+        raise PayePayrollNotFoundError("Employee not found.")
+    profile = get_employee_profile_by_user_id(db_session, item.user_id)
+    company = get_company_by_id(db_session, item.company_id)
+    return item, period, owner, profile, company.name if company is not None else "Company"
+
+
+def _paye_employee_name(profile: EmployeeProfile | None, owner: User) -> str:
+    display = _display_name(profile)
+    return display or owner.email
+
+
+def _money_html(value: object | None) -> str:
+    if value is None:
+        return "-"
+    return f"GBP {Decimal(str(value)):,.2f}"
+
+
+def _paye_period_label(period: MonthlyPayePeriod) -> str:
+    return f"{period.period_start.isoformat()} to {period.period_end.isoformat()}"
+
+
+def _paye_payslip_values(item: MonthlyPayeItem) -> dict[str, Decimal | None]:
+    return {
+        "gross_pay": _decimal_field(item, "gross_pay"),
+        "taxable_pay": _decimal_field(item, "taxable_pay"),
+        "paye_tax": _decimal_field(item, "paye_tax"),
+        "employee_ni": _decimal_field(item, "employee_ni"),
+        "employer_ni": _decimal_field(item, "employer_ni"),
+        "employee_pension": _decimal_field(item, "employee_pension"),
+        "employer_pension": _decimal_field(item, "employer_pension"),
+        "student_loan": _decimal_field(item, "student_loan"),
+        "postgraduate_loan": _decimal_field(item, "postgraduate_loan_deduction"),
+        "other_deductions": _decimal_field(item, "other_deductions"),
+        "net_pay": _decimal_field(item, "net_pay"),
+        "ytd_gross_pay": _decimal_field(item, "ytd_gross_pay"),
+        "ytd_taxable_pay": _decimal_field(item, "ytd_taxable_pay"),
+        "ytd_paye_tax": _decimal_field(item, "ytd_paye_tax"),
+        "ytd_employee_ni": _decimal_field(item, "ytd_employee_ni"),
+        "ytd_employee_pension": _decimal_field(item, "ytd_employee_pension"),
+        "ytd_student_loan": _decimal_field(item, "ytd_student_loan"),
+        "ytd_postgraduate_loan": _decimal_field(item, "ytd_postgraduate_loan"),
+        "ytd_net_pay": _decimal_field(item, "ytd_net_pay"),
+    }
+
+
+def render_monthly_paye_payslip_html(db_session: Session, actor: User, item_id: uuid.UUID) -> str:
+    item, period, owner, profile, company_name = _load_paye_payslip_context(db_session, actor, item_id)
+    values = _paye_payslip_values(item)
+    employee_name = _paye_employee_name(profile, owner)
+    generated = _now().strftime("%Y-%m-%d %H:%M UTC")
+    ni_number = (profile.national_insurance_number or "").strip() if profile is not None else ""
+    status = "Paid" if item.status == "paid" else "Approved"
+    ytd_loans = (values["ytd_student_loan"] or Decimal(0)) + (values["ytd_postgraduate_loan"] or Decimal(0))
+
+    def row(label: str, value: str) -> str:
+        return f"<div class=\"row\"><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>"
+
+    return f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8" />
+<title>Monthly PAYE Payslip</title>
+<style>
+body {{ margin: 0; background: #f4f6f8; color: #111827; font-family: Arial, sans-serif; }}
+.wrap {{ max-width: 920px; margin: 0 auto; padding: 18px; }}
+.actions {{ display: flex; justify-content: space-between; margin-bottom: 12px; }}
+button {{ border: 1px solid #cbd5e1; background: white; padding: 8px 12px; border-radius: 8px; cursor: pointer; }}
+.card {{ background: #fff; border: 1px solid #d9e0ea; border-radius: 16px; padding: 28px; box-shadow: 0 16px 34px rgba(15,23,42,.08); }}
+.head {{ display: grid; grid-template-columns: 1fr 1fr; gap: 18px; border-bottom: 1px solid #e5e7eb; padding-bottom: 16px; }}
+.right {{ text-align: right; }}
+.company {{ font-size: 20px; font-weight: 800; }}
+.doc {{ font-size: 22px; font-weight: 800; }}
+.muted {{ color: #64748b; font-size: 12px; }}
+.grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }}
+.section {{ border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; }}
+h2 {{ color: #2f6f9e; font-size: 13px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .04em; }}
+.row {{ display: flex; justify-content: space-between; gap: 16px; border-top: 1px solid #f1f5f9; padding: 8px 0; font-size: 14px; }}
+.row:first-of-type {{ border-top: 0; }}
+.net {{ background: #f8fafc; border-color: #cbd5e1; }}
+@media print {{ .actions {{ display:none; }} body {{ background:white; }} .card {{ box-shadow:none; border:0; }} }}
+</style></head><body>
+<div class="wrap">
+  <div class="actions">
+    <button onclick="window.history.back()" type="button">Back</button>
+    <button onclick="window.print()" type="button">Save / Print Payslip</button>
+  </div>
+  <main class="card">
+    <header class="head">
+      <div>
+        <div class="company">{html.escape(company_name)}</div>
+        <p class="muted">Company</p>
+        <h1>{html.escape(employee_name)}</h1>
+        <p class="muted">{html.escape(owner.email)}</p>
+        <p class="muted">National Insurance: {html.escape(ni_number or "Not provided")}</p>
+      </div>
+      <div class="right">
+        <div class="doc">Monthly PAYE Payslip</div>
+        <p>{html.escape(_paye_period_label(period))}</p>
+        <p class="muted">Pay date: {html.escape(period.pay_date.isoformat())}</p>
+        <p class="muted">Generated: {html.escape(generated)}</p>
+      </div>
+    </header>
+    <section class="grid">
+      <div class="section">
+        <h2>Payroll details</h2>
+        {row("Status", status)}
+        {row("Tax code", item.tax_code or "Not provided")}
+        {row("NI category", item.ni_category or "Not provided")}
+        {row("Pay period", _paye_period_label(period))}
+        {row("Pay date", period.pay_date.isoformat())}
+      </div>
+      <div class="section net">
+        <h2>Net pay</h2>
+        {row("Gross pay", _money_html(values["gross_pay"]))}
+        {row("Total deductions", _money_html(_decimal_field(item, "total_deductions")))}
+        {row("Net pay", _money_html(values["net_pay"]))}
+      </div>
+      <div class="section">
+        <h2>Pay and deductions</h2>
+        {row("Taxable pay", _money_html(values["taxable_pay"]))}
+        {row("PAYE tax", _money_html(values["paye_tax"]))}
+        {row("Employee NI", _money_html(values["employee_ni"]))}
+        {row("Employee pension contribution", _money_html(values["employee_pension"]))}
+        {row("Student loan deduction", _money_html(values["student_loan"]))}
+        {row("Postgraduate loan deduction", _money_html(values["postgraduate_loan"]))}
+        {row("Other deductions", _money_html(values["other_deductions"]))}
+      </div>
+      <div class="section">
+        <h2>Year to date</h2>
+        {row("YTD gross pay", _money_html(values["ytd_gross_pay"]))}
+        {row("YTD taxable pay", _money_html(values["ytd_taxable_pay"]))}
+        {row("YTD PAYE tax", _money_html(values["ytd_paye_tax"]))}
+        {row("YTD employee NI", _money_html(values["ytd_employee_ni"]))}
+        {row("YTD employee pension", _money_html(values["ytd_employee_pension"]))}
+        {row("YTD student/postgraduate loan", _money_html(ytd_loans))}
+        {row("YTD net pay", _money_html(values["ytd_net_pay"]))}
+      </div>
+      <div class="section">
+        <h2>Employer information (employer cost only)</h2>
+        {row("Employer pension contribution", _money_html(_decimal_field(item, "employer_pension")))}
+        {row("Employer NI", _money_html(_decimal_field(item, "employer_ni")))}
+      </div>
+    </section>
+  </main>
+</div></body></html>"""
+
+
+def render_monthly_paye_payslip_pdf(db_session: Session, actor: User, item_id: uuid.UUID) -> tuple[bytes, str]:
+    item, period, owner, profile, company_name = _load_paye_payslip_context(db_session, actor, item_id)
+    employee_name = _paye_employee_name(profile, owner)
+    ni_number = (profile.national_insurance_number or "").strip() if profile is not None else None
+    values = _paye_payslip_values(item)
+    body = build_monthly_paye_payslip_pdf(
+        company_name=company_name,
+        employee_name=employee_name,
+        employee_email=owner.email,
+        national_insurance_number=ni_number,
+        tax_code=item.tax_code,
+        ni_category=item.ni_category,
+        pay_period=_paye_period_label(period),
+        pay_date=period.pay_date,
+        generated_at=_now().strftime("%Y-%m-%d %H:%M UTC"),
+        status_label="Paid" if item.status == "paid" else "Approved",
+        values=values,
+    )
+    return body, f"timiq-paye-payslip-{period.tax_year}-month-{period.tax_month:02d}.pdf"
 
 
 def _unsupported_item(
