@@ -38,6 +38,7 @@ from app.modules.payroll.service import (
     approve_item,
     create_late_shift_adjustment_from_paid_item,
     export_csv_report,
+    export_my_tax_year_pay_summary_xlsx,
     export_pdf_report,
     export_print_html,
     export_xlsx_report,
@@ -272,6 +273,30 @@ def payroll_pay_history_me(
     current_user: User = Depends(require_authenticated_employee_self_service),
 ) -> list[PayHistoryEntry]:
     return list_my_pay_history(db_session, current_user)
+
+
+@router.get("/pay-history/me/tax-year-summary.xlsx")
+def payroll_pay_history_tax_year_summary_xlsx(
+    tax_year: str = Query(..., min_length=9, max_length=9),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_authenticated_employee_self_service),
+) -> Response:
+    try:
+        body = export_my_tax_year_pay_summary_xlsx(
+            db_session,
+            current_user,
+            tax_year=tax_year,
+        )
+    except PayrollPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except PayrollError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    filename_tax_year = tax_year.strip().replace("/", "-")
+    return protected_file_response(
+        body=body,
+        download_filename=f"timiq-pay-summary-{filename_tax_year}.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @router.get("/items/{item_id}/summary", response_model=PayrollItemSummaryResponse)

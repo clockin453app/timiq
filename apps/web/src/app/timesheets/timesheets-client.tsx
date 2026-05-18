@@ -29,6 +29,8 @@ import { useLiveShiftDurationParts } from "../../features/time-clock/shift-durat
 import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import { PayrollRoundingHint } from "../../features/time-records/payroll-rounding-hint";
+import { fetchMyPayHistory, type PayHistoryEntry } from "../../features/payroll/api";
+import { formatMoneyGBP } from "../../features/payroll/format";
 import { useT } from "../../lib/i18n";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import {
@@ -173,6 +175,17 @@ function segmentBtnClass(active: boolean) {
   ].join(" ");
 }
 
+function formatWhenShort(iso: string | null | undefined): string {
+  if (!iso) {
+    return "—";
+  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return iso;
+  }
+  return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
 export function TimesheetsClient() {
   const t = useT();
   const user = useCurrentUser();
@@ -194,6 +207,7 @@ export function TimesheetsClient() {
   const companyScope = useAdministratorCompanyScope(user, companies);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [payHistoryRows, setPayHistoryRows] = useState<PayHistoryEntry[]>([]);
 
   const activeCompanyId = useMemo(() => {
     if (isAdministrator(user)) {
@@ -353,6 +367,29 @@ export function TimesheetsClient() {
     };
   }, [weekStart, adminMode, management, subjectUserId, activeCompanyId, user]);
 
+  useEffect(() => {
+    if (user.system_role !== "employee") {
+      setPayHistoryRows([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await fetchMyPayHistory();
+        if (!cancelled) {
+          setPayHistoryRows(rows);
+        }
+      } catch {
+        if (!cancelled) {
+          setPayHistoryRows([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user.system_role]);
+
   const completedCount = viewingAllEmployees
     ? (companySheet?.completed_shift_count ?? 0)
     : sheet != null && typeof sheet.completed_shift_count === "number"
@@ -368,6 +405,10 @@ export function TimesheetsClient() {
         : Boolean(sheet && completedCount === 0)),
   );
   const daysWithAttendance = sheet?.days.filter(dayHasAttendance) ?? [];
+  const selectedWeekPay = useMemo(
+    () => payHistoryRows.find((row) => row.week_start === sheet?.week_start) ?? null,
+    [payHistoryRows, sheet?.week_start],
+  );
 
   const hasExportableData =
     !loading &&
@@ -597,6 +638,78 @@ export function TimesheetsClient() {
           />
         ) : null}
 
+        {!loading && sheet && !viewingAllEmployees ? (
+          <div className="space-y-2 md:hidden">
+            <details className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 text-sm shadow-sm">
+              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-[var(--color-text)]">
+                      {formatPayrollWeekUkLabel(sheet.week_start, sheet.company_timezone, false)}
+                    </p>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      Payment date: {formatWhenShort(selectedWeekPay?.paid_at)}
+                    </p>
+                  </div>
+                  <span className="shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-header)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-text-soft)]">
+                    Open details
+                  </span>
+                </div>
+                <dl className="mt-3 grid grid-cols-2 gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-header)] p-2">
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Payroll hours</dt>
+                    <dd className="tabular-nums font-semibold text-[var(--color-text)]">
+                      {formatDurationSeconds(sheet.week_rounded_seconds)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Gross earnings</dt>
+                    <dd className="tabular-nums font-semibold text-[var(--color-text)]">
+                      {selectedWeekPay && !selectedWeekPay.rate_missing
+                        ? formatMoneyGBP(selectedWeekPay.gross_amount)
+                        : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Payable time</dt>
+                    <dd className="tabular-nums text-[var(--color-text)]">
+                      {formatDurationSeconds(sheet.week_counted_seconds)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Break deducted</dt>
+                    <dd className="text-[var(--color-text)]">
+                      <BreakDeductionCell seconds={sheet.week_break_seconds} />
+                    </dd>
+                  </div>
+                </dl>
+              </summary>
+              <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3">
+                {daysWithAttendance.length > 0 ? (
+                  daysWithAttendance.map((day) => (
+                    <div
+                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-header)] p-2 text-xs"
+                      key={day.date}
+                    >
+                      <p className="font-semibold text-[var(--color-text)]">{formatDay(day.date)}</p>
+                      <div className="mt-1 grid grid-cols-2 gap-1 text-[var(--color-text-muted)]">
+                        <span>Clocked {formatDurationSeconds(day.actual_seconds)}</span>
+                        <span>Payroll {formatDurationSeconds(day.rounded_seconds)}</span>
+                        <span>Payable {formatDurationSeconds(day.counted_seconds)}</span>
+                        <span>
+                          Break <BreakDeductionCell seconds={day.break_seconds} />
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-xs text-[var(--color-text-muted)]">No completed day rows for this week.</p>
+                )}
+              </div>
+            </details>
+          </div>
+        ) : null}
+
         {!loading && companySheet && viewingAllEmployees ? (
           <TimesheetWeekSummaryLine
             breakSeconds={companySheet.week_break_seconds}
@@ -666,6 +779,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees && completedCount > 0 ? (
+          <div className="hidden md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -711,6 +825,7 @@ export function TimesheetsClient() {
               </TableRow>
             </TableBody>
           </Table>
+          </div>
         ) : null}
 
         {!loading && companySheet && viewingAllEmployees && companySheet.completed_shift_count > 0 ? (

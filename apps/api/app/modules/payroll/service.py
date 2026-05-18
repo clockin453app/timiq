@@ -61,6 +61,7 @@ from app.modules.payroll.repository import (
     list_completed_time_shifts_for_company_range,
     list_items_for_period,
     list_items_for_user_pay_history,
+    list_paid_items_for_user_tax_year_summary,
     list_paid_items_for_company_payment_history,
     list_payroll_items_for_user_company_ytd_calendar_year,
     list_periods_for_company_month,
@@ -446,6 +447,8 @@ def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: 
     net_eff = _effective_net_amount_for_item(item)
     gross = _decimal_or_none(item.gross_amount)
     other_d = Decimal(str(item.other_deductions_amount or 0))
+    additions = Decimal("0.00")
+    deductions_total = (cis or Decimal(0)) + other_d
     reg_h = item.regular_seconds / 3600
     ot_h = item.overtime_seconds / 3600
     tot_h = item.rounded_total_seconds / 3600
@@ -544,6 +547,48 @@ body {{
 }}
 .meta-block p {{ margin: 0.35rem 0; }}
 .meta-block strong {{ color: #374151; }}
+.info-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}}
+.info-panel {{
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  padding: 0.75rem;
+}}
+.info-panel h2 {{
+  margin: 0 0 0.4rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #374151;
+}}
+.summary-grid {{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 0.6rem;
+  margin-top: 1rem;
+}}
+.summary-card {{
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 0.7rem;
+}}
+.summary-card span {{
+  display: block;
+  font-size: 0.72rem;
+  color: #6b7280;
+}}
+.summary-card strong {{
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}}
 .pay-table {{
   width: 100%;
   border-collapse: collapse;
@@ -594,14 +639,30 @@ body {{
         <div class="doc-type">{html.escape(statement_heading)}</div>
       </div>
     </header>
-    <div class="meta-block">
-      <p><strong>Employee:</strong> {ename}</p>
-      {email_block}
-      {ni_block}
-      {period_line}
-      <p><strong>Generated:</strong> {html.escape(generated)}</p>
-      {paid_line}
-      <p><strong>Payment type:</strong> {mode_label}</p>
+    <div class="info-grid meta-block">
+      <section class="info-panel">
+        <h2>Employee</h2>
+        <p><strong>Name:</strong> {ename}</p>
+        {email_block}
+        {ni_block}
+      </section>
+      <section class="info-panel">
+        <h2>Pay period</h2>
+        {period_line}
+        {paid_line}
+        <p><strong>Generated:</strong> {html.escape(generated)}</p>
+      </section>
+      <section class="info-panel">
+        <h2>Payment</h2>
+        <p><strong>Payment type:</strong> {mode_label}</p>
+        <p><strong>Company:</strong> {cname}</p>
+      </section>
+    </div>
+    <div class="summary-grid">
+      <div class="summary-card"><span>Gross pay</span><strong>{gross_display}</strong></div>
+      <div class="summary-card"><span>CIS / tax</span><strong>{cis_display}</strong></div>
+      <div class="summary-card"><span>Deductions</span><strong>£{deductions_total:.2f}</strong></div>
+      <div class="summary-card"><span>Net pay</span><strong>{net_display}</strong></div>
     </div>
     <table class="pay-table"><tbody>
       <tr><td>Hours worked (rounded total)</td><td class="num">{tot_h:.2f} h</td></tr>
@@ -609,6 +670,7 @@ body {{
       <tr class="section"><td>Gross pay</td><td class="num">{gross_display}</td></tr>
       <tr><td>CIS tax</td><td class="num">{cis_display}</td></tr>
       {other_block}
+      <tr><td>Additions</td><td class="num">£{additions:.2f}</td></tr>
       <tr class="section"><td>Total net pay</td><td class="num">{net_display}</td></tr>
       <tr><td>YTD taxable pay ({period.week_start.year})</td><td class="num">£{ytd_pay:.2f}</td></tr>
       <tr><td>YTD CIS deducted ({period.week_start.year})</td><td class="num">£{ytd_cis:.2f}</td></tr>
@@ -1906,6 +1968,245 @@ def list_my_pay_history(db_session: Session, actor: User) -> list[PayHistoryEntr
             )
         )
     return result
+
+
+def _parse_uk_tax_year(tax_year: str) -> tuple[int, int, date, date]:
+    cleaned = (tax_year or "").strip().replace("/", "-")
+    parts = cleaned.split("-")
+    if len(parts) != 2:
+        raise PayrollError("tax_year must use YYYY-YYYY format.")
+    try:
+        start_year = int(parts[0])
+        end_year = int(parts[1])
+    except ValueError:
+        raise PayrollError("tax_year must use YYYY-YYYY format.") from None
+    if end_year != start_year + 1:
+        raise PayrollError("tax_year must be consecutive years, for example 2025-2026.")
+    return start_year, end_year, date(start_year, 4, 6), date(end_year, 4, 5)
+
+
+def _pay_summary_money(value: Decimal | None) -> Decimal:
+    return (value or Decimal(0)).quantize(Decimal("0.01"))
+
+
+def _pay_summary_tax_status(item: PayrollItem) -> str:
+    mode = normalize_payroll_payment_mode(item.payment_mode)
+    if mode == "gross_payment":
+        return "Gross payment"
+    tax_pct = _decimal_or_none(item.tax_rate_snapshot)
+    if tax_pct is not None and tax_pct > 0:
+        return f"CIS {tax_pct.normalize()}%"
+    return _payment_mode_label(item.payment_mode)
+
+
+def _pay_summary_period_label(period: PayrollPeriod) -> str:
+    return f"{period.week_start.isoformat()} to {_week_end_display(period.week_start).isoformat()}"
+
+
+def export_my_tax_year_pay_summary_xlsx(
+    db_session: Session,
+    actor: User,
+    *,
+    tax_year: str,
+) -> bytes:
+    if actor.system_role != SystemRole.EMPLOYEE:
+        raise PayrollPermissionError("Only employees can download their own pay summary.")
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    start_year, end_year, date_from, date_to = _parse_uk_tax_year(tax_year)
+    paid_at_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+    paid_at_before = datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
+    rows = list_paid_items_for_user_tax_year_summary(
+        db_session,
+        user_id=actor.id,
+        paid_at_from=paid_at_from,
+        paid_at_before=paid_at_before,
+    )
+
+    employee_name = _employee_primary_name(db_session, actor.id)
+    ni, utr = _employee_tax_identifiers_for_payroll(db_session, actor.id)
+    year_label = f"{start_year}/{end_year}"
+    company_names: dict[uuid.UUID, str] = {}
+
+    wb = Workbook()
+    payslips = wb.active
+    payslips.title = "Payslips"
+    companies = wb.create_sheet("Companies")
+
+    header_fill = PatternFill("solid", fgColor="D9E2F3")
+    summary_fill = PatternFill("solid", fgColor="F3F4F6")
+    thin = Side(style="thin", color="D1D5DB")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    bold = Font(bold=True)
+    money_format = '£#,##0.00;[Red]-£#,##0.00'
+    date_format = "yyyy-mm-dd"
+
+    summary_values = {
+        "gross": Decimal(0),
+        "tax": Decimal(0),
+        "admin": Decimal(0),
+        "deductions": Decimal(0),
+        "additions": Decimal(0),
+        "vat": Decimal(0),
+        "net": Decimal(0),
+    }
+
+    payslips["C2"] = "Name"
+    payslips["D2"] = employee_name
+    payslips["C3"] = "NI Number"
+    payslips["D3"] = ni or ""
+    payslips["C4"] = "UTR Number"
+    payslips["D4"] = utr or ""
+    payslips["C5"] = "Period"
+    payslips["D5"] = year_label
+    for cell_ref in ("C2", "C3", "C4", "C5", "F2", "F3", "F4", "F5", "F6", "F7"):
+        payslips[cell_ref].font = bold
+        payslips[cell_ref].fill = summary_fill
+
+    summary_rows = [
+        ("F2", "G2", "Total Gross", "gross"),
+        ("F3", "G3", "Total Tax / CIS", "tax"),
+        ("F4", "G4", "Total Admin Fees", "admin"),
+        ("F5", "G5", "Total Deductions", "deductions"),
+        ("F6", "G6", "Total Additions", "additions"),
+        ("F7", "G7", "Total Take Home", "net"),
+    ]
+    for label_cell, value_cell, label, _key in summary_rows:
+        payslips[label_cell] = label
+        payslips[value_cell] = Decimal(0)
+        payslips[value_cell].number_format = money_format
+
+    table_header_row = 12
+    headers = [
+        "№",
+        "Period",
+        "Payment Date",
+        "Company",
+        "Tax Status",
+        "Total Pay",
+        "Tax / CIS",
+        "Admin Fee",
+        "Deductions",
+        "Additions",
+        "VAT if applicable",
+        "Take Home",
+    ]
+    for col, label in enumerate(headers, start=2):
+        cell = payslips.cell(row=table_header_row, column=col, value=label)
+        cell.font = bold
+        cell.fill = header_fill
+        cell.border = border
+        cell.alignment = Alignment(horizontal="center")
+
+    for idx, (item, period) in enumerate(rows, start=1):
+        company_name = company_names.get(item.company_id)
+        if company_name is None:
+            company = get_company_by_id(db_session, item.company_id)
+            company_name = company.name if company is not None else "Company"
+            company_names[item.company_id] = company_name
+
+        gross = _pay_summary_money(_decimal_or_none(item.gross_amount))
+        tax = _pay_summary_money(_effective_tax_amount_for_item(item))
+        admin_fee = Decimal("0.00")
+        other_deductions = _pay_summary_money(_decimal_or_none(item.other_deductions_amount))
+        deductions = tax + admin_fee + other_deductions
+        additions = Decimal("0.00")
+        vat = Decimal("0.00")
+        net = _pay_summary_money(_effective_net_amount_for_item(item))
+
+        summary_values["gross"] += gross
+        summary_values["tax"] += tax
+        summary_values["admin"] += admin_fee
+        summary_values["deductions"] += deductions
+        summary_values["additions"] += additions
+        summary_values["vat"] += vat
+        summary_values["net"] += net
+
+        row_idx = table_header_row + idx
+        values = [
+            idx,
+            _pay_summary_period_label(period),
+            item.paid_at.date() if item.paid_at is not None else None,
+            company_name,
+            _pay_summary_tax_status(item),
+            gross,
+            tax,
+            admin_fee,
+            deductions,
+            additions,
+            vat,
+            net,
+        ]
+        for col, value in enumerate(values, start=2):
+            cell = payslips.cell(row=row_idx, column=col, value=value)
+            cell.border = border
+            if col == 4:
+                cell.number_format = date_format
+            if col >= 7:
+                cell.number_format = money_format
+            cell.alignment = Alignment(vertical="top")
+
+    for label_cell, value_cell, _label, key in summary_rows:
+        payslips[value_cell] = summary_values[key]
+        payslips[value_cell].number_format = money_format
+
+    totals_row = table_header_row + len(rows) + 2
+    payslips.cell(row=totals_row, column=2, value="Totals").font = bold
+    for col, key in (
+        (7, "gross"),
+        (8, "tax"),
+        (9, "admin"),
+        (10, "deductions"),
+        (11, "additions"),
+        (12, "vat"),
+        (13, "net"),
+    ):
+        cell = payslips.cell(row=totals_row, column=col, value=summary_values[key])
+        cell.font = bold
+        cell.border = border
+        cell.number_format = money_format
+
+    payslips.freeze_panes = f"B{table_header_row + 1}"
+    payslips.auto_filter.ref = f"B{table_header_row}:M{max(table_header_row + 1, table_header_row + len(rows))}"
+    for col_idx, width in enumerate([4, 8, 24, 14, 28, 16, 13, 13, 12, 13, 12, 16, 13], start=1):
+        payslips.column_dimensions[get_column_letter(col_idx)].width = width
+
+    company_headers = ["№", "Name", "Trading Name", "Reference Number", "Address"]
+    for col, label in enumerate(company_headers, start=2):
+        cell = companies.cell(row=2, column=col, value=label)
+        cell.font = bold
+        cell.fill = header_fill
+        cell.border = border
+    for idx, (_company_id, company_name) in enumerate(sorted(company_names.items(), key=lambda row: row[1]), start=1):
+        row_idx = 2 + idx
+        values = [idx, company_name, "", "", ""]
+        for col, value in enumerate(values, start=2):
+            cell = companies.cell(row=row_idx, column=col, value=value)
+            cell.border = border
+    for col_idx, width in enumerate([4, 8, 34, 24, 22, 44], start=1):
+        companies.column_dimensions[get_column_letter(col_idx)].width = width
+
+    output = io.BytesIO()
+    wb.save(output)
+
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="payroll.pay_summary_exported",
+        entity_type="payroll_item",
+        entity_id=None,
+        company_id=actor.company_id,
+        details={
+            "tax_year": f"{start_year}-{end_year}",
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "row_count": len(rows),
+        },
+    )
+    return output.getvalue()
 
 
 def list_payroll_payment_history(

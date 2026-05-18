@@ -280,6 +280,26 @@ def list_paid_items_for_company_payment_history(
     return [(item, period) for item, period in db_session.execute(statement).all()]
 
 
+def list_paid_items_for_user_tax_year_summary(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    paid_at_from: datetime,
+    paid_at_before: datetime,
+) -> list[tuple[PayrollItem, PayrollPeriod]]:
+    statement = (
+        select(PayrollItem, PayrollPeriod)
+        .join(PayrollPeriod, PayrollItem.period_id == PayrollPeriod.id)
+        .where(PayrollItem.user_id == user_id)
+        .where(PayrollItem.status == "paid")
+        .where(PayrollItem.paid_at.is_not(None))
+        .where(PayrollItem.paid_at >= paid_at_from)
+        .where(PayrollItem.paid_at < paid_at_before)
+        .order_by(PayrollItem.paid_at.asc(), PayrollPeriod.week_start.asc())
+    )
+    return [(item, period) for item, period in db_session.execute(statement).all()]
+
+
 def _actionable_pending_payroll_item_filter():
     return (
         PayrollItem.status == "pending",

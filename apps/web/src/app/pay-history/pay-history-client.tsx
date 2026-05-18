@@ -1,10 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { PageHeader, Sheet, SheetBody, Button } from "../../components/ui";
-import { fetchMyPayHistory, payrollItemPayslipUrl, type PayHistoryEntry } from "../../features/payroll/api";
+import {
+  downloadMyTaxYearPaySummary,
+  fetchMyPayHistory,
+  payrollItemPayslipUrl,
+  type PayHistoryEntry,
+} from "../../features/payroll/api";
 import {
   effectiveDisplayedTaxAmount,
   formatHoursFromSeconds,
@@ -59,6 +64,24 @@ function hoursSummary(row: PayHistoryEntry): string {
   return `${reg} / ${ot} h (rounded ${tot} h)`;
 }
 
+function currentUkTaxYearValue(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const taxYearStart = new Date(year, 3, 6);
+  const start = now >= taxYearStart ? year : year - 1;
+  return `${start}-${start + 1}`;
+}
+
+function taxYearOptions(): string[] {
+  const current = currentUkTaxYearValue();
+  const start = Number(current.slice(0, 4));
+  return [start, start - 1, start - 2, start - 3].map((year) => `${year}-${year + 1}`);
+}
+
+function taxYearLabel(value: string): string {
+  return value.replace("-", "/");
+}
+
 
 function payslipAllowed(row: PayHistoryEntry): boolean {
   return row.can_open_payslip !== false;
@@ -69,6 +92,10 @@ export function PayHistoryClient() {
   const [rows, setRows] = useState<PayHistoryEntry[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [selectedTaxYear, setSelectedTaxYear] = useState(currentUkTaxYearValue);
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryError, setSummaryError] = useState("");
+  const taxYears = useMemo(() => taxYearOptions(), []);
 
   async function load() {
     setLoading(true);
@@ -95,6 +122,18 @@ export function PayHistoryClient() {
     window.open(payrollItemPayslipUrl(row.id), "_blank", "noopener,noreferrer");
   }
 
+  async function handleDownloadSummary() {
+    setSummaryError("");
+    setSummaryBusy(true);
+    try {
+      await downloadMyTaxYearPaySummary(selectedTaxYear);
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : t("pay_history.summary_download_failed", "Could not download pay summary."));
+    } finally {
+      setSummaryBusy(false);
+    }
+  }
+
   return (
     <Sheet>
       <PageHeader
@@ -105,6 +144,39 @@ export function PayHistoryClient() {
         )}
       />
       <SheetBody className="space-y-4">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3 text-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <label className="block max-w-xs text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+              <span className="text-[var(--color-text)]">{t("pay_history.select_tax_year", "Select Tax Year")}</span>
+              <select
+                className="timiq-select mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]"
+                onChange={(event) => setSelectedTaxYear(event.target.value)}
+                value={selectedTaxYear}
+              >
+                {taxYears.map((year) => (
+                  <option key={year} value={year}>
+                    {taxYearLabel(year)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button disabled={summaryBusy} onClick={() => void handleDownloadSummary()} type="button">
+              {summaryBusy
+                ? t("pay_history.summary_downloading", "Downloading…")
+                : t("pay_history.download_summary", "Download Pay Summary")}
+            </Button>
+          </div>
+          <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
+            {t(
+              "pay_history.summary_hint",
+              "Downloads a paid-payroll XLSX summary for the selected UK tax year.",
+            )}
+          </p>
+          {summaryError ? (
+            <p className="mt-2 text-sm text-[var(--color-danger-700)]">{summaryError}</p>
+          ) : null}
+        </div>
+
         {error ? (
           <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
             {error}
@@ -139,26 +211,45 @@ export function PayHistoryClient() {
                   className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm shadow-sm"
                   key={row.id}
                 >
-                  <p className="font-semibold text-[var(--color-text)]">{periodLabel(row)}</p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">{hoursSummary(row)}</p>
-                  <p className="mt-2 text-xs font-medium text-[var(--color-text)]">
-                    {row.company_name?.trim() ? row.company_name : "—"}
-                  </p>
-                  <p className="mt-2 space-y-0.5 text-sm leading-snug">
-                    <span className="block">
-                      Gross: {row.rate_missing ? "—" : formatMoneyGBP(row.gross_amount)}
-                    </span>
-                    <span className="block">CIS: {formatMoneyGBP(cisForRow(row))}</span>
-                    <span className="block">Net: {formatMoneyGBP(netForRow(row))}</span>
-                  </p>
-                  <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-                    <span className="font-medium text-[var(--color-text)]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-[var(--color-text)]">{periodLabel(row)}</p>
+                      <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">
+                        {row.company_name?.trim() ? row.company_name : "—"}
+                      </p>
+                    </div>
+                    <span className="shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-header)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-text-soft)]">
                       {payrollStatusLabel(t, row.status)}
                     </span>
-                    {row.approved_at
-                      ? ` · ${t("pay_history.approved_at", "Approved")} ${formatWhen(row.approved_at)}`
-                      : ""}
-                    {row.paid_at ? ` · ${t("pay_history.paid_at", "Paid")} ${formatWhen(row.paid_at)}` : ""}
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-header)] p-2">
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Gross</dt>
+                      <dd className="tabular-nums font-semibold text-[var(--color-text)]">
+                        {row.rate_missing ? "—" : formatMoneyGBP(row.gross_amount)}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Net pay</dt>
+                      <dd className="tabular-nums font-semibold text-[var(--color-text)]">{formatMoneyGBP(netForRow(row))}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">CIS</dt>
+                      <dd className="tabular-nums text-[var(--color-text)]">{formatMoneyGBP(cisForRow(row))}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Hours</dt>
+                      <dd className="tabular-nums text-[var(--color-text)]">
+                        {formatHoursFromSeconds(row.rounded_total_seconds)} h
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="mt-2 text-xs text-[var(--color-text-muted)]">
+                    {row.paid_at
+                      ? `${t("pay_history.paid_at", "Paid")} ${formatWhen(row.paid_at)}`
+                      : row.approved_at
+                        ? `${t("pay_history.approved_at", "Approved")} ${formatWhen(row.approved_at)}`
+                        : hoursSummary(row)}
                   </p>
                   {row.rate_missing ? (
                     <p className="mt-1 text-xs text-[var(--color-text-muted)]">
@@ -173,12 +264,13 @@ export function PayHistoryClient() {
                       {t("pay_history.view_week", "View week")}
                     </Link>
                     <Button
+                      className="min-h-9"
                       disabled={!payslipAllowed(row)}
                       onClick={() => openPayslip(row)}
                       type="button"
                       variant="secondary"
                     >
-                      {t("payroll.payslip", "Payslip")}
+                      {t("pay_history.open_payslip", "Open payslip")}
                     </Button>
                   </div>
                 </div>

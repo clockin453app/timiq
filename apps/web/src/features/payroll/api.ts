@@ -493,6 +493,23 @@ export async function fetchMyPayHistory(): Promise<PayHistoryEntry[]> {
   return response.json() as Promise<PayHistoryEntry[]>;
 }
 
+export async function downloadMyTaxYearPaySummary(taxYear: string): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/payroll/pay-history/me/tax-year-summary.xlsx?${qs({ tax_year: taxYear })}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error("Could not download pay summary.");
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `timiq-pay-summary-${taxYear}.xlsx`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function fetchPayrollItemSummary(itemId: string): Promise<PayrollItemSummaryResponse> {
   const response = await fetch(`${API_URL}/api/payroll/items/${encodeURIComponent(itemId)}/summary`, {
     credentials: "include",
