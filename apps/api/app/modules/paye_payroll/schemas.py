@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 PayFrequency = Literal["monthly"]
 SalaryType = Literal["fixed_monthly_salary", "hourly"]
+PayeHourSource = Literal["completed_time_shifts", "manual_hours_future"]
 TaxBasis = Literal["cumulative", "month1"]
 StudentLoanPlan = Literal["none", "plan_1", "plan_2", "plan_4", "plan_5"]
 PensionStatus = Literal["eligible", "enrolled", "opted_out", "postponed", "not_eligible"]
@@ -23,6 +24,9 @@ class EmployeePayeSettingsPatchRequest(BaseModel):
     pay_frequency: PayFrequency | None = None
     salary_type: SalaryType | None = None
     monthly_salary: Decimal | None = Field(default=None, ge=0)
+    paye_hourly_rate: Decimal | None = Field(default=None, ge=0)
+    paye_uses_time_records: bool | None = None
+    paye_hour_source: PayeHourSource | None = None
     tax_code: str | None = Field(default=None, max_length=32)
     tax_basis: TaxBasis | None = None
     ni_category: str | None = Field(default=None, max_length=8)
@@ -43,6 +47,9 @@ class EmployeePayeSettingsResponse(BaseModel):
     pay_frequency: str
     salary_type: str
     monthly_salary: Decimal | None = None
+    paye_hourly_rate: Decimal | None = None
+    paye_uses_time_records: bool
+    paye_hour_source: str
     tax_code: str | None = None
     tax_basis: str
     ni_category: str | None = None
@@ -67,6 +74,9 @@ class CompanyPayeSettingsPatchRequest(BaseModel):
     default_pension_basis: PensionBasis | None = None
     monthly_payday_rule: str | None = Field(default=None, max_length=64)
     pay_period_closing_day: int | None = Field(default=None, ge=1, le=31)
+    paye_overtime_enabled: bool | None = None
+    paye_overtime_threshold_hours: Decimal | None = Field(default=None, ge=0)
+    paye_overtime_multiplier: Decimal | None = Field(default=None, ge=0)
     default_tax_year: str | None = Field(default=None, max_length=9)
     rti_status: RtiStatus | None = None
 
@@ -83,6 +93,9 @@ class CompanyPayeSettingsResponse(BaseModel):
     default_pension_basis: str
     monthly_payday_rule: str | None = None
     pay_period_closing_day: int | None = None
+    paye_overtime_enabled: bool
+    paye_overtime_threshold_hours: Decimal | None = None
+    paye_overtime_multiplier: Decimal | None = None
     default_tax_year: str | None = None
     rti_status: str
     created_at: datetime
@@ -162,6 +175,12 @@ class MonthlyPayeItemResponse(BaseModel):
     bonus_pay: Decimal = Decimal("0")
     commission_pay: Decimal = Decimal("0")
     component_pay: Decimal = Decimal("0")
+    regular_hours: Decimal | None = None
+    overtime_hours: Decimal | None = None
+    hourly_rate: Decimal | None = None
+    gross_hourly_pay: Decimal | None = None
+    regular_pay: Decimal | None = None
+    overtime_pay: Decimal | None = None
     gross_pay: Decimal | None = None
     taxable_pay: Decimal | None = None
     niable_pay: Decimal | None = None
@@ -193,6 +212,8 @@ class MonthlyPayeItemResponse(BaseModel):
     paid_at: datetime | None = None
     paid_by_user_id: uuid.UUID | None = None
     component_snapshot: list[dict] = Field(default_factory=list)
+    overtime_policy_snapshot: dict | None = None
+    time_record_source_snapshot: dict | None = None
     calculation_snapshot: dict
     unsupported_reason: str | None = None
     created_at: datetime

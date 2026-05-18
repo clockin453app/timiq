@@ -24,6 +24,7 @@ import {
   patchEmployeePayeSettings,
   type PayrollType,
   type SalaryType,
+  type PayeHourSource,
   type TaxBasis,
   type StudentLoanPlan,
   type PensionEnrolmentStatus,
@@ -90,6 +91,9 @@ export function EmployeeDetailPanel({
   const [isSavingPayeSettings, setIsSavingPayeSettings] = useState(false);
   const [payeSalaryType, setPayeSalaryType] = useState<SalaryType>("hourly");
   const [payeMonthlySalary, setPayeMonthlySalary] = useState("");
+  const [payeHourlyRate, setPayeHourlyRate] = useState("");
+  const [payeUsesTimeRecords, setPayeUsesTimeRecords] = useState(true);
+  const [payeHourSource, setPayeHourSource] = useState<PayeHourSource>("completed_time_shifts");
   const [payeTaxCode, setPayeTaxCode] = useState("");
   const [payeTaxBasis, setPayeTaxBasis] = useState<TaxBasis>("cumulative");
   const [payeNiCategory, setPayeNiCategory] = useState("");
@@ -133,6 +137,9 @@ export function EmployeeDetailPanel({
       const payeSettings = await getEmployeePayeSettings(user.id);
       setPayeSalaryType(payeSettings.salary_type);
       setPayeMonthlySalary(payeSettings.monthly_salary ?? "");
+      setPayeHourlyRate(payeSettings.paye_hourly_rate ?? "");
+      setPayeUsesTimeRecords(payeSettings.paye_uses_time_records);
+      setPayeHourSource(payeSettings.paye_hour_source);
       setPayeTaxCode(payeSettings.tax_code ?? "");
       setPayeTaxBasis(payeSettings.tax_basis);
       setPayeNiCategory(payeSettings.ni_category ?? "");
@@ -250,6 +257,9 @@ export function EmployeeDetailPanel({
         pay_frequency: "monthly",
         salary_type: payeSalaryType,
         monthly_salary: payeMonthlySalary.trim() === "" ? null : payeMonthlySalary.trim(),
+        paye_hourly_rate: payeHourlyRate.trim() === "" ? null : payeHourlyRate.trim(),
+        paye_uses_time_records: payeUsesTimeRecords,
+        paye_hour_source: payeHourSource,
         tax_code: payeTaxCode.trim() === "" ? null : payeTaxCode.trim(),
         tax_basis: payeTaxBasis,
         ni_category: payeNiCategory.trim() === "" ? null : payeNiCategory.trim(),
@@ -711,7 +721,7 @@ export function EmployeeDetailPanel({
                     </select>
                     {payeSalaryType === "hourly" ? (
                       <p className="mt-1 text-[11px] font-medium text-amber-900">
-                        Hourly PAYE is stored for future use but will block Phase 2A calculation.
+                        Hourly PAYE is not calculated yet. This employee will remain not supported in Monthly PAYE Report until hourly calculation is enabled.
                       </p>
                     ) : null}
                   </label>
@@ -724,6 +734,40 @@ export function EmployeeDetailPanel({
                       placeholder="Leave blank for hourly"
                       value={payeMonthlySalary}
                     />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    PAYE hourly rate
+                    <input
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeHourlyRate(event.target.value)}
+                      placeholder="Stored for future hourly PAYE"
+                      value={payeHourlyRate}
+                    />
+                    <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                      Hourly PAYE foundation is stored for future use. Hourly PAYE calculation is not enabled yet.
+                    </p>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
+                    <input
+                      checked={payeUsesTimeRecords}
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeUsesTimeRecords(event.target.checked)}
+                      type="checkbox"
+                    />
+                    Uses time records
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Hour source
+                    <select
+                      className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeHourSource(event.target.value as PayeHourSource)}
+                      value={payeHourSource}
+                    >
+                      <option value="completed_time_shifts">Completed time shifts</option>
+                      <option value="manual_hours_future">Manual hours — future</option>
+                    </select>
                   </label>
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Tax code

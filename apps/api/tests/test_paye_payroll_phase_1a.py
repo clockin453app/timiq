@@ -83,6 +83,9 @@ def test_paye_employee_settings_can_be_saved_and_read_separately() -> None:
             EmployeePayeSettingsPatchRequest(
                 salary_type="fixed_monthly_salary",
                 monthly_salary=Decimal("2500.00"),
+                paye_hourly_rate=Decimal("18.50"),
+                paye_uses_time_records=True,
+                paye_hour_source="completed_time_shifts",
                 tax_code="1257L",
                 ni_category="A",
                 student_loan_plan="plan_2",
@@ -95,6 +98,9 @@ def test_paye_employee_settings_can_be_saved_and_read_separately() -> None:
     assert saved.company_id == company_id
     assert saved.salary_type == "fixed_monthly_salary"
     assert saved.monthly_salary == Decimal("2500.0000")
+    assert saved.paye_hourly_rate == Decimal("18.5000")
+    assert saved.paye_uses_time_records is True
+    assert saved.paye_hour_source == "completed_time_shifts"
     assert saved.tax_code == "1257L"
     assert saved.ni_category == "A"
     assert saved.student_loan_plan == "plan_2"
@@ -117,12 +123,18 @@ def test_company_paye_settings_can_be_saved_and_read_separately() -> None:
                 pension_provider_name="Example Pension",
                 default_employee_pension_percent=Decimal("5"),
                 default_employer_pension_percent=Decimal("3"),
+                paye_overtime_enabled=True,
+                paye_overtime_threshold_hours=Decimal("160"),
+                paye_overtime_multiplier=Decimal("1.50"),
                 default_tax_year="2026-2027",
             ),
         )
     assert saved.company_id == company_id
     assert saved.paye_reference == "123/AB456"
     assert saved.accounts_office_reference == "123PA00012345"
+    assert saved.paye_overtime_enabled is True
+    assert saved.paye_overtime_threshold_hours == Decimal("160.0000")
+    assert saved.paye_overtime_multiplier == Decimal("1.5000")
     assert saved.rti_status == "not_ready"
 
 

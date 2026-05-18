@@ -423,6 +423,96 @@ def test_calculated_item_snapshots_and_links_bonus_commission_components() -> No
     assert item.component_snapshot[0]["type"] == "bonus"
 
 
+def test_phase_4b_hourly_foundation_fields_do_not_affect_fixed_salary_calculation() -> None:
+    company_id = uuid.uuid4()
+    user = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    period = _period(company_id)
+    settings = SimpleNamespace(
+        pay_frequency="monthly",
+        salary_type="fixed_monthly_salary",
+        monthly_salary=Decimal("3000"),
+        paye_hourly_rate=Decimal("50"),
+        paye_uses_time_records=True,
+        paye_hour_source="completed_time_shifts",
+        tax_code="1257L",
+        tax_basis="cumulative",
+        ni_category="A",
+        student_loan_plan="none",
+        postgraduate_loan=False,
+        pension_enrolment_status="not_eligible",
+        employee_pension_percent=Decimal("0"),
+        employer_pension_percent=Decimal("0"),
+        pension_scheme_basis="qualifying_earnings",
+        pension_relief_method="relief_at_source",
+    )
+    company_settings = SimpleNamespace(
+        default_employee_pension_percent=None,
+        default_employer_pension_percent=None,
+        paye_overtime_enabled=True,
+        paye_overtime_threshold_hours=Decimal("160"),
+        paye_overtime_multiplier=Decimal("1.5"),
+    )
+    with patch("app.modules.paye_payroll.repository.list_prior_items_for_user_tax_year", return_value=[]):
+        item = _calculated_item(
+            MagicMock(),
+            period=period,
+            user=user,
+            profile=SimpleNamespace(payroll_type="paye_employee"),
+            settings=settings,
+            company_settings=company_settings,
+            components=[],
+        )
+    assert item.gross_pay == Decimal("3000.00")
+    assert item.taxable_pay == Decimal("3000.00")
+    assert item.employee_ni == Decimal("156.16")
+    assert item.net_pay == Decimal("2453.34")
+    assert item.regular_hours is None
+    assert item.overtime_hours is None
+    assert item.hourly_rate is None
+    assert item.overtime_policy_snapshot is None
+    assert item.time_record_source_snapshot is None
+
+
+def test_hourly_employee_remains_unsupported_until_hourly_calculation_phase() -> None:
+    company_id = uuid.uuid4()
+    actor = _user(SystemRole.ADMINISTRATOR)
+    user = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    period = _period(company_id)
+    settings = SimpleNamespace(
+        pay_frequency="monthly",
+        salary_type="hourly",
+        monthly_salary=None,
+        paye_hourly_rate=Decimal("20"),
+        paye_uses_time_records=True,
+        paye_hour_source="completed_time_shifts",
+        tax_code="1257L",
+        tax_basis="cumulative",
+        ni_category="A",
+        student_loan_plan="none",
+        postgraduate_loan=False,
+        pension_enrolment_status="not_eligible",
+        employee_pension_percent=Decimal("0"),
+        employer_pension_percent=Decimal("0"),
+        pension_scheme_basis="qualifying_earnings",
+        pension_relief_method="relief_at_source",
+    )
+    db = MagicMock()
+    with (
+        patch("app.modules.paye_payroll.service._ensure_tax_year_rule"),
+        patch("app.modules.paye_payroll.service._get_or_create_company_settings", return_value=SimpleNamespace()),
+        patch("app.modules.paye_payroll.repository.get_monthly_period", return_value=period),
+        patch("app.modules.paye_payroll.repository.clear_component_item_links_for_period"),
+        patch("app.modules.paye_payroll.repository.delete_pending_items_for_period"),
+        patch("app.modules.paye_payroll.repository.list_paye_candidates_for_company", return_value=[(user, SimpleNamespace(payroll_type="paye_employee"), settings)]),
+        patch("app.modules.paye_payroll.repository.list_pay_components", return_value=[]),
+        patch("app.modules.paye_payroll.service.monthly_paye_report", return_value=MagicMock()),
+    ):
+        recalculate_monthly_paye(db, actor, company_id=company_id, tax_year="2026-2027", tax_month=1)
+    added_items = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], MonthlyPayeItem)]
+    assert added_items
+    assert added_items[0].unsupported_reason == "Only fixed monthly salary is supported in Phase 2A."
+
+
 def test_component_management_permissions_and_locking() -> None:
     company_id = uuid.uuid4()
     other_company_id = uuid.uuid4()

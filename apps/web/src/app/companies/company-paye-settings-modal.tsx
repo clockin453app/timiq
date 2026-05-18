@@ -38,6 +38,9 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
   const [defaultPensionBasis, setDefaultPensionBasis] = useState<PensionSchemeBasis>("qualifying_earnings");
   const [monthlyPaydayRule, setMonthlyPaydayRule] = useState("");
   const [payPeriodClosingDay, setPayPeriodClosingDay] = useState("");
+  const [payeOvertimeEnabled, setPayeOvertimeEnabled] = useState(false);
+  const [payeOvertimeThresholdHours, setPayeOvertimeThresholdHours] = useState("");
+  const [payeOvertimeMultiplier, setPayeOvertimeMultiplier] = useState("");
 
   useEffect(() => {
     if (!company) {
@@ -80,6 +83,9 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
     setDefaultPensionBasis(settings.default_pension_basis);
     setMonthlyPaydayRule(settings.monthly_payday_rule ?? "");
     setPayPeriodClosingDay(valueOrBlank(settings.pay_period_closing_day));
+    setPayeOvertimeEnabled(settings.paye_overtime_enabled);
+    setPayeOvertimeThresholdHours(valueOrBlank(settings.paye_overtime_threshold_hours));
+    setPayeOvertimeMultiplier(valueOrBlank(settings.paye_overtime_multiplier));
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -103,6 +109,9 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
         default_pension_basis: defaultPensionBasis,
         monthly_payday_rule: monthlyPaydayRule.trim() || null,
         pay_period_closing_day: payPeriodClosingDay.trim() === "" ? null : Number(payPeriodClosingDay),
+        paye_overtime_enabled: payeOvertimeEnabled,
+        paye_overtime_threshold_hours: payeOvertimeThresholdHours.trim() || null,
+        paye_overtime_multiplier: payeOvertimeMultiplier.trim() || null,
       });
       setSuccessMessage("PAYE employer settings saved.");
       await onSaved();
@@ -219,6 +228,25 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Pay period closing day
                 <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" max={31} min={1} onChange={(e) => setPayPeriodClosingDay(e.target.value)} type="number" value={payPeriodClosingDay} />
+              </label>
+            </section>
+
+            <section className="space-y-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">PAYE overtime foundation</p>
+              <p className="text-xs text-[var(--color-text-muted)]">
+                PAYE overtime settings are stored for future use. PAYE overtime calculation is not enabled yet.
+              </p>
+              <label className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
+                <input checked={payeOvertimeEnabled} disabled={isSaving} onChange={(e) => setPayeOvertimeEnabled(e.target.checked)} type="checkbox" />
+                PAYE overtime enabled
+              </label>
+              <label className="block text-xs font-bold text-[var(--color-text)]">
+                PAYE overtime threshold hours
+                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" min={0} onChange={(e) => setPayeOvertimeThresholdHours(e.target.value)} type="number" value={payeOvertimeThresholdHours} />
+              </label>
+              <label className="block text-xs font-bold text-[var(--color-text)]">
+                PAYE overtime multiplier
+                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" min={0} onChange={(e) => setPayeOvertimeMultiplier(e.target.value)} step="0.01" type="number" value={payeOvertimeMultiplier} />
               </label>
             </section>
 

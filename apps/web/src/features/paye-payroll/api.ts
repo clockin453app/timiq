@@ -3,6 +3,7 @@ import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 
 export type PayrollType = "cis_subcontractor" | "paye_employee";
 export type SalaryType = "fixed_monthly_salary" | "hourly";
+export type PayeHourSource = "completed_time_shifts" | "manual_hours_future";
 export type TaxBasis = "cumulative" | "month1";
 export type StudentLoanPlan = "none" | "plan_1" | "plan_2" | "plan_4" | "plan_5";
 export type PensionEnrolmentStatus = "eligible" | "enrolled" | "opted_out" | "postponed" | "not_eligible";
@@ -15,6 +16,9 @@ export type EmployeePayeSettings = {
   pay_frequency: "monthly";
   salary_type: SalaryType;
   monthly_salary: string | null;
+  paye_hourly_rate: string | null;
+  paye_uses_time_records: boolean;
+  paye_hour_source: PayeHourSource;
   tax_code: string | null;
   tax_basis: TaxBasis;
   ni_category: string | null;
@@ -33,6 +37,9 @@ export type PatchEmployeePayeSettingsRequest = Partial<{
   pay_frequency: "monthly";
   salary_type: SalaryType;
   monthly_salary: string | number | null;
+  paye_hourly_rate: string | number | null;
+  paye_uses_time_records: boolean;
+  paye_hour_source: PayeHourSource;
   tax_code: string | null;
   tax_basis: TaxBasis;
   ni_category: string | null;
@@ -55,6 +62,9 @@ export type CompanyPayeSettings = {
   default_pension_basis: PensionSchemeBasis;
   monthly_payday_rule: string | null;
   pay_period_closing_day: number | null;
+  paye_overtime_enabled: boolean;
+  paye_overtime_threshold_hours: string | null;
+  paye_overtime_multiplier: string | null;
   default_tax_year: string | null;
   rti_status: string;
   created_at: string;
@@ -105,6 +115,12 @@ export type MonthlyPayeItem = {
   bonus_pay: string;
   commission_pay: string;
   component_pay: string;
+  regular_hours: string | null;
+  overtime_hours: string | null;
+  hourly_rate: string | null;
+  gross_hourly_pay: string | null;
+  regular_pay: string | null;
+  overtime_pay: string | null;
   gross_pay: string | null;
   taxable_pay: string | null;
   niable_pay: string | null;
@@ -307,6 +323,9 @@ export async function patchCompanyPayeSettings(
       | "default_pension_basis"
       | "monthly_payday_rule"
       | "pay_period_closing_day"
+      | "paye_overtime_enabled"
+      | "paye_overtime_threshold_hours"
+      | "paye_overtime_multiplier"
       | "default_tax_year"
       | "rti_status"
     >
