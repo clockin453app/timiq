@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { WeekPickerBar } from "../../components/week-picker-bar";
@@ -185,6 +186,24 @@ function formatWhenShort(iso: string | null | undefined): string {
     return iso;
   }
   return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+function numericValue(value: string | number | null | undefined): number {
+  if (value === null || value === undefined || value === "") {
+    return 0;
+  }
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function hasVisibleTimesheetWeekActivity(row: TimesheetWeekSummaryRow): boolean {
+  return (
+    row.clocked_seconds > 0 ||
+    row.payable_seconds > 0 ||
+    row.payroll_seconds > 0 ||
+    row.has_completed_shifts ||
+    numericValue(row.gross_amount) > 0
+  );
 }
 
 export function TimesheetsClient() {
@@ -406,9 +425,9 @@ export function TimesheetsClient() {
         : Boolean(sheet && completedCount === 0)),
   );
   const daysWithAttendance = sheet?.days.filter(dayHasAttendance) ?? [];
-  const selectedWeekSummary = useMemo(
-    () => recentWeeks.find((row) => row.week_start === sheet?.week_start) ?? null,
-    [recentWeeks, sheet?.week_start],
+  const visibleRecentWeeks = useMemo(
+    () => recentWeeks.filter(hasVisibleTimesheetWeekActivity),
+    [recentWeeks],
   );
 
   const hasExportableData =
@@ -536,7 +555,7 @@ export function TimesheetsClient() {
           </label>
         ) : null}
 
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+        <div className={`flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between ${!adminMode && user.system_role === "employee" ? "hidden md:flex" : ""}`}>
           <div className="min-w-0 flex-1">
             <WeekPickerBar
               disabled={loading}
@@ -566,7 +585,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees && openShiftsSingle.length > 0 ? (
-          <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)]">
+          <div className={`space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)] ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
             <p className="text-xs font-bold uppercase tracking-wide text-[#374151]">Open shift (not in week totals)</p>
             <p className="text-xs text-[var(--color-text-muted)]">
               Payable and payroll totals below include only completed shifts. Clocked elapsed while still clocked in is
@@ -635,20 +654,13 @@ export function TimesheetsClient() {
               <span className="text-right">Payment Date</span>
               <span className="text-right">Gross / Hours</span>
             </div>
-            {recentWeeks.length > 0 ? (
-              recentWeeks.map((row) => {
-                const active = row.week_start === weekStart;
+            {visibleRecentWeeks.length > 0 ? (
+              visibleRecentWeeks.map((row) => {
                 return (
-                  <button
-                    className={[
-                      "grid w-full grid-cols-[1fr_auto_auto] items-center gap-2 rounded-[var(--radius-md)] border px-3 py-3 text-left text-sm shadow-sm",
-                      active
-                        ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)]"
-                        : "border-[var(--color-border)] bg-[var(--color-cell)]",
-                    ].join(" ")}
+                  <Link
+                    className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3 text-left text-sm shadow-sm hover:border-[var(--color-border-dark)] hover:bg-[var(--color-header)]"
+                    href={`/timesheets/week?week_start=${encodeURIComponent(row.week_start)}`}
                     key={row.week_start}
-                    onClick={() => setWeekStart(row.week_start)}
-                    type="button"
                   >
                     <span className="min-w-0 font-semibold text-[var(--color-text)]">
                       {formatPayrollWeekUkLabel(row.week_start, timezoneLabel || browserDefaultTimeZone(), false)}
@@ -659,7 +671,7 @@ export function TimesheetsClient() {
                     <span className="whitespace-nowrap text-right text-xs font-semibold tabular-nums text-[var(--color-text)]">
                       {row.gross_amount ? formatMoneyGBP(row.gross_amount) : formatDurationSeconds(row.payroll_seconds)}
                     </span>
-                  </button>
+                  </Link>
                 );
               })
             ) : (
@@ -671,85 +683,15 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees ? (
-          <TimesheetWeekSummaryLine
-            breakSeconds={sheet.week_break_seconds}
-            clocked={sheet.week_actual_seconds}
-            payable={sheet.week_counted_seconds}
-            payroll={sheet.week_rounded_seconds}
-            timeZone={sheet.company_timezone}
-            weekStart={sheet.week_start}
-          />
-        ) : null}
-
-        {!loading && sheet && !viewingAllEmployees ? (
-          <div className="space-y-2 md:hidden">
-            <details className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 text-sm shadow-sm">
-              <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-semibold text-[var(--color-text)]">
-                      {formatPayrollWeekUkLabel(sheet.week_start, sheet.company_timezone, false)}
-                    </p>
-                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                      Payment date: {formatWhenShort(selectedWeekSummary?.paid_at)}
-                    </p>
-                  </div>
-                  <span className="shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-header)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-text-soft)]">
-                    Details
-                  </span>
-                </div>
-                <dl className="mt-3 grid grid-cols-2 gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-header)] p-2">
-                  <div>
-                    <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Payroll hours</dt>
-                    <dd className="tabular-nums font-semibold text-[var(--color-text)]">
-                      {formatDurationSeconds(sheet.week_rounded_seconds)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Gross earnings</dt>
-                    <dd className="tabular-nums font-semibold text-[var(--color-text)]">
-                      {selectedWeekSummary?.gross_amount
-                        ? formatMoneyGBP(selectedWeekSummary.gross_amount)
-                        : "—"}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Payable time</dt>
-                    <dd className="tabular-nums text-[var(--color-text)]">
-                      {formatDurationSeconds(sheet.week_counted_seconds)}
-                    </dd>
-                  </div>
-                  <div>
-                    <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Break deducted</dt>
-                    <dd className="text-[var(--color-text)]">
-                      <BreakDeductionCell seconds={sheet.week_break_seconds} />
-                    </dd>
-                  </div>
-                </dl>
-              </summary>
-              <div className="mt-3 space-y-2 border-t border-[var(--color-border)] pt-3">
-                {daysWithAttendance.length > 0 ? (
-                  daysWithAttendance.map((day) => (
-                    <div
-                      className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-header)] p-2 text-xs"
-                      key={day.date}
-                    >
-                      <p className="font-semibold text-[var(--color-text)]">{formatDay(day.date)}</p>
-                      <div className="mt-1 grid grid-cols-2 gap-1 text-[var(--color-text-muted)]">
-                        <span>Clocked {formatDurationSeconds(day.actual_seconds)}</span>
-                        <span>Payroll {formatDurationSeconds(day.rounded_seconds)}</span>
-                        <span>Payable {formatDurationSeconds(day.counted_seconds)}</span>
-                        <span>
-                          Break <BreakDeductionCell seconds={day.break_seconds} />
-                        </span>
-                      </div>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-xs text-[var(--color-text-muted)]">No completed day rows for this week.</p>
-                )}
-              </div>
-            </details>
+          <div className={!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}>
+            <TimesheetWeekSummaryLine
+              breakSeconds={sheet.week_break_seconds}
+              clocked={sheet.week_actual_seconds}
+              payable={sheet.week_counted_seconds}
+              payroll={sheet.week_rounded_seconds}
+              timeZone={sheet.company_timezone}
+              weekStart={sheet.week_start}
+            />
           </div>
         ) : null}
 
@@ -765,7 +707,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees && (sheet.week_leave?.length ?? 0) > 0 ? (
-          <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
+          <div className={`overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
             <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
                 Leave & absence (week overlap)
@@ -812,7 +754,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {showNoCompleted ? (
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-5 text-center">
+          <div className={`rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-5 text-center ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
             <p className="text-sm font-semibold text-[var(--color-text)]">No completed shifts this week.</p>
             <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
               Day totals and the table below list only completed clock-in/out pairs. If anyone is still clocked in, see
@@ -934,13 +876,13 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && !sheet && !companySheet ? (
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-4 py-4 text-sm text-[var(--color-text-muted)]">
+          <div className={`rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-4 py-4 text-sm text-[var(--color-text-muted)] ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
             No timesheet loaded for this selection.
           </div>
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees ? (
-          <p className="text-xs text-[var(--color-text-muted)]">
+          <p className={`text-xs text-[var(--color-text-muted)] ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
             Completed shifts this week: {completedCount}
             {sheet.shift_count !== completedCount ? ` · All shift records in week: ${sheet.shift_count}` : ""}.
             Locations (completed): {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}.
