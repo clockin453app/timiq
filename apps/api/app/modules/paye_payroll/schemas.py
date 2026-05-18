@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
@@ -105,3 +105,117 @@ class MonthlyPayeReportShellResponse(BaseModel):
     message: str
     company_settings_configured: bool
     rows: list[MonthlyPayeReportShellRow]
+
+
+class MonthlyPayeRecalculateRequest(BaseModel):
+    tax_year: str = Field(..., max_length=9)
+    tax_month: int = Field(..., ge=1, le=12)
+    company_id: uuid.UUID | None = None
+
+
+class MonthlyPayePeriodResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    company_id: uuid.UUID
+    tax_year: str
+    tax_month: int
+    period_start: date
+    period_end: date
+    pay_date: date
+    status: str
+    calculated_at: datetime | None = None
+    calculated_by_user_id: uuid.UUID | None = None
+    approved_at: datetime | None = None
+    approved_by_user_id: uuid.UUID | None = None
+    paid_at: datetime | None = None
+    paid_by_user_id: uuid.UUID | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class MonthlyPayeItemResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    period_id: uuid.UUID
+    company_id: uuid.UUID
+    user_id: uuid.UUID
+    employee_email: str | None = None
+    employee_name: str | None = None
+    payroll_type: str
+    pay_frequency: str
+    salary_type: str
+    monthly_salary: Decimal | None = None
+    tax_code: str | None = None
+    tax_basis: str
+    ni_category: str | None = None
+    student_loan_plan: str
+    postgraduate_loan: bool
+    pension_enrolment_status: str
+    employee_pension_percent: Decimal | None = None
+    employer_pension_percent: Decimal | None = None
+    pension_scheme_basis: str
+    pension_relief_method: str
+    gross_pay: Decimal | None = None
+    taxable_pay: Decimal | None = None
+    niable_pay: Decimal | None = None
+    pensionable_pay: Decimal | None = None
+    paye_tax: Decimal | None = None
+    employee_ni: Decimal | None = None
+    employer_ni: Decimal | None = None
+    employee_pension: Decimal | None = None
+    employer_pension: Decimal | None = None
+    student_loan: Decimal | None = None
+    postgraduate_loan_deduction: Decimal | None = None
+    other_deductions: Decimal
+    additions: Decimal
+    total_deductions: Decimal | None = None
+    net_pay: Decimal | None = None
+    ytd_gross_pay: Decimal | None = None
+    ytd_taxable_pay: Decimal | None = None
+    ytd_paye_tax: Decimal | None = None
+    ytd_employee_ni: Decimal | None = None
+    ytd_employer_ni: Decimal | None = None
+    ytd_employee_pension: Decimal | None = None
+    ytd_employer_pension: Decimal | None = None
+    ytd_student_loan: Decimal | None = None
+    ytd_postgraduate_loan: Decimal | None = None
+    ytd_net_pay: Decimal | None = None
+    status: str
+    approved_at: datetime | None = None
+    approved_by_user_id: uuid.UUID | None = None
+    paid_at: datetime | None = None
+    paid_by_user_id: uuid.UUID | None = None
+    calculation_snapshot: dict
+    unsupported_reason: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class MonthlyPayeSummaryResponse(BaseModel):
+    employees: int
+    total_gross: Decimal
+    taxable_pay: Decimal
+    paye_tax: Decimal
+    employee_ni: Decimal
+    employer_ni: Decimal
+    employee_pension: Decimal
+    employer_pension: Decimal
+    student_loans: Decimal
+    postgraduate_loans: Decimal
+    total_deductions: Decimal
+    net_pay: Decimal
+    unsupported_count: int
+
+
+class MonthlyPayeReportResponse(BaseModel):
+    company_id: uuid.UUID
+    tax_year: str
+    tax_month: int
+    calculation_enabled: bool = True
+    message: str
+    company_settings_configured: bool
+    period: MonthlyPayePeriodResponse | None = None
+    rows: list[MonthlyPayeItemResponse]
+    summary: MonthlyPayeSummaryResponse

@@ -71,14 +71,80 @@ export type MonthlyPayeReportShellRow = {
   status: string;
 };
 
-export type MonthlyPayeReportShell = {
+export type MonthlyPayePeriod = {
+  id: string;
   company_id: string;
-  year: number;
-  month: number;
+  tax_year: string;
+  tax_month: number;
+  period_start: string;
+  period_end: string;
+  pay_date: string;
+  status: "pending" | "approved" | "paid" | string;
+  calculated_at: string | null;
+  approved_at: string | null;
+  paid_at: string | null;
+};
+
+export type MonthlyPayeItem = {
+  id: string;
+  period_id: string;
+  company_id: string;
+  user_id: string;
+  employee_email: string | null;
+  employee_name: string | null;
+  payroll_type: string;
+  pay_frequency: string;
+  salary_type: string;
+  monthly_salary: string | null;
+  tax_code: string | null;
+  tax_basis: string;
+  ni_category: string | null;
+  student_loan_plan: string;
+  postgraduate_loan: boolean;
+  pension_enrolment_status: string;
+  gross_pay: string | null;
+  taxable_pay: string | null;
+  niable_pay: string | null;
+  pensionable_pay: string | null;
+  paye_tax: string | null;
+  employee_ni: string | null;
+  employer_ni: string | null;
+  employee_pension: string | null;
+  employer_pension: string | null;
+  student_loan: string | null;
+  postgraduate_loan_deduction: string | null;
+  total_deductions: string | null;
+  net_pay: string | null;
+  status: "pending" | "approved" | "paid" | string;
+  unsupported_reason: string | null;
+};
+
+export type MonthlyPayeSummary = {
+  employees: number;
+  total_gross: string;
+  taxable_pay: string;
+  paye_tax: string;
+  employee_ni: string;
+  employer_ni: string;
+  employee_pension: string;
+  employer_pension: string;
+  student_loans: string;
+  postgraduate_loans: string;
+  total_deductions: string;
+  net_pay: string;
+  unsupported_count: number;
+};
+
+export type MonthlyPayeReport = {
+  company_id: string;
+  tax_year: string;
+  tax_month: number;
   calculation_enabled: boolean;
   message: string;
   company_settings_configured: boolean;
-  rows: MonthlyPayeReportShellRow[];
+  period: MonthlyPayePeriod | null;
+  rows: MonthlyPayeItem[];
+  summary: MonthlyPayeSummary;
 };
 
 function qs(params: Record<string, string | undefined>): string {
@@ -166,21 +232,64 @@ export async function patchCompanyPayeSettings(
 
 export async function fetchMonthlyPayeReportShell(params: {
   companyId?: string | null;
-  year: number;
-  month: number;
+  taxYear?: string;
+  taxMonth?: number;
   employeeUserId?: string | null;
-}): Promise<MonthlyPayeReportShell> {
+}): Promise<MonthlyPayeReport> {
   const response = await fetch(
     `${API_URL}/api/paye-payroll/monthly-report${qs({
       company_id: params.companyId || undefined,
-      year: String(params.year),
-      month: String(params.month),
-      employee_user_id: params.employeeUserId || undefined,
+      tax_year: params.taxYear || "2026-2027",
+      tax_month: params.taxMonth ? String(params.taxMonth) : undefined,
+      employee_id: params.employeeUserId || undefined,
     })}`,
     { credentials: "include" },
   );
   if (!response.ok) {
     await parseError(response, "Could not load Monthly PAYE Report.");
   }
-  return response.json() as Promise<MonthlyPayeReportShell>;
+  return response.json() as Promise<MonthlyPayeReport>;
+}
+
+export async function recalculateMonthlyPaye(params: {
+  companyId?: string | null;
+  taxYear: string;
+  taxMonth: number;
+}): Promise<MonthlyPayeReport> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/monthly-report/recalculate`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      company_id: params.companyId || undefined,
+      tax_year: params.taxYear,
+      tax_month: params.taxMonth,
+    }),
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not recalculate Monthly PAYE Report.");
+  }
+  return response.json() as Promise<MonthlyPayeReport>;
+}
+
+export async function approveMonthlyPayePeriod(periodId: string): Promise<MonthlyPayeReport> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/periods/${periodId}/approve`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not approve Monthly PAYE period.");
+  }
+  return response.json() as Promise<MonthlyPayeReport>;
+}
+
+export async function markMonthlyPayePeriodPaid(periodId: string): Promise<MonthlyPayeReport> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/periods/${periodId}/mark-paid`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not mark Monthly PAYE period paid.");
+  }
+  return response.json() as Promise<MonthlyPayeReport>;
 }

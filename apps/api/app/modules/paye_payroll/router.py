@@ -13,16 +13,22 @@ from app.modules.paye_payroll.schemas import (
     CompanyPayeSettingsResponse,
     EmployeePayeSettingsPatchRequest,
     EmployeePayeSettingsResponse,
+    MonthlyPayeRecalculateRequest,
+    MonthlyPayeReportResponse,
     MonthlyPayeReportShellResponse,
 )
 from app.modules.paye_payroll.service import (
     PayePayrollNotFoundError,
     PayePayrollPermissionError,
+    approve_monthly_paye_period,
+    mark_monthly_paye_period_paid,
+    monthly_paye_report,
     monthly_paye_report_shell,
     patch_company_paye_settings,
     patch_employee_paye_settings,
     read_company_paye_settings,
     read_employee_paye_settings,
+    recalculate_monthly_paye,
 )
 
 router = APIRouter(prefix="/api/paye-payroll", tags=["paye-payroll"])
@@ -85,23 +91,72 @@ def patch_company_settings(
         raise _handle_error(exc) from exc
 
 
-@router.get("/monthly-report", response_model=MonthlyPayeReportShellResponse)
-def get_monthly_report_shell(
+@router.get("/monthly-report", response_model=MonthlyPayeReportResponse)
+def get_monthly_report(
     company_id: uuid.UUID | None = Query(default=None),
-    year: int = Query(..., ge=2000, le=2100),
-    month: int = Query(..., ge=1, le=12),
+    tax_year: str | None = Query(default=None),
+    tax_month: int | None = Query(default=None, ge=1, le=12),
+    employee_id: uuid.UUID | None = Query(default=None),
+    year: int | None = Query(default=None, ge=2000, le=2100),
+    month: int | None = Query(default=None, ge=1, le=12),
     employee_user_id: uuid.UUID | None = Query(default=None),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
-) -> MonthlyPayeReportShellResponse:
+) -> MonthlyPayeReportResponse:
     try:
-        return monthly_paye_report_shell(
+        resolved_tax_year = tax_year or "2026-2027"
+        resolved_tax_month = tax_month or month
+        if resolved_tax_month is None:
+            raise PayePayrollPermissionError("Select a PAYE tax month.")
+        return monthly_paye_report(
             db_session,
             current_user,
             company_id=company_id,
-            year=year,
-            month=month,
-            employee_user_id=employee_user_id,
+            tax_year=resolved_tax_year,
+            tax_month=resolved_tax_month,
+            employee_id=employee_id or employee_user_id,
         )
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/monthly-report/recalculate", response_model=MonthlyPayeReportResponse)
+def recalculate_monthly_report(
+    request: MonthlyPayeRecalculateRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> MonthlyPayeReportResponse:
+    try:
+        return recalculate_monthly_paye(
+            db_session,
+            current_user,
+            company_id=request.company_id,
+            tax_year=request.tax_year,
+            tax_month=request.tax_month,
+        )
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/periods/{period_id}/approve", response_model=MonthlyPayeReportResponse)
+def approve_period(
+    period_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> MonthlyPayeReportResponse:
+    try:
+        return approve_monthly_paye_period(db_session, current_user, period_id)
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/periods/{period_id}/mark-paid", response_model=MonthlyPayeReportResponse)
+def mark_period_paid(
+    period_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> MonthlyPayeReportResponse:
+    try:
+        return mark_monthly_paye_period_paid(db_session, current_user, period_id)
     except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
         raise _handle_error(exc) from exc

@@ -181,17 +181,33 @@ def test_administrator_can_access_monthly_paye_report_shell() -> None:
     client = TestClient(app)
     app.dependency_overrides[get_authenticated_user] = lambda: actor
     try:
-        with patch("app.modules.paye_payroll.router.monthly_paye_report_shell") as shell:
+        with patch("app.modules.paye_payroll.router.monthly_paye_report") as shell:
             shell.return_value = {
                 "company_id": str(uuid.uuid4()),
-                "year": 2026,
-                "month": 5,
-                "calculation_enabled": False,
-                "message": "PAYE calculation engine is not enabled yet. Configure employee and company PAYE settings first.",
+                "tax_year": "2026-2027",
+                "tax_month": 5,
+                "calculation_enabled": True,
+                "message": "Monthly PAYE report loaded.",
                 "company_settings_configured": False,
+                "period": None,
                 "rows": [],
+                "summary": {
+                    "employees": 0,
+                    "total_gross": "0.00",
+                    "taxable_pay": "0.00",
+                    "paye_tax": "0.00",
+                    "employee_ni": "0.00",
+                    "employer_ni": "0.00",
+                    "employee_pension": "0.00",
+                    "employer_pension": "0.00",
+                    "student_loans": "0.00",
+                    "postgraduate_loans": "0.00",
+                    "total_deductions": "0.00",
+                    "net_pay": "0.00",
+                    "unsupported_count": 0,
+                },
             }
-            response = client.get(f"/api/paye-payroll/monthly-report?company_id={uuid.uuid4()}&year=2026&month=5")
+            response = client.get(f"/api/paye-payroll/monthly-report?company_id={uuid.uuid4()}&tax_year=2026-2027&tax_month=5")
         assert response.status_code == 200
     finally:
         app.dependency_overrides.clear()

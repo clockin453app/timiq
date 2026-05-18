@@ -25,7 +25,13 @@ from app.modules.time_clock.models import ClockSelfie, TimeShift, TimeShiftBreak
 from app.modules.onboarding.models import OnboardingDocument, OnboardingSubmission
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.payroll_policies.models import LocationPayrollPolicy
-from app.modules.paye_payroll.models import CompanyPayeSettings, EmployeePayeSettings, PayeTaxYearRule
+from app.modules.paye_payroll.models import (
+    CompanyPayeSettings,
+    EmployeePayeSettings,
+    MonthlyPayeItem,
+    MonthlyPayePeriod,
+    PayeTaxYearRule,
+)
 from app.modules.privacy.models import PrivacyPolicyAcknowledgement, PrivacyRequest
 from app.modules.presence.models import UserPresenceSession
 from app.modules.settings.models import CompanyAppSettings, UserPreference
@@ -55,6 +61,8 @@ __all__ = [
     "CompanyPayeSettings",
     "EmployeeProfile",
     "EmployeePayeSettings",
+    "MonthlyPayeItem",
+    "MonthlyPayePeriod",
     "EmployeeJobRole",
     "EmployeeLocationAccess",
     "LeaveBalanceAdjustment",
