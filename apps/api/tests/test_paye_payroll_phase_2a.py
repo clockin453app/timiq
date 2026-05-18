@@ -30,6 +30,7 @@ from app.modules.paye_payroll.service import (
     mark_monthly_paye_period_paid,
     patch_pay_component,
     recalculate_monthly_paye,
+    undo_paid_monthly_paye_period,
 )
 
 
@@ -549,3 +550,92 @@ def test_recalculate_blocked_for_approved_or_paid_and_mark_paid_requires_approve
             raise AssertionError("Expected mark-paid block")
         except PayePayrollPermissionError:
             pass
+
+
+def test_undo_paid_reverts_period_and_items_without_changing_values() -> None:
+    company_id = uuid.uuid4()
+    actor = _user(SystemRole.ADMINISTRATOR)
+    paid_by = uuid.uuid4()
+    approved_by = uuid.uuid4()
+    approved_at = datetime.now(timezone.utc)
+    paid_at = datetime.now(timezone.utc)
+    period = _period(company_id, status="paid")
+    period.approved_at = approved_at
+    period.approved_by_user_id = approved_by
+    period.paid_at = paid_at
+    period.paid_by_user_id = paid_by
+    item = _item(company_id, uuid.uuid4())
+    item.period_id = period.id
+    item.status = "paid"
+    item.approved_at = approved_at
+    item.approved_by_user_id = approved_by
+    item.paid_at = paid_at
+    item.paid_by_user_id = paid_by
+    item.component_snapshot = [{"type": "bonus", "amount": "100.00"}]
+    item.calculation_snapshot = {"phase": "2A"}
+    before_values = (item.gross_pay, item.paye_tax, item.employee_ni, item.net_pay)
+    with (
+        patch("app.modules.paye_payroll.repository.get_monthly_period_by_id", return_value=period),
+        patch("app.modules.paye_payroll.repository.list_items_for_period", return_value=[item]),
+        patch("app.modules.paye_payroll.service.monthly_paye_report", return_value=MagicMock()),
+    ):
+        undo_paid_monthly_paye_period(MagicMock(), actor, period.id)
+    assert period.status == "approved"
+    assert period.paid_at is None
+    assert period.paid_by_user_id is None
+    assert period.approved_at == approved_at
+    assert period.approved_by_user_id == approved_by
+    assert item.status == "approved"
+    assert item.paid_at is None
+    assert item.paid_by_user_id is None
+    assert item.approved_at == approved_at
+    assert item.approved_by_user_id == approved_by
+    assert (item.gross_pay, item.paye_tax, item.employee_ni, item.net_pay) == before_values
+    assert item.component_snapshot == [{"type": "bonus", "amount": "100.00"}]
+    assert item.calculation_snapshot == {"phase": "2A"}
+
+
+def test_company_admin_undo_paid_scope_and_invalid_status_blocks() -> None:
+    own_company = uuid.uuid4()
+    other_company = uuid.uuid4()
+    admin = _user(SystemRole.ADMIN, company_id=own_company)
+    own_paid = _period(own_company, status="paid")
+    own_item = _item(own_company, uuid.uuid4())
+    own_item.period_id = own_paid.id
+    own_item.status = "paid"
+    with (
+        patch("app.modules.paye_payroll.repository.get_monthly_period_by_id", return_value=own_paid),
+        patch("app.modules.paye_payroll.repository.list_items_for_period", return_value=[own_item]),
+        patch("app.modules.paye_payroll.service.monthly_paye_report", return_value=MagicMock()),
+    ):
+        undo_paid_monthly_paye_period(MagicMock(), admin, own_paid.id)
+    assert own_paid.status == "approved"
+    assert own_item.status == "approved"
+
+    other_paid = _period(other_company, status="paid")
+    with patch("app.modules.paye_payroll.repository.get_monthly_period_by_id", return_value=other_paid):
+        try:
+            undo_paid_monthly_paye_period(MagicMock(), admin, other_paid.id)
+            raise AssertionError("Expected company scope block")
+        except PayePayrollPermissionError:
+            pass
+
+    for status in ("pending", "approved"):
+        period = _period(own_company, status=status)
+        with patch("app.modules.paye_payroll.repository.get_monthly_period_by_id", return_value=period):
+            try:
+                undo_paid_monthly_paye_period(MagicMock(), admin, period.id)
+                raise AssertionError(f"Expected undo-paid block for {status}")
+            except PayePayrollPermissionError:
+                pass
+
+
+def test_employee_cannot_undo_paid_paye_period_endpoint() -> None:
+    employee = _user(SystemRole.EMPLOYEE, company_id=uuid.uuid4())
+    client = TestClient(app)
+    app.dependency_overrides[get_authenticated_user] = lambda: employee
+    try:
+        response = client.post(f"/api/paye-payroll/periods/{uuid.uuid4()}/undo-paid")
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()

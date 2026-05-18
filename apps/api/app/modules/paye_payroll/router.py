@@ -45,6 +45,7 @@ from app.modules.paye_payroll.service import (
     render_monthly_paye_payslip_pdf,
     render_own_monthly_paye_payslip_html,
     render_own_monthly_paye_payslip_pdf,
+    undo_paid_monthly_paye_period,
 )
 
 router = APIRouter(prefix="/api/paye-payroll", tags=["paye-payroll"])
@@ -312,5 +313,17 @@ def mark_period_paid(
 ) -> MonthlyPayeReportResponse:
     try:
         return mark_monthly_paye_period_paid(db_session, current_user, period_id)
+    except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.post("/periods/{period_id}/undo-paid", response_model=MonthlyPayeReportResponse)
+def undo_period_paid(
+    period_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> MonthlyPayeReportResponse:
+    try:
+        return undo_paid_monthly_paye_period(db_session, current_user, period_id)
     except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
         raise _handle_error(exc) from exc

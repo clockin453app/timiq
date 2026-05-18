@@ -27,6 +27,7 @@ import {
   markMonthlyPayePeriodPaid,
   openMonthlyPayePayslip,
   recalculateMonthlyPaye,
+  undoPaidMonthlyPayePeriod,
   type PayePayComponent,
   type PayeCapabilitiesResponse,
   type MonthlyPayeItem,
@@ -107,6 +108,12 @@ function rowMoney(row: MonthlyPayeItem, field: keyof MonthlyPayeItem): string {
 
 function canOpenPayePayslip(row: MonthlyPayeItem): boolean {
   return !row.unsupported_reason && (row.status === "approved" || row.status === "paid");
+}
+
+function componentLockLabel(row: MonthlyPayeItem): string | null {
+  if (row.status === "approved") return "Locked — approved";
+  if (row.status === "paid") return "Locked — paid";
+  return null;
 }
 
 export function MonthlyPayeClient() {
@@ -222,9 +229,9 @@ export function MonthlyPayeClient() {
     void load();
   }
 
-  async function runAction(action: "recalculate" | "approve" | "paid") {
+  async function runAction(action: "recalculate" | "approve" | "paid" | "undoPaid") {
     if (!activeCompanyId) return;
-    if ((action === "approve" || action === "paid") && !report?.period) return;
+    if ((action === "approve" || action === "paid" || action === "undoPaid") && !report?.period) return;
     setActionLoading(action);
     setError("");
     try {
@@ -237,7 +244,9 @@ export function MonthlyPayeClient() {
             })
           : action === "approve"
             ? await approveMonthlyPayePeriod(report!.period!.id)
-            : await markMonthlyPayePeriodPaid(report!.period!.id);
+            : action === "paid"
+              ? await markMonthlyPayePeriodPaid(report!.period!.id)
+              : await undoPaidMonthlyPayePeriod(report!.period!.id);
       setReport(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Monthly PAYE action failed.");
@@ -256,6 +265,7 @@ export function MonthlyPayeClient() {
     : `Tax month ${taxMonth}`;
   const canApprove = report?.period?.status === "pending" && (report?.summary.unsupported_count ?? 0) === 0;
   const canMarkPaid = report?.period?.status === "approved";
+  const canUndoPaid = report?.period?.status === "paid";
   const canRecalculate = !report?.period || report.period.status === "pending";
   const componentsLocked = report?.period?.status === "approved" || report?.period?.status === "paid";
   const capabilityRows = capabilities?.categories.flatMap((category) => category.capabilities) ?? [];
@@ -377,6 +387,15 @@ export function MonthlyPayeClient() {
             >
               {actionLoading === "paid" ? "Marking paid..." : "Mark paid"}
             </Button>
+            <Button
+              disabled={actionLoading !== "" || !report?.period || !canUndoPaid}
+              onClick={() => void runAction("undoPaid")}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              {actionLoading === "undoPaid" ? "Undoing paid..." : "Undo paid"}
+            </Button>
           </div>
         </form>
 
@@ -481,17 +500,20 @@ export function MonthlyPayeClient() {
                 <TableCell>{rowMoney(row, "gross_pay")}</TableCell>
                 <TableCell>
                   <div>{rowMoney(row, "component_pay")}</div>
-                  <button
-                    className="mt-1 text-xs font-semibold text-[var(--color-accent)] underline disabled:opacity-60"
-                    disabled={componentsLocked}
-                    onClick={() => {
-                      setComponentEmployee(row);
-                      setEditingComponent(null);
-                    }}
-                    type="button"
-                  >
-                    Add bonus/commission
-                  </button>
+                  {componentLockLabel(row) ? (
+                    <div className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">{componentLockLabel(row)}</div>
+                  ) : (
+                    <button
+                      className="mt-1 text-xs font-semibold text-[var(--color-accent)] underline"
+                      onClick={() => {
+                        setComponentEmployee(row);
+                        setEditingComponent(null);
+                      }}
+                      type="button"
+                    >
+                      Add bonus/commission
+                    </button>
+                  )}
                   {components.filter((component) => component.user_id === row.user_id).length ? (
                     <div className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">
                       {components
@@ -501,29 +523,31 @@ export function MonthlyPayeClient() {
                             <span>
                               {component.component_type}: {money(component.amount)}
                             </span>
-                            <button
-                              className="font-semibold text-[var(--color-accent)] underline disabled:opacity-60"
-                              disabled={componentsLocked}
-                              onClick={() => {
-                                setComponentEmployee(row);
-                                setEditingComponent(component);
-                              }}
-                              type="button"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="font-semibold text-[var(--color-danger-700)] underline disabled:opacity-60"
-                              disabled={componentsLocked}
-                              onClick={() =>
-                                void deletePayePayComponent(component.id)
-                                  .then(load)
-                                  .catch((e) => setError(e instanceof Error ? e.message : "Could not delete PAYE component."))
-                              }
-                              type="button"
-                            >
-                              Delete
-                            </button>
+                            {!componentLockLabel(row) ? (
+                              <>
+                                <button
+                                  className="font-semibold text-[var(--color-accent)] underline"
+                                  onClick={() => {
+                                    setComponentEmployee(row);
+                                    setEditingComponent(component);
+                                  }}
+                                  type="button"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  className="font-semibold text-[var(--color-danger-700)] underline"
+                                  onClick={() =>
+                                    void deletePayePayComponent(component.id)
+                                      .then(load)
+                                      .catch((e) => setError(e instanceof Error ? e.message : "Could not delete PAYE component."))
+                                  }
+                                  type="button"
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            ) : null}
                           </div>
                         ))}
                     </div>

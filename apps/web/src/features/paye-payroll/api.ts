@@ -388,6 +388,17 @@ export async function markMonthlyPayePeriodPaid(periodId: string): Promise<Month
   return response.json() as Promise<MonthlyPayeReport>;
 }
 
+export async function undoPaidMonthlyPayePeriod(periodId: string): Promise<MonthlyPayeReport> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/periods/${periodId}/undo-paid`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not undo Monthly PAYE paid status.");
+  }
+  return response.json() as Promise<MonthlyPayeReport>;
+}
+
 export async function fetchPayePayComponents(params: {
   companyId?: string | null;
   taxYear: string;
