@@ -510,7 +510,7 @@ html {{ box-sizing: border-box; }}
 body {{
   margin: 0;
   padding: 0;
-  background: #f3f4f6;
+  background: #f4f6f8;
   color: #111827;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: clamp(14px, 2.8vw, 16px);
@@ -521,22 +521,22 @@ body {{
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  padding: 12px;
+  padding: 14px;
 }}
 @media (min-width: 768px) {{
-  .payslip-wrap {{ padding: 20px 24px 28px; }}
+  .payslip-wrap {{ padding: 24px 28px 32px; }}
 }}
 .payslip-card {{
   max-width: 210mm;
   margin: 0 auto;
   background: #fff;
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 18px 16px 20px;
+  border-radius: 10px;
+  padding: 20px 16px 24px;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }}
 @media (min-width: 768px) {{
-  .payslip-card {{ padding: 22px 24px 24px; }}
+  .payslip-card {{ padding: 26px 28px 30px; }}
 }}
 .payslip-head {{
   display: flex;
@@ -567,13 +567,16 @@ body {{
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
   gap: 0.75rem;
-  margin-top: 1rem;
+  margin-top: 1.15rem;
+}}
+@media (min-width: 900px) {{
+  .info-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
 }}
 .info-panel {{
   border: 1px solid #e5e7eb;
-  border-radius: 8px;
+  border-radius: 9px;
   background: #f9fafb;
-  padding: 0.75rem;
+  padding: 0.9rem;
 }}
 .info-panel h2 {{
   margin: 0 0 0.4rem;
@@ -585,14 +588,17 @@ body {{
 .summary-grid {{
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  gap: 0.6rem;
-  margin-top: 1rem;
+  gap: 0.7rem;
+  margin-top: 1.05rem;
+}}
+@media (min-width: 900px) {{
+  .summary-grid {{ grid-template-columns: repeat(4, minmax(0, 1fr)); }}
 }}
 .summary-card {{
   border: 1px solid #d1d5db;
-  border-radius: 8px;
+  border-radius: 9px;
   background: #f8fafc;
-  padding: 0.7rem;
+  padding: 0.8rem;
 }}
 .summary-card span {{
   display: block;
@@ -608,12 +614,12 @@ body {{
 .pay-table {{
   width: 100%;
   border-collapse: collapse;
-  margin-top: 1.1rem;
+  margin-top: 1.25rem;
   table-layout: fixed;
 }}
 .pay-table td {{
   border: 1px solid #d1d5db;
-  padding: 0.6rem 0.65rem;
+  padding: 0.68rem 0.72rem;
   vertical-align: top;
   word-wrap: break-word;
   overflow-wrap: anywhere;
@@ -631,11 +637,6 @@ body {{
 }}
 .pay-table tr.section td:first-child {{
   background: #eef2f7;
-}}
-.foot-note {{
-  margin-top: 1.25rem;
-  font-size: 0.8rem;
-  color: #6b7280;
 }}
 @media print {{
   body {{ background: #fff; font-size: 11pt; }}
@@ -691,7 +692,6 @@ body {{
       <tr><td>YTD taxable pay ({period.week_start.year})</td><td class="num">£{ytd_pay:.2f}</td></tr>
       <tr><td>YTD CIS deducted ({period.week_start.year})</td><td class="num">£{ytd_cis:.2f}</td></tr>
     </tbody></table>
-    <p class="foot-note">Use your browser&rsquo;s Print dialog to print or save as PDF.</p>
   </div>
 </div>
 </body></html>"""
