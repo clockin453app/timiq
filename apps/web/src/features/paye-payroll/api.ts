@@ -396,6 +396,17 @@ export async function approveMonthlyPayePeriod(periodId: string): Promise<Monthl
   return response.json() as Promise<MonthlyPayeReport>;
 }
 
+export async function unlockApprovedMonthlyPayePeriod(periodId: string): Promise<MonthlyPayeReport> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/periods/${periodId}/unlock-approved`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not unlock approved Monthly PAYE period.");
+  }
+  return response.json() as Promise<MonthlyPayeReport>;
+}
+
 export async function markMonthlyPayePeriodPaid(periodId: string): Promise<MonthlyPayeReport> {
   const response = await fetch(`${API_URL}/api/paye-payroll/periods/${periodId}/mark-paid`, {
     method: "POST",

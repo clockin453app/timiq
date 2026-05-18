@@ -1391,6 +1391,40 @@ def approve_monthly_paye_period(
     )
 
 
+def unlock_approved_monthly_paye_period(
+    db_session: Session,
+    actor: User,
+    period_id: uuid.UUID,
+) -> MonthlyPayeReportResponse:
+    period = paye_repo.get_monthly_period_by_id(db_session, period_id)
+    if period is None:
+        raise PayePayrollNotFoundError("Monthly PAYE period not found.")
+    _resolve_company_id(actor, period.company_id)
+    if period.status != "approved":
+        raise PayePayrollPermissionError("Only approved PAYE periods can be unlocked.")
+    items = paye_repo.list_items_for_period(db_session, period.id)
+    now = _now()
+    period.status = "pending"
+    period.approved_at = None
+    period.approved_by_user_id = None
+    period.updated_at = now
+    for item in items:
+        if item.status == "approved":
+            item.status = "pending"
+            item.approved_at = None
+            item.approved_by_user_id = None
+            item.updated_at = now
+    db_session.commit()
+    return monthly_paye_report(
+        db_session,
+        actor,
+        company_id=period.company_id,
+        tax_year=period.tax_year,
+        tax_month=period.tax_month,
+        employee_id=None,
+    )
+
+
 def mark_monthly_paye_period_paid(
     db_session: Session,
     actor: User,

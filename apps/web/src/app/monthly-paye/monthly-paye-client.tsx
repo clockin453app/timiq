@@ -27,6 +27,7 @@ import {
   markMonthlyPayePeriodPaid,
   openMonthlyPayePayslip,
   recalculateMonthlyPaye,
+  unlockApprovedMonthlyPayePeriod,
   undoPaidMonthlyPayePeriod,
   type PayePayComponent,
   type PayeCapabilitiesResponse,
@@ -229,9 +230,17 @@ export function MonthlyPayeClient() {
     void load();
   }
 
-  async function runAction(action: "recalculate" | "approve" | "paid" | "undoPaid") {
+  async function runAction(action: "recalculate" | "approve" | "unlockApproved" | "paid" | "undoPaid") {
     if (!activeCompanyId) return;
-    if ((action === "approve" || action === "paid" || action === "undoPaid") && !report?.period) return;
+    if ((action === "approve" || action === "unlockApproved" || action === "paid" || action === "undoPaid") && !report?.period) return;
+    if (
+      action === "unlockApproved" &&
+      !window.confirm(
+        "Unlock this approved PAYE period? This will move it back to pending so payroll can be edited and recalculated. It will not change money values until you recalculate.",
+      )
+    ) {
+      return;
+    }
     setActionLoading(action);
     setError("");
     try {
@@ -244,9 +253,11 @@ export function MonthlyPayeClient() {
             })
           : action === "approve"
             ? await approveMonthlyPayePeriod(report!.period!.id)
-            : action === "paid"
-              ? await markMonthlyPayePeriodPaid(report!.period!.id)
-              : await undoPaidMonthlyPayePeriod(report!.period!.id);
+            : action === "unlockApproved"
+              ? await unlockApprovedMonthlyPayePeriod(report!.period!.id)
+              : action === "paid"
+                ? await markMonthlyPayePeriodPaid(report!.period!.id)
+                : await undoPaidMonthlyPayePeriod(report!.period!.id);
       setReport(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Monthly PAYE action failed.");
@@ -264,6 +275,7 @@ export function MonthlyPayeClient() {
     ? `${report.period.period_start} to ${report.period.period_end}`
     : `Tax month ${taxMonth}`;
   const canApprove = report?.period?.status === "pending" && (report?.summary.unsupported_count ?? 0) === 0;
+  const canUnlockApproved = report?.period?.status === "approved";
   const canMarkPaid = report?.period?.status === "approved";
   const canUndoPaid = report?.period?.status === "paid";
   const canRecalculate = !report?.period || report.period.status === "pending";
@@ -386,6 +398,15 @@ export function MonthlyPayeClient() {
               variant="secondary"
             >
               {actionLoading === "paid" ? "Marking paid..." : "Mark paid"}
+            </Button>
+            <Button
+              disabled={actionLoading !== "" || !report?.period || !canUnlockApproved}
+              onClick={() => void runAction("unlockApproved")}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              {actionLoading === "unlockApproved" ? "Unlocking..." : "Unlock approved"}
             </Button>
             <Button
               disabled={actionLoading !== "" || !report?.period || !canUndoPaid}

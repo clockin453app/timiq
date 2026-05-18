@@ -31,6 +31,7 @@ from app.modules.paye_payroll.service import (
     patch_pay_component,
     recalculate_monthly_paye,
     undo_paid_monthly_paye_period,
+    unlock_approved_monthly_paye_period,
 )
 
 
@@ -683,6 +684,105 @@ def test_undo_paid_reverts_period_and_items_without_changing_values() -> None:
     assert (item.gross_pay, item.paye_tax, item.employee_ni, item.net_pay) == before_values
     assert item.component_snapshot == [{"type": "bonus", "amount": "100.00"}]
     assert item.calculation_snapshot == {"phase": "2A"}
+
+
+def test_unlock_approved_reverts_period_and_items_without_changing_values() -> None:
+    company_id = uuid.uuid4()
+    actor = _user(SystemRole.ADMINISTRATOR)
+    approved_by = uuid.uuid4()
+    approved_at = datetime.now(timezone.utc)
+    period = _period(company_id, status="approved")
+    period.approved_at = approved_at
+    period.approved_by_user_id = approved_by
+    item = _item(company_id, uuid.uuid4())
+    item.period_id = period.id
+    item.status = "approved"
+    item.approved_at = approved_at
+    item.approved_by_user_id = approved_by
+    item.component_snapshot = [{"type": "bonus", "amount": "100.00"}]
+    item.overtime_policy_snapshot = {"enabled": False}
+    item.time_record_source_snapshot = {"source": "completed_time_shifts"}
+    item.calculation_snapshot = {"phase": "2A"}
+    before_values = (
+        item.gross_pay,
+        item.taxable_pay,
+        item.paye_tax,
+        item.employee_ni,
+        item.net_pay,
+        item.ytd_gross_pay,
+        item.ytd_net_pay,
+    )
+    with (
+        patch("app.modules.paye_payroll.repository.get_monthly_period_by_id", return_value=period),
+        patch("app.modules.paye_payroll.repository.list_items_for_period", return_value=[item]),
+        patch("app.modules.paye_payroll.service.monthly_paye_report", return_value=MagicMock()),
+    ):
+        unlock_approved_monthly_paye_period(MagicMock(), actor, period.id)
+    assert period.status == "pending"
+    assert period.approved_at is None
+    assert period.approved_by_user_id is None
+    assert item.status == "pending"
+    assert item.approved_at is None
+    assert item.approved_by_user_id is None
+    assert (
+        item.gross_pay,
+        item.taxable_pay,
+        item.paye_tax,
+        item.employee_ni,
+        item.net_pay,
+        item.ytd_gross_pay,
+        item.ytd_net_pay,
+    ) == before_values
+    assert item.component_snapshot == [{"type": "bonus", "amount": "100.00"}]
+    assert item.overtime_policy_snapshot == {"enabled": False}
+    assert item.time_record_source_snapshot == {"source": "completed_time_shifts"}
+    assert item.calculation_snapshot == {"phase": "2A"}
+
+
+def test_company_admin_unlock_approved_scope_and_invalid_status_blocks() -> None:
+    own_company = uuid.uuid4()
+    other_company = uuid.uuid4()
+    admin = _user(SystemRole.ADMIN, company_id=own_company)
+    own_approved = _period(own_company, status="approved")
+    own_item = _item(own_company, uuid.uuid4())
+    own_item.period_id = own_approved.id
+    own_item.status = "approved"
+    with (
+        patch("app.modules.paye_payroll.repository.get_monthly_period_by_id", return_value=own_approved),
+        patch("app.modules.paye_payroll.repository.list_items_for_period", return_value=[own_item]),
+        patch("app.modules.paye_payroll.service.monthly_paye_report", return_value=MagicMock()),
+    ):
+        unlock_approved_monthly_paye_period(MagicMock(), admin, own_approved.id)
+    assert own_approved.status == "pending"
+    assert own_item.status == "pending"
+
+    other_approved = _period(other_company, status="approved")
+    with patch("app.modules.paye_payroll.repository.get_monthly_period_by_id", return_value=other_approved):
+        try:
+            unlock_approved_monthly_paye_period(MagicMock(), admin, other_approved.id)
+            raise AssertionError("Expected company scope block")
+        except PayePayrollPermissionError:
+            pass
+
+    for status in ("pending", "paid"):
+        period = _period(own_company, status=status)
+        with patch("app.modules.paye_payroll.repository.get_monthly_period_by_id", return_value=period):
+            try:
+                unlock_approved_monthly_paye_period(MagicMock(), admin, period.id)
+                raise AssertionError(f"Expected unlock-approved block for {status}")
+            except PayePayrollPermissionError:
+                pass
+
+
+def test_employee_cannot_unlock_approved_paye_period_endpoint() -> None:
+    employee = _user(SystemRole.EMPLOYEE, company_id=uuid.uuid4())
+    client = TestClient(app)
+    app.dependency_overrides[get_authenticated_user] = lambda: employee
+    try:
+        response = client.post(f"/api/paye-payroll/periods/{uuid.uuid4()}/unlock-approved")
+        assert response.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_company_admin_undo_paid_scope_and_invalid_status_blocks() -> None:
