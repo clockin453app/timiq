@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 from app.modules.auth.models import SystemRole
 from app.modules.onboarding.constants import ONBOARDING_CONTRACT_VERSION
 from app.modules.onboarding.models import OnboardingSubmission
-from app.modules.onboarding.service import render_submission_print_html, submit_my_submission
+from app.modules.onboarding.service import _contract_accepted_display, render_submission_print_html, submit_my_submission
 
 
 PNG_BYTES = b"\x89PNG\r\n\x1a\nsignature-bytes"
@@ -68,11 +68,15 @@ def test_print_document_embeds_drawn_signature_and_header() -> None:
     assert "Petre Rotaru" in html
     assert "employee@timiq.local" in html
     assert "Contract accepted" in html
+    assert "18 May 2026, 12:00 UTC" in html
+    assert "2026-05-18T12:00" not in html
+    assert "+00:00" not in html
     assert ONBOARDING_CONTRACT_VERSION in html
     assert "Employee signature" in html
     assert "Signature mode:" in html
     assert "Typed Employee" in html
     assert "data:image/png;base64," in html
+    assert "Submitted / accepted" not in html
 
 
 def test_print_document_handles_missing_signature_file_safely() -> None:
@@ -115,6 +119,28 @@ def test_print_document_does_not_expose_storage_paths_or_urls() -> None:
     assert "onboarding-signatures/secret/path" not in html
     assert "https://r2" not in html.lower()
     assert "storage_path" not in html
+
+
+def test_contract_accepted_display_requires_explicit_field() -> None:
+    assert _contract_accepted_display({}) == "Not recorded"
+    assert _contract_accepted_display({"contract_accepted": "true"}) == "yes"
+    assert _contract_accepted_display({"contract_accepted": "false"}) == "no"
+    assert _contract_accepted_display({"contract_accepted": ""}) == "no"
+    assert _contract_accepted_display({"accept_contract": "yes"}) == "yes"
+
+
+def test_print_document_does_not_infer_acceptance_from_submitted_or_signature() -> None:
+    owner = _user()
+    submission = _submission(owner)
+    submission.form_payload.pop("contract_accepted", None)
+    submission.form_payload.pop("accept_contract", None)
+    assert submission.submitted_at is not None
+    assert submission.signature_image_path
+
+    html, _storage = _render(submission, owner)
+
+    assert "Not recorded" in html
+    assert "<span class=\"label\">Contract accepted</span><span class=\"value\">yes</span>" not in html
 
 
 def test_new_submission_captures_backend_contract_version() -> None:

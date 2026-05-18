@@ -584,6 +584,10 @@ export function StarterFormClient() {
       );
       return;
     }
+    if (form.contract_accepted !== "true") {
+      setError("Confirm that you have read and accept the onboarding contract terms before submitting.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -1129,7 +1133,7 @@ export function StarterFormClient() {
                   disabled={!editable}
                   onChange={(e) => setField("contract_accepted", e.target.checked ? "true" : "")}
                 />
-                <span>I have read and accept the contract terms above. *</span>
+                <span>I have read and accept the onboarding contract terms above. *</span>
               </label>
 
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">12. Signature</p>

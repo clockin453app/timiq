@@ -363,6 +363,35 @@ def _contract_version_display(value: object) -> str:
     return raw or ONBOARDING_CONTRACT_VERSION
 
 
+def _format_document_datetime(value: datetime | None) -> str:
+    if value is None:
+        return "—"
+    dt = value
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    dt = dt.astimezone(timezone.utc)
+    return dt.strftime("%d %b %Y, %H:%M UTC")
+
+
+def _contract_accepted_display(form: dict[str, Any]) -> str:
+    if "contract_accepted" in form:
+        raw = form.get("contract_accepted")
+    elif "accept_contract" in form:
+        raw = form.get("accept_contract")
+    else:
+        return "Not recorded"
+    if raw in (True, 1):
+        return "yes"
+    if raw in (False, 0):
+        return "no"
+    text = str(raw).strip().lower()
+    if text in ("yes", "true", "1", "on"):
+        return "yes"
+    if text in ("no", "false", "0", "off", ""):
+        return "no"
+    return "Not recorded"
+
+
 def _street_line(form: dict[str, Any]) -> str:
     s = str(form.get("street_address", "")).strip()
     if s:
@@ -939,10 +968,9 @@ def render_submission_print_html(db_session: Session, actor: User, submission_id
     typed = html.escape(typed_raw)
     contract_raw = submission.form_payload.get("contract_version") or ONBOARDING_CONTRACT_VERSION
     contract = html.escape(_contract_version_display(contract_raw))
-    accepted = submission.form_payload.get("contract_accepted") or submission.form_payload.get("accept_contract")
-    accepted_label = "yes" if accepted in (True, "true", "yes", "1", 1) else "no"
-    submitted_label = html.escape(submission.submitted_at.isoformat() if submission.submitted_at else "—")
-    generated_label = html.escape(_utc_now().isoformat())
+    accepted_label = _contract_accepted_display(form)
+    submitted_label = html.escape(_format_document_datetime(submission.submitted_at))
+    generated_label = html.escape(_format_document_datetime(_utc_now()))
     signature_body = ""
     if signature_data_url:
         signature_body = (
@@ -1003,9 +1031,6 @@ th {{ background: #f8fafc; width: 28%; }}
 <section class="signature-panel">
   <p><strong>Signature mode:</strong> {sig_mode}</p>
   {typed_line}
-  <p><strong>Submitted / accepted:</strong> {submitted_label}</p>
-  <p><strong>Contract accepted:</strong> {accepted_label}</p>
-  <p><strong>Contract version:</strong> {contract}</p>
   {signature_body}
 </section>
 
