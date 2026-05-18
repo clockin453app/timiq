@@ -15,6 +15,7 @@ PensionStatus = Literal["eligible", "enrolled", "opted_out", "postponed", "not_e
 PensionBasis = Literal["qualifying_earnings", "total_earnings"]
 PensionReliefMethod = Literal["relief_at_source", "net_pay_arrangement", "salary_sacrifice"]
 RtiStatus = Literal["not_ready", "ready", "exported", "submitted", "accepted", "rejected"]
+CapabilityStatus = Literal["enabled", "disabled", "coming_soon", "not_supported"]
 
 
 class EmployeePayeSettingsPatchRequest(BaseModel):
@@ -219,3 +220,24 @@ class MonthlyPayeReportResponse(BaseModel):
     period: MonthlyPayePeriodResponse | None = None
     rows: list[MonthlyPayeItemResponse]
     summary: MonthlyPayeSummaryResponse
+
+
+class PayeCapabilityResponse(BaseModel):
+    key: str
+    name: str
+    category: str
+    status: CapabilityStatus
+    tax_years_supported: list[str]
+    source_note: str
+    description: str
+    unsupported_message: str | None = None
+
+
+class PayeCapabilityCategoryResponse(BaseModel):
+    category: str
+    capabilities: list[PayeCapabilityResponse]
+
+
+class PayeCapabilitiesResponse(BaseModel):
+    tax_year: str
+    categories: list[PayeCapabilityCategoryResponse]

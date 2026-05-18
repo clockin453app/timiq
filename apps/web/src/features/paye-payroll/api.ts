@@ -147,6 +147,29 @@ export type MonthlyPayeReport = {
   summary: MonthlyPayeSummary;
 };
 
+export type PayeCapabilityStatus = "enabled" | "disabled" | "coming_soon" | "not_supported";
+
+export type PayeCapability = {
+  key: string;
+  name: string;
+  category: string;
+  status: PayeCapabilityStatus;
+  tax_years_supported: string[];
+  source_note: string;
+  description: string;
+  unsupported_message: string | null;
+};
+
+export type PayeCapabilityCategory = {
+  category: string;
+  capabilities: PayeCapability[];
+};
+
+export type PayeCapabilitiesResponse = {
+  tax_year: string;
+  categories: PayeCapabilityCategory[];
+};
+
 function qs(params: Record<string, string | undefined>): string {
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
@@ -171,6 +194,16 @@ export async function getEmployeePayeSettings(userId: string): Promise<EmployeeP
     await parseError(response, "Could not load PAYE employee settings.");
   }
   return response.json() as Promise<EmployeePayeSettings>;
+}
+
+export async function fetchPayeCapabilities(): Promise<PayeCapabilitiesResponse> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/capabilities`, {
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not load PAYE capability coverage.");
+  }
+  return response.json() as Promise<PayeCapabilitiesResponse>;
 }
 
 export async function patchEmployeePayeSettings(

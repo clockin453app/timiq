@@ -19,9 +19,11 @@ import { listCompanies, type Company } from "../../features/companies/api";
 import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import {
   approveMonthlyPayePeriod,
+  fetchPayeCapabilities,
   fetchMonthlyPayeReportShell,
   markMonthlyPayePeriodPaid,
   recalculateMonthlyPaye,
+  type PayeCapabilitiesResponse,
   type MonthlyPayeItem,
   type MonthlyPayeReport,
 } from "../../features/paye-payroll/api";
@@ -71,6 +73,25 @@ function SummaryCard(props: { label: string; value: string; hint?: string }) {
   );
 }
 
+function CapabilityList(props: { title: string; items: string[]; tone: "ok" | "warn" | "soon" }) {
+  const toneClass =
+    props.tone === "ok"
+      ? "border-emerald-800/20 bg-emerald-50 text-emerald-950"
+      : props.tone === "soon"
+        ? "border-blue-800/20 bg-blue-50 text-blue-950"
+        : "border-amber-800/25 bg-amber-50 text-amber-950";
+  return (
+    <div className={`rounded-[var(--radius-md)] border p-3 ${toneClass}`}>
+      <p className="text-xs font-bold uppercase tracking-wide">{props.title}</p>
+      <ul className="mt-2 space-y-1 text-xs">
+        {props.items.slice(0, 8).map((item) => (
+          <li key={item}>- {item}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function rowMoney(row: MonthlyPayeItem, field: keyof MonthlyPayeItem): string {
   if (row.unsupported_reason) {
     return "Not supported";
@@ -87,6 +108,7 @@ export function MonthlyPayeClient() {
   const [employeeUserId, setEmployeeUserId] = useState("");
   const [employees, setEmployees] = useState<AuthUser[]>([]);
   const [report, setReport] = useState<MonthlyPayeReport | null>(null);
+  const [capabilities, setCapabilities] = useState<PayeCapabilitiesResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
@@ -127,6 +149,25 @@ export function MonthlyPayeClient() {
       cancelled = true;
     };
   }, [activeCompanyId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await fetchPayeCapabilities();
+        if (!cancelled) {
+          setCapabilities(data);
+        }
+      } catch {
+        if (!cancelled) {
+          setCapabilities(null);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function load() {
     if (!activeCompanyId || !taxMonth) {
@@ -195,6 +236,16 @@ export function MonthlyPayeClient() {
   const canApprove = report?.period?.status === "pending" && (report?.summary.unsupported_count ?? 0) === 0;
   const canMarkPaid = report?.period?.status === "approved";
   const canRecalculate = !report?.period || report.period.status === "pending";
+  const capabilityRows = capabilities?.categories.flatMap((category) => category.capabilities) ?? [];
+  const supportedCapabilityNames = capabilityRows
+    .filter((capability) => capability.status === "enabled")
+    .map((capability) => capability.name);
+  const comingSoonCapabilityNames = capabilityRows
+    .filter((capability) => capability.status === "coming_soon")
+    .map((capability) => capability.name);
+  const unsupportedCapabilityNames = capabilityRows
+    .filter((capability) => capability.status === "not_supported")
+    .map((capability) => capability.name);
 
   return (
     <Sheet>
@@ -311,6 +362,45 @@ export function MonthlyPayeClient() {
           Supported in this phase: fixed monthly salary, numeric L tax codes only, NI category A only.
           Payslips and RTI/HMRC submission are not enabled.
         </div>
+
+        <section className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
+          <div className="mb-3">
+            <p className="text-sm font-bold text-[var(--color-text)]">PAYE calculation coverage</p>
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+              Informational matrix only. Unsupported features are not calculated and will continue to show as not supported.
+            </p>
+          </div>
+          <div className="grid gap-2 lg:grid-cols-3">
+            <CapabilityList
+              title="Currently supported"
+              items={
+                supportedCapabilityNames.length
+                  ? supportedCapabilityNames
+                  : [
+                      "Fixed monthly salary",
+                      "Numeric L tax codes",
+                      "NI category A",
+                      "Student and postgraduate loans",
+                    ]
+              }
+              tone="ok"
+            />
+            <CapabilityList
+              title="Not supported yet"
+              items={
+                unsupportedCapabilityNames.length
+                  ? unsupportedCapabilityNames
+                  : ["Hourly PAYE", "Other NI categories", "RTI/HMRC submission"]
+              }
+              tone="warn"
+            />
+            <CapabilityList
+              title="Coming next"
+              items={comingSoonCapabilityNames.length ? comingSoonCapabilityNames : ["Hourly PAYE", "Overtime", "Statutory pay"]}
+              tone="soon"
+            />
+          </div>
+        </section>
 
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <SummaryCard label="Employees" value={String(report?.summary.employees ?? 0)} hint={`${report?.summary.unsupported_count ?? 0} unsupported`} />

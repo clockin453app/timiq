@@ -13,6 +13,7 @@ from app.modules.paye_payroll.schemas import (
     CompanyPayeSettingsResponse,
     EmployeePayeSettingsPatchRequest,
     EmployeePayeSettingsResponse,
+    PayeCapabilitiesResponse,
     MonthlyPayeRecalculateRequest,
     MonthlyPayeReportResponse,
     MonthlyPayeReportShellResponse,
@@ -26,6 +27,7 @@ from app.modules.paye_payroll.service import (
     monthly_paye_report_shell,
     patch_company_paye_settings,
     patch_employee_paye_settings,
+    read_paye_capabilities,
     read_company_paye_settings,
     read_employee_paye_settings,
     recalculate_monthly_paye,
@@ -51,6 +53,16 @@ def get_employee_settings(
     try:
         return read_employee_paye_settings(db_session, current_user, user_id)
     except (PayePayrollPermissionError, PayePayrollNotFoundError) as exc:
+        raise _handle_error(exc) from exc
+
+
+@router.get("/capabilities", response_model=PayeCapabilitiesResponse)
+def get_capabilities(
+    current_user: User = Depends(require_admin_or_administrator),
+) -> PayeCapabilitiesResponse:
+    try:
+        return read_paye_capabilities(current_user)
+    except PayePayrollPermissionError as exc:
         raise _handle_error(exc) from exc
 
 

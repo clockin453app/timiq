@@ -129,7 +129,9 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
             <p className="text-sm font-bold text-[var(--color-text)]">PAYE employer settings</p>
             <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{company.name}</p>
             <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              Monthly PAYE employer details and pension defaults. Calculation is not enabled yet.
+              Monthly PAYE employer details and pension defaults. Current calculation support is limited to fixed
+              monthly salary, numeric L tax codes, NI category A, basic pensions, and student/postgraduate loans.
+              RTI/HMRC submission is not enabled.
             </p>
           </div>
           <Button onClick={onClose} type="button">

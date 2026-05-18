@@ -662,7 +662,8 @@ export function EmployeeDetailPanel({
                 PAYE monthly settings
               </p>
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Stored for the future Monthly PAYE Report. No PAYE tax, NI, pension, or payslip calculation is enabled yet.
+                Phase 2A supports fixed monthly salary, numeric L tax codes such as 1257L, NI category A,
+                basic pensions, and student/postgraduate loans. Other PAYE cases show as not supported until activated.
               </p>
               {profileLoadError ? (
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
@@ -705,9 +706,14 @@ export function EmployeeDetailPanel({
                       }
                       value={payeSalaryType}
                     >
-                      <option value="hourly">Hourly</option>
-                      <option value="fixed_monthly_salary">Fixed monthly salary</option>
+                      <option value="hourly">Hourly — not supported yet</option>
+                      <option value="fixed_monthly_salary">Fixed monthly salary — supported</option>
                     </select>
+                    {payeSalaryType === "hourly" ? (
+                      <p className="mt-1 text-[11px] font-medium text-amber-900">
+                        Hourly PAYE is stored for future use but will block Phase 2A calculation.
+                      </p>
+                    ) : null}
                   </label>
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Monthly salary
@@ -728,6 +734,9 @@ export function EmployeeDetailPanel({
                       placeholder="e.g. 1257L"
                       value={payeTaxCode}
                     />
+                    <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                      Only numeric L tax codes such as 1257L are calculated in Phase 2A. BR, D0, K, NT, S and C codes are not supported yet.
+                    </p>
                   </label>
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Tax basis
@@ -750,6 +759,9 @@ export function EmployeeDetailPanel({
                       placeholder="e.g. A"
                       value={payeNiCategory}
                     />
+                    <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                      Only NI category A is calculated in Phase 2A. Other categories will be marked not supported.
+                    </p>
                   </label>
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Student loan plan
@@ -789,6 +801,11 @@ export function EmployeeDetailPanel({
                       <option value="postponed">Postponed</option>
                       <option value="not_eligible">Not eligible</option>
                     </select>
+                    {payePensionStatus !== "enrolled" ? (
+                      <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                        Pension contributions are calculated only when status is Enrolled.
+                      </p>
+                    ) : null}
                   </label>
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Employee pension %
@@ -830,8 +847,15 @@ export function EmployeeDetailPanel({
                     >
                       <option value="relief_at_source">Relief at source</option>
                       <option value="net_pay_arrangement">Net pay arrangement</option>
-                      <option value="salary_sacrifice">Salary sacrifice</option>
+                      <option disabled={payePensionReliefMethod !== "salary_sacrifice"} value="salary_sacrifice">
+                        Salary sacrifice — not supported yet
+                      </option>
                     </select>
+                    {payePensionReliefMethod === "salary_sacrifice" ? (
+                      <p className="mt-1 text-[11px] font-medium text-amber-900">
+                        Salary sacrifice is not supported in Phase 2A and will block calculation.
+                      </p>
+                    ) : null}
                   </label>
                   <div className="md:col-span-2">
                     <Button disabled={isSavingPayeSettings} onClick={() => void handleSavePayeSettings()} type="button">

@@ -20,6 +20,7 @@ from app.modules.paye_payroll.calculation import (
     money,
     tax_month_bounds,
 )
+from app.modules.paye_payroll.capabilities import list_paye_capabilities
 from app.modules.paye_payroll.models import (
     CompanyPayeSettings,
     EmployeePayeSettings,
@@ -33,6 +34,9 @@ from app.modules.paye_payroll.schemas import (
     CompanyPayeSettingsResponse,
     EmployeePayeSettingsPatchRequest,
     EmployeePayeSettingsResponse,
+    PayeCapabilitiesResponse,
+    PayeCapabilityCategoryResponse,
+    PayeCapabilityResponse,
     MonthlyPayeItemResponse,
     MonthlyPayePeriodResponse,
     MonthlyPayeReportResponse,
@@ -210,6 +214,32 @@ def patch_company_paye_settings(
     db_session.commit()
     db_session.refresh(row)
     return CompanyPayeSettingsResponse.model_validate(row)
+
+
+def read_paye_capabilities(actor: User) -> PayeCapabilitiesResponse:
+    if actor.system_role not in (SystemRole.ADMINISTRATOR, SystemRole.ADMIN):
+        raise PayePayrollPermissionError("PAYE capability coverage requires Admin or Administrator.")
+    grouped: dict[str, list[PayeCapabilityResponse]] = {}
+    for capability in list_paye_capabilities():
+        grouped.setdefault(capability.category, []).append(
+            PayeCapabilityResponse(
+                key=capability.key,
+                name=capability.name,
+                category=capability.category,
+                status=capability.status,  # type: ignore[arg-type]
+                tax_years_supported=list(capability.tax_years_supported),
+                source_note=capability.source_note,
+                description=capability.description,
+                unsupported_message=capability.unsupported_message,
+            ),
+        )
+    return PayeCapabilitiesResponse(
+        tax_year=SUPPORTED_TAX_YEAR,
+        categories=[
+            PayeCapabilityCategoryResponse(category=category, capabilities=capabilities)
+            for category, capabilities in grouped.items()
+        ],
+    )
 
 
 def _display_name(profile: EmployeeProfile | None) -> str | None:
