@@ -8,11 +8,22 @@ from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.modules.auth.models import SystemRole
 from app.modules.employee_profiles.schemas import EmployeeProfileUpdateRequest
 from app.modules.employee_profiles.service import update_profile_for_actor_or_user_id
-from app.modules.payroll.schemas import PayrollItemResponse, PayrollPaySplit, PayrollReportAlerts
-from app.modules.payroll.service import recalculate_payroll, render_payroll_item_payslip_html, render_payroll_item_payslip_pdf
+from app.modules.payroll.schemas import PayrollItemPatchRequest, PayrollItemResponse, PayrollPaySplit, PayrollReportAlerts
+from app.modules.payroll.service import (
+    PayrollApprovedBlockingError,
+    PayrollError,
+    PayrollPaidBlockingError,
+    _payment_mode_label_for_item,
+    patch_payroll_item,
+    recalculate_payroll,
+    render_payroll_item_payslip_html,
+    render_payroll_item_payslip_pdf,
+)
 
 
 def _actor() -> SimpleNamespace:
@@ -75,7 +86,8 @@ def _recalculate_saved_payment_modes(
     *,
     profile_mode: str | None,
     existing_pending_mode: str | None = None,
-) -> list[str]:
+    existing_pending_source: str | None = None,
+) -> list[tuple[str, str | None]]:
     company_id = uuid.uuid4()
     emp = _employee(company_id)
     period_id = uuid.uuid4()
@@ -129,7 +141,14 @@ def _recalculate_saved_payment_modes(
 
     existing_items = []
     if existing_pending_mode is not None:
-        existing_items.append(SimpleNamespace(status="pending", user_id=emp.id, payment_mode=existing_pending_mode))
+        existing_items.append(
+            SimpleNamespace(
+                status="pending",
+                user_id=emp.id,
+                payment_mode=existing_pending_mode,
+                payment_mode_source=existing_pending_source,
+            )
+        )
 
     with (
         patch("app.modules.payroll.service.get_company_by_id", return_value=SimpleNamespace(default_tax_rate=20)),
@@ -175,19 +194,114 @@ def _recalculate_saved_payment_modes(
         patch("app.modules.payroll.service.item_to_response", side_effect=item_response),
     ):
         recalculate_payroll(MagicMock(), _actor(), company_id=company_id, week_start=date(2026, 5, 11))
-    return [item.payment_mode for item in saved_items]
+    return [(item.payment_mode, item.payment_mode_source) for item in saved_items]
 
 
 def test_new_payroll_item_uses_profile_gross_payment_when_no_pending_item() -> None:
-    assert _recalculate_saved_payment_modes(profile_mode="gross_payment") == ["gross_payment"]
+    assert _recalculate_saved_payment_modes(profile_mode="gross_payment") == [("gross_payment", "profile")]
 
 
 def test_new_payroll_item_uses_profile_net_payment_when_no_pending_item() -> None:
-    assert _recalculate_saved_payment_modes(profile_mode="net_payment") == ["net_payment"]
+    assert _recalculate_saved_payment_modes(profile_mode="net_payment") == [("net_payment", "profile")]
 
 
-def test_existing_pending_item_payment_mode_wins_over_profile_mode() -> None:
-    assert _recalculate_saved_payment_modes(profile_mode="gross_payment", existing_pending_mode="net_payment") == ["net_payment"]
+def test_pending_profile_sourced_item_refreshes_from_profile_mode() -> None:
+    assert _recalculate_saved_payment_modes(
+        profile_mode="gross_payment",
+        existing_pending_mode="net_payment",
+        existing_pending_source="profile",
+    ) == [("gross_payment", "profile")]
+
+
+def test_pending_manual_item_payment_mode_wins_over_profile_mode() -> None:
+    assert _recalculate_saved_payment_modes(
+        profile_mode="gross_payment",
+        existing_pending_mode="net_payment",
+        existing_pending_source="manual",
+    ) == [("net_payment", "manual")]
+
+
+def test_missing_profile_payment_mode_defaults_to_net_payment() -> None:
+    assert _recalculate_saved_payment_modes(profile_mode=None) == [("net_payment", "profile")]
+
+
+def test_payment_mode_label_handles_known_and_missing_modes() -> None:
+    assert _payment_mode_label_for_item(SimpleNamespace(payment_mode="gross_payment")) == "Gross payment"
+    assert _payment_mode_label_for_item(SimpleNamespace(payment_mode="net_payment")) == "Net payment"
+    assert _payment_mode_label_for_item(SimpleNamespace(payment_mode=None)) == "Not provided"
+
+
+@patch("app.modules.payroll.service.update_item", side_effect=lambda _db, item: item)
+@patch("app.modules.payroll.service.create_internal_audit_event")
+@patch("app.modules.payroll.service.item_to_response", side_effect=lambda _db, item: item)
+@patch("app.modules.payroll.service.get_item_by_id")
+def test_patch_payment_mode_sets_manual_source_only_when_mode_changes(
+    mock_get: MagicMock,
+    _mock_response: MagicMock,
+    _mock_audit: MagicMock,
+    _mock_update: MagicMock,
+) -> None:
+    item = SimpleNamespace(
+        id=uuid.uuid4(),
+        status="pending",
+        company_id=uuid.uuid4(),
+        payment_mode="net_payment",
+        payment_mode_source="profile",
+        notes=None,
+        other_deductions_amount=0,
+        display_tax_amount=None,
+        display_net_amount=None,
+        rate_missing=True,
+    )
+    mock_get.return_value = item
+    actor = SimpleNamespace(system_role=SystemRole.ADMINISTRATOR, company_id=None, id=uuid.uuid4())
+
+    patch_payroll_item(MagicMock(), actor, item.id, PayrollItemPatchRequest(payment_mode="net_payment"))
+    assert item.payment_mode_source == "profile"
+
+    patch_payroll_item(MagicMock(), actor, item.id, PayrollItemPatchRequest(payment_mode="gross_payment"))
+    assert item.payment_mode == "gross_payment"
+    assert item.payment_mode_source == "manual"
+
+
+@patch("app.modules.payroll.service.get_item_by_id")
+def test_paid_row_still_rejects_payment_mode_edit(mock_get: MagicMock) -> None:
+    item = SimpleNamespace(id=uuid.uuid4(), status="paid", company_id=uuid.uuid4())
+    mock_get.return_value = item
+    actor = SimpleNamespace(system_role=SystemRole.ADMINISTRATOR, company_id=None, id=uuid.uuid4())
+    with pytest.raises(PayrollError, match="locked"):
+        patch_payroll_item(MagicMock(), actor, item.id, PayrollItemPatchRequest(payment_mode="gross_payment"))
+
+
+def test_recalculate_still_blocks_paid_period() -> None:
+    company_id = uuid.uuid4()
+    actor = _actor()
+    period = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, week_start=date(2026, 5, 11))
+    with (
+        patch("app.modules.payroll.service.get_company_by_id", return_value=SimpleNamespace(default_tax_rate=20)),
+        patch("app.modules.payroll.service.ensure_company_time_policy", return_value=SimpleNamespace(timezone_name="Europe/London")),
+        patch("app.modules.payroll.service.first_workplace_tax", return_value=None),
+        patch("app.modules.payroll.service.get_period_by_company_week", return_value=period),
+        patch("app.modules.payroll.service.period_has_paid_item", return_value=True),
+    ):
+        with pytest.raises(PayrollPaidBlockingError):
+            recalculate_payroll(MagicMock(), actor, company_id=company_id, week_start=period.week_start)
+
+
+def test_recalculate_still_blocks_approved_period() -> None:
+    company_id = uuid.uuid4()
+    actor = _actor()
+    period = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, week_start=date(2026, 5, 11))
+    with (
+        patch("app.modules.payroll.service.get_company_by_id", return_value=SimpleNamespace(default_tax_rate=20)),
+        patch("app.modules.payroll.service.ensure_company_time_policy", return_value=SimpleNamespace(timezone_name="Europe/London")),
+        patch("app.modules.payroll.service.first_workplace_tax", return_value=None),
+        patch("app.modules.payroll.service.get_period_by_company_week", return_value=period),
+        patch("app.modules.payroll.service.period_has_paid_item", return_value=False),
+        patch("app.modules.payroll.service.period_has_approved_item", return_value=True),
+    ):
+        with pytest.raises(PayrollApprovedBlockingError):
+            recalculate_payroll(MagicMock(), actor, company_id=company_id, week_start=period.week_start)
 
 
 def _payslip_item(payment_mode: str) -> SimpleNamespace:

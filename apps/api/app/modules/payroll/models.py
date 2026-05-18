@@ -82,6 +82,7 @@ class PayrollItem(Base):
     display_tax_amount: Mapped[float] = mapped_column(Numeric(14, 4), nullable=True)
     display_net_amount: Mapped[float] = mapped_column(Numeric(14, 4), nullable=True)
     payment_mode: Mapped[str] = mapped_column(String(64), nullable=True)
+    payment_mode_source: Mapped[str] = mapped_column(String(32), nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
     policy_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending", index=True)

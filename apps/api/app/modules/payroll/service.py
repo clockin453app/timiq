@@ -161,6 +161,15 @@ def _stored_payment_mode_or_none(payment_mode: str | None) -> str | None:
     return None
 
 
+def _stored_payment_mode_source_or_none(payment_mode_source: str | None) -> str | None:
+    if payment_mode_source is None:
+        return None
+    raw = str(payment_mode_source).strip().lower()
+    if raw in ("profile", "manual"):
+        return raw
+    return None
+
+
 def _payment_mode_label_for_item(item: PayrollItem) -> str:
     mode = _stored_payment_mode_or_none(getattr(item, "payment_mode", None))
     if mode is None:
@@ -1495,11 +1504,12 @@ def recalculate_payroll(
     else:
         period.timezone_name = policy.timezone_name
     period = save_period(db_session, period)
-    pending_modes: dict[uuid.UUID, str] = {}
+    pending_manual_modes: dict[uuid.UUID, str] = {}
     for it in list_items_for_period(db_session, period.id):
         pending_mode = _stored_payment_mode_or_none(it.payment_mode)
-        if it.status == "pending" and pending_mode is not None:
-            pending_modes[it.user_id] = pending_mode
+        payment_mode_source = _stored_payment_mode_source_or_none(getattr(it, "payment_mode_source", None))
+        if it.status == "pending" and pending_mode is not None and payment_mode_source == "manual":
+            pending_manual_modes[it.user_id] = pending_mode
     delete_pending_items_for_period(db_session, period.id)
 
     employees = list_employee_users_for_company(db_session, company_id)
@@ -1522,7 +1532,9 @@ def recalculate_payroll(
         tax_pct = resolve_effective_tax_rate_percent(profile, default_tax, workplace_tax)
         other_d = Decimal(0)
         profile_mode = _stored_payment_mode_or_none(getattr(profile, "payment_mode", None))
-        pay_mode = pending_modes.get(emp.id) or profile_mode or "net_payment"
+        manual_mode = pending_manual_modes.get(emp.id)
+        pay_mode = manual_mode or profile_mode or "net_payment"
+        payment_mode_source = "manual" if manual_mode is not None else "profile"
         bundle = compute_money_bundle(
             regular_seconds=reg_s,
             overtime_seconds=ot_s,
@@ -1553,6 +1565,7 @@ def recalculate_payroll(
             status="pending",
             rate_missing=bool(bundle["rate_missing"]),
             payment_mode=pay_mode,
+            payment_mode_source=payment_mode_source,
         )
         save_item(db_session, item)
 
@@ -1652,10 +1665,15 @@ def patch_payroll_item(
         )
         return item_to_response(db_session, item)
 
+    existing_payment_mode = _stored_payment_mode_or_none(item.payment_mode)
+
     if request.notes is not None:
         item.notes = request.notes
     if request.payment_mode is not None:
-        item.payment_mode = normalize_payroll_payment_mode(request.payment_mode)
+        requested_payment_mode = normalize_payroll_payment_mode(request.payment_mode)
+        item.payment_mode = requested_payment_mode
+        if requested_payment_mode != existing_payment_mode:
+            item.payment_mode_source = "manual"
     else:
         item.payment_mode = normalize_payroll_payment_mode(item.payment_mode)
     if request.other_deductions_amount is not None:
@@ -1919,6 +1937,7 @@ def create_late_shift_adjustment_from_paid_item(
         status="pending",
         rate_missing=bool(bundle["rate_missing"]),
         payment_mode=pay_mode,
+        payment_mode_source="manual",
         notes=notes_val,
     )
     save_item(db_session, new_item)
