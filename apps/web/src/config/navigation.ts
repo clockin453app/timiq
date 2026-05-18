@@ -298,6 +298,13 @@ const AUDIT_LOG: NavigationItem = {
   allowedRoles: ["administrator", "admin"],
 };
 
+const LIVE_LOGS: NavigationItem = {
+  label: "Live logs",
+  labelKey: "nav.live_logs",
+  href: "/system/live-logs",
+  allowedRoles: ["administrator"],
+};
+
 const SYSTEM_HEALTH: NavigationItem = {
   label: "System Health",
   labelKey: "nav.system_health",
@@ -359,7 +366,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mgmt-system",
     label: "System",
     groupLabelKey: "nav.group.mgmt_system",
-    items: [AUDIT_LOG, SYSTEM_HEALTH, SETTINGS],
+    items: [AUDIT_LOG, LIVE_LOGS, SYSTEM_HEALTH, SETTINGS],
   },
 ];
 
@@ -508,7 +515,7 @@ const MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mobile-mgmt-system",
     label: "System",
     groupLabelKey: "nav.group.mgmt_system",
-    items: [HELP_CENTRE, SYSTEM_HEALTH, AUDIT_LOG],
+    items: [HELP_CENTRE, LIVE_LOGS, SYSTEM_HEALTH, AUDIT_LOG],
   },
 ];
 

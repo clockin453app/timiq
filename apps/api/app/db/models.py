@@ -26,6 +26,7 @@ from app.modules.onboarding.models import OnboardingDocument, OnboardingSubmissi
 from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.payroll_policies.models import LocationPayrollPolicy
 from app.modules.privacy.models import PrivacyPolicyAcknowledgement, PrivacyRequest
+from app.modules.presence.models import UserPresenceSession
 from app.modules.settings.models import CompanyAppSettings, UserPreference
 from app.modules.smart_forms.models import SmartFormSubmission, SmartFormTemplate
 from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard
@@ -65,6 +66,7 @@ __all__ = [
     "TimeShift",
     "TimeShiftBreak",
     "User",
+    "UserPresenceSession",
     "Workplace",
     "PayrollPeriod",
     "PayrollItem",

@@ -8,6 +8,7 @@ import { MobileBottomNav } from "./mobile-bottom-nav";
 import { MobileHeader } from "./mobile-header";
 import { PageLocationActionProvider } from "./page-location-action-context";
 import { PageLocationGuide } from "./page-location-guide";
+import { PresenceHeartbeat } from "./presence-heartbeat";
 
 type AppShellProps = {
   activeHref?: string;
@@ -19,6 +20,7 @@ export function AppShell({ activeHref = "/dashboard", children }: AppShellProps)
     <div className="flex min-h-dvh w-full max-w-[100vw] min-w-0 flex-col overflow-x-clip bg-[var(--color-page)] xl:h-dvh xl:max-h-dvh xl:min-h-0">
       <NotificationSoundListener />
       <PushEnablePrompt />
+      <PresenceHeartbeat />
       <DesktopTopBar activeHref={activeHref} />
       <MobileHeader activeHref={activeHref} />
 
