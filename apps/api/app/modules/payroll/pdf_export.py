@@ -189,3 +189,134 @@ def build_payroll_report_pdf(
     story.append(table)
     doc.build(story, onFirstPage=_page_number, onLaterPages=_page_number)
     return buf.getvalue()
+
+
+def build_payroll_item_payslip_pdf(
+    *,
+    company_name: str,
+    employee_name: str,
+    employee_email: str | None,
+    national_insurance_number: str | None,
+    utr_number: str | None,
+    week_start: date,
+    week_end: date,
+    timezone_name: str,
+    generated_at: str,
+    paid_or_approved_label: str,
+    payment_mode_label: str,
+    regular_hours: float,
+    overtime_hours: float,
+    total_hours: float,
+    gross_amount: Decimal | None,
+    cis_tax_amount: Decimal | None,
+    other_deductions_amount: Decimal,
+    additions_amount: Decimal,
+    net_amount: Decimal | None,
+    ytd_taxable_pay: Decimal,
+    ytd_cis_deducted: Decimal,
+) -> bytes:
+    styles = getSampleStyleSheet()
+    title_s = ParagraphStyle("PayslipTitle", parent=styles["Heading1"], fontSize=17, leading=21, spaceAfter=8, textColor=colors.HexColor("#111827"))
+    h2 = ParagraphStyle("PayslipH2", parent=styles["Heading2"], fontSize=10.5, leading=13, spaceAfter=5, textColor=colors.HexColor("#111827"))
+    body = ParagraphStyle("PayslipBody", parent=styles["Normal"], fontSize=8.8, leading=11.5, textColor=colors.HexColor("#1f2937"))
+    small = ParagraphStyle("PayslipSmall", parent=body, fontSize=7.6, leading=9.6)
+    right = ParagraphStyle("PayslipRight", parent=body, alignment=TA_RIGHT)
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        rightMargin=1.15 * cm,
+        leftMargin=1.15 * cm,
+        topMargin=1.1 * cm,
+        bottomMargin=1.1 * cm,
+        pageCompression=0,
+    )
+    story: list[Any] = []
+    story.append(_p("TimIQ Payslip", title_s))
+
+    period = f"{week_start.isoformat()} to {week_end.isoformat()} ({timezone_name or 'UTC'})"
+    meta_rows = [
+        [_p("Company", small), _p(company_name, body), _p("Generated", small), _p(generated_at, body)],
+        [_p("Employee", small), _p(employee_name, body), _p("Email", small), _p(employee_email or "—", body)],
+        [_p("National Insurance", small), _p(national_insurance_number or "Not provided", body), _p("UTR", small), _p(utr_number or "Not provided", body)],
+        [_p("Pay period", small), _p(period, body), _p("Payment", small), _p(paid_or_approved_label or "—", body)],
+        [_p("Payment type", small), _p(payment_mode_label, body), _p("", small), _p("", body)],
+    ]
+    meta = Table(meta_rows, colWidths=[3.4 * cm, 6.3 * cm, 3.2 * cm, 6.1 * cm])
+    meta.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f9fafb")),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d1d5db")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#e5e7eb")),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ],
+        ),
+    )
+    story.append(meta)
+    story.append(Spacer(1, 0.25 * cm))
+
+    deductions = (cis_tax_amount or Decimal(0)) + other_deductions_amount
+    summary_rows = [
+        [_p("Gross pay", small), _p(_money(gross_amount), right)],
+        [_p("CIS / tax", small), _p(_money(cis_tax_amount), right)],
+        [_p("Other deductions", small), _p(_money(other_deductions_amount), right)],
+        [_p("Additions", small), _p(_money(additions_amount), right)],
+        [_p("Total deductions", small), _p(_money(deductions), right)],
+        [_p("Net pay", small), _p(_money(net_amount), right)],
+    ]
+    summary = Table(summary_rows, colWidths=[5.1 * cm, 4.1 * cm])
+    summary.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef2ff")),
+                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#c7d2fe")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#e0e7ff")),
+                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ],
+        ),
+    )
+    story.append(_p("Pay Summary", h2))
+    story.append(summary)
+    story.append(Spacer(1, 0.25 * cm))
+
+    detail_rows = [
+        ["Description", "Value"],
+        ["Hours worked (rounded total)", f"{total_hours:.2f} h"],
+        ["Regular / overtime hours", f"{regular_hours:.2f} / {overtime_hours:.2f} h"],
+        ["YTD taxable pay", _money(ytd_taxable_pay)],
+        ["YTD CIS deducted", _money(ytd_cis_deducted)],
+    ]
+    detail = Table(detail_rows, colWidths=[10.5 * cm, 8.0 * cm])
+    detail.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d1d5db")),
+                ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ],
+        ),
+    )
+    story.append(_p("Details", h2))
+    story.append(detail)
+    doc.build(story, onFirstPage=_page_number, onLaterPages=_page_number)
+    return buf.getvalue()

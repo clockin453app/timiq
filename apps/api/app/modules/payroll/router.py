@@ -51,6 +51,7 @@ from app.modules.payroll.service import (
     patch_payroll_item,
     recalculate_payroll,
     render_payroll_item_payslip_html,
+    render_payroll_item_payslip_pdf,
     undo_paid_item,
     unlock_item,
 )
@@ -343,6 +344,31 @@ def payroll_item_payslip(
         headers={
             "Content-Disposition": f'inline; filename="payslip-{item_id}.html"',
         },
+    )
+
+
+@router.get("/items/{item_id}/payslip.pdf")
+def payroll_item_payslip_pdf(
+    item_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_authenticated_employee_self_service),
+) -> Response:
+    try:
+        body, week_start = render_payroll_item_payslip_pdf(db_session, current_user, item_id)
+    except PayrollItemNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
+        ) from exc
+    except PayrollPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    return protected_file_response(
+        body=body,
+        download_filename=f"timiq-payslip-week-{week_start.isoformat()}.pdf",
+        media_type="application/pdf",
     )
 
 

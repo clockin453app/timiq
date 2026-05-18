@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -97,6 +98,22 @@ class TimesheetWeekResponse(BaseModel):
     open_shifts: list[TimesheetOpenShiftSummary] = Field(default_factory=list)
     locations_worked: list[str] = Field(default_factory=list)
     week_leave: list[WeekLeaveRow] = Field(default_factory=list)
+
+
+class TimesheetWeekSummaryRow(BaseModel):
+    week_start: date
+    week_end: date
+    clocked_seconds: int = 0
+    payable_seconds: int = 0
+    payroll_seconds: int = 0
+    gross_amount: Decimal | None = None
+    paid_at: datetime | None = None
+    status: str
+    has_completed_shifts: bool = False
+
+
+class TimesheetWeeksResponse(BaseModel):
+    weeks: list[TimesheetWeekSummaryRow]
 
 
 class AdminTimesheetEmployeeDayRow(BaseModel):

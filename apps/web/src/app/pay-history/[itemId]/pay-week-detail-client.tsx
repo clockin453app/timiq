@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { PageHeader, Sheet, SheetBody, Button } from "../../../components/ui";
-import { fetchPayrollItemSummary, payrollItemPayslipUrl, type PayrollItemSummaryResponse } from "../../../features/payroll/api";
+import {
+  downloadPayrollItemPayslipPdf,
+  fetchPayrollItemSummary,
+  payrollItemPayslipUrl,
+  type PayrollItemSummaryResponse,
+} from "../../../features/payroll/api";
 import {
   formatHoursFromSeconds,
   formatMoneyGBP,
@@ -30,6 +35,7 @@ export function PayWeekDetailClient(props: { itemId: string }) {
   const [detail, setDetail] = useState<PayrollItemSummaryResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [downloadBusy, setDownloadBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,6 +72,18 @@ export function PayWeekDetailClient(props: { itemId: string }) {
       return;
     }
     window.open(payrollItemPayslipUrl(detail.item_id), "_blank", "noopener,noreferrer");
+  }
+
+  async function downloadPayslip() {
+    if (!detail || detail.can_open_payslip === false) {
+      return;
+    }
+    setDownloadBusy(true);
+    try {
+      await downloadPayrollItemPayslipPdf(detail.item_id, `timiq-payslip-week-${detail.week_start}.pdf`);
+    } finally {
+      setDownloadBusy(false);
+    }
   }
 
   const weekLabel =
@@ -260,6 +278,9 @@ export function PayWeekDetailClient(props: { itemId: string }) {
             </div>
 
             <div className="flex flex-wrap gap-2">
+              <Button disabled={detail.can_open_payslip === false || downloadBusy} onClick={() => void downloadPayslip()} type="button">
+                {downloadBusy ? t("common.downloading", "Downloading…") : t("pay_history.download_payslip", "Download payslip")}
+              </Button>
               <Button disabled={detail.can_open_payslip === false} onClick={openPayslip} type="button">
                 {t("pay_history.open_payslip_print", "Open payslip / print")}
               </Button>

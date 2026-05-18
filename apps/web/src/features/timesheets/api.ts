@@ -45,6 +45,22 @@ export type TimesheetWeekResponse = {
   week_leave: WeekLeaveRow[];
 };
 
+export type TimesheetWeekSummaryRow = {
+  week_start: string;
+  week_end: string;
+  clocked_seconds: number;
+  payable_seconds: number;
+  payroll_seconds: number;
+  gross_amount: string | null;
+  paid_at: string | null;
+  status: string;
+  has_completed_shifts: boolean;
+};
+
+export type TimesheetWeeksResponse = {
+  weeks: TimesheetWeekSummaryRow[];
+};
+
 export async function fetchMyTimesheetWeek(
   weekStartIsoYmd: string,
 ): Promise<TimesheetWeekResponse> {
@@ -62,6 +78,23 @@ export async function fetchMyTimesheetWeek(
   }
 
   return response.json() as Promise<TimesheetWeekResponse>;
+}
+
+export async function fetchMyTimesheetWeeks(limit = 12): Promise<TimesheetWeeksResponse> {
+  const search = new URLSearchParams({ limit: String(limit) });
+  const response = await fetch(
+    `${API_URL}/api/timesheets/me/weeks?${search.toString()}`,
+    {
+      method: "GET",
+      credentials: "include",
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error("Could not load timesheet weeks.");
+  }
+
+  return response.json() as Promise<TimesheetWeeksResponse>;
 }
 
 export async function fetchAdminTimesheetWeek(

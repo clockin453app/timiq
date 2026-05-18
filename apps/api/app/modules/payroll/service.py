@@ -49,7 +49,7 @@ from app.modules.payroll.permissions import (
     assert_payroll_company_scope,
 )
 from app.modules.payroll_policies.service import effective_early_access_for_shift, effective_time_policy_for_shift
-from app.modules.payroll.pdf_export import build_payroll_report_pdf
+from app.modules.payroll.pdf_export import build_payroll_item_payslip_pdf, build_payroll_report_pdf
 from app.modules.payroll.repository import (
     count_open_shifts_started_in_week,
     delete_pending_items_for_period,
@@ -696,6 +696,60 @@ body {{
         },
     )
     return html_out
+
+
+def render_payroll_item_payslip_pdf(db_session: Session, actor: User, item_id: uuid.UUID) -> tuple[bytes, date]:
+    item, period, owner = _load_item_period_owner(db_session, item_id)
+    assert_actor_can_view_payroll_item(actor, item, owner)
+    ytd_pay, ytd_cis = _compute_ytd_for_item(db_session, item, period)
+    company = get_company_by_id(db_session, item.company_id)
+    ni, utr = _employee_tax_identifiers_for_payroll(db_session, item.user_id)
+    if item.paid_at is not None:
+        paid_or_approved = f"Paid at {_utc_dt_display_for_payslip(item.paid_at)}"
+    elif item.approved_at is not None:
+        paid_or_approved = f"Approved at {_utc_dt_display_for_payslip(item.approved_at)}"
+    else:
+        paid_or_approved = "—"
+
+    body = build_payroll_item_payslip_pdf(
+        company_name=company.name if company is not None else "Company",
+        employee_name=_employee_primary_name(db_session, item.user_id),
+        employee_email=owner.email,
+        national_insurance_number=ni,
+        utr_number=utr,
+        week_start=period.week_start,
+        week_end=_week_end_display(period.week_start),
+        timezone_name=period.timezone_name,
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        paid_or_approved_label=paid_or_approved,
+        payment_mode_label=_payment_mode_label(item.payment_mode),
+        regular_hours=item.regular_seconds / 3600,
+        overtime_hours=item.overtime_seconds / 3600,
+        total_hours=item.rounded_total_seconds / 3600,
+        gross_amount=_decimal_or_none(item.gross_amount),
+        cis_tax_amount=_effective_tax_amount_for_item(item),
+        other_deductions_amount=Decimal(str(item.other_deductions_amount or 0)),
+        additions_amount=Decimal("0.00"),
+        net_amount=_effective_net_amount_for_item(item),
+        ytd_taxable_pay=ytd_pay,
+        ytd_cis_deducted=ytd_cis,
+    )
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="payroll.payslip_pdf_downloaded",
+        entity_type="payroll_item",
+        entity_id=str(item.id),
+        company_id=item.company_id,
+        details={
+            "item_id": str(item.id),
+            "owner_user_id": str(item.user_id),
+            "company_id": str(item.company_id),
+            "actor_user_id": str(actor.id),
+            "as_admin": actor.id != item.user_id,
+        },
+    )
+    return body, period.week_start
 
 
 def _employee_display(

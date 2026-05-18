@@ -27,6 +27,7 @@ from app.modules.payroll_policies.service import (
 from app.modules.leave import repository as leave_repo
 from app.modules.leave.schemas import WeekLeaveRow
 from app.modules.locations.models import Location
+from app.modules.payroll.models import PayrollItem, PayrollPeriod
 from app.modules.face_check.service import face_reference_configured
 from app.modules.time_clock.models import TimeShift
 from app.modules.time_clock.permissions import can_view_shift_owner_selfies
@@ -52,6 +53,8 @@ from app.modules.time_records.schemas import (
     TimesheetDayTotals,
     TimesheetOpenShiftSummary,
     TimesheetWeekResponse,
+    TimesheetWeeksResponse,
+    TimesheetWeekSummaryRow,
 )
 
 DEFAULT_PAGE_LIMIT = 50
@@ -614,6 +617,82 @@ def timesheet_week_for_user(
         locations_worked=sorted(location_names),
         week_leave=week_leave,
     )
+
+
+def list_my_recent_timesheet_weeks(
+    db_session: Session,
+    actor: User,
+    *,
+    limit: int = 12,
+) -> TimesheetWeeksResponse:
+    if actor.system_role != SystemRole.EMPLOYEE:
+        raise TimeRecordsPermissionError("Only employees can view their own timesheet weeks.")
+
+    safe_limit = max(1, min(int(limit or 12), 52))
+    policy = _fallback_policy()
+    if actor.company_id is not None:
+        policy = ensure_company_time_policy(db_session, actor.company_id)
+    try:
+        tz = ZoneInfo(policy.timezone_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+
+    today_local = datetime.now(timezone.utc).astimezone(tz).date()
+    current_week_start = today_local - timedelta(days=today_local.weekday())
+    week_starts = [current_week_start - timedelta(days=7 * i) for i in range(safe_limit)]
+
+    pay_rows = (
+        db_session.execute(
+            select(PayrollItem, PayrollPeriod)
+            .join(PayrollPeriod, PayrollItem.period_id == PayrollPeriod.id)
+            .where(PayrollItem.user_id == actor.id)
+            .where(PayrollItem.status.in_(("approved", "paid")))
+            .where(PayrollPeriod.week_start.in_(week_starts)),
+        )
+        .all()
+    )
+    pay_by_week = {period.week_start: item for item, period in pay_rows}
+
+    out: list[TimesheetWeekSummaryRow] = []
+    for week_start in week_starts:
+        week = timesheet_week_for_user(
+            db_session,
+            actor,
+            subject_user_id=actor.id,
+            week_start=week_start,
+        )
+        pay_item = pay_by_week.get(week_start)
+        if pay_item is not None:
+            status_value = pay_item.status
+            gross = Decimal(str(pay_item.gross_amount)) if pay_item.gross_amount is not None else None
+            paid_at = pay_item.paid_at
+        elif week.completed_shift_count > 0:
+            status_value = "timesheet_completed"
+            gross = None
+            paid_at = None
+        elif week.open_shift_in_week:
+            status_value = "open_shift"
+            gross = None
+            paid_at = None
+        else:
+            status_value = "no_completed_shifts"
+            gross = None
+            paid_at = None
+        out.append(
+            TimesheetWeekSummaryRow(
+                week_start=week.week_start,
+                week_end=week.week_start + timedelta(days=6),
+                clocked_seconds=week.week_actual_seconds,
+                payable_seconds=week.week_counted_seconds,
+                payroll_seconds=week.week_rounded_seconds,
+                gross_amount=gross,
+                paid_at=paid_at,
+                status=status_value,
+                has_completed_shifts=week.completed_shift_count > 0,
+            ),
+        )
+
+    return TimesheetWeeksResponse(weeks=out)
 
 
 def _resolve_timesheet_company_scope(

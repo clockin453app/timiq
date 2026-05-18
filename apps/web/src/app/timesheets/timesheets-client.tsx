@@ -29,7 +29,6 @@ import { useLiveShiftDurationParts } from "../../features/time-clock/shift-durat
 import { BreakDeductionCell } from "../../features/time-records/break-deduction-cell";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import { PayrollRoundingHint } from "../../features/time-records/payroll-rounding-hint";
-import { fetchMyPayHistory, type PayHistoryEntry } from "../../features/payroll/api";
 import { formatMoneyGBP } from "../../features/payroll/format";
 import { useT } from "../../lib/i18n";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
@@ -40,9 +39,11 @@ import {
   fetchAdminCompanyTimesheetWeek,
   fetchAdminTimesheetWeek,
   fetchMyTimesheetWeek,
+  fetchMyTimesheetWeeks,
   type AdminTimesheetWeekAllEmployeesResponse,
   type TimesheetDayTotals,
   type TimesheetWeekResponse,
+  type TimesheetWeekSummaryRow,
   type WeekLeaveRow,
 } from "../../features/timesheets/api";
 import { leaveTypeLabel } from "../../features/leave/labels";
@@ -207,7 +208,7 @@ export function TimesheetsClient() {
   const companyScope = useAdministratorCompanyScope(user, companies);
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState("");
-  const [payHistoryRows, setPayHistoryRows] = useState<PayHistoryEntry[]>([]);
+  const [recentWeeks, setRecentWeeks] = useState<TimesheetWeekSummaryRow[]>([]);
 
   const activeCompanyId = useMemo(() => {
     if (isAdministrator(user)) {
@@ -369,19 +370,19 @@ export function TimesheetsClient() {
 
   useEffect(() => {
     if (user.system_role !== "employee") {
-      setPayHistoryRows([]);
+      setRecentWeeks([]);
       return;
     }
     let cancelled = false;
     (async () => {
       try {
-        const rows = await fetchMyPayHistory();
+        const response = await fetchMyTimesheetWeeks(12);
         if (!cancelled) {
-          setPayHistoryRows(rows);
+          setRecentWeeks(response.weeks);
         }
       } catch {
         if (!cancelled) {
-          setPayHistoryRows([]);
+          setRecentWeeks([]);
         }
       }
     })();
@@ -405,9 +406,9 @@ export function TimesheetsClient() {
         : Boolean(sheet && completedCount === 0)),
   );
   const daysWithAttendance = sheet?.days.filter(dayHasAttendance) ?? [];
-  const selectedWeekPay = useMemo(
-    () => payHistoryRows.find((row) => row.week_start === sheet?.week_start) ?? null,
-    [payHistoryRows, sheet?.week_start],
+  const selectedWeekSummary = useMemo(
+    () => recentWeeks.find((row) => row.week_start === sheet?.week_start) ?? null,
+    [recentWeeks, sheet?.week_start],
   );
 
   const hasExportableData =
@@ -627,6 +628,48 @@ export function TimesheetsClient() {
           </div>
         ) : null}
 
+        {!adminMode && user.system_role === "employee" ? (
+          <div className="space-y-2 md:hidden">
+            <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-[11px] font-medium text-[var(--color-text-muted)]">
+              <span>Period</span>
+              <span className="text-right">Payment Date</span>
+              <span className="text-right">Gross / Hours</span>
+            </div>
+            {recentWeeks.length > 0 ? (
+              recentWeeks.map((row) => {
+                const active = row.week_start === weekStart;
+                return (
+                  <button
+                    className={[
+                      "grid w-full grid-cols-[1fr_auto_auto] items-center gap-2 rounded-[var(--radius-md)] border px-3 py-3 text-left text-sm shadow-sm",
+                      active
+                        ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)]"
+                        : "border-[var(--color-border)] bg-[var(--color-cell)]",
+                    ].join(" ")}
+                    key={row.week_start}
+                    onClick={() => setWeekStart(row.week_start)}
+                    type="button"
+                  >
+                    <span className="min-w-0 font-semibold text-[var(--color-text)]">
+                      {formatPayrollWeekUkLabel(row.week_start, timezoneLabel || browserDefaultTimeZone(), false)}
+                    </span>
+                    <span className="whitespace-nowrap text-right text-xs text-[var(--color-text-muted)]">
+                      {formatWhenShort(row.paid_at)}
+                    </span>
+                    <span className="whitespace-nowrap text-right text-xs font-semibold tabular-nums text-[var(--color-text)]">
+                      {row.gross_amount ? formatMoneyGBP(row.gross_amount) : formatDurationSeconds(row.payroll_seconds)}
+                    </span>
+                  </button>
+                );
+              })
+            ) : (
+              <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text-muted)]">
+                No recent timesheet weeks found.
+              </div>
+            )}
+          </div>
+        ) : null}
+
         {!loading && sheet && !viewingAllEmployees ? (
           <TimesheetWeekSummaryLine
             breakSeconds={sheet.week_break_seconds}
@@ -648,11 +691,11 @@ export function TimesheetsClient() {
                       {formatPayrollWeekUkLabel(sheet.week_start, sheet.company_timezone, false)}
                     </p>
                     <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                      Payment date: {formatWhenShort(selectedWeekPay?.paid_at)}
+                      Payment date: {formatWhenShort(selectedWeekSummary?.paid_at)}
                     </p>
                   </div>
                   <span className="shrink-0 rounded border border-[var(--color-border)] bg-[var(--color-header)] px-2 py-0.5 text-[10px] font-bold uppercase text-[var(--color-text-soft)]">
-                    Open details
+                    Details
                   </span>
                 </div>
                 <dl className="mt-3 grid grid-cols-2 gap-2 rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-header)] p-2">
@@ -665,8 +708,8 @@ export function TimesheetsClient() {
                   <div>
                     <dt className="text-[10px] font-bold uppercase text-[var(--color-text-soft)]">Gross earnings</dt>
                     <dd className="tabular-nums font-semibold text-[var(--color-text)]">
-                      {selectedWeekPay && !selectedWeekPay.rate_missing
-                        ? formatMoneyGBP(selectedWeekPay.gross_amount)
+                      {selectedWeekSummary?.gross_amount
+                        ? formatMoneyGBP(selectedWeekSummary.gross_amount)
                         : "—"}
                     </dd>
                   </div>

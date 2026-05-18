@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PageHeader, Sheet, SheetBody, Button } from "../../components/ui";
 import {
   downloadMyTaxYearPaySummary,
+  downloadPayrollItemPayslipPdf,
   fetchMyPayHistory,
   payrollItemPayslipUrl,
   type PayHistoryEntry,
@@ -95,6 +96,7 @@ export function PayHistoryClient() {
   const [selectedTaxYear, setSelectedTaxYear] = useState(currentUkTaxYearValue);
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [summaryError, setSummaryError] = useState("");
+  const [downloadBusyId, setDownloadBusyId] = useState<string | null>(null);
   const taxYears = useMemo(() => taxYearOptions(), []);
 
   async function load() {
@@ -120,6 +122,18 @@ export function PayHistoryClient() {
       return;
     }
     window.open(payrollItemPayslipUrl(row.id), "_blank", "noopener,noreferrer");
+  }
+
+  async function downloadPayslip(row: PayHistoryEntry) {
+    if (!payslipAllowed(row)) {
+      return;
+    }
+    setDownloadBusyId(row.id);
+    try {
+      await downloadPayrollItemPayslipPdf(row.id, `timiq-payslip-week-${row.week_start}.pdf`);
+    } finally {
+      setDownloadBusyId(null);
+    }
   }
 
   async function handleDownloadSummary() {
@@ -261,7 +275,7 @@ export function PayHistoryClient() {
                       className="inline-flex items-center justify-center rounded-[var(--radius-sm)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-1.5 text-xs font-semibold text-[var(--color-text)] hover:bg-[var(--color-cell)]"
                       href={`/pay-history/${encodeURIComponent(row.id)}`}
                     >
-                      {t("pay_history.view_week", "View week")}
+                      {t("pay_history.view_payslip", "View payslip")}
                     </Link>
                     <Button
                       className="min-h-9"
@@ -270,7 +284,16 @@ export function PayHistoryClient() {
                       type="button"
                       variant="secondary"
                     >
-                      {t("pay_history.open_payslip", "Open payslip")}
+                      {t("pay_history.open_payslip", "View payslip")}
+                    </Button>
+                    <Button
+                      className="min-h-9"
+                      disabled={!payslipAllowed(row) || downloadBusyId === row.id}
+                      onClick={() => void downloadPayslip(row)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      {downloadBusyId === row.id ? t("common.downloading", "Downloading…") : t("common.download", "Download")}
                     </Button>
                   </div>
                 </div>
@@ -309,6 +332,9 @@ export function PayHistoryClient() {
                 <th className="border border-[var(--color-border)] px-2 py-2 text-left">
                   {t("payroll.payslip", "Payslip")}
                 </th>
+                <th className="border border-[var(--color-border)] px-2 py-2 text-left">
+                  {t("common.download", "Download")}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -339,7 +365,7 @@ export function PayHistoryClient() {
                           className="text-xs font-semibold text-[var(--color-text)] underline decoration-[var(--color-border-dark)] underline-offset-2 hover:text-[var(--color-text-muted)]"
                           href={`/pay-history/${encodeURIComponent(row.id)}`}
                         >
-                          {t("pay_history.view_details", "View")}
+                          {t("pay_history.view_payslip", "View payslip")}
                         </Link>
                       </td>
                       <td className="border border-[var(--color-border)] px-2 py-2">
@@ -349,7 +375,18 @@ export function PayHistoryClient() {
                           onClick={() => openPayslip(row)}
                           type="button"
                         >
-                          {t("pay_history.open_payslip", "Open")}
+                          {t("pay_history.view_payslip", "View payslip")}
+                        </button>
+                      </td>
+                      <td className="border border-[var(--color-border)] px-2 py-2">
+                        <button
+                          aria-label={`Download payslip for ${periodLabel(row)}`}
+                          className="text-xs font-semibold text-[var(--color-text)] underline decoration-[var(--color-border-dark)] underline-offset-2 hover:text-[var(--color-text-muted)] disabled:cursor-not-allowed disabled:opacity-40 disabled:no-underline"
+                          disabled={!payslipAllowed(row) || downloadBusyId === row.id}
+                          onClick={() => void downloadPayslip(row)}
+                          type="button"
+                        >
+                          {downloadBusyId === row.id ? t("common.downloading", "Downloading…") : t("common.download", "Download")}
                         </button>
                       </td>
                     </tr>

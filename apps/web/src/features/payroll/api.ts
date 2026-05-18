@@ -228,8 +228,26 @@ export function payrollItemPayslipUrl(itemId: string): string {
   return `${API_URL}/api/payroll/items/${encodeURIComponent(itemId)}/payslip`;
 }
 
+export function payrollItemPayslipPdfUrl(itemId: string): string {
+  return `${API_URL}/api/payroll/items/${encodeURIComponent(itemId)}/payslip.pdf`;
+}
+
 export function openPayrollItemPayslip(itemId: string): void {
   window.open(payrollItemPayslipUrl(itemId), "_blank", "noopener,noreferrer");
+}
+
+export async function downloadPayrollItemPayslipPdf(itemId: string, filename?: string): Promise<void> {
+  const response = await fetch(payrollItemPayslipPdfUrl(itemId), { credentials: "include" });
+  if (!response.ok) {
+    throw new Error("Could not download payslip.");
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename || `timiq-payslip-${itemId}.pdf`;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function qs(params: Record<string, string | undefined>): string {

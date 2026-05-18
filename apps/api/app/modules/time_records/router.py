@@ -24,6 +24,7 @@ from app.modules.time_records.schemas import (
     TimeRecordFaceReviewResponse,
     TimeRecordShiftRow,
     TimesheetWeekResponse,
+    TimesheetWeeksResponse,
 )
 from app.modules.time_records.service import (
     TimeRecordsFaceReviewNotFoundError,
@@ -35,6 +36,7 @@ from app.modules.time_records.service import (
     list_time_records_admin,
     list_time_records_me,
     get_time_record_face_review,
+    list_my_recent_timesheet_weeks,
     resolve_time_record_face_review_image,
     timesheet_week_all_employees_for_company,
     timesheet_week_for_user,
@@ -324,6 +326,25 @@ def read_my_timesheet_week(
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@timesheets_router.get("/me/weeks", response_model=TimesheetWeeksResponse)
+def read_my_timesheet_weeks(
+    limit: int = Query(default=12, ge=1, le=52),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_authenticated_employee_self_service),
+) -> TimesheetWeeksResponse:
+    try:
+        return list_my_recent_timesheet_weeks(
+            db_session,
+            current_user,
+            limit=limit,
+        )
+    except TimeRecordsPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
             detail=str(exc),
         ) from exc
 
