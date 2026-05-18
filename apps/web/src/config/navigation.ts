@@ -225,7 +225,7 @@ const COMPANIES: NavigationItem = {
   label: "Companies",
   labelKey: "nav.companies",
   href: "/companies",
-  allowedRoles: ["administrator"],
+  allowedRoles: ["administrator", "admin"],
 };
 
 const CIS_WORKPLACES: NavigationItem = {

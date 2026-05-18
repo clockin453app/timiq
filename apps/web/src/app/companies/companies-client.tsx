@@ -39,6 +39,7 @@ type EditingCompanyState = {
 export function CompaniesClient() {
   const t = useT();
   const currentUser = useCurrentUser();
+  const administratorView = isAdministrator(currentUser);
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [name, setName] = useState("");
@@ -180,12 +181,12 @@ export function CompaniesClient() {
           }
         >
           <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
-            {isAdministrator(currentUser)
+            {administratorView
               ? "You can create and manage all companies."
               : "You can review your assigned company only."}
           </div>
 
-          {isAdministrator(currentUser) ? (
+          {administratorView ? (
             <form
               className="mb-4 w-full max-w-[min(40rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
               onSubmit={handleCreateCompany}
@@ -233,7 +234,7 @@ export function CompaniesClient() {
                 <TableHead>{t("companies.name", "Name")}</TableHead>
                 <TableHead>{t("companies.status", "Status")}</TableHead>
                 <TableHead>Created</TableHead>
-                <TableHead>Default CIS %</TableHead>
+                {administratorView ? <TableHead>Default CIS %</TableHead> : null}
                 <TableHead>Actions</TableHead>
               </TableRow>
             </TableHeader>
@@ -241,13 +242,13 @@ export function CompaniesClient() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5}>Loading companies...</TableCell>
+                  <TableCell colSpan={administratorView ? 5 : 4}>Loading companies...</TableCell>
                 </TableRow>
               ) : null}
 
               {!isLoading && companies.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={5}>No companies found.</TableCell>
+                  <TableCell colSpan={administratorView ? 5 : 4}>No companies found.</TableCell>
                 </TableRow>
               ) : null}
 
@@ -279,9 +280,11 @@ export function CompaniesClient() {
                             {new Date(company.created_at).toLocaleDateString()}
                           </TableCell>
 
-                          <TableCell className="text-xs">
-                            {company.default_tax_rate ?? "—"}
-                          </TableCell>
+                          {administratorView ? (
+                            <TableCell className="text-xs">
+                              {company.default_tax_rate ?? "—"}
+                            </TableCell>
+                          ) : null}
 
                           <TableCell>
                             <div className="flex flex-wrap gap-2">
@@ -309,13 +312,15 @@ export function CompaniesClient() {
                                 Time policy
                               </Button>
 
-                              <Button
-                                disabled={updatingCompanyId === company.id}
-                                onClick={() => setPayrollTaxCompany(company)}
-                                type="button"
-                              >
-                                CIS default
-                              </Button>
+                              {administratorView ? (
+                                <Button
+                                  disabled={updatingCompanyId === company.id}
+                                  onClick={() => setPayrollTaxCompany(company)}
+                                  type="button"
+                                >
+                                  CIS default
+                                </Button>
+                              ) : null}
                             </div>
                           </TableCell>
                         </TableRow>
@@ -331,12 +336,14 @@ export function CompaniesClient() {
                         <TableCell>
                           {new Date(company.created_at).toLocaleDateString()}
                         </TableCell>
-                        <TableCell className="text-xs">
-                          {company.default_tax_rate ?? "—"}
-                        </TableCell>
+                        {administratorView ? (
+                          <TableCell className="text-xs">
+                            {company.default_tax_rate ?? "—"}
+                          </TableCell>
+                        ) : null}
                         <TableCell>
                           <div className="flex flex-wrap gap-2">
-                            {isAdministrator(currentUser) ? (
+                            {administratorView ? (
                               <>
                                 <Button
                                   onClick={() => startEditingCompany(company)}
@@ -371,12 +378,14 @@ export function CompaniesClient() {
                               Time policy
                             </Button>
 
-                            <Button
-                              onClick={() => setPayrollTaxCompany(company)}
-                              type="button"
-                            >
-                              CIS default
-                            </Button>
+                            {administratorView ? (
+                              <Button
+                                onClick={() => setPayrollTaxCompany(company)}
+                                type="button"
+                              >
+                                CIS default
+                              </Button>
+                            ) : null}
                           </div>
                         </TableCell>
                       </TableRow>
