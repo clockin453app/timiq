@@ -1,3 +1,4 @@
+import base64
 import html
 import json
 import uuid
@@ -353,6 +354,13 @@ def _yn_flag(value: str) -> str | None:
 def _truthy_contract_accepted(value: str) -> bool:
     v = value.strip().lower()
     return v in ("yes", "true", "1", "on")
+
+
+def _contract_version_display(value: object) -> str:
+    raw = str(value or "").strip()
+    if raw == "legacy-ui_constants-1":
+        return "Legacy UI contract v1 (legacy-ui_constants-1)"
+    return raw or ONBOARDING_CONTRACT_VERSION
 
 
 def _street_line(form: dict[str, Any]) -> str:
@@ -747,8 +755,7 @@ def submit_my_submission(db_session: Session, actor: User) -> OnboardingSubmissi
         raise OnboardingStateError("Only a draft can be submitted.")
     form = dict(row.form_payload or {})
     if _truthy_contract_accepted(str(form.get("contract_accepted", ""))):
-        if not str(form.get("contract_version", "")).strip():
-            form["contract_version"] = ONBOARDING_CONTRACT_VERSION
+        form["contract_version"] = ONBOARDING_CONTRACT_VERSION
     row.form_payload = form
     docs = list_documents_for_submission(db_session, row.id)
     _validate_ready_to_submit(row, docs, account_email=actor.email)
@@ -867,6 +874,26 @@ def _assert_can_print_onboarding_submission(actor: User, submission: OnboardingS
         raise OnboardingPermissionError("You do not have permission to print this submission.")
 
 
+def _signature_image_data_url(signature_path: str | None) -> tuple[str | None, str | None]:
+    if not signature_path:
+        return None, None
+    try:
+        backend = get_storage_backend()
+        if not backend.exists(signature_path):
+            return None, "Signature file unavailable"
+        data = backend.read_bytes(signature_path)
+    except Exception:
+        return None, "Signature file unavailable"
+    if len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n":
+        media = "image/png"
+    elif len(data) >= 3 and data[:3] == b"\xff\xd8\xff":
+        media = "image/jpeg"
+    else:
+        return None, "Signature file unavailable"
+    encoded = base64.b64encode(data).decode("ascii")
+    return f"data:{media};base64,{encoded}", None
+
+
 def render_submission_print_html(db_session: Session, actor: User, submission_id: uuid.UUID) -> str:
     bundle = get_submission_with_user_and_profile(db_session, submission_id)
     if bundle is None:
@@ -906,38 +933,81 @@ def render_submission_print_html(db_session: Session, actor: User, submission_id
             "</tr>",
         )
 
-    sig_drawn = "yes" if submission.signature_image_path else "no"
+    signature_data_url, signature_error = _signature_image_data_url(submission.signature_image_path)
     sig_mode = html.escape((submission.signature_mode or "").strip() or "—")
-    typed = html.escape((submission.signature_typed_text or "").strip() or "—")
-    contract = html.escape(str(submission.form_payload.get("contract_version") or ONBOARDING_CONTRACT_VERSION))
+    typed_raw = (submission.signature_typed_text or "").strip() or str(form.get("signature_name", "")).strip()
+    typed = html.escape(typed_raw)
+    contract_raw = submission.form_payload.get("contract_version") or ONBOARDING_CONTRACT_VERSION
+    contract = html.escape(_contract_version_display(contract_raw))
     accepted = submission.form_payload.get("contract_accepted") or submission.form_payload.get("accept_contract")
     accepted_label = "yes" if accepted in (True, "true", "yes", "1", 1) else "no"
+    submitted_label = html.escape(submission.submitted_at.isoformat() if submission.submitted_at else "—")
+    generated_label = html.escape(_utc_now().isoformat())
+    signature_body = ""
+    if signature_data_url:
+        signature_body = (
+            '<div class="signature-image-wrap">'
+            f'<img class="signature-image" src="{signature_data_url}" alt="Employee signature"/>'
+            "</div>"
+        )
+    elif signature_error:
+        signature_body = f'<p class="signature-missing">{html.escape(signature_error)}</p>'
+    else:
+        signature_body = '<p class="signature-missing">Not provided</p>'
+    typed_line = f"<p><strong>Typed / signatory name:</strong> {typed}</p>" if typed_raw else ""
 
     html_out = f"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/><title>Starter form — {employee_name}</title>
 <style>
-body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; }}
-h1 {{ font-size: 1.25rem; }}
-h2 {{ font-size: 1rem; margin-top: 1.5rem; }}
+* {{ box-sizing: border-box; }}
+body {{ background: #f5f7fb; color: #111827; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 28px; }}
+.document {{ background: #fff; border: 1px solid #d9e0ea; border-radius: 14px; margin: 0 auto; max-width: 980px; padding: 28px; }}
+.header {{ border-bottom: 1px solid #e5e7eb; display: grid; gap: 18px; grid-template-columns: minmax(0, 1fr) minmax(280px, 0.85fr); padding-bottom: 18px; }}
+h1 {{ font-size: 1.45rem; margin: 0; }}
+.title {{ font-size: 1.15rem; font-weight: 800; text-align: right; }}
+.meta-grid {{ display: grid; gap: 10px 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }}
+.meta-item {{ background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; }}
+.label {{ color: #64748b; display: block; font-size: 0.72rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }}
+.value {{ display: block; font-size: 0.92rem; font-weight: 700; margin-top: 3px; }}
+h2 {{ color: #111827; font-size: 1rem; margin: 1.35rem 0 0.55rem; }}
 table {{ border-collapse: collapse; width: 100%; margin-top: 8px; }}
-th, td {{ border: 1px solid #ccc; padding: 6px 8px; text-align: left; font-size: 0.875rem; vertical-align: top; }}
-th {{ background: #f4f4f5; width: 28%; }}
-@media print {{ body {{ margin: 12px; }} }}
+th, td {{ border: 1px solid #d7dde5; padding: 7px 9px; text-align: left; font-size: 0.875rem; vertical-align: top; }}
+th {{ background: #f8fafc; width: 28%; }}
+.signature-panel {{ border: 1px solid #d7dde5; border-radius: 12px; padding: 14px; }}
+.signature-image-wrap {{ background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; margin: 10px 0; min-height: 110px; padding: 10px; }}
+.signature-image {{ display: block; max-height: 145px; max-width: 360px; object-fit: contain; }}
+.signature-missing {{ background: #fff7ed; border: 1px solid #fed7aa; border-radius: 8px; color: #9a3412; padding: 10px; }}
+@media print {{ body {{ background: #fff; padding: 0; }} .document {{ border: none; border-radius: 0; max-width: none; }} }}
 </style></head><body>
-<h1>Starter form (onboarding)</h1>
-<p><strong>Company:</strong> {company_esc}</p>
-<p><strong>Employee:</strong> {employee_name} ({html.escape(owner.email or "")})</p>
-<p><strong>Status:</strong> {html.escape(submission.status)}</p>
-<p><strong>Submitted:</strong> {html.escape(submission.submitted_at.isoformat() if submission.submitted_at else "—")}</p>
+<main class="document">
+<header class="header">
+  <div>
+    <h1>{company_esc}</h1>
+    <p><strong>Employee:</strong> {employee_name} ({html.escape(owner.email or "")})</p>
+  </div>
+  <div>
+    <div class="title">Starter Form / Onboarding Contract</div>
+  </div>
+</header>
+<section class="meta-grid">
+  <div class="meta-item"><span class="label">Company</span><span class="value">{company_esc}</span></div>
+  <div class="meta-item"><span class="label">Employee</span><span class="value">{employee_name} ({html.escape(owner.email or "")})</span></div>
+  <div class="meta-item"><span class="label">Status</span><span class="value">{html.escape(submission.status)}</span></div>
+  <div class="meta-item"><span class="label">Submitted</span><span class="value">{submitted_label}</span></div>
+  <div class="meta-item"><span class="label">Contract accepted</span><span class="value">{accepted_label}</span></div>
+  <div class="meta-item"><span class="label">Contract version</span><span class="value">{contract}</span></div>
+  <div class="meta-item"><span class="label">Generated</span><span class="value">{generated_label}</span></div>
+</section>
 
-<h2>Contract</h2>
-<p><strong>Contract version:</strong> {contract}</p>
-<p><strong>Contract accepted:</strong> {accepted_label}</p>
-
-<h2>Signature</h2>
-<p><strong>Mode:</strong> {sig_mode}</p>
-<p><strong>Typed signature:</strong> {typed}</p>
-<p><strong>Drawn signature on file:</strong> {sig_drawn}</p>
+<h2>Employee signature</h2>
+<section class="signature-panel">
+  <p><strong>Signature mode:</strong> {sig_mode}</p>
+  {typed_line}
+  <p><strong>Submitted / accepted:</strong> {submitted_label}</p>
+  <p><strong>Contract accepted:</strong> {accepted_label}</p>
+  <p><strong>Contract version:</strong> {contract}</p>
+  {signature_body}
+</section>
 
 <h2>Documents</h2>
 <table><thead><tr><th>Type</th><th>Filename</th><th>Content type</th><th>Size (bytes)</th></tr></thead><tbody>
@@ -948,7 +1018,7 @@ th {{ background: #f4f4f5; width: 28%; }}
 <table><tbody>
 {"".join(form_rows) if form_rows else "<tr><td colspan=2>No form data</td></tr>"}
 </tbody></table>
-<p style="margin-top:16px;font-size:12px;color:#666;">Use your browser&rsquo;s Print dialog to print or save as PDF.</p>
+</main>
 </body></html>"""
 
     create_internal_audit_event(

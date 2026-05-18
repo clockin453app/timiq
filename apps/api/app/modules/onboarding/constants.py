@@ -1,3 +1,3 @@
-"""Version marker for the starter-form contract shown in the app (not stored as full text per row)."""
+"""Version marker captured when a starter-form contract is submitted."""
 
-ONBOARDING_CONTRACT_VERSION = "legacy-ui_constants-1"
+ONBOARDING_CONTRACT_VERSION = "starter-form-contract-v2"

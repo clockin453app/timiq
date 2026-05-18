@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, PointerEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import {
   Button,
@@ -85,6 +85,12 @@ export function StarterFormClient() {
   const [saving, setSaving] = useState(false);
   const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
   const profilePhotoPreviewRevokeRef = useRef<string | null>(null);
+  const [signaturePreviewUrl, setSignaturePreviewUrl] = useState<string | null>(null);
+  const signaturePreviewRevokeRef = useRef<string | null>(null);
+  const signatureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const signatureDrawingRef = useRef(false);
+  const signatureLastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const [canvasHasInk, setCanvasHasInk] = useState(false);
   const [hasLocalDraft, setHasLocalDraft] = useState(false);
   const [localDeviceMessage, setLocalDeviceMessage] = useState("");
 
@@ -147,15 +153,103 @@ export function StarterFormClient() {
   }, [detail?.has_profile_photo, detail?.user_id, detail?.profile_photo_updated_at]);
 
   useEffect(() => {
+    const row = detail;
+    if (!row?.has_drawn_signature) {
+      if (signaturePreviewRevokeRef.current) {
+        URL.revokeObjectURL(signaturePreviewRevokeRef.current);
+        signaturePreviewRevokeRef.current = null;
+      }
+      setSignaturePreviewUrl(null);
+      return;
+    }
+
+    const submissionId = row.id;
+    let cancelled = false;
+    async function loadSignaturePreview() {
+      try {
+        const blob = await fetchOnboardingSignatureBlob(submissionId);
+        const url = URL.createObjectURL(blob);
+        if (signaturePreviewRevokeRef.current) {
+          URL.revokeObjectURL(signaturePreviewRevokeRef.current);
+        }
+        signaturePreviewRevokeRef.current = url;
+        if (!cancelled) {
+          setSignaturePreviewUrl(url);
+        }
+      } catch {
+        if (!cancelled) {
+          setSignaturePreviewUrl(null);
+        }
+      }
+    }
+
+    void loadSignaturePreview();
+    return () => {
+      cancelled = true;
+    };
+  }, [detail?.has_drawn_signature, detail?.id, detail?.updated_at]);
+
+  useEffect(() => {
     return () => {
       if (profilePhotoPreviewRevokeRef.current) {
         URL.revokeObjectURL(profilePhotoPreviewRevokeRef.current);
         profilePhotoPreviewRevokeRef.current = null;
       }
+      if (signaturePreviewRevokeRef.current) {
+        URL.revokeObjectURL(signaturePreviewRevokeRef.current);
+        signaturePreviewRevokeRef.current = null;
+      }
     };
   }, []);
 
   const editable = detail?.status === "draft";
+
+  const prepareSignatureCanvas = useCallback(() => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    const rect = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const nextWidth = Math.max(320, Math.floor(rect.width * dpr));
+    const nextHeight = Math.max(180, Math.floor(rect.height * dpr));
+    if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 2.6;
+    ctx.strokeStyle = "#111827";
+  }, []);
+
+  const clearSignatureCanvas = useCallback(() => {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) {
+      return;
+    }
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setCanvasHasInk(false);
+    signatureLastPointRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    if (!editable) {
+      return;
+    }
+    prepareSignatureCanvas();
+    window.addEventListener("resize", prepareSignatureCanvas);
+    return () => window.removeEventListener("resize", prepareSignatureCanvas);
+  }, [editable, prepareSignatureCanvas]);
 
   useEffect(() => {
     let cancelled = false;
@@ -233,6 +327,84 @@ export function StarterFormClient() {
 
   function setField(key: string, value: string) {
     setForm((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function signatureCanvasPoint(event: PointerEvent<HTMLCanvasElement>) {
+    const canvas = event.currentTarget;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  }
+
+  function handleSignaturePointerDown(event: PointerEvent<HTMLCanvasElement>) {
+    if (!editable) {
+      return;
+    }
+    prepareSignatureCanvas();
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    signatureDrawingRef.current = true;
+    signatureLastPointRef.current = signatureCanvasPoint(event);
+  }
+
+  function handleSignaturePointerMove(event: PointerEvent<HTMLCanvasElement>) {
+    if (!editable || !signatureDrawingRef.current) {
+      return;
+    }
+    event.preventDefault();
+    const canvas = event.currentTarget;
+    const ctx = canvas.getContext("2d");
+    const last = signatureLastPointRef.current;
+    if (!ctx || !last) {
+      return;
+    }
+    const next = signatureCanvasPoint(event);
+    ctx.beginPath();
+    ctx.moveTo(last.x, last.y);
+    ctx.lineTo(next.x, next.y);
+    ctx.stroke();
+    signatureLastPointRef.current = next;
+    setCanvasHasInk(true);
+  }
+
+  function handleSignaturePointerUp(event: PointerEvent<HTMLCanvasElement>) {
+    if (!editable) {
+      return;
+    }
+    event.preventDefault();
+    signatureDrawingRef.current = false;
+    signatureLastPointRef.current = null;
+  }
+
+  function signatureCanvasBlob(): Promise<Blob> {
+    const canvas = signatureCanvasRef.current;
+    if (!canvas) {
+      return Promise.reject(new Error("Signature pad is unavailable."));
+    }
+    return new Promise((resolve, reject) => {
+      canvas.toBlob((blob) => {
+        if (!blob) {
+          reject(new Error("Could not prepare signature image."));
+          return;
+        }
+        resolve(blob);
+      }, "image/png");
+    });
+  }
+
+  async function saveDrawnSignatureFromCanvas(): Promise<OnboardingSubmissionDetail> {
+    if (!canvasHasInk) {
+      throw new Error("Draw your signature before saving.");
+    }
+    const blob = await signatureCanvasBlob();
+    const file = new File([blob], "signature.png", { type: "image/png" });
+    const data = await setDrawnSignature(file);
+    setDetail(data);
+    setCanvasHasInk(false);
+    clearSignatureCanvas();
+    return data;
   }
 
   async function handleSaveDraft(e: FormEvent) {
@@ -325,8 +497,12 @@ export function StarterFormClient() {
     }
   }
 
-  async function handleDrawnSignature(file: File | null) {
-    if (!file || !editable) {
+  async function handleSaveDrawnSignature() {
+    if (!editable) {
+      return;
+    }
+    if (!canvasHasInk) {
+      setError("Draw your signature before saving.");
       return;
     }
     if (isNavigatorOffline()) {
@@ -336,8 +512,7 @@ export function StarterFormClient() {
     setSaving(true);
     setError("");
     try {
-      const data = await setDrawnSignature(file);
-      setDetail(data);
+      await saveDrawnSignatureFromCanvas();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save signature.");
     } finally {
@@ -391,6 +566,7 @@ export function StarterFormClient() {
       const data = await clearSignature();
       setDetail(data);
       setTypedSig("");
+      clearSignatureCanvas();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not clear signature.");
     } finally {
@@ -411,6 +587,13 @@ export function StarterFormClient() {
     setSaving(true);
     setError("");
     try {
+      if (canvasHasInk) {
+        await saveDrawnSignatureFromCanvas();
+      } else if (!detail?.has_drawn_signature) {
+        setError("Draw and save your signature before submitting.");
+        setSaving(false);
+        return;
+      }
       await patchOnboardingDraft(form);
       const data = await submitOnboarding();
       setDetail(data);
@@ -959,8 +1142,8 @@ export function StarterFormClient() {
                 />
               </label>
               <p className="text-sm text-[var(--color-text-muted)]">
-                Final submission requires a drawn signature image (JPEG or PNG, max 2 MB). Typed name above is
-                optional and does not replace the drawn image.
+                Final submission requires a drawn signature. Typed name is optional and does not replace the drawn
+                signature.
               </p>
               {detail.signature_mode ? (
                 <p className="text-sm text-[var(--color-text)]">
@@ -970,6 +1153,22 @@ export function StarterFormClient() {
                     : null}
                   {detail.signature_mode === "drawn" && detail.has_drawn_signature ? " — image on file" : null}
                 </p>
+              ) : null}
+              {detail.has_drawn_signature ? (
+                <div className="max-w-md rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-sheet)] p-3">
+                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                    Current saved signature
+                  </p>
+                  {signaturePreviewUrl ? (
+                    <img
+                      alt="Saved drawn signature"
+                      className="mt-2 max-h-32 w-full rounded border border-[var(--color-border-dark)] bg-white object-contain p-2"
+                      src={signaturePreviewUrl}
+                    />
+                  ) : (
+                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">Saved signature preview unavailable.</p>
+                  )}
+                </div>
               ) : null}
               <div className="flex flex-col gap-3 md:flex-row md:items-end">
                 <label className="flex min-w-[12rem] flex-1 flex-col gap-1 text-sm">
@@ -985,18 +1184,45 @@ export function StarterFormClient() {
                   Save typed name
                 </Button>
               </div>
-              <div className="flex flex-col gap-2">
-                <span className="text-sm text-[var(--color-text-muted)]">Drawn signature file *</span>
-                <Input
-                  type="file"
-                  accept="image/jpeg,image/png"
-                  disabled={!editable || saving}
-                  onChange={(e) => void handleDrawnSignature(e.target.files?.[0] ?? null)}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-semibold text-[var(--color-text)]">Draw signature *</p>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    Use your mouse, finger, or stylus. Save the signature when you are happy with it.
+                  </p>
+                </div>
+                <canvas
+                  aria-label="Draw signature"
+                  className="h-[190px] w-full max-w-2xl rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-white shadow-sm"
+                  onPointerCancel={handleSignaturePointerUp}
+                  onPointerDown={handleSignaturePointerDown}
+                  onPointerLeave={handleSignaturePointerUp}
+                  onPointerMove={handleSignaturePointerMove}
+                  onPointerUp={handleSignaturePointerUp}
+                  ref={signatureCanvasRef}
+                  style={{ touchAction: "none" }}
                 />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={!editable || saving || !canvasHasInk}
+                    onClick={clearSignatureCanvas}
+                  >
+                    Clear pad
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={!editable || saving || !canvasHasInk}
+                    onClick={() => void handleSaveDrawnSignature()}
+                  >
+                    Save signature
+                  </Button>
+                </div>
               </div>
               {editable ? (
                 <Button type="button" variant="secondary" disabled={saving} onClick={() => void handleClearSignature()}>
-                  Clear signature
+                  Clear saved signature / redraw
                 </Button>
               ) : null}
               {!editable && detail.signature_mode === "drawn" && detail.has_drawn_signature ? (
