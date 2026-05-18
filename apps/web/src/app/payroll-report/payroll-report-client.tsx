@@ -208,14 +208,14 @@ function storedPaymentMode(value: string | null | undefined): "net_payment" | "g
 }
 
 function paymentTypeBadgeClass(mode: "net_payment" | "gross_payment" | null): string {
-  const base = "inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold";
+  const base = "inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold";
   if (mode === "gross_payment") {
-    return `${base} border-slate-300 bg-slate-50 text-slate-900`;
+    return `${base} border-purple-300 bg-purple-50 text-purple-950`;
   }
   if (mode === "net_payment") {
-    return `${base} border-blue-900/15 bg-blue-50 text-slate-900`;
+    return `${base} border-amber-300 bg-amber-50 text-amber-950`;
   }
-  return `${base} border-slate-200 bg-white text-slate-500`;
+  return `${base} border-slate-200 bg-slate-50 text-slate-600`;
 }
 
 function formatShiftDateTime(iso: string, timeZone: string): string {
@@ -285,17 +285,17 @@ function PayrollEmployeeIdentity(props: {
           userId={props.user_id}
         />
         <div className="min-w-0">
-          <div className="truncate font-medium leading-snug text-[#111827]">{primary}</div>
+          <div className="truncate text-[13px] font-medium leading-snug text-[#111827]">{primary}</div>
           {secondary ? (
-            <div className="mt-0.5 truncate text-[11px] leading-snug text-[var(--color-text-muted)]">{secondary}</div>
+            <div className="mt-0.5 truncate text-xs leading-snug text-[var(--color-text-muted)]">{secondary}</div>
           ) : null}
         </div>
       </div>
     ) : (
       <div className={props.className}>
-        <div className="font-medium leading-snug text-[#111827]">{primary}</div>
+        <div className="text-[13px] font-medium leading-snug text-[#111827]">{primary}</div>
         {secondary ? (
-          <div className="mt-0.5 text-[11px] leading-snug text-[var(--color-text-muted)]">{secondary}</div>
+          <div className="mt-0.5 text-xs leading-snug text-[var(--color-text-muted)]">{secondary}</div>
         ) : null}
       </div>
     );
@@ -1425,7 +1425,7 @@ export function PayrollReportClient() {
               <p className="mb-3 text-xs text-[var(--color-text-muted)]">
                 Summary by employee for this payroll week. Use + to view shift lines for this employee.
               </p>
-              <div className="timiq-scroll-x w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[#111827]">
+              <div className="timiq-scroll-x w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[13px] [&_thead_th]:font-semibold [&_thead_th]:text-[#111827]">
                 <Table className="min-w-full">
                 <TableHeader>
                   <TableRow>
@@ -1496,7 +1496,7 @@ export function PayrollReportClient() {
                                 {expandedUserId === row.user_id ? "−" : "+"}
                               </Button>
                             </TableCell>
-                            <TableCell className="max-w-[14rem] min-w-0 align-top text-xs">
+                            <TableCell className="max-w-[14rem] min-w-0 align-top text-[13px]">
                               <PayrollEmployeeIdentity
                                 employee_email={row.employee_email}
                                 employee_name={row.employee_name}
@@ -1505,21 +1505,21 @@ export function PayrollReportClient() {
                                 withAvatar
                               />
                             </TableCell>
-                            <TableCell className="max-w-[8rem] truncate align-top text-xs text-[var(--color-text-muted)]">
+                            <TableCell className="max-w-[8rem] truncate align-top text-[13px] text-[var(--color-text-muted)]">
                               {row.employee_job_title ?? "—"}
                             </TableCell>
-                            <TableCell className="align-top text-xs tabular-nums">
+                            <TableCell className="align-top text-[13px] tabular-nums">
                               {formatHoursFromSeconds(row.regular_seconds)}
                             </TableCell>
-                            <TableCell className="align-top text-xs tabular-nums">
+                            <TableCell className="align-top text-[13px] tabular-nums">
                               {formatHoursFromSeconds(row.overtime_seconds)}
                             </TableCell>
-                            <TableCell className={`align-top text-xs ${payMode === "gross_payment" ? "font-semibold text-[#111827]" : ""}`}>
+                            <TableCell className={`align-top text-[13px] ${payMode === "gross_payment" ? "font-semibold text-[#111827]" : ""}`}>
                               {row.rate_missing
                                 ? t("payroll.report.rate_not_set", "Rate not set")
                                 : formatMoneyGBP(row.gross_amount)}
                             </TableCell>
-                            <TableCell className="align-top text-xs">
+                            <TableCell className="align-top text-[13px]">
                               {formatMoneyGBP(
                                 effectiveDisplayedTaxAmount(
                                   row.display_tax_amount,
@@ -1528,21 +1528,21 @@ export function PayrollReportClient() {
                                 ),
                               )}
                             </TableCell>
-                            <TableCell className={`align-top text-xs ${payMode === "net_payment" ? "font-semibold text-[#111827]" : ""}`}>
+                            <TableCell className={`align-top text-[13px] ${payMode === "net_payment" ? "font-semibold text-[#111827]" : ""}`}>
                               {formatMoneyGBP(row.display_net_amount ?? row.net_amount)}
                             </TableCell>
-                            <TableCell className="align-top text-xs">
+                            <TableCell className="align-top text-[13px]">
                               <span className={paymentTypeBadgeClass(payMode)}>{paymentModeLabel}</span>
                             </TableCell>
-                            <TableCell className="align-top text-xs">
+                            <TableCell className="align-top text-[13px]">
                               {formatMoneyGBP(row.other_deductions_amount)}
                             </TableCell>
-                            <TableCell className="max-w-[8rem] truncate align-top text-xs text-[var(--color-text-muted)]">
+                            <TableCell className="max-w-[8rem] truncate align-top text-[13px] text-[var(--color-text-muted)]">
                               {row.notes?.trim() ? row.notes : "—"}
                             </TableCell>
-                            <TableCell className="align-top text-xs">
+                            <TableCell className="align-top text-[13px]">
                               <span
-                                className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadgeClass(row.status)}`}
+                                className={`inline-block rounded px-2 py-0.5 text-xs font-bold uppercase ${statusBadgeClass(row.status)}`}
                               >
                                 {statusBadgeLabel(t, row.status)}
                                 {row.status === "paid" ? t("payroll.report.locked_suffix", " · Locked") : ""}
