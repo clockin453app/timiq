@@ -202,7 +202,9 @@ def build_payroll_item_payslip_pdf(
     week_end: date,
     timezone_name: str,
     generated_at: str,
-    paid_or_approved_label: str,
+    status_label: str,
+    pay_date_label: str,
+    week_label: str,
     payment_mode_label: str,
     regular_hours: float,
     overtime_hours: float,
@@ -218,57 +220,79 @@ def build_payroll_item_payslip_pdf(
     styles = getSampleStyleSheet()
     text = colors.HexColor("#111827")
     muted = colors.HexColor("#64748b")
-    border = colors.HexColor("#d7dde5")
+    accent = colors.HexColor("#2f6f9e")
+    border = colors.HexColor("#d9e0ea")
     soft_border = colors.HexColor("#e5e7eb")
-    card_bg = colors.HexColor("#f8fafc")
-    label_bg = colors.HexColor("#f3f6f9")
     company_title = ParagraphStyle(
         "PayslipCompanyTitle",
         parent=styles["Heading1"],
         fontName="Helvetica-Bold",
-        fontSize=18,
-        leading=22,
+        fontSize=17,
+        leading=21,
+        textColor=text,
+    )
+    company_label = ParagraphStyle(
+        "PayslipCompanyLabel",
+        parent=styles["Normal"],
+        fontSize=8.0,
+        leading=10.0,
+        textColor=muted,
+    )
+    employee_title = ParagraphStyle(
+        "PayslipEmployeeTitle",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=13.5,
+        leading=17,
         textColor=text,
     )
     statement_title = ParagraphStyle(
         "PayslipStatementTitle",
         parent=company_title,
-        fontSize=14,
-        leading=18,
+        fontSize=17,
+        leading=21,
         alignment=TA_RIGHT,
     )
-    card_title = ParagraphStyle(
-        "PayslipCardTitle",
+    statement_meta = ParagraphStyle(
+        "PayslipStatementMeta",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=10.0,
+        leading=13.0,
+        alignment=TA_RIGHT,
+        textColor=colors.HexColor("#334155"),
+    )
+    generated_style = ParagraphStyle(
+        "PayslipGenerated",
+        parent=statement_meta,
+        fontSize=7.8,
+        leading=10.0,
+        textColor=muted,
+    )
+    section_title = ParagraphStyle(
+        "PayslipSectionTitle",
         parent=styles["Heading3"],
         fontName="Helvetica-Bold",
         fontSize=8.4,
-        leading=10.5,
-        textColor=text,
+        leading=10.8,
+        textColor=accent,
     )
     label = ParagraphStyle(
         "PayslipLabel",
         parent=styles["Normal"],
-        fontSize=8.8,
-        leading=11.4,
-        textColor=muted,
+        fontSize=9.0,
+        leading=12.5,
+        textColor=colors.HexColor("#475569"),
     )
     value = ParagraphStyle(
         "PayslipValue",
         parent=label,
         fontName="Helvetica-Bold",
-        fontSize=9.4,
-        leading=12.2,
+        fontSize=9.2,
+        leading=12.5,
         textColor=text,
     )
-    value_normal = ParagraphStyle("PayslipValueNormal", parent=value, fontName="Helvetica")
     right = ParagraphStyle("PayslipRight", parent=value, alignment=TA_RIGHT)
-    small = ParagraphStyle("PayslipSmall", parent=label, fontSize=7.8, leading=10.0)
-    money = ParagraphStyle(
-        "PayslipMoney",
-        parent=value,
-        fontSize=12.0,
-        leading=15.0,
-    )
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -281,10 +305,8 @@ def build_payroll_item_payslip_pdf(
         pageCompression=0,
     )
     story: list[Any] = []
-    deductions = (cis_tax_amount or Decimal(0)) + other_deductions_amount
-    period = f"{week_start.isoformat()} to {week_end.isoformat()} ({timezone_name or 'UTC'})"
     full_width = doc.width
-    statement_heading = "CIS pay statement" if cis_tax_amount is not None and cis_tax_amount != 0 else "Payslip"
+    statement_heading = "CIS Pay Statement" if cis_tax_amount is not None and cis_tax_amount != 0 else "Payslip"
 
     def _footer(canvas, doc_obj) -> None:  # type: ignore[no-untyped-def]
         canvas.saveState()
@@ -295,9 +317,49 @@ def build_payroll_item_payslip_pdf(
         canvas.drawRightString(doc_obj.pagesize[0] - doc_obj.rightMargin, y, f"Page {doc_obj.page}")
         canvas.restoreState()
 
+    header_left = Table(
+        [
+            [_p(company_name.upper(), company_title)],
+            [_p("Company", company_label)],
+            [_p(employee_name, employee_title)],
+            [_p(f"UTR: {utr_number or 'Not provided'}", label)],
+            [_p(f"National Insurance: {national_insurance_number or 'Not provided'}", label)],
+        ],
+        colWidths=[full_width * 0.48],
+    )
+    header_left.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 2), (0, 2), 8),
+            ],
+        ),
+    )
+    header_right = Table(
+        [
+            [_p(statement_heading, statement_title)],
+            [_p(week_label, statement_meta)],
+            [_p(f"Generated: {generated_at}", generated_style)],
+        ],
+        colWidths=[full_width * 0.42],
+    )
+    header_right.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 2), (0, 2), 8),
+            ],
+        ),
+    )
     header = Table(
-        [[_p(company_name, company_title), _p(statement_heading, statement_title)]],
-        colWidths=[full_width * 0.58, full_width * 0.42],
+        [[header_left, header_right]],
+        colWidths=[full_width * 0.52, full_width * 0.48],
     )
     header.setStyle(
         TableStyle(
@@ -306,156 +368,122 @@ def build_payroll_item_payslip_pdf(
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
                 ("LINEBELOW", (0, 0), (-1, -1), 0.6, soft_border),
             ],
         ),
     )
-    story.append(header)
-    story.append(Spacer(1, 0.36 * cm))
 
-    def _info_card(title: str, rows: list[tuple[str, str]]) -> Table:
-        data: list[list[Any]] = [[_p(title.upper(), card_title)]]
-        for left, right_value in rows:
-            data.append([_p(f"{left}: {right_value}", value_normal)])
-        table = Table(data, colWidths=[card_w])
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), card_bg),
-                    ("BOX", (0, 0), (-1, -1), 0.7, border),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 9),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 9),
-                    ("TOPPADDING", (0, 0), (-1, -1), 8),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
-                ],
-            ),
+    def _rows(rows: list[tuple[str, str]], *, total_index: int | None = None) -> Table:
+        table = Table(
+            [[_p(label_text, label), _p(value_text, right)] for label_text, value_text in rows],
+            colWidths=[full_width * 0.24, full_width * 0.17],
         )
+        style: list[tuple[Any, ...]] = [
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]
+        if total_index is not None:
+            style.append(("LINEABOVE", (0, total_index), (-1, total_index), 0.6, soft_border))
+            style.append(("TOPPADDING", (0, total_index), (-1, total_index), 8))
+        table.setStyle(TableStyle(style))
         return table
 
-    card_gap = 0.35 * cm
-    card_w = (full_width - (2 * card_gap)) / 3
-    info_row = Table(
+    left_body = Table(
         [
+            [_p("PAY SUMMARY", section_title)],
             [
-                _info_card(
-                    "Employee",
+                _rows(
                     [
-                        ("Name", employee_name),
-                        ("Email", employee_email or "Not provided"),
-                        ("National Insurance", national_insurance_number or "Not provided"),
-                        ("UTR", utr_number or "Not provided"),
-                    ],
-                ),
-                "",
-                _info_card(
-                    "Pay period",
-                    [
-                        ("Period", period),
-                        ("Status", paid_or_approved_label or "Not provided"),
-                        ("Generated", generated_at),
-                    ],
-                ),
-                "",
-                _info_card(
-                    "Payment",
-                    [
+                        ("Status", status_label),
                         ("Payment type", payment_mode_label),
-                        ("Company", company_name),
-                        ("Period ending", week_end.strftime("%d %b %Y")),
+                        ("Hours worked", f"{total_hours:.2f}"),
+                        ("Gross pay", _money(gross_amount)),
+                        ("CIS tax", _money(cis_tax_amount)),
+                        ("Total net pay", _money(net_amount)),
                     ],
+                    total_index=5,
                 ),
             ],
         ],
-        colWidths=[card_w, card_gap, card_w, card_gap, card_w],
+        colWidths=[full_width * 0.41],
     )
-    info_row.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-            ],
-        ),
-    )
-    story.append(info_row)
-    story.append(Spacer(1, 0.34 * cm))
-
-    summary_gap = 0.25 * cm
-    summary_w = (full_width - (3 * summary_gap)) / 4
-    def _summary_card(title: str, amount: str) -> Table:
-        table = Table([[_p(title, small)], [_p(amount, money)]], colWidths=[summary_w])
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), card_bg),
-                    ("BOX", (0, 0), (-1, -1), 0.7, border),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 8),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 8),
-                    ("TOPPADDING", (0, 0), (-1, -1), 6),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
-                ],
-            ),
-        )
-        return table
-
-    summary = Table(
-        [
-            [
-                _summary_card("Gross pay", _money(gross_amount)),
-                "",
-                _summary_card("CIS / tax", _money(cis_tax_amount)),
-                "",
-                _summary_card("Deductions", _money(deductions)),
-                "",
-                _summary_card("Net pay", _money(net_amount)),
-            ],
-        ],
-        colWidths=[summary_w, summary_gap, summary_w, summary_gap, summary_w, summary_gap, summary_w],
-    )
-    summary.setStyle(
+    left_body.setStyle(
         TableStyle(
             [
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 0),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 0),
                 ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
             ],
         ),
     )
-    story.append(summary)
-    story.append(Spacer(1, 0.36 * cm))
 
-    details_rows = [
-        ("Hours worked (rounded total)", f"{total_hours:.2f} h"),
-        ("Regular / overtime hours", f"{regular_hours:.2f} / {overtime_hours:.2f} h"),
-        ("Gross pay", _money(gross_amount)),
-        ("CIS tax", _money(cis_tax_amount)),
-        ("Additions", _money(additions_amount)),
-        ("Total net pay", _money(net_amount)),
-        (f"YTD taxable pay ({week_start.year})", _money(ytd_taxable_pay)),
-        (f"YTD CIS deducted ({week_start.year})", _money(ytd_cis_deducted)),
-    ]
-    details = Table(
-        [[_p(left, value), _p(right_value, right)] for left, right_value in details_rows],
-        colWidths=[full_width * 0.54, full_width * 0.46],
-        repeatRows=0,
+    pay_date_style = ParagraphStyle(
+        "PayslipPayDate",
+        parent=section_title,
+        textColor=colors.HexColor("#334155"),
     )
-    details.setStyle(
+    right_body = Table(
+        [
+            [_p(f"PAY DATE: {pay_date_label}", pay_date_style)],
+            [_p("YEAR TO DATE", section_title)],
+            [_rows([("Taxable Pay", _money(ytd_taxable_pay)), ("CIS deducted YTD", _money(ytd_cis_deducted))])],
+        ],
+        colWidths=[full_width * 0.41],
+    )
+    right_body.setStyle(
         TableStyle(
             [
-                ("GRID", (0, 0), (-1, -1), 0.55, border),
-                ("BACKGROUND", (0, 0), (0, -1), label_bg),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 9),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 9),
-                ("TOPPADDING", (0, 0), (-1, -1), 8),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 7),
+                ("TOPPADDING", (0, 1), (0, 1), 8),
             ],
         ),
     )
-    story.append(details)
+
+    body = Table(
+        [[left_body, "", right_body]],
+        colWidths=[full_width * 0.43, full_width * 0.10, full_width * 0.47],
+    )
+    body.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 14),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+            ],
+        ),
+    )
+
+    accent_bar = Table([[""]], colWidths=[full_width], rowHeights=[0.14 * cm])
+    accent_bar.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), accent)]))
+
+    document = Table([[header], [body], [accent_bar]], colWidths=[full_width])
+    document.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.6, border),
+                ("LEFTPADDING", (0, 0), (-1, -1), 18),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 18),
+                ("TOPPADDING", (0, 0), (-1, -1), 16),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 14),
+                ("LEFTPADDING", (0, 2), (0, 2), 18),
+                ("RIGHTPADDING", (0, 2), (0, 2), 18),
+                ("TOPPADDING", (0, 2), (0, 2), 0),
+                ("BOTTOMPADDING", (0, 2), (0, 2), 16),
+            ],
+        ),
+    )
+    story.append(document)
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     return buf.getvalue()

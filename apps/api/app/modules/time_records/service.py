@@ -473,6 +473,41 @@ def _week_bounds_utc(policy: CompanyTimePolicy, week_start: date) -> tuple[datet
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
+def _payroll_item_for_user_week(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    week_start: date,
+) -> PayrollItem | None:
+    return db_session.scalar(
+        select(PayrollItem)
+        .join(PayrollPeriod, PayrollItem.period_id == PayrollPeriod.id)
+        .where(PayrollItem.user_id == user_id)
+        .where(PayrollItem.status.in_(("approved", "paid")))
+        .where(PayrollPeriod.week_start == week_start)
+    )
+
+
+def _payroll_decimal(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    return Decimal(str(value))
+
+
+def _payroll_display_tax(item: PayrollItem | None) -> Decimal | None:
+    if item is None:
+        return None
+    display = _payroll_decimal(item.display_tax_amount)
+    return display if display is not None else _payroll_decimal(item.tax_amount)
+
+
+def _payroll_display_net(item: PayrollItem | None) -> Decimal | None:
+    if item is None:
+        return None
+    display = _payroll_decimal(item.display_net_amount)
+    return display if display is not None else _payroll_decimal(item.net_amount)
+
+
 def timesheet_week_for_user(
     db_session: Session,
     actor: User,
@@ -488,8 +523,11 @@ def timesheet_week_for_user(
         raise TimeRecordsPermissionError("You cannot view this user's timesheet.")
 
     policy = _fallback_policy()
+    company_name: str | None = None
     if subject.company_id is not None:
         policy = ensure_company_time_policy(db_session, subject.company_id)
+        company = get_company_by_id(db_session, subject.company_id)
+        company_name = company.name if company is not None and isinstance(company.name, str) else None
 
     week_start_utc, week_end_utc = _week_bounds_utc(policy, week_start)
 
@@ -602,14 +640,31 @@ def timesheet_week_for_user(
                 )
             )
 
+    pay_item = _payroll_item_for_user_week(db_session, user_id=subject_user_id, week_start=week_start)
+
     return TimesheetWeekResponse(
         week_start=week_start,
+        week_end=week_start + timedelta(days=6),
         company_timezone=policy.timezone_name,
+        company_name=company_name,
         days=list(day_map.values()),
         week_actual_seconds=week_actual,
         week_counted_seconds=week_counted,
         week_rounded_seconds=week_rounded,
         week_break_seconds=week_break,
+        gross_amount=_payroll_decimal(pay_item.gross_amount) if pay_item is not None else None,
+        cis_tax_amount=_payroll_display_tax(pay_item),
+        net_amount=_payroll_display_net(pay_item),
+        paid_at=pay_item.paid_at if pay_item is not None else None,
+        approved_at=pay_item.approved_at if pay_item is not None else None,
+        status=pay_item.status if pay_item is not None else None,
+        hourly_rate_snapshot=(
+            _payroll_decimal(pay_item.hourly_rate_snapshot)
+            if pay_item is not None and pay_item.hourly_rate_snapshot is not None
+            else None
+        ),
+        regular_seconds=pay_item.regular_seconds if pay_item is not None else None,
+        overtime_seconds=pay_item.overtime_seconds if pay_item is not None else None,
         open_shift_in_week=open_shift_in_week,
         shift_count=shift_count,
         completed_shift_count=completed_shift_count,
@@ -652,6 +707,10 @@ def list_my_recent_timesheet_weeks(
         .all()
     )
     pay_by_week = {period.week_start: item for item, period in pay_rows}
+    company_name: str | None = None
+    if actor.company_id is not None:
+        company = get_company_by_id(db_session, actor.company_id)
+        company_name = company.name if company is not None and isinstance(company.name, str) else None
 
     out: list[TimesheetWeekSummaryRow] = []
     for week_start in week_starts:
@@ -664,29 +723,64 @@ def list_my_recent_timesheet_weeks(
         pay_item = pay_by_week.get(week_start)
         if pay_item is not None:
             status_value = pay_item.status
-            gross = Decimal(str(pay_item.gross_amount)) if pay_item.gross_amount is not None else None
+            gross = _payroll_decimal(pay_item.gross_amount)
+            cis_tax = _payroll_display_tax(pay_item)
+            net = _payroll_display_net(pay_item)
             paid_at = pay_item.paid_at
+            approved_at = pay_item.approved_at
+            hourly_rate = (
+                _payroll_decimal(pay_item.hourly_rate_snapshot)
+                if pay_item.hourly_rate_snapshot is not None
+                else None
+            )
+            regular_seconds = pay_item.regular_seconds
+            overtime_seconds = pay_item.overtime_seconds
         elif week.completed_shift_count > 0:
             status_value = "timesheet_completed"
             gross = None
+            cis_tax = None
+            net = None
             paid_at = None
+            approved_at = None
+            hourly_rate = None
+            regular_seconds = None
+            overtime_seconds = None
         elif week.open_shift_in_week:
             status_value = "open_shift"
             gross = None
+            cis_tax = None
+            net = None
             paid_at = None
+            approved_at = None
+            hourly_rate = None
+            regular_seconds = None
+            overtime_seconds = None
         else:
             status_value = "no_completed_shifts"
             gross = None
+            cis_tax = None
+            net = None
             paid_at = None
+            approved_at = None
+            hourly_rate = None
+            regular_seconds = None
+            overtime_seconds = None
         out.append(
             TimesheetWeekSummaryRow(
                 week_start=week.week_start,
                 week_end=week.week_start + timedelta(days=6),
+                company_name=company_name,
                 clocked_seconds=week.week_actual_seconds,
                 payable_seconds=week.week_counted_seconds,
                 payroll_seconds=week.week_rounded_seconds,
                 gross_amount=gross,
+                cis_tax_amount=cis_tax,
+                net_amount=net,
                 paid_at=paid_at,
+                approved_at=approved_at,
+                hourly_rate_snapshot=hourly_rate,
+                regular_seconds=regular_seconds,
+                overtime_seconds=overtime_seconds,
                 status=status_value,
                 has_completed_shifts=week.completed_shift_count > 0,
             ),

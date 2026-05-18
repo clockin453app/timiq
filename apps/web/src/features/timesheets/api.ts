@@ -31,12 +31,21 @@ export type WeekLeaveRow = {
 
 export type TimesheetWeekResponse = {
   week_start: string;
+  week_end: string;
   company_timezone: string;
+  company_name: string | null;
   days: TimesheetDayTotals[];
   week_actual_seconds: number;
   week_counted_seconds: number;
   week_rounded_seconds: number;
   week_break_seconds: number;
+  gross_amount: string | null;
+  paid_at: string | null;
+  approved_at: string | null;
+  status: string | null;
+  hourly_rate_snapshot: string | null;
+  regular_seconds: number | null;
+  overtime_seconds: number | null;
   open_shift_in_week: boolean;
   shift_count: number;
   completed_shift_count: number;
@@ -48,11 +57,18 @@ export type TimesheetWeekResponse = {
 export type TimesheetWeekSummaryRow = {
   week_start: string;
   week_end: string;
+  company_name: string | null;
   clocked_seconds: number;
   payable_seconds: number;
   payroll_seconds: number;
   gross_amount: string | null;
+  cis_tax_amount: string | null;
+  net_amount: string | null;
   paid_at: string | null;
+  approved_at: string | null;
+  hourly_rate_snapshot: string | null;
+  regular_seconds: number | null;
+  overtime_seconds: number | null;
   status: string;
   has_completed_shifts: boolean;
 };

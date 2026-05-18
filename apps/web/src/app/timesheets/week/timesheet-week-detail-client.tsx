@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { PageHeader, Sheet, SheetBody } from "../../../components/ui";
 import { formatDurationSeconds } from "../../../features/time-records/format-duration";
 import { BreakDeductionCell } from "../../../features/time-records/break-deduction-cell";
+import { formatMoneyGBP } from "../../../features/payroll/format";
 import {
   fetchMyTimesheetWeek,
   type TimesheetDayTotals,
@@ -50,6 +51,36 @@ function formatDateTime(iso: string, timeZone?: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
+}
+
+function formatDateShort(iso: string | null | undefined): string {
+  if (!iso) {
+    return "—";
+  }
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    return iso;
+  }
+  return d.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
+function formatHoursDecimal(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined) {
+    return "—";
+  }
+  const hours = seconds / 3600;
+  return Number.isInteger(hours) ? String(hours) : hours.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function InfoRow(props: { label: string; value: string; emphasize?: boolean }) {
+  return (
+    <div className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)] gap-4 py-1.5 text-[15px]">
+      <dt className="font-bold text-[#667797]">{props.label}:</dt>
+      <dd className={`font-extrabold text-[#00143d] ${props.emphasize ? "text-base" : ""}`}>
+        {props.value}
+      </dd>
+    </div>
+  );
 }
 
 function OpenShiftLiveElapsed({ clockInAt }: { clockInAt: string }) {
@@ -113,6 +144,13 @@ export function TimesheetWeekDetailClient(props: { weekStart: string }) {
   const weekLabel = sheet
     ? formatPayrollWeekUkLabel(sheet.week_start, sheet.company_timezone || browserDefaultTimeZone(), false)
     : weekStart || "—";
+  const paymentDate = sheet ? formatDateShort(sheet.paid_at ?? sheet.approved_at) : "—";
+  const companyName = sheet?.company_name?.trim() || "—";
+  const rateValue = sheet?.hourly_rate_snapshot ? formatMoneyGBP(sheet.hourly_rate_snapshot) : null;
+  const overtimeValue =
+    sheet?.overtime_seconds !== null && sheet?.overtime_seconds !== undefined
+      ? formatHoursDecimal(sheet.overtime_seconds)
+      : null;
   const hasShiftData = Boolean(
     sheet &&
       (daysWithAttendance.length > 0 ||
@@ -153,39 +191,30 @@ export function TimesheetWeekDetailClient(props: { weekStart: string }) {
         ) : null}
 
         {!loading && sheet ? (
-          <div className="space-y-4">
-            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-3 text-sm">
-              <p className="font-semibold text-[var(--color-text)]">{weekLabel}</p>
-              <dl className="mt-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-cell)] p-2">
-                  <dt className="font-bold uppercase text-[var(--color-text-soft)]">Clocked</dt>
-                  <dd className="mt-1 tabular-nums font-semibold text-[var(--color-text)]">
-                    {formatDurationSeconds(sheet.week_actual_seconds)}
-                  </dd>
-                </div>
-                <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-cell)] p-2">
-                  <dt className="font-bold uppercase text-[var(--color-text-soft)]">Payable</dt>
-                  <dd className="mt-1 tabular-nums font-semibold text-[var(--color-text)]">
-                    {formatDurationSeconds(sheet.week_counted_seconds)}
-                  </dd>
-                </div>
-                <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-cell)] p-2">
-                  <dt className="font-bold uppercase text-[var(--color-text-soft)]">Payroll</dt>
-                  <dd className="mt-1 tabular-nums font-semibold text-[var(--color-text)]">
-                    {formatDurationSeconds(sheet.week_rounded_seconds)}
-                  </dd>
-                </div>
-                <div className="rounded-[var(--radius-sm)] border border-[var(--color-border)] bg-[var(--color-cell)] p-2">
-                  <dt className="font-bold uppercase text-[var(--color-text-soft)]">Break</dt>
-                  <dd className="mt-1 font-semibold text-[var(--color-text)]">
-                    <BreakDeductionCell seconds={sheet.week_break_seconds} />
-                  </dd>
-                </div>
-              </dl>
+          <div className="mx-auto max-w-[980px] rounded-[22px] border border-[#dbe3ee] bg-white p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)] md:p-6">
+            <div className="space-y-4">
+              <section className="rounded-[18px] border border-[#dbe3ee] bg-[#f8fbff] px-5 py-4">
+                <h2 className="text-lg font-extrabold text-[#00143d]">General Info</h2>
+                <dl className="mt-1">
+                  <InfoRow label="Period" value={weekLabel} />
+                  <InfoRow label="Payment Date" value={paymentDate} />
+                  <InfoRow label="Company" value={companyName.toUpperCase()} />
+                </dl>
+              </section>
+
+              <section className="rounded-[18px] border border-[#dbe3ee] bg-[#f8fbff] px-5 py-4">
+                <h2 className="text-lg font-extrabold text-[#00143d]">Estimated Earnings</h2>
+                <dl className="mt-1">
+                  <InfoRow label="Hours/Days" value={formatHoursDecimal(sheet.week_rounded_seconds)} />
+                  {rateValue ? <InfoRow label="Rate" value={rateValue} /> : null}
+                  {overtimeValue ? <InfoRow label="OT Hours/Days" value={overtimeValue} /> : null}
+                  <InfoRow label="Gross Pay" value={formatMoneyGBP(sheet.gross_amount)} emphasize />
+                </dl>
+              </section>
             </div>
 
             {!hasShiftData ? (
-              <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-5 text-center">
+              <div className="mt-4 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-5 text-center">
                 <p className="text-sm font-semibold text-[var(--color-text)]">No shift data for this week.</p>
                 <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
                   Completed shift rows will appear here once you have clocked in and out for the selected week.
@@ -194,7 +223,7 @@ export function TimesheetWeekDetailClient(props: { weekStart: string }) {
             ) : null}
 
             {sheet.open_shifts.length > 0 ? (
-              <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)]">
+              <div className="mt-4 space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)]">
                 <p className="text-xs font-bold uppercase tracking-wide text-[#374151]">Open shift</p>
                 <ul className="space-y-2">
                   {sheet.open_shifts.map((shift) => (
@@ -217,7 +246,8 @@ export function TimesheetWeekDetailClient(props: { weekStart: string }) {
             ) : null}
 
             {daysWithAttendance.length > 0 ? (
-              <div className="space-y-2">
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-bold uppercase tracking-wide text-[#64748b]">Shift details</p>
                 {daysWithAttendance.map((day) => (
                   <div
                     className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm shadow-sm"

@@ -455,47 +455,33 @@ def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: 
     ni, utr = _employee_tax_identifiers_for_payroll(db_session, item.user_id)
     ni_display = html.escape(ni) if ni else "Not provided"
     utr_display = html.escape(utr) if utr else "Not provided"
-    tax_id_block = (
-        f"<p><strong>National Insurance:</strong> {ni_display}</p>"
-        f"<p><strong>UTR:</strong> {utr_display}</p>"
-    )
     cis = _effective_tax_amount_for_item(item)
     net_eff = _effective_net_amount_for_item(item)
     gross = _decimal_or_none(item.gross_amount)
-    other_d = Decimal(str(item.other_deductions_amount or 0))
-    additions = Decimal("0.00")
-    deductions_total = (cis or Decimal(0)) + other_d
-    reg_h = item.regular_seconds / 3600
-    ot_h = item.overtime_seconds / 3600
     tot_h = item.rounded_total_seconds / 3600
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     mode_label = html.escape(_payment_mode_label_for_item(item))
-    paid_line_parts: list[str] = []
     if item.paid_at is not None:
-        paid_line_parts.append(f"<p><strong>Status:</strong> Paid at {_utc_dt_display_for_payslip(item.paid_at)}</p>")
+        status_label = "Paid"
+        pay_date_label = item.paid_at.strftime("%Y-%m-%d")
     elif item.approved_at is not None:
-        paid_line_parts.append(
-            f"<p><strong>Status:</strong> Approved at {_utc_dt_display_for_payslip(item.approved_at)}</p>",
-        )
+        status_label = "Approved"
+        pay_date_label = item.approved_at.strftime("%Y-%m-%d")
     else:
-        paid_line_parts.append("<p><strong>Status:</strong> Not provided</p>")
-    paid_line = "".join(paid_line_parts)
+        status_label = "Not provided"
+        pay_date_label = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    ni_block = tax_id_block
+    week_end = _week_end_display(period.week_start)
+    week_number = period.week_start.isocalendar().week
+    week_label = (
+        f"Week {week_number} "
+        f"({period.week_start.strftime('%d %b')} \u2013 {week_end.strftime('%d %b %Y')})"
+    )
 
-    email_raw = (owner.email or "").strip()
-    email_block = ""
-    if email_raw:
-        email_block = f"<p><strong>Email:</strong> {html.escape(email_raw)}</p>"
-
-    wk_start_esc = html.escape(str(period.week_start))
-    wk_end_esc = html.escape(str(_week_end_display(period.week_start)))
-    tz_esc = html.escape(period.timezone_name or "UTC")
-    period_line = f"<p><strong>Period:</strong> week {wk_start_esc} to {wk_end_esc} ({tz_esc}, Mon–Sun)</p>"
     net_display = f"£{net_eff:.2f}" if net_eff is not None else "—"
     gross_display = f"£{gross:.2f}" if gross is not None else "—"
     cis_display = f"£{cis:.2f}" if cis is not None else "—"
-    statement_heading = "CIS pay statement" if cis is not None and cis != 0 else "Payslip"
+    statement_heading = "CIS Pay Statement" if cis is not None and cis != 0 else "Payslip"
 
     html_out = f"""<!DOCTYPE html>
 <html lang="en"><head>
@@ -508,7 +494,7 @@ html {{ box-sizing: border-box; }}
 body {{
   margin: 0;
   padding: 0;
-  background: #fff;
+  background: #f5f7fb;
   color: #111827;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: clamp(14px, 2.8vw, 16px);
@@ -519,192 +505,210 @@ body {{
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
-  padding: 16px;
+  padding: 10px 16px 32px;
 }}
 @media (min-width: 768px) {{
-  .payslip-wrap {{ padding: 34px 40px 42px; }}
+  .payslip-wrap {{ padding: 12px 32px 44px; }}
+}}
+.action-row {{
+  width: min(100%, 980px);
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 10px;
+}}
+.back-btn {{
+  border: 0;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  padding: 0.65rem 0;
+  text-align: left;
+}}
+.print-btn {{
+  border: 0;
+  border-radius: 10px;
+  background: #1464ee;
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  padding: 0.78rem 1rem;
+  text-align: center;
+  box-shadow: 0 5px 14px rgba(20, 100, 238, 0.2);
 }}
 .payslip-card {{
   width: min(100%, 980px);
-  margin: 0 auto;
+  margin: 18px auto 0;
   background: #fff;
-  padding: 0;
+  border: 1px solid #d9e0ea;
+  padding: 24px 24px 26px;
+  box-shadow: 0 16px 34px rgba(15, 23, 42, 0.08);
 }}
 @media (min-width: 768px) {{
-  .payslip-card {{ padding: 0; }}
+  .payslip-card {{ padding: 30px 34px 28px; }}
 }}
 .payslip-head {{
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(250px, 0.9fr);
   gap: 24px;
-  flex-wrap: wrap;
-  padding-bottom: 18px;
-  margin-bottom: 22px;
+  padding-bottom: 20px;
+  margin-bottom: 18px;
   border-bottom: 1px solid #e5e7eb;
 }}
-.payslip-head-left {{ flex: 1 1 12rem; min-width: 0; }}
-.payslip-head-right {{ flex: 0 1 auto; text-align: right; }}
 .co-name {{
-  font-size: clamp(1.05rem, 3vw, 1.2rem);
-  font-weight: 700;
+  font-size: clamp(1.35rem, 3vw, 1.65rem);
+  font-weight: 850;
+  letter-spacing: 0.01em;
+  text-transform: uppercase;
   word-break: break-word;
 }}
-@media (min-width: 768px) {{
-  .co-name {{ font-size: 1.45rem; }}
-}}
-.doc-type {{
-  font-size: clamp(0.95rem, 2.6vw, 1.05rem);
-  font-weight: 700;
-  color: #374151;
-  white-space: nowrap;
-}}
-@media (min-width: 768px) {{
-  .doc-type {{ font-size: 1.12rem; }}
-}}
-.meta-block p {{ margin: 0.35rem 0; }}
-.meta-block strong {{ color: #374151; }}
-.info-grid {{
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
-  align-items: stretch;
-  gap: 1rem;
-  margin-top: 0;
-}}
-@media (min-width: 900px) {{
-  .info-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); }}
-}}
-.info-panel {{
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  background: #f9fafb;
-  min-height: 10.25rem;
-  padding: 1rem;
-}}
-.info-panel h2 {{
-  margin: 0 0 0.7rem;
-  font-size: 0.74rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #374151;
-}}
-.summary-grid {{
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-  align-items: stretch;
-  gap: 0.85rem;
-  margin-top: 1.25rem;
-}}
-@media (min-width: 900px) {{
-  .summary-grid {{ grid-template-columns: repeat(4, minmax(0, 1fr)); }}
-}}
-.summary-card {{
-  border: 1px solid #d1d5db;
-  border-radius: 12px;
-  background: #f8fafc;
-  min-height: 5.4rem;
-  padding: 0.95rem;
-}}
-.summary-card span {{
-  display: block;
-  font-size: 0.72rem;
-  color: #6b7280;
-}}
-.summary-card strong {{
-  display: block;
-  margin-top: 0.35rem;
-  font-size: 1.2rem;
-  font-variant-numeric: tabular-nums;
-}}
-.pay-table {{
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 1.45rem;
-  table-layout: fixed;
-}}
-.pay-table td {{
-  border: 1px solid #d1d5db;
-  padding: 0.82rem 0.9rem;
-  vertical-align: top;
-  word-wrap: break-word;
-  overflow-wrap: anywhere;
-}}
-.pay-table td:first-child {{
-  font-weight: 600;
-  color: #374151;
-  width: 54%;
-  background: #f9fafb;
-}}
-.pay-table .num {{
-  text-align: right;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}}
-.pay-table tr.section td:first-child {{
-  background: #eef2f7;
-}}
-.payslip-footer {{
-  margin-top: 1.25rem;
+.eyebrow {{
   color: #64748b;
-  font-size: 0.82rem;
+  font-size: 0.83rem;
+  font-weight: 600;
+  margin-top: 0.15rem;
+}}
+.employee-name {{
+  font-size: 1.15rem;
+  font-weight: 800;
+  margin-top: 1rem;
+}}
+.identity-line {{
+  color: #64748b;
+  font-size: 0.9rem;
+  font-weight: 650;
+  margin-top: 0.18rem;
+}}
+.payslip-head-right {{ text-align: right; }}
+.doc-type {{
+  color: #111827;
+  font-size: clamp(1.35rem, 3vw, 1.65rem);
+  font-weight: 850;
+  line-height: 1.15;
+}}
+.week-title {{
+  color: #334155;
+  font-size: 1.02rem;
+  font-weight: 800;
+  margin-top: 0.35rem;
+}}
+.generated {{
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 650;
+  margin-top: 0.75rem;
+}}
+.statement-body {{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.92fr);
+  gap: 56px;
+  padding: 0.9rem 0 0.7rem;
+}}
+.section-title {{
+  color: #356e9f;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  margin: 0 0 0.65rem;
+  text-transform: uppercase;
+}}
+.row {{
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) minmax(120px, auto);
+  gap: 18px;
+  padding: 0.31rem 0;
+}}
+.row-label {{
+  color: #475569;
+  font-weight: 650;
+}}
+.row-value {{
+  color: #111827;
+  font-weight: 750;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}}
+.total-row {{
+  border-top: 1px solid #e5e7eb;
+  margin-top: 0.55rem;
+  padding-top: 0.72rem;
+}}
+.total-row .row-label,
+.total-row .row-value {{
+  font-weight: 850;
+}}
+.pay-date {{
+  color: #334155;
+  font-size: 0.88rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+  margin: 0 0 0.9rem;
+  text-transform: uppercase;
+}}
+.accent-line {{
+  height: 14px;
+  margin-top: 1rem;
+  background: #2f6f9e;
+}}
+@media (max-width: 760px) {{
+  .action-row {{ grid-template-columns: 1fr; }}
+  .print-btn {{ width: 100%; }}
+  .payslip-card {{ margin-top: 12px; padding: 20px 16px 22px; }}
+  .payslip-head,
+  .statement-body {{ grid-template-columns: 1fr; gap: 20px; }}
+  .payslip-head-right {{ text-align: left; }}
 }}
 @media print {{
   body {{ background: #fff; font-size: 11pt; }}
   .payslip-wrap {{ max-width: none; padding: 0; }}
-  .payslip-card {{ width: 100%; border: none; box-shadow: none; border-radius: 0; padding: 0; }}
-  .info-grid {{ grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.75rem; }}
-  .summary-grid {{ grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.6rem; }}
-  .pay-table td {{ padding: 0.45rem 0.5rem; }}
+  .action-row {{ display: none; }}
+  .payslip-card {{ width: 100%; border: none; box-shadow: none; padding: 0; }}
   @page {{ size: A4; margin: 12mm; }}
 }}
 </style></head><body>
 <div class="payslip-wrap">
+  <div class="action-row">
+    <button class="back-btn" onclick="window.history.back()" type="button">\u2190 Back</button>
+    <button class="print-btn" onclick="window.print()" type="button">Save / Print Payslip</button>
+    <span aria-hidden="true"></span>
+  </div>
   <div class="payslip-card">
     <header class="payslip-head">
       <div class="payslip-head-left">
         <div class="co-name">{cname}</div>
+        <div class="eyebrow">Company</div>
+        <div class="employee-name">{ename}</div>
+        <div class="identity-line">UTR: {utr_display}</div>
+        <div class="identity-line">National Insurance: {ni_display}</div>
       </div>
       <div class="payslip-head-right">
         <div class="doc-type">{html.escape(statement_heading)}</div>
+        <div class="week-title">{html.escape(week_label)}</div>
+        <div class="generated">Generated: {html.escape(generated)}</div>
       </div>
     </header>
-    <div class="info-grid meta-block">
-      <section class="info-panel">
-        <h2>Employee</h2>
-        <p><strong>Name:</strong> {ename}</p>
-        {email_block}
-        {ni_block}
+    <main class="statement-body">
+      <section>
+        <h2 class="section-title">Pay Summary</h2>
+        <div class="row"><span class="row-label">Status</span><span class="row-value">{html.escape(status_label)}</span></div>
+        <div class="row"><span class="row-label">Payment type</span><span class="row-value">{mode_label}</span></div>
+        <div class="row"><span class="row-label">Hours worked</span><span class="row-value">{tot_h:.2f}</span></div>
+        <div class="row"><span class="row-label">Gross pay</span><span class="row-value">{gross_display}</span></div>
+        <div class="row"><span class="row-label">CIS tax</span><span class="row-value">{cis_display}</span></div>
+        <div class="row total-row"><span class="row-label">Total net pay</span><span class="row-value">{net_display}</span></div>
       </section>
-      <section class="info-panel">
-        <h2>Pay period</h2>
-        {period_line}
-        {paid_line}
-        <p><strong>Generated:</strong> {html.escape(generated)}</p>
+      <section>
+        <p class="pay-date">Pay date: {html.escape(pay_date_label)}</p>
+        <h2 class="section-title">Year to Date</h2>
+        <div class="row"><span class="row-label">Taxable Pay</span><span class="row-value">£{ytd_pay:.2f}</span></div>
+        <div class="row"><span class="row-label">CIS deducted YTD</span><span class="row-value">£{ytd_cis:.2f}</span></div>
       </section>
-      <section class="info-panel">
-        <h2>Payment</h2>
-        <p><strong>Payment type:</strong> {mode_label}</p>
-        <p><strong>Company:</strong> {cname}</p>
-        <p><strong>Period ending:</strong> {wk_end_esc}</p>
-      </section>
-    </div>
-    <div class="summary-grid">
-      <div class="summary-card"><span>Gross pay</span><strong>{gross_display}</strong></div>
-      <div class="summary-card"><span>CIS / tax</span><strong>{cis_display}</strong></div>
-      <div class="summary-card"><span>Deductions</span><strong>£{deductions_total:.2f}</strong></div>
-      <div class="summary-card"><span>Net pay</span><strong>{net_display}</strong></div>
-    </div>
-    <table class="pay-table"><tbody>
-      <tr><td>Hours worked (rounded total)</td><td class="num">{tot_h:.2f} h</td></tr>
-      <tr><td>Regular / overtime hours</td><td class="num">{reg_h:.2f} / {ot_h:.2f} h</td></tr>
-      <tr class="section"><td>Gross pay</td><td class="num">{gross_display}</td></tr>
-      <tr><td>CIS tax</td><td class="num">{cis_display}</td></tr>
-      <tr><td>Additions</td><td class="num">£{additions:.2f}</td></tr>
-      <tr class="section"><td>Total net pay</td><td class="num">{net_display}</td></tr>
-      <tr><td>YTD taxable pay ({period.week_start.year})</td><td class="num">£{ytd_pay:.2f}</td></tr>
-      <tr><td>YTD CIS deducted ({period.week_start.year})</td><td class="num">£{ytd_cis:.2f}</td></tr>
-    </tbody></table>
-    <p class="payslip-footer">Please keep this for your records.</p>
+    </main>
+    <div class="accent-line"></div>
   </div>
 </div>
 </body></html>"""
@@ -734,11 +738,20 @@ def render_payroll_item_payslip_pdf(db_session: Session, actor: User, item_id: u
     company = get_company_by_id(db_session, item.company_id)
     ni, utr = _employee_tax_identifiers_for_payroll(db_session, item.user_id)
     if item.paid_at is not None:
-        paid_or_approved = f"Paid at {_utc_dt_display_for_payslip(item.paid_at)}"
+        status_label = "Paid"
+        pay_date_label = item.paid_at.strftime("%Y-%m-%d")
     elif item.approved_at is not None:
-        paid_or_approved = f"Approved at {_utc_dt_display_for_payslip(item.approved_at)}"
+        status_label = "Approved"
+        pay_date_label = item.approved_at.strftime("%Y-%m-%d")
     else:
-        paid_or_approved = "—"
+        status_label = "Not provided"
+        pay_date_label = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    week_end = _week_end_display(period.week_start)
+    week_label = (
+        f"Week {period.week_start.isocalendar().week} "
+        f"({period.week_start.strftime('%d %b')} \u2013 {week_end.strftime('%d %b %Y')})"
+    )
 
     body = build_payroll_item_payslip_pdf(
         company_name=company.name if company is not None else "Company",
@@ -747,10 +760,12 @@ def render_payroll_item_payslip_pdf(db_session: Session, actor: User, item_id: u
         national_insurance_number=ni,
         utr_number=utr,
         week_start=period.week_start,
-        week_end=_week_end_display(period.week_start),
+        week_end=week_end,
         timezone_name=period.timezone_name,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        paid_or_approved_label=paid_or_approved,
+        status_label=status_label,
+        pay_date_label=pay_date_label,
+        week_label=week_label,
         payment_mode_label=_payment_mode_label_for_item(item),
         regular_hours=item.regular_seconds / 3600,
         overtime_hours=item.overtime_seconds / 3600,

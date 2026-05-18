@@ -445,6 +445,7 @@ export function TimesheetsClient() {
     () => recentWeeks.filter(hasVisibleTimesheetWeekActivity),
     [recentWeeks],
   );
+  const employeeListMode = !adminMode && user.system_role === "employee";
 
   const hasExportableData =
     !loading &&
@@ -571,7 +572,7 @@ export function TimesheetsClient() {
           </label>
         ) : null}
 
-        <div className={`flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between ${!adminMode && user.system_role === "employee" ? "hidden md:flex" : ""}`}>
+        <div className={`flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between ${employeeListMode ? "hidden" : ""}`}>
           <div className="min-w-0 flex-1">
             <WeekPickerBar
               disabled={loading}
@@ -601,7 +602,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees && openShiftsSingle.length > 0 ? (
-          <div className={`space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)] ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
+          <div className={`space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] border-l-4 border-l-amber-700/80 bg-[var(--color-header)] px-3 py-3 text-sm text-[var(--color-text)] ${employeeListMode ? "hidden" : ""}`}>
             <p className="text-xs font-bold uppercase tracking-wide text-[#374151]">Open shift (not in week totals)</p>
             <p className="text-xs text-[var(--color-text-muted)]">
               Payable and payroll totals below include only completed shifts. Clocked elapsed while still clocked in is
@@ -663,9 +664,80 @@ export function TimesheetsClient() {
           </div>
         ) : null}
 
-        {!adminMode && user.system_role === "employee" ? (
+        {employeeListMode ? (
+          <div className="hidden overflow-hidden rounded-[22px] border border-[#dbe3ee] bg-white shadow-[0_18px_45px_rgba(15,23,42,0.06)] md:block">
+            <div className="flex items-center justify-between border-b border-[#e8edf4] px-5 py-4">
+              <h2 className="text-base font-extrabold text-[#111827]">All weekly timesheets</h2>
+              <span className="text-xs font-semibold text-[#64748b]">{visibleRecentWeeks.length} week(s)</span>
+            </div>
+            <div className="overflow-x-auto px-4 pb-4">
+              <table className="w-full min-w-[920px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-[#e8edf4] text-[10px] font-extrabold uppercase tracking-[0.08em] text-[#64748b]">
+                    <th className="px-3 py-4 text-left">Period</th>
+                    <th className="px-3 py-4 text-right">Hours</th>
+                    <th className="px-3 py-4 text-right">Gross Pay</th>
+                    <th className="px-3 py-4 text-right">CIS Tax</th>
+                    <th className="px-3 py-4 text-right">Take Home</th>
+                    <th className="px-3 py-4 text-left">Company</th>
+                    <th className="px-3 py-4 text-right">View</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRecentWeeks.length > 0 ? (
+                    visibleRecentWeeks.map((row) => {
+                      const rowTimeZone = timezoneLabel || browserDefaultTimeZone();
+                      return (
+                        <tr
+                          className="border-b border-[#edf1f6] last:border-b-0 hover:bg-[#f8fafc]"
+                          key={row.week_start}
+                        >
+                          <td className="px-3 py-4 font-bold text-[#111827]">
+                            {formatPayrollWeekUkLabel(row.week_start, rowTimeZone, false)}
+                          </td>
+                          <td className="px-3 py-4 text-right font-semibold tabular-nums text-[#111827]">
+                            {formatDurationSeconds(row.payroll_seconds)}
+                          </td>
+                          <td className="px-3 py-4 text-right font-semibold tabular-nums text-[#111827]">
+                            {formatMoneyGBP(row.gross_amount)}
+                          </td>
+                          <td className="px-3 py-4 text-right font-semibold tabular-nums text-[#111827]">
+                            {formatMoneyGBP(row.cis_tax_amount)}
+                          </td>
+                          <td className="px-3 py-4 text-right font-semibold tabular-nums text-[#111827]">
+                            {formatMoneyGBP(row.net_amount)}
+                          </td>
+                          <td className="px-3 py-4 font-bold uppercase text-[#111827]">
+                            {row.company_name?.trim() || "—"}
+                          </td>
+                          <td className="px-3 py-4 text-right">
+                            <Link
+                              aria-label={`View timesheet for ${row.week_start}`}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded border border-[#dbe3ee] bg-[#f8fafc] text-lg font-bold text-[#334155] hover:bg-white"
+                              href={`/timesheets/week?week_start=${encodeURIComponent(row.week_start)}`}
+                            >
+                              ›
+                            </Link>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td className="px-3 py-8 text-center text-sm text-[#64748b]" colSpan={7}>
+                        No recent timesheet weeks found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : null}
+
+        {employeeListMode ? (
           <div className="space-y-2 md:hidden">
-            <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+            <div className="grid grid-cols-[minmax(0,1fr)_minmax(80px,auto)_minmax(88px,auto)] gap-3 px-1 text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
               <span>Period</span>
               <span className="text-right">Payment Date</span>
               <span className="text-right">Gross Earnings</span>
@@ -675,17 +747,17 @@ export function TimesheetsClient() {
                 const rowTimeZone = timezoneLabel || browserDefaultTimeZone();
                 return (
                   <Link
-                    className="grid w-full grid-cols-[1fr_auto_auto] items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3.5 text-left shadow-sm hover:border-[var(--color-border-dark)] hover:bg-[var(--color-header)]"
+                    className="grid w-full grid-cols-[minmax(0,1fr)_minmax(80px,auto)_minmax(88px,auto)] items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3.5 text-left shadow-sm hover:border-[var(--color-border-dark)] hover:bg-[var(--color-header)]"
                     href={`/timesheets/week?week_start=${encodeURIComponent(row.week_start)}`}
                     key={row.week_start}
                   >
                     <span className="min-w-0 text-base font-bold leading-tight text-[var(--color-text)]">
                       {mobilePayrollWeekLabel(row.week_start, rowTimeZone)}
                     </span>
-                    <span className="whitespace-nowrap text-right text-sm font-semibold text-[var(--color-text-muted)]">
+                    <span className="min-w-[80px] whitespace-nowrap text-right text-sm font-semibold text-[var(--color-text-muted)]">
                       {formatWhenShort(row.paid_at)}
                     </span>
-                    <span className="whitespace-nowrap text-right text-sm font-bold tabular-nums text-[var(--color-text)]">
+                    <span className="min-w-[88px] whitespace-nowrap text-right text-sm font-bold tabular-nums text-[var(--color-text)]">
                       {row.gross_amount ? formatMoneyGBP(row.gross_amount) : formatDurationSeconds(row.payroll_seconds)}
                     </span>
                   </Link>
@@ -700,7 +772,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees ? (
-          <div className={!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}>
+          <div className={employeeListMode ? "hidden" : ""}>
             <TimesheetWeekSummaryLine
               breakSeconds={sheet.week_break_seconds}
               clocked={sheet.week_actual_seconds}
@@ -724,7 +796,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees && (sheet.week_leave?.length ?? 0) > 0 ? (
-          <div className={`overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
+          <div className={`overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] ${employeeListMode ? "hidden" : ""}`}>
             <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
                 Leave & absence (week overlap)
@@ -771,7 +843,7 @@ export function TimesheetsClient() {
         ) : null}
 
         {showNoCompleted ? (
-          <div className={`rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-5 text-center ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
+          <div className={`rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-empty-panel-bg)] px-4 py-5 text-center ${employeeListMode ? "hidden" : ""}`}>
             <p className="text-sm font-semibold text-[var(--color-text)]">No completed shifts this week.</p>
             <p className="mx-auto mt-2 max-w-md text-xs leading-relaxed text-[var(--color-text-muted)]">
               Day totals and the table below list only completed clock-in/out pairs. If anyone is still clocked in, see
@@ -780,7 +852,7 @@ export function TimesheetsClient() {
           </div>
         ) : null}
 
-        {!loading && sheet && !viewingAllEmployees && completedCount > 0 ? (
+        {!loading && sheet && !viewingAllEmployees && completedCount > 0 && !employeeListMode ? (
           <div className="hidden md:block">
           <Table>
             <TableHeader>
@@ -893,13 +965,13 @@ export function TimesheetsClient() {
         ) : null}
 
         {!loading && !sheet && !companySheet ? (
-          <div className={`rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-4 py-4 text-sm text-[var(--color-text-muted)] ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
+          <div className={`rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-4 py-4 text-sm text-[var(--color-text-muted)] ${employeeListMode ? "hidden" : ""}`}>
             No timesheet loaded for this selection.
           </div>
         ) : null}
 
         {!loading && sheet && !viewingAllEmployees ? (
-          <p className={`text-xs text-[var(--color-text-muted)] ${!adminMode && user.system_role === "employee" ? "hidden md:block" : ""}`}>
+          <p className={`text-xs text-[var(--color-text-muted)] ${employeeListMode ? "hidden" : ""}`}>
             Completed shifts this week: {completedCount}
             {sheet.shift_count !== completedCount ? ` · All shift records in week: ${sheet.shift_count}` : ""}.
             Locations (completed): {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}.

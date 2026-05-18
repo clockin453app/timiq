@@ -86,12 +86,21 @@ class TimesheetOpenShiftSummary(BaseModel):
 
 class TimesheetWeekResponse(BaseModel):
     week_start: date
+    week_end: date | None = None
     company_timezone: str
+    company_name: str | None = None
     days: list[TimesheetDayTotals]
     week_actual_seconds: int
     week_counted_seconds: int
     week_rounded_seconds: int
     week_break_seconds: int
+    gross_amount: Decimal | None = None
+    paid_at: datetime | None = None
+    approved_at: datetime | None = None
+    status: str | None = None
+    hourly_rate_snapshot: Decimal | None = None
+    regular_seconds: int | None = None
+    overtime_seconds: int | None = None
     open_shift_in_week: bool
     shift_count: int = 0
     completed_shift_count: int = 0
@@ -103,11 +112,18 @@ class TimesheetWeekResponse(BaseModel):
 class TimesheetWeekSummaryRow(BaseModel):
     week_start: date
     week_end: date
+    company_name: str | None = None
     clocked_seconds: int = 0
     payable_seconds: int = 0
     payroll_seconds: int = 0
     gross_amount: Decimal | None = None
+    cis_tax_amount: Decimal | None = None
+    net_amount: Decimal | None = None
     paid_at: datetime | None = None
+    approved_at: datetime | None = None
+    hourly_rate_snapshot: Decimal | None = None
+    regular_seconds: int | None = None
+    overtime_seconds: int | None = None
     status: str
     has_completed_shifts: bool = False
 
