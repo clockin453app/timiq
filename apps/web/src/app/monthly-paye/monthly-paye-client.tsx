@@ -37,6 +37,17 @@ function employeeName(user: AuthUser): string {
   return name || user.email;
 }
 
+function ReadinessCard(props: { label: string; value: string; hint: string; tone?: "ok" | "warn" }) {
+  const valueClass = props.tone === "ok" ? "text-emerald-900" : "text-amber-900";
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">{props.label}</p>
+      <p className={`mt-1 text-sm font-bold ${valueClass}`}>{props.value}</p>
+      <p className="mt-1 text-xs text-[var(--color-text-muted)]">{props.hint}</p>
+    </div>
+  );
+}
+
 export function MonthlyPayeClient() {
   const currentUser = useCurrentUser();
   const administratorView = isAdministrator(currentUser);
@@ -133,6 +144,13 @@ export function MonthlyPayeClient() {
     if (!activeCompanyId) return null;
     return companies.find((company) => company.id === activeCompanyId)?.name ?? null;
   }, [activeCompanyId, companies]);
+  const configuredPayeEmployees = useMemo(
+    () =>
+      report?.rows.filter(
+        (row) => row.payroll_type === "paye_employee" || Boolean(row.tax_code?.trim()) || Boolean(row.ni_category?.trim()),
+      ).length ?? 0,
+    [report],
+  );
 
   return (
     <Sheet>
@@ -214,6 +232,33 @@ export function MonthlyPayeClient() {
         <div className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-3 py-2 text-sm text-amber-950">
           PAYE calculation engine is not enabled yet. Configure employee and company PAYE settings first.
           PAYE payslips will be available after PAYE calculation is enabled.
+        </div>
+
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <ReadinessCard
+            label="Company PAYE settings"
+            value={report?.company_settings_configured ? "Configured" : "Missing"}
+            hint="Employer PAYE details and pension defaults"
+            tone={report?.company_settings_configured ? "ok" : "warn"}
+          />
+          <ReadinessCard
+            label="PAYE employees"
+            value={`${configuredPayeEmployees} configured`}
+            hint="Employees marked as PAYE or with PAYE identifiers"
+            tone={configuredPayeEmployees > 0 ? "ok" : "warn"}
+          />
+          <ReadinessCard
+            label="Calculation engine"
+            value="Not enabled yet"
+            hint="No PAYE tax, NI, pension, or loan calculations"
+            tone="warn"
+          />
+          <ReadinessCard
+            label="Payslips"
+            value="Not enabled yet"
+            hint="PAYE payslips will be separate from CIS statements"
+            tone="warn"
+          />
         </div>
 
         {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading…</p> : null}

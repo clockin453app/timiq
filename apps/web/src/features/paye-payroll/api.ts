@@ -134,6 +134,36 @@ export async function getCompanyPayeSettings(companyId?: string | null): Promise
   return response.json() as Promise<CompanyPayeSettings>;
 }
 
+export async function patchCompanyPayeSettings(
+  request: Partial<
+    Pick<
+      CompanyPayeSettings,
+      | "company_id"
+      | "paye_reference"
+      | "accounts_office_reference"
+      | "pension_provider_name"
+      | "default_employee_pension_percent"
+      | "default_employer_pension_percent"
+      | "default_pension_basis"
+      | "monthly_payday_rule"
+      | "pay_period_closing_day"
+      | "default_tax_year"
+      | "rti_status"
+    >
+  >,
+): Promise<CompanyPayeSettings> {
+  const response = await fetch(`${API_URL}/api/paye-payroll/company-settings`, {
+    method: "PATCH",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(request),
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not save PAYE company settings.");
+  }
+  return response.json() as Promise<CompanyPayeSettings>;
+}
+
 export async function fetchMonthlyPayeReportShell(params: {
   companyId?: string | null;
   year: number;

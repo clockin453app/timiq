@@ -26,6 +26,7 @@ from app.modules.paye_payroll.service import (
     monthly_paye_report_shell,
     patch_company_paye_settings,
     patch_employee_paye_settings,
+    read_company_paye_settings,
     read_employee_paye_settings,
 )
 
@@ -125,6 +126,17 @@ def test_company_paye_settings_can_be_saved_and_read_separately() -> None:
     assert saved.rti_status == "not_ready"
 
 
+def test_administrator_can_read_company_paye_settings() -> None:
+    company_id = uuid.uuid4()
+    actor = _user(SystemRole.ADMINISTRATOR)
+    db = MagicMock()
+    db.get.return_value = None
+    with patch("app.modules.paye_payroll.service.get_company_by_id", return_value=SimpleNamespace(id=company_id)):
+        settings = read_company_paye_settings(db, actor, company_id)
+    assert settings.company_id == company_id
+    assert settings.rti_status == "not_ready"
+
+
 def test_paye_settings_do_not_change_cis_money_calculation() -> None:
     out = compute_money_bundle(
         regular_seconds=3600,
@@ -192,11 +204,13 @@ def test_company_admin_can_access_only_own_company_settings() -> None:
     db = MagicMock()
     db.get.return_value = None
     with patch("app.modules.paye_payroll.service.get_company_by_id", return_value=SimpleNamespace(id=own_company)):
+        own_read = read_company_paye_settings(db, actor, None)
         own = patch_company_paye_settings(
             db,
             actor,
             CompanyPayeSettingsPatchRequest(company_id=own_company, pension_provider_name="Own Pension"),
         )
+    assert own_read.company_id == own_company
     assert own.company_id == own_company
     try:
         patch_company_paye_settings(
@@ -216,8 +230,12 @@ def test_employee_cannot_access_admin_paye_report_or_settings() -> None:
     try:
         report = client.get("/api/paye-payroll/monthly-report?year=2026&month=5")
         settings = client.get(f"/api/paye-payroll/employee-settings/{employee.id}")
+        company_settings = client.get("/api/paye-payroll/company-settings")
+        patch_company = client.patch("/api/paye-payroll/company-settings", json={"paye_reference": "123/AB456"})
         assert report.status_code == 403
         assert settings.status_code == 403
+        assert company_settings.status_code == 403
+        assert patch_company.status_code == 403
     finally:
         app.dependency_overrides.clear()
 

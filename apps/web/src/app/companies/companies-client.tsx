@@ -29,6 +29,7 @@ import {
 import { useT } from "../../lib/i18n";
 
 import { CompanyPayrollTaxModal } from "./company-payroll-tax-modal";
+import { CompanyPayeSettingsModal } from "./company-paye-settings-modal";
 import { CompanyTimePolicyModal } from "./company-time-policy-modal";
 
 type EditingCompanyState = {
@@ -52,6 +53,7 @@ export function CompaniesClient() {
   const [updatingCompanyId, setUpdatingCompanyId] = useState<string | null>(null);
   const [policyCompany, setPolicyCompany] = useState<Company | null>(null);
   const [payrollTaxCompany, setPayrollTaxCompany] = useState<Company | null>(null);
+  const [payeSettingsCompany, setPayeSettingsCompany] = useState<Company | null>(null);
 
   async function loadCompanies() {
     setIsLoading(true);
@@ -312,6 +314,14 @@ export function CompaniesClient() {
                                 Time policy
                               </Button>
 
+                              <Button
+                                disabled={updatingCompanyId === company.id}
+                                onClick={() => setPayeSettingsCompany(company)}
+                                type="button"
+                              >
+                                PAYE settings
+                              </Button>
+
                               {administratorView ? (
                                 <Button
                                   disabled={updatingCompanyId === company.id}
@@ -378,6 +388,13 @@ export function CompaniesClient() {
                               Time policy
                             </Button>
 
+                            <Button
+                              onClick={() => setPayeSettingsCompany(company)}
+                              type="button"
+                            >
+                              PAYE settings
+                            </Button>
+
                             {administratorView ? (
                               <Button
                                 onClick={() => setPayrollTaxCompany(company)}
@@ -416,6 +433,16 @@ export function CompaniesClient() {
           onSaved={async () => {
             setSuccessMessage(`Updated default CIS rate for ${payrollTaxCompany.name}.`);
             await loadCompanies();
+          }}
+        />
+      ) : null}
+
+      {payeSettingsCompany ? (
+        <CompanyPayeSettingsModal
+          company={payeSettingsCompany}
+          onClose={() => setPayeSettingsCompany(null)}
+          onSaved={async () => {
+            setSuccessMessage(`Updated PAYE settings for ${payeSettingsCompany.name}.`);
           }}
         />
       ) : null}
