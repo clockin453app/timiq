@@ -1,6 +1,7 @@
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -19,6 +20,7 @@ class EmployeeProfileUpdateRequest(BaseModel):
     early_access_enabled: bool | None = None
     hourly_rate: Decimal | None = Field(default=None, ge=0)
     tax_rate: Decimal | None = Field(default=None, ge=0, le=100)
+    payment_mode: Literal["net_payment", "gross_payment"] | None = None
 
 
 class FaceReferenceStatusResponse(BaseModel):
@@ -48,6 +50,7 @@ class EmployeeProfileResponse(BaseModel):
     early_access_enabled: bool
     hourly_rate: Decimal | None = None
     tax_rate: Decimal | None = None
+    payment_mode: str | None = None
     face_check_consent_at: datetime | None = None
     face_reference_enrolled_at: datetime | None = None
     face_reference_updated_at: datetime | None = None

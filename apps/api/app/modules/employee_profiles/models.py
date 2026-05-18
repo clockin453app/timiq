@@ -48,6 +48,7 @@ class EmployeeProfile(Base):
     )
     hourly_rate: Mapped[float] = mapped_column(Numeric(12, 4), nullable=True)
     tax_rate: Mapped[float] = mapped_column(Numeric(10, 4), nullable=True)
+    payment_mode: Mapped[str] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -65,6 +65,7 @@ export function EmployeeDetailPanel({
   const [earlyAccessEnabled, setEarlyAccessEnabled] = useState(false);
   const [hourlyRateStr, setHourlyRateStr] = useState("");
   const [taxRateStr, setTaxRateStr] = useState("");
+  const [paymentMode, setPaymentMode] = useState<"net_payment" | "gross_payment">("net_payment");
   const [employeeProfileLoaded, setEmployeeProfileLoaded] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
@@ -99,6 +100,7 @@ export function EmployeeDetailPanel({
       setEarlyAccessEnabled(profile.early_access_enabled);
       setHourlyRateStr(profile.hourly_rate ?? "");
       setTaxRateStr(profile.tax_rate ?? "");
+      setPaymentMode(profile.payment_mode === "gross_payment" ? "gross_payment" : "net_payment");
       setJobTitleStr(profile.job_title ?? "");
       setNiStr(profile.national_insurance_number ?? "");
       setUtrStr(profile.utr_number ?? "");
@@ -185,6 +187,7 @@ export function EmployeeDetailPanel({
       await patchManagedEmployeeProfile(user.id, {
         hourly_rate: hourlyRateStr.trim() === "" ? null : hourlyRateStr.trim(),
         tax_rate: taxRateStr.trim() === "" ? null : taxRateStr.trim(),
+        payment_mode: paymentMode,
       });
       setLocalSuccess("Payroll rates saved.");
       await onRefresh();
@@ -552,6 +555,20 @@ export function EmployeeDetailPanel({
                       type="text"
                       value={taxRateStr}
                     />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Payment mode
+                    <select
+                      className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={profileLoading || isSavingPayrollRates}
+                      onChange={(event) =>
+                        setPaymentMode(event.target.value === "gross_payment" ? "gross_payment" : "net_payment")
+                      }
+                      value={paymentMode}
+                    >
+                      <option value="gross_payment">Gross payment</option>
+                      <option value="net_payment">Net payment</option>
+                    </select>
                   </label>
                   <Button
                     disabled={isSavingPayrollRates || profileLoading}

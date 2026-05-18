@@ -152,6 +152,22 @@ def _payment_mode_label(payment_mode: str | None) -> str:
     return "Net payment"
 
 
+def _stored_payment_mode_or_none(payment_mode: str | None) -> str | None:
+    if payment_mode is None:
+        return None
+    raw = str(payment_mode).strip().lower()
+    if raw in ("net", "net_payment", "gross", "gross_payment"):
+        return normalize_payroll_payment_mode(raw)
+    return None
+
+
+def _payment_mode_label_for_item(item: PayrollItem) -> str:
+    mode = _stored_payment_mode_or_none(getattr(item, "payment_mode", None))
+    if mode is None:
+        return "Not provided"
+    return _payment_mode_label(mode)
+
+
 def _apply_payroll_item_money_after_patch(item: PayrollItem, request: PayrollItemPatchRequest) -> None:
     """Reconcile tax/net/display amounts from stored hours, snapshots, payment mode, and other deductions."""
     if item.rate_missing:
@@ -410,8 +426,8 @@ def get_payroll_item_summary(db_session: Session, actor: User, item_id: uuid.UUI
         status=item.status,
         approved_at=item.approved_at,
         paid_at=item.paid_at,
-        payment_mode=normalize_payroll_payment_mode(item.payment_mode),
-        payment_mode_label=_payment_mode_label(item.payment_mode),
+        payment_mode=_stored_payment_mode_or_none(item.payment_mode),
+        payment_mode_label=_payment_mode_label_for_item(item),
         regular_seconds=item.regular_seconds,
         overtime_seconds=item.overtime_seconds,
         rounded_total_seconds=item.rounded_total_seconds,
@@ -453,7 +469,7 @@ def render_payroll_item_payslip_html(db_session: Session, actor: User, item_id: 
     ot_h = item.overtime_seconds / 3600
     tot_h = item.rounded_total_seconds / 3600
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    mode_label = html.escape(_payment_mode_label(item.payment_mode))
+    mode_label = html.escape(_payment_mode_label_for_item(item))
     paid_line_parts: list[str] = []
     if item.paid_at is not None:
         paid_line_parts.append(f"<p><strong>Paid at:</strong> {_utc_dt_display_for_payslip(item.paid_at)}</p>")
@@ -722,7 +738,7 @@ def render_payroll_item_payslip_pdf(db_session: Session, actor: User, item_id: u
         timezone_name=period.timezone_name,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         paid_or_approved_label=paid_or_approved,
-        payment_mode_label=_payment_mode_label(item.payment_mode),
+        payment_mode_label=_payment_mode_label_for_item(item),
         regular_hours=item.regular_seconds / 3600,
         overtime_hours=item.overtime_seconds / 3600,
         total_hours=item.rounded_total_seconds / 3600,
@@ -1150,7 +1166,7 @@ def item_to_response(db_session: Session, item: PayrollItem) -> PayrollItemRespo
         other_deductions_amount=Decimal(str(item.other_deductions_amount or 0)),
         display_tax_amount=_decimal_or_none(item.display_tax_amount),
         display_net_amount=_decimal_or_none(item.display_net_amount),
-        payment_mode=normalize_payroll_payment_mode(item.payment_mode),
+        payment_mode=_stored_payment_mode_or_none(item.payment_mode),
         notes=item.notes,
         policy_snapshot=item.policy_snapshot or {},
         status=item.status,
@@ -1452,8 +1468,9 @@ def recalculate_payroll(
     period = save_period(db_session, period)
     pending_modes: dict[uuid.UUID, str] = {}
     for it in list_items_for_period(db_session, period.id):
-        if it.status == "pending":
-            pending_modes[it.user_id] = normalize_payroll_payment_mode(it.payment_mode)
+        pending_mode = _stored_payment_mode_or_none(it.payment_mode)
+        if it.status == "pending" and pending_mode is not None:
+            pending_modes[it.user_id] = pending_mode
     delete_pending_items_for_period(db_session, period.id)
 
     employees = list_employee_users_for_company(db_session, company_id)
@@ -1475,7 +1492,8 @@ def recalculate_payroll(
             hourly = Decimal(str(profile.hourly_rate))
         tax_pct = resolve_effective_tax_rate_percent(profile, default_tax, workplace_tax)
         other_d = Decimal(0)
-        pay_mode = pending_modes.get(emp.id, "net_payment")
+        profile_mode = _stored_payment_mode_or_none(getattr(profile, "payment_mode", None))
+        pay_mode = pending_modes.get(emp.id) or profile_mode or "net_payment"
         bundle = compute_money_bundle(
             regular_seconds=reg_s,
             overtime_seconds=ot_s,
@@ -2044,13 +2062,13 @@ def _pay_summary_money(value: Decimal | None) -> Decimal:
 
 
 def _pay_summary_tax_status(item: PayrollItem) -> str:
-    mode = normalize_payroll_payment_mode(item.payment_mode)
+    mode = _stored_payment_mode_or_none(item.payment_mode)
     if mode == "gross_payment":
         return "Gross payment"
     tax_pct = _decimal_or_none(item.tax_rate_snapshot)
     if tax_pct is not None and tax_pct > 0:
         return f"CIS {tax_pct.normalize()}%"
-    return _payment_mode_label(item.payment_mode)
+    return _payment_mode_label(mode) if mode is not None else "Not provided"
 
 
 def _pay_summary_period_label(period: PayrollPeriod) -> str:
@@ -2311,8 +2329,8 @@ def list_payroll_payment_history(
                 gross_amount=_decimal_or_none(item.gross_amount),
                 cis_tax_amount=_effective_tax_amount_for_item(item),
                 net_paid_amount=_effective_net_amount_for_item(item),
-                payment_mode=normalize_payroll_payment_mode(item.payment_mode),
-                payment_mode_label=_payment_mode_label(item.payment_mode),
+                payment_mode=_stored_payment_mode_or_none(item.payment_mode),
+                payment_mode_label=_payment_mode_label_for_item(item),
                 status=item.status,
                 can_open_payslip=True,
                 can_undo_paid=True,

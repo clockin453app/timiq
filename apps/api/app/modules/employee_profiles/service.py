@@ -21,6 +21,7 @@ from app.modules.employee_profiles.schemas import (
     EmployeeProfileUpdateRequest,
 )
 from app.modules.face_check.service import face_reference_configured
+from app.modules.payroll.calculation import normalize_payroll_payment_mode
 
 
 def employee_profile_to_response(
@@ -47,6 +48,7 @@ def employee_profile_to_response(
             update={
                 "hourly_rate": None,
                 "tax_rate": None,
+                "payment_mode": None,
                 "national_insurance_number": None,
                 "utr_number": None,
             },
@@ -170,7 +172,7 @@ def update_profile_for_actor_or_user_id(
             )
         profile.early_access_enabled = request.early_access_enabled
 
-    if request.hourly_rate is not None or request.tax_rate is not None:
+    if request.hourly_rate is not None or request.tax_rate is not None or "payment_mode" in set_data:
         if actor.id == target_user.id:
             raise EmployeeProfilePermissionError("You cannot update payroll rates on your own profile.")
         if not can_manage_user(actor, target_user):
@@ -181,5 +183,11 @@ def update_profile_for_actor_or_user_id(
             profile.hourly_rate = float(request.hourly_rate)
         if request.tax_rate is not None:
             profile.tax_rate = float(request.tax_rate)
+        if "payment_mode" in set_data:
+            profile.payment_mode = (
+                normalize_payroll_payment_mode(request.payment_mode)
+                if request.payment_mode is not None
+                else None
+            )
 
     return update_employee_profile(db_session, profile)
