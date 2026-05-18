@@ -517,6 +517,12 @@ export type PayrollReportExportParams = {
   employeeUserId?: string | null;
 };
 
+function addDaysIsoDate(isoDate: string, days: number): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  const value = new Date(Date.UTC(year, month - 1, day + days));
+  return value.toISOString().slice(0, 10);
+}
+
 export async function downloadPayrollCsv(params: PayrollReportExportParams): Promise<void> {
   const response = await fetch(
     `${API_URL}/api/payroll/export.csv?${qs({
@@ -538,6 +544,35 @@ export async function downloadPayrollCsv(params: PayrollReportExportParams): Pro
   const datePart =
     params.dateFrom && params.dateTo ? `${params.dateFrom}-to-${params.dateTo}` : params.weekStartIso ?? "export";
   anchor.download = `payroll-${params.companyId}-${datePart}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadPayrollExcelReport(params: PayrollReportExportParams): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/payroll/export.xlsx?${qs({
+      company_id: params.companyId,
+      week_start: params.weekStartIso,
+      date_from: params.dateFrom,
+      date_to: params.dateTo,
+      employee_user_id: params.employeeUserId ?? undefined,
+    })}`,
+    { credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error("Could not export Excel.");
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  const datePart =
+    params.dateFrom && params.dateTo
+      ? `${params.dateFrom}-to-${params.dateTo}`
+      : params.weekStartIso
+        ? `${params.weekStartIso}-to-${addDaysIsoDate(params.weekStartIso, 6)}`
+        : "export";
+  anchor.download = `timiq-payroll-report-${datePart}.xlsx`;
   anchor.click();
   URL.revokeObjectURL(url);
 }

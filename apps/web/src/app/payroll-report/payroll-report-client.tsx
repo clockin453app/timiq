@@ -26,6 +26,7 @@ import {
   approvePayrollItem,
   createPayrollLateShiftAdjustment,
   downloadPayrollCsv,
+  downloadPayrollExcelReport,
   downloadPayrollPdfReport,
   fetchPayrollMonthSummary,
   fetchPayrollPaymentHistory,
@@ -898,6 +899,27 @@ export function PayrollReportClient() {
     }
   }
 
+  async function handleExcelDownload() {
+    if (!activeCompanyId) {
+      return;
+    }
+    const range = selectedExportRange();
+    if (!range) {
+      return;
+    }
+    try {
+      setError("");
+      await downloadPayrollExcelReport({
+        companyId: activeCompanyId,
+        dateFrom: range.dateFrom,
+        dateTo: range.dateTo,
+        employeeUserId: draftEmployeeId || null,
+      });
+    } catch {
+      setError(t("payroll.report.xlsx_export_failed", "Could not download payroll Excel report."));
+    }
+  }
+
   function handlePrint() {
     if (!activeCompanyId) {
       return;
@@ -1174,6 +1196,14 @@ export function PayrollReportClient() {
                 </Button>
                 <Button disabled={loading || !activeCompanyId} onClick={handleCsv} type="button" variant="secondary">
                   {t("payroll.report.export_csv", "Export payroll CSV")}
+                </Button>
+                <Button
+                  disabled={loading || !activeCompanyId}
+                  onClick={handleExcelDownload}
+                  type="button"
+                  variant="secondary"
+                >
+                  {t("payroll.report.export_xlsx", "Export Excel")}
                 </Button>
                 <Button
                   disabled={loading || !activeCompanyId}

@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy.orm import Session
@@ -40,6 +40,7 @@ from app.modules.payroll.service import (
     export_csv_report,
     export_pdf_report,
     export_print_html,
+    export_xlsx_report,
     get_payroll_item_summary,
     get_payroll_month_summary,
     get_payroll_report,
@@ -428,10 +429,60 @@ def payroll_export_pdf(
         ) from exc
     except PayrollError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    filename_date = f"{date_from.isoformat()}-to-{date_to.isoformat()}" if date_from and date_to else week_start.isoformat()
+    filename_date = (
+        f"{date_from.isoformat()}-to-{date_to.isoformat()}"
+        if date_from and date_to
+        else week_start.isoformat()
+    )
     filename = f"timiq-payroll-report-{filename_date}.pdf"
     return protected_file_response(
         body=body,
         download_filename=filename,
         media_type="application/pdf",
+    )
+
+
+@router.get("/export.xlsx")
+def payroll_export_xlsx(
+    company_id: uuid.UUID = Query(...),
+    week_start: date | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    employee_user_id: uuid.UUID | None = Query(default=None),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    if date_from is None and date_to is None and week_start is None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="week_start or date range required.")
+    if (date_from is None) != (date_to is None):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="date_from and date_to are required together.")
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="date_from must be before or equal to date_to.")
+    try:
+        body = export_xlsx_report(
+            db_session,
+            current_user,
+            company_id=company_id,
+            week_start=week_start,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
+        )
+    except PayrollPermissionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(exc),
+        ) from exc
+    except PayrollError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    filename_date = (
+        f"{date_from.isoformat()}-to-{date_to.isoformat()}"
+        if date_from and date_to
+        else f"{week_start.isoformat()}-to-{(week_start + timedelta(days=6)).isoformat()}"
+    )
+    filename = f"timiq-payroll-report-{filename_date}.xlsx"
+    return protected_file_response(
+        body=body,
+        download_filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )

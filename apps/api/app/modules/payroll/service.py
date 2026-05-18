@@ -2382,6 +2382,375 @@ def export_csv_report(
     return buffer.getvalue()
 
 
+def _decimal_from_export_value(value: object) -> Decimal | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text or text == "—":
+        return None
+    try:
+        return Decimal(text.replace("£", "").replace(",", ""))
+    except Exception:
+        return None
+
+
+def _float_from_export_value(value: object) -> float | None:
+    dec = _decimal_from_export_value(value)
+    return float(dec) if dec is not None else None
+
+
+def _date_from_export_value(value: object) -> date | str:
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return date.fromisoformat(text)
+    except ValueError:
+        return text
+
+
+def _xlsx_status_label(status: object) -> str:
+    raw = str(status or "").strip()
+    return raw.replace("_", " ").title() if raw else ""
+
+
+def _append_payroll_xlsx_sheet(
+    *,
+    workbook,
+    company_name: str,
+    period_label: str,
+    timezone_name: str,
+    employee_filter_label: str,
+    generated_at: datetime,
+    summary: dict[str, object],
+    rows: list[dict[str, object]],
+) -> bytes:
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    ws = workbook.active
+    ws.title = "Payroll Report"
+
+    title_fill = PatternFill("solid", fgColor="111827")
+    header_fill = PatternFill("solid", fgColor="D9E2F3")
+    label_fill = PatternFill("solid", fgColor="F3F4F6")
+    white_font = Font(color="FFFFFF", bold=True, size=14)
+    bold = Font(bold=True)
+
+    ws.merge_cells("A1:U1")
+    ws["A1"] = "TimIQ Payroll Report"
+    ws["A1"].font = white_font
+    ws["A1"].fill = title_fill
+    ws["A1"].alignment = Alignment(vertical="center")
+    ws.row_dimensions[1].height = 24
+
+    meta_rows = [
+        ("Company", company_name),
+        ("Period", period_label),
+        ("Employee filter", employee_filter_label),
+        ("Generated", generated_at.strftime("%Y-%m-%d %H:%M UTC")),
+        ("Timezone", timezone_name or "—"),
+    ]
+    row_idx = 3
+    for label, value in meta_rows:
+        ws.cell(row=row_idx, column=1, value=label).font = bold
+        ws.cell(row=row_idx, column=1).fill = label_fill
+        ws.cell(row=row_idx, column=2, value=value)
+        row_idx += 1
+
+    row_idx += 1
+    ws.cell(row=row_idx, column=1, value="Summary").font = Font(bold=True, size=12)
+    row_idx += 1
+    for label, value, number_format in (
+        ("Total hours", summary.get("total_hours"), "0.00"),
+        ("Employees", summary.get("employee_count"), "0"),
+        ("Gross pay", summary.get("gross_pay"), '£#,##0.00;[Red]-£#,##0.00'),
+        ("CIS tax", summary.get("cis_tax"), '£#,##0.00;[Red]-£#,##0.00'),
+        ("Net pay", summary.get("net_pay"), '£#,##0.00;[Red]-£#,##0.00'),
+    ):
+        ws.cell(row=row_idx, column=1, value=label).font = bold
+        ws.cell(row=row_idx, column=1).fill = label_fill
+        cell = ws.cell(row=row_idx, column=2, value=value)
+        cell.number_format = number_format
+        row_idx += 1
+
+    row_idx += 2
+    header_row = row_idx
+    headers = [
+        "Row type",
+        "Company",
+        "Date from",
+        "Date to",
+        "Employee filter",
+        "Employee",
+        "Employee email",
+        "Role",
+        "Payroll week / period",
+        "Shift date",
+        "Clock in",
+        "Clock out",
+        "Location",
+        "Hours",
+        "Actual hours",
+        "Overtime hours",
+        "Gross pay",
+        "CIS tax",
+        "Net pay",
+        "Status",
+        "Notes",
+    ]
+    for col, label in enumerate(headers, start=1):
+        cell = ws.cell(row=header_row, column=col, value=label)
+        cell.font = bold
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center")
+
+    data_start = header_row + 1
+    if rows:
+        for out_row, row in enumerate(rows, start=data_start):
+            values = [
+                row.get("row_type"),
+                company_name,
+                row.get("date_from"),
+                row.get("date_to"),
+                employee_filter_label,
+                row.get("employee"),
+                row.get("employee_email"),
+                row.get("role"),
+                row.get("period"),
+                _date_from_export_value(row.get("shift_date")),
+                row.get("clock_in"),
+                row.get("clock_out"),
+                row.get("location"),
+                _float_from_export_value(row.get("hours")),
+                _float_from_export_value(row.get("actual_hours")),
+                _float_from_export_value(row.get("ot_hours")),
+                _float_from_export_value(row.get("gross")),
+                _float_from_export_value(row.get("cis_tax")),
+                _float_from_export_value(row.get("net")),
+                _xlsx_status_label(row.get("status")),
+                row.get("notes"),
+            ]
+            for col, value in enumerate(values, start=1):
+                ws.cell(row=out_row, column=col, value=value)
+    else:
+        ws.cell(row=data_start, column=1, value="No payable payroll rows for this selected range.")
+        ws.merge_cells(start_row=data_start, start_column=1, end_row=data_start, end_column=len(headers))
+
+    date_cols = (3, 4, 10)
+    hours_cols = (14, 15, 16)
+    money_cols = (17, 18, 19)
+    for row in ws.iter_rows(min_row=data_start, max_row=max(data_start, data_start + max(len(rows), 1) - 1)):
+        for cell in row:
+            if cell.column in date_cols:
+                cell.number_format = "yyyy-mm-dd"
+            elif cell.column in hours_cols:
+                cell.number_format = "0.00"
+            elif cell.column in money_cols:
+                cell.number_format = '£#,##0.00;[Red]-£#,##0.00'
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+
+    widths = [18, 24, 12, 12, 24, 26, 30, 18, 24, 12, 22, 22, 24, 10, 12, 12, 13, 13, 13, 14, 42]
+    for col_idx, width in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+    ws.freeze_panes = f"A{data_start}"
+    ws.auto_filter.ref = f"A{header_row}:U{max(data_start, data_start + max(len(rows), 1) - 1)}"
+    output = io.BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
+def export_xlsx_report(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID,
+    week_start: date | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    employee_user_id: uuid.UUID | None = None,
+) -> bytes:
+    from openpyxl import Workbook
+
+    assert_payroll_admin_or_administrator(actor)
+    assert_payroll_company_scope(actor, company_id)
+    company = get_company_by_id(db_session, company_id)
+    company_name = company.name if company is not None else "Company"
+    generated_at = datetime.now(timezone.utc)
+
+    if date_from is not None or date_to is not None:
+        if date_from is None or date_to is None:
+            raise PayrollError("date_from and date_to are required together.")
+        if date_from > date_to:
+            raise PayrollError("date_from must be before or equal to date_to.")
+        _assert_valid_range_filter(db_session, company_id=company_id, employee_user_id=employee_user_id)
+        policy = ensure_company_time_policy(db_session, company_id)
+        shift_rows, total_shift_seconds, employee_ids = _range_shift_rows(
+            db_session,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
+        )
+        payroll_rows, gross_total, cis_total, net_total = _range_payroll_total_rows(
+            db_session,
+            company_id=company_id,
+            date_from=date_from,
+            date_to=date_to,
+            employee_user_id=employee_user_id,
+        )
+        employee_label = _employee_filter_label(
+            db_session,
+            company_id=company_id,
+            employee_user_id=employee_user_id,
+        )
+        note = PARTIAL_RANGE_PAYROLL_NOTE if _range_has_partial_week_portion(date_from, date_to) else ""
+        rows = [
+            {
+                **row,
+                "date_from": date_from,
+                "date_to": date_to,
+                "notes": note,
+            }
+            for row in shift_rows
+        ]
+        rows.extend(
+            {
+                **row,
+                "date_from": date_from,
+                "date_to": date_to,
+                "notes": "Stored payroll total for a complete payroll week inside the selected range.",
+            }
+            for row in payroll_rows
+        )
+        summary = {
+            "total_hours": total_shift_seconds / 3600,
+            "employee_count": len(employee_ids),
+            "gross_pay": float(gross_total) if gross_total is not None else None,
+            "cis_tax": float(cis_total) if cis_total is not None else None,
+            "net_pay": float(net_total) if net_total is not None else None,
+        }
+        body = _append_payroll_xlsx_sheet(
+            workbook=Workbook(),
+            company_name=company_name,
+            period_label=f"{date_from.isoformat()} to {date_to.isoformat()}",
+            timezone_name=policy.timezone_name,
+            employee_filter_label=employee_label,
+            generated_at=generated_at,
+            summary=summary,
+            rows=rows,
+        )
+        create_internal_audit_event(
+            db_session=db_session,
+            actor=actor,
+            action="payroll.report_exported",
+            entity_type="payroll_period",
+            entity_id=None,
+            company_id=company_id,
+            details={
+                "export_type": "xlsx_range",
+                "date_from": str(date_from),
+                "date_to": str(date_to),
+                "row_count": len(rows),
+                "employee_user_id": str(employee_user_id) if employee_user_id else None,
+            },
+        )
+        return body
+
+    if week_start is None:
+        raise PayrollError("week_start is required.")
+    report = get_payroll_report(
+        db_session,
+        actor,
+        company_id=company_id,
+        week_start=week_start,
+        auto_recalculate_if_safe=False,
+    )
+    week_end = _week_end_display(week_start)
+    by_id: dict[uuid.UUID, PayrollItem] = {}
+    if report.items:
+        pid = report.items[0].period_id
+        by_id = {i.id: i for i in list_items_for_period(db_session, pid)}
+    rows: list[dict[str, object]] = []
+    gross_sum = cis_sum = net_sum = Decimal(0)
+    has_gross = has_cis = has_net = False
+    for row in report.items:
+        if employee_user_id is not None and row.user_id != employee_user_id:
+            continue
+        item = by_id.get(row.id)
+        eff_cis = _effective_tax_amount_for_item(item) if item is not None else None
+        eff_net = _effective_net_amount_for_item(item) if item is not None else None
+        if row.gross_amount is not None:
+            gross_sum += Decimal(str(row.gross_amount))
+            has_gross = True
+        if eff_cis is not None:
+            cis_sum += eff_cis
+            has_cis = True
+        if eff_net is not None:
+            net_sum += eff_net
+            has_net = True
+        rows.append(
+            {
+                "row_type": "payroll_week_total",
+                "date_from": week_start,
+                "date_to": week_end,
+                "employee": row.employee_name or row.employee_email or "Employee",
+                "employee_email": row.employee_email or "",
+                "role": row.employee_job_title or "—",
+                "period": f"{week_start.isoformat()} to {week_end.isoformat()}",
+                "shift_date": "",
+                "clock_in": "",
+                "clock_out": "",
+                "location": "",
+                "hours": row.rounded_total_seconds / 3600,
+                "actual_hours": "",
+                "ot_hours": row.overtime_seconds / 3600,
+                "gross": row.gross_amount,
+                "cis_tax": eff_cis,
+                "net": eff_net,
+                "status": row.status,
+                "notes": "",
+            },
+        )
+    employee_label = _employee_filter_label(db_session, company_id=company_id, employee_user_id=employee_user_id)
+    summary = {
+        "total_hours": sum(float(_float_from_export_value(r.get("hours")) or 0) for r in rows),
+        "employee_count": len({r.get("employee_email") for r in rows if r.get("employee_email")}),
+        "gross_pay": float(gross_sum) if has_gross else None,
+        "cis_tax": float(cis_sum) if has_cis else None,
+        "net_pay": float(net_sum) if has_net else None,
+    }
+    body = _append_payroll_xlsx_sheet(
+        workbook=Workbook(),
+        company_name=company_name,
+        period_label=f"{week_start.isoformat()} to {week_end.isoformat()}",
+        timezone_name=report.period.timezone_name,
+        employee_filter_label=employee_label,
+        generated_at=generated_at,
+        summary=summary,
+        rows=rows,
+    )
+    period_entity = str(report.period.id) if report.period.total_items else None
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="payroll.report_exported",
+        entity_type="payroll_period",
+        entity_id=period_entity,
+        company_id=company_id,
+        details={
+            "export_type": "xlsx",
+            "week_start": str(week_start),
+            "row_count": len(rows),
+            "employee_user_id": str(employee_user_id) if employee_user_id else None,
+        },
+    )
+    return body
+
+
 def _payroll_report_alert_lines(alerts: PayrollReportAlerts) -> list[str]:
     lines: list[str] = []
     if alerts.payroll_period_not_calculated:
