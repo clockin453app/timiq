@@ -49,6 +49,7 @@ def employee_profile_to_response(
                 "hourly_rate": None,
                 "tax_rate": None,
                 "payment_mode": None,
+                "payroll_type": base.payroll_type,
                 "national_insurance_number": None,
                 "utr_number": None,
             },
@@ -172,7 +173,12 @@ def update_profile_for_actor_or_user_id(
             )
         profile.early_access_enabled = request.early_access_enabled
 
-    if request.hourly_rate is not None or request.tax_rate is not None or "payment_mode" in set_data:
+    if (
+        request.hourly_rate is not None
+        or request.tax_rate is not None
+        or "payment_mode" in set_data
+        or "payroll_type" in set_data
+    ):
         if actor.id == target_user.id:
             raise EmployeeProfilePermissionError("You cannot update payroll rates on your own profile.")
         if not can_manage_user(actor, target_user):
@@ -189,5 +195,7 @@ def update_profile_for_actor_or_user_id(
                 if request.payment_mode is not None
                 else None
             )
+        if "payroll_type" in set_data:
+            profile.payroll_type = request.payroll_type or "cis_subcontractor"
 
     return update_employee_profile(db_session, profile)

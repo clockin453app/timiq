@@ -27,6 +27,7 @@ from app.modules.messaging.router import router as messaging_router
 from app.modules.notifications.router import push_router, router as notifications_router
 from app.modules.privacy.router import router as privacy_router
 from app.modules.payroll_policies.router import router as payroll_policies_router
+from app.modules.paye_payroll.router import router as paye_payroll_router
 from app.modules.presence.router import router as presence_router
 from app.modules.settings.router import router as settings_router
 from app.modules.smart_forms.router import router as smart_forms_router
@@ -79,6 +80,7 @@ app.include_router(notifications_router)
 app.include_router(push_router)
 app.include_router(privacy_router)
 app.include_router(payroll_policies_router)
+app.include_router(paye_payroll_router)
 app.include_router(presence_router)
 app.include_router(settings_router)
 app.include_router(smart_forms_router)

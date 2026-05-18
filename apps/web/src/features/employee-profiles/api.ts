@@ -20,6 +20,7 @@ export type EmployeeProfile = {
   hourly_rate: string | null;
   tax_rate: string | null;
   payment_mode: "net_payment" | "gross_payment" | null;
+  payroll_type: "cis_subcontractor" | "paye_employee";
   face_check_consent_at?: string | null;
   face_reference_enrolled_at?: string | null;
   face_reference_updated_at?: string | null;
@@ -54,6 +55,7 @@ export type PatchManagedEmployeeProfileRequest = {
   hourly_rate?: string | number | null;
   tax_rate?: string | number | null;
   payment_mode?: "net_payment" | "gross_payment" | null;
+  payroll_type?: "cis_subcontractor" | "paye_employee" | null;
 };
 
 export async function getMyEmployeeProfile(): Promise<EmployeeProfile> {

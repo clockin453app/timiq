@@ -21,6 +21,7 @@ class EmployeeProfileUpdateRequest(BaseModel):
     hourly_rate: Decimal | None = Field(default=None, ge=0)
     tax_rate: Decimal | None = Field(default=None, ge=0, le=100)
     payment_mode: Literal["net_payment", "gross_payment"] | None = None
+    payroll_type: Literal["cis_subcontractor", "paye_employee"] | None = None
 
 
 class FaceReferenceStatusResponse(BaseModel):
@@ -51,6 +52,7 @@ class EmployeeProfileResponse(BaseModel):
     hourly_rate: Decimal | None = None
     tax_rate: Decimal | None = None
     payment_mode: str | None = None
+    payroll_type: str = "cis_subcontractor"
     face_check_consent_at: datetime | None = None
     face_reference_enrolled_at: datetime | None = None
     face_reference_updated_at: datetime | None = None

@@ -1257,7 +1257,7 @@ export function PayrollReportClient() {
   return (
     <Sheet>
       <PageHeader
-        title={t("payroll.report.title", "Payroll report")}
+        title={t("payroll.report.title", "CIS Payroll Report")}
         description={t(
           "payroll.report.subtitle",
           "Weekly payroll, approvals, and exports. Week is defined by the company time policy timezone.",

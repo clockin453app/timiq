@@ -19,6 +19,17 @@ import {
   getManagedEmployeeProfile,
   patchManagedEmployeeProfile,
 } from "../../features/employee-profiles/api";
+import {
+  getEmployeePayeSettings,
+  patchEmployeePayeSettings,
+  type PayrollType,
+  type SalaryType,
+  type TaxBasis,
+  type StudentLoanPlan,
+  type PensionEnrolmentStatus,
+  type PensionSchemeBasis,
+  type PensionReliefMethod,
+} from "../../features/paye-payroll/api";
 import { type Company } from "../../features/companies/api";
 
 function formatRole(role: string) {
@@ -66,6 +77,7 @@ export function EmployeeDetailPanel({
   const [hourlyRateStr, setHourlyRateStr] = useState("");
   const [taxRateStr, setTaxRateStr] = useState("");
   const [paymentMode, setPaymentMode] = useState<"net_payment" | "gross_payment">("net_payment");
+  const [payrollType, setPayrollType] = useState<PayrollType>("cis_subcontractor");
   const [employeeProfileLoaded, setEmployeeProfileLoaded] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileLoadError, setProfileLoadError] = useState<string | null>(null);
@@ -75,6 +87,19 @@ export function EmployeeDetailPanel({
   const [niStr, setNiStr] = useState("");
   const [utrStr, setUtrStr] = useState("");
   const [isSavingEmployment, setIsSavingEmployment] = useState(false);
+  const [isSavingPayeSettings, setIsSavingPayeSettings] = useState(false);
+  const [payeSalaryType, setPayeSalaryType] = useState<SalaryType>("hourly");
+  const [payeMonthlySalary, setPayeMonthlySalary] = useState("");
+  const [payeTaxCode, setPayeTaxCode] = useState("");
+  const [payeTaxBasis, setPayeTaxBasis] = useState<TaxBasis>("cumulative");
+  const [payeNiCategory, setPayeNiCategory] = useState("");
+  const [payeStudentLoanPlan, setPayeStudentLoanPlan] = useState<StudentLoanPlan>("none");
+  const [payePostgraduateLoan, setPayePostgraduateLoan] = useState(false);
+  const [payePensionStatus, setPayePensionStatus] = useState<PensionEnrolmentStatus>("not_eligible");
+  const [payeEmployeePensionPercent, setPayeEmployeePensionPercent] = useState("");
+  const [payeEmployerPensionPercent, setPayeEmployerPensionPercent] = useState("");
+  const [payePensionBasis, setPayePensionBasis] = useState<PensionSchemeBasis>("qualifying_earnings");
+  const [payePensionReliefMethod, setPayePensionReliefMethod] = useState<PensionReliefMethod>("relief_at_source");
 
   const showEmployeeExtendedFields =
     canManageUser(currentUser, user) && user.system_role === "employee";
@@ -101,9 +126,23 @@ export function EmployeeDetailPanel({
       setHourlyRateStr(profile.hourly_rate ?? "");
       setTaxRateStr(profile.tax_rate ?? "");
       setPaymentMode(profile.payment_mode === "gross_payment" ? "gross_payment" : "net_payment");
+      setPayrollType(profile.payroll_type === "paye_employee" ? "paye_employee" : "cis_subcontractor");
       setJobTitleStr(profile.job_title ?? "");
       setNiStr(profile.national_insurance_number ?? "");
       setUtrStr(profile.utr_number ?? "");
+      const payeSettings = await getEmployeePayeSettings(user.id);
+      setPayeSalaryType(payeSettings.salary_type);
+      setPayeMonthlySalary(payeSettings.monthly_salary ?? "");
+      setPayeTaxCode(payeSettings.tax_code ?? "");
+      setPayeTaxBasis(payeSettings.tax_basis);
+      setPayeNiCategory(payeSettings.ni_category ?? "");
+      setPayeStudentLoanPlan(payeSettings.student_loan_plan);
+      setPayePostgraduateLoan(payeSettings.postgraduate_loan);
+      setPayePensionStatus(payeSettings.pension_enrolment_status);
+      setPayeEmployeePensionPercent(payeSettings.employee_pension_percent ?? "");
+      setPayeEmployerPensionPercent(payeSettings.employer_pension_percent ?? "");
+      setPayePensionBasis(payeSettings.pension_scheme_basis);
+      setPayePensionReliefMethod(payeSettings.pension_relief_method);
       setEmployeeProfileLoaded(true);
     } catch {
       if (generation !== profileFetchGeneration.current) {
@@ -167,7 +206,6 @@ export function EmployeeDetailPanel({
       await patchManagedEmployeeProfile(user.id, {
         job_title: jobTitleStr.trim() === "" ? null : jobTitleStr.trim(),
         national_insurance_number: niStr.trim() === "" ? null : niStr.trim(),
-        utr_number: utrStr.trim() === "" ? null : utrStr.trim(),
       });
       setLocalSuccess("Employment details saved.");
       await onRefresh();
@@ -188,6 +226,7 @@ export function EmployeeDetailPanel({
         hourly_rate: hourlyRateStr.trim() === "" ? null : hourlyRateStr.trim(),
         tax_rate: taxRateStr.trim() === "" ? null : taxRateStr.trim(),
         payment_mode: paymentMode,
+        utr_number: utrStr.trim() === "" ? null : utrStr.trim(),
       });
       setLocalSuccess("Payroll rates saved.");
       await onRefresh();
@@ -196,6 +235,41 @@ export function EmployeeDetailPanel({
       setLocalError(error instanceof Error ? error.message : "Could not save payroll rates.");
     } finally {
       setIsSavingPayrollRates(false);
+    }
+  }
+
+  async function handleSavePayeSettings() {
+    setLocalError("");
+    setLocalSuccess("");
+    setIsSavingPayeSettings(true);
+    try {
+      await patchManagedEmployeeProfile(user.id, {
+        payroll_type: payrollType,
+      });
+      await patchEmployeePayeSettings(user.id, {
+        pay_frequency: "monthly",
+        salary_type: payeSalaryType,
+        monthly_salary: payeMonthlySalary.trim() === "" ? null : payeMonthlySalary.trim(),
+        tax_code: payeTaxCode.trim() === "" ? null : payeTaxCode.trim(),
+        tax_basis: payeTaxBasis,
+        ni_category: payeNiCategory.trim() === "" ? null : payeNiCategory.trim(),
+        student_loan_plan: payeStudentLoanPlan,
+        postgraduate_loan: payePostgraduateLoan,
+        pension_enrolment_status: payePensionStatus,
+        employee_pension_percent:
+          payeEmployeePensionPercent.trim() === "" ? null : payeEmployeePensionPercent.trim(),
+        employer_pension_percent:
+          payeEmployerPensionPercent.trim() === "" ? null : payeEmployerPensionPercent.trim(),
+        pension_scheme_basis: payePensionBasis,
+        pension_relief_method: payePensionReliefMethod,
+      });
+      setLocalSuccess("PAYE monthly settings saved.");
+      await onRefresh();
+      await reloadEmployeeProfile();
+    } catch (error) {
+      setLocalError(error instanceof Error ? error.message : "Could not save PAYE settings.");
+    } finally {
+      setIsSavingPayeSettings(false);
     }
   }
 
@@ -458,18 +532,6 @@ export function EmployeeDetailPanel({
                     value={niStr}
                   />
                 </label>
-                <label className="block text-xs font-bold text-[var(--color-text)]">
-                  UTR (Unique Taxpayer Reference)
-                  <input
-                    autoComplete="off"
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    disabled={isSavingEmployment}
-                    onChange={(event) => setUtrStr(event.target.value)}
-                    placeholder="Digits only"
-                    type="text"
-                    value={utrStr}
-                  />
-                </label>
                 <Button disabled={isSavingEmployment} onClick={() => void handleSaveEmployment()} type="button">
                   {isSavingEmployment ? "Saving…" : "Save employment details"}
                 </Button>
@@ -524,18 +586,18 @@ export function EmployeeDetailPanel({
 
             <div className="border-t border-[var(--color-border)] pt-3">
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                Payroll rates
+                CIS payroll settings
               </p>
               {profileLoadError ? (
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                  Fix profile loading above to edit payroll rates.
+                  Fix profile loading above to edit CIS payroll settings.
                 </p>
               ) : profileLoading ? (
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">Loading profile…</p>
               ) : employeeProfileLoaded ? (
                 <div className="mt-2 space-y-2">
                   <label className="block text-xs font-bold text-[var(--color-text)]">
-                    Hourly rate
+                    CIS hourly rate
                     <input
                       className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                       disabled={profileLoading || isSavingPayrollRates}
@@ -557,6 +619,18 @@ export function EmployeeDetailPanel({
                     />
                   </label>
                   <label className="block text-xs font-bold text-[var(--color-text)]">
+                    UTR (Unique Taxpayer Reference)
+                    <input
+                      autoComplete="off"
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={profileLoading || isSavingPayrollRates}
+                      onChange={(event) => setUtrStr(event.target.value)}
+                      placeholder="Digits only"
+                      type="text"
+                      value={utrStr}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
                     Payment mode
                     <select
                       className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
@@ -575,8 +649,195 @@ export function EmployeeDetailPanel({
                     onClick={handleSavePayrollRates}
                     type="button"
                   >
-                    {isSavingPayrollRates ? "Saving…" : "Save payroll rates"}
+                    {isSavingPayrollRates ? "Saving…" : "Save CIS payroll settings"}
                   </Button>
+                </div>
+              ) : (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">Loading profile…</p>
+              )}
+            </div>
+
+            <div className="border-t border-[var(--color-border)] pt-3">
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                PAYE monthly settings
+              </p>
+              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                Stored for the future Monthly PAYE Report. No PAYE tax, NI, pension, or payslip calculation is enabled yet.
+              </p>
+              {profileLoadError ? (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                  Fix profile loading above to edit PAYE settings.
+                </p>
+              ) : profileLoading ? (
+                <p className="mt-1 text-xs text-[var(--color-text-muted)]">Loading profile…</p>
+              ) : employeeProfileLoaded ? (
+                <div className="mt-2 grid gap-2 md:grid-cols-2">
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Payroll type
+                    <select
+                      className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) =>
+                        setPayrollType(event.target.value === "paye_employee" ? "paye_employee" : "cis_subcontractor")
+                      }
+                      value={payrollType}
+                    >
+                      <option value="cis_subcontractor">CIS subcontractor</option>
+                      <option value="paye_employee">PAYE employee</option>
+                    </select>
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Pay frequency
+                    <input
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled
+                      value="Monthly"
+                      readOnly
+                    />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Salary type
+                    <select
+                      className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) =>
+                        setPayeSalaryType(event.target.value === "fixed_monthly_salary" ? "fixed_monthly_salary" : "hourly")
+                      }
+                      value={payeSalaryType}
+                    >
+                      <option value="hourly">Hourly</option>
+                      <option value="fixed_monthly_salary">Fixed monthly salary</option>
+                    </select>
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Monthly salary
+                    <input
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeMonthlySalary(event.target.value)}
+                      placeholder="Leave blank for hourly"
+                      value={payeMonthlySalary}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Tax code
+                    <input
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeTaxCode(event.target.value)}
+                      placeholder="e.g. 1257L"
+                      value={payeTaxCode}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Tax basis
+                    <select
+                      className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeTaxBasis(event.target.value === "month1" ? "month1" : "cumulative")}
+                      value={payeTaxBasis}
+                    >
+                      <option value="cumulative">Cumulative</option>
+                      <option value="month1">Month 1</option>
+                    </select>
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    NI category
+                    <input
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeNiCategory(event.target.value)}
+                      placeholder="e.g. A"
+                      value={payeNiCategory}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Student loan plan
+                    <select
+                      className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeStudentLoanPlan(event.target.value as StudentLoanPlan)}
+                      value={payeStudentLoanPlan}
+                    >
+                      <option value="none">None</option>
+                      <option value="plan_1">Plan 1</option>
+                      <option value="plan_2">Plan 2</option>
+                      <option value="plan_4">Plan 4</option>
+                      <option value="plan_5">Plan 5</option>
+                    </select>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
+                    <input
+                      checked={payePostgraduateLoan}
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayePostgraduateLoan(event.target.checked)}
+                      type="checkbox"
+                    />
+                    Postgraduate loan
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Pension enrolment status
+                    <select
+                      className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayePensionStatus(event.target.value as PensionEnrolmentStatus)}
+                      value={payePensionStatus}
+                    >
+                      <option value="eligible">Eligible</option>
+                      <option value="enrolled">Enrolled</option>
+                      <option value="opted_out">Opted out</option>
+                      <option value="postponed">Postponed</option>
+                      <option value="not_eligible">Not eligible</option>
+                    </select>
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Employee pension %
+                    <input
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeEmployeePensionPercent(event.target.value)}
+                      value={payeEmployeePensionPercent}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Employer pension %
+                    <input
+                      className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayeEmployerPensionPercent(event.target.value)}
+                      value={payeEmployerPensionPercent}
+                    />
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Pension scheme basis
+                    <select
+                      className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayePensionBasis(event.target.value as PensionSchemeBasis)}
+                      value={payePensionBasis}
+                    >
+                      <option value="qualifying_earnings">Qualifying earnings</option>
+                      <option value="total_earnings">Total earnings</option>
+                    </select>
+                  </label>
+                  <label className="block text-xs font-bold text-[var(--color-text)]">
+                    Pension relief method
+                    <select
+                      className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                      disabled={isSavingPayeSettings}
+                      onChange={(event) => setPayePensionReliefMethod(event.target.value as PensionReliefMethod)}
+                      value={payePensionReliefMethod}
+                    >
+                      <option value="relief_at_source">Relief at source</option>
+                      <option value="net_pay_arrangement">Net pay arrangement</option>
+                      <option value="salary_sacrifice">Salary sacrifice</option>
+                    </select>
+                  </label>
+                  <div className="md:col-span-2">
+                    <Button disabled={isSavingPayeSettings} onClick={() => void handleSavePayeSettings()} type="button">
+                      {isSavingPayeSettings ? "Saving…" : "Save PAYE monthly settings"}
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">Loading profile…</p>

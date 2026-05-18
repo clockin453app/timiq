@@ -257,9 +257,16 @@ const LIVE_ATTENDANCE: NavigationItem = {
 };
 
 const PAYROLL_REPORT: NavigationItem = {
-  label: "Payroll Report",
-  labelKey: "nav.payroll_report",
+  label: "CIS Payroll Report",
+  labelKey: "nav.cis_payroll_report",
   href: "/payroll-report",
+  allowedRoles: ["administrator", "admin"],
+};
+
+const MONTHLY_PAYE_REPORT: NavigationItem = {
+  label: "Monthly PAYE Report",
+  labelKey: "nav.monthly_paye_report",
+  href: "/monthly-paye",
   allowedRoles: ["administrator", "admin"],
 };
 
@@ -354,7 +361,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mgmt-payroll",
     label: "Payroll",
     groupLabelKey: "nav.group.mgmt_payroll",
-    items: [PAYROLL_REPORT, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
+    items: [PAYROLL_REPORT, MONTHLY_PAYE_REPORT, SITE_PAYROLL_RULES, BUDGET_CALCULATOR, ACCOUNTING_LINK],
   },
   {
     id: "mgmt-work",
@@ -602,6 +609,7 @@ const MOBILE_MORE_ADMIN: NavigationItem[] = [
   EMPLOYEES,
   LOCATIONS,
   PAYROLL_REPORT,
+  MONTHLY_PAYE_REPORT,
 ];
 
 /**
