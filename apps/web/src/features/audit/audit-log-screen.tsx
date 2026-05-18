@@ -194,23 +194,25 @@ export function AuditLogScreen() {
               <input
                 className="w-full rounded border border-[var(--color-border-dark)] bg-white px-2 py-1.5 text-sm"
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Action, entity, or details text"
+                placeholder="Search names, emails, companies, actions, entities, or details"
                 value={search}
               />
             </label>
             <label className="block space-y-1">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Actor user id</span>
+              <span className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Actor user ID</span>
               <input
                 className="w-full rounded border border-[var(--color-border-dark)] bg-white px-2 py-1.5 font-mono text-xs"
                 onChange={(e) => setActorUserId(e.target.value)}
+                placeholder="UUID only, not name"
                 value={actorUserId}
               />
             </label>
             <label className="block space-y-1">
-              <span className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Subject user id</span>
+              <span className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Subject user ID</span>
               <input
                 className="w-full rounded border border-[var(--color-border-dark)] bg-white px-2 py-1.5 font-mono text-xs"
                 onChange={(e) => setSubjectUserId(e.target.value)}
+                placeholder="UUID only, not name"
                 value={subjectUserId}
               />
             </label>
