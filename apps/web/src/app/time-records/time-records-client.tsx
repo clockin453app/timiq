@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui";
+import { UserAvatar } from "../../components/user-avatar";
 import {
   canAccessManagement,
   isAdministrator,
@@ -33,7 +34,6 @@ import { shiftStatusLabel, useT } from "../../lib/i18n";
 import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 import { FaceCheckCell } from "../../features/face-check/face-check-cell";
 import { FaceCheckReviewModal } from "../../features/face-check/face-check-review-modal";
-import { FaceReferenceAvatar } from "../../features/face-check/face-reference-avatar";
 import {
   adminCreateCompletedShift,
   adminForceClockOut,
@@ -650,9 +650,9 @@ export function TimeRecordsClient() {
                     {adminMode ? (
                       <TableCell className="max-w-[14rem] text-xs">
                         <div className="flex min-w-0 items-center gap-2">
-                          <FaceReferenceAvatar
-                            employeeEmail={row.employee_email}
-                            employeeName={row.employee_name}
+                          <UserAvatar
+                            email={row.employee_email}
+                            name={row.employee_name}
                             sizeClassName="h-8 w-8"
                             userId={row.user_id}
                           />

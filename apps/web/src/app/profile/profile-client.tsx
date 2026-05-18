@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 
+import { UserAvatar } from "../../components/user-avatar";
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
 import {
   getMyEmployeeProfile,
@@ -20,7 +21,6 @@ import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { FaceCheckProfileSection } from "../../features/face-check/face-check-profile-section";
 import {
   fetchOnboardingDocumentBlob,
-  fetchOnboardingProfilePhotoBlob,
   fetchOnboardingSignatureBlob,
   getMyOnboarding,
   ONBOARDING_REQUIRED_DOC_SLOTS,
@@ -62,8 +62,6 @@ export function ProfileClient() {
   const [onboardingLoading, setOnboardingLoading] = useState(false);
   const [onboardingError, setOnboardingError] = useState("");
   const [showSensitiveOnboarding, setShowSensitiveOnboarding] = useState(false);
-  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
-  const profileAvatarRevokeRef = useRef<string | null>(null);
 
   async function loadProfile() {
     setIsLoadingProfile(true);
@@ -134,50 +132,6 @@ export function ProfileClient() {
       cancelled = true;
     };
   }, [user.id, user.system_role]);
-
-  useEffect(() => {
-    if (!isEmployee(user) || !onboarding?.has_profile_photo) {
-      if (profileAvatarRevokeRef.current) {
-        URL.revokeObjectURL(profileAvatarRevokeRef.current);
-        profileAvatarRevokeRef.current = null;
-      }
-      setProfileAvatarUrl(null);
-      return;
-    }
-
-    let cancelled = false;
-    async function loadAvatar() {
-      try {
-        const blob = await fetchOnboardingProfilePhotoBlob(user.id);
-        const url = URL.createObjectURL(blob);
-        if (profileAvatarRevokeRef.current) {
-          URL.revokeObjectURL(profileAvatarRevokeRef.current);
-        }
-        profileAvatarRevokeRef.current = url;
-        if (!cancelled) {
-          setProfileAvatarUrl(url);
-        }
-      } catch {
-        if (!cancelled) {
-          setProfileAvatarUrl(null);
-        }
-      }
-    }
-
-    void loadAvatar();
-    return () => {
-      cancelled = true;
-    };
-  }, [user.id, onboarding?.has_profile_photo, onboarding?.profile_photo_updated_at]);
-
-  useEffect(() => {
-    return () => {
-      if (profileAvatarRevokeRef.current) {
-        URL.revokeObjectURL(profileAvatarRevokeRef.current);
-        profileAvatarRevokeRef.current = null;
-      }
-    };
-  }, []);
 
   async function handleSave(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -325,21 +279,6 @@ export function ProfileClient() {
     return user.email;
   }
 
-  function profileInitials(): string {
-    const fn = profile?.first_name?.trim();
-    const ln = profile?.last_name?.trim();
-    if (fn && ln) {
-      return `${fn[0] ?? ""}${ln[0] ?? ""}`.toUpperCase();
-    }
-    if (fn && fn.length >= 2) {
-      return fn.slice(0, 2).toUpperCase();
-    }
-    if (fn) {
-      return fn.slice(0, 1).toUpperCase();
-    }
-    return user.email.slice(0, 2).toUpperCase();
-  }
-
   async function handleViewOnboardingSignature(submissionId: string) {
     try {
       const blob = await fetchOnboardingSignatureBlob(submissionId);
@@ -361,17 +300,14 @@ export function ProfileClient() {
         <div className="space-y-3">
           {isEmployee(user) ? (
             <div className="flex items-center gap-4 border border-[var(--color-border)] bg-[var(--color-cell)] p-4">
-              <div className="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-full border-2 border-[var(--color-border-dark)] bg-[var(--color-header)] text-lg font-bold tracking-wide text-[var(--color-text-soft)]">
-                {profileAvatarUrl ? (
-                  <img
-                    src={profileAvatarUrl}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  profileInitials()
-                )}
-              </div>
+              <UserAvatar
+                className="border-2 bg-[var(--color-header)] text-lg tracking-wide text-[var(--color-text-soft)]"
+                email={user.email}
+                key={`${user.id}:${onboarding?.profile_photo_updated_at ?? ""}:${profile?.face_reference_updated_at ?? ""}`}
+                name={profileDisplayName()}
+                sizeClassName="h-24 w-24"
+                userId={user.id}
+              />
               <div className="min-w-0 flex-1">
                 <p className="text-lg font-semibold leading-tight text-[var(--color-text)]">
                   {isLoadingProfile ? t("common.loading", "Loading…") : profileDisplayName()}

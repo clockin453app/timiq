@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui";
+import { UserAvatar } from "../../components/user-avatar";
 import { isAdministrator, RoleGuard, useCurrentUser } from "../../features/auth";
 import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
@@ -509,7 +510,15 @@ export function LiveAttendanceClient() {
                       return (
                         <TableRow key={row.user_id}>
                           <TableCell className="max-w-[8rem] text-sm font-medium sm:max-w-none">
-                            <span className="line-clamp-2">{row.display_name || "Employee"}</span>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <UserAvatar
+                                email={row.email}
+                                name={row.display_name}
+                                sizeClassName="h-8 w-8"
+                                userId={row.user_id}
+                              />
+                              <span className="line-clamp-2 min-w-0">{row.display_name || "Employee"}</span>
+                            </div>
                           </TableCell>
                           <TableCell className="hidden max-w-[12rem] truncate text-sm md:table-cell">{row.email ?? "—"}</TableCell>
                           <TableCell className="hidden text-sm lg:table-cell">{row.job_title ?? "—"}</TableCell>

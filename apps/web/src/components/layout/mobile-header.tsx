@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { X } from "lucide-react";
 
+import { UserAvatar } from "../user-avatar";
 import { getMobileDrawerNavigationGroups } from "../../config/navigation";
 import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
@@ -83,6 +84,12 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
         <div className="flex shrink-0 items-center gap-1.5">
           <MessagesHeaderButton activeHref={activeHref} />
           <NotificationBell />
+          <UserAvatar
+            email={user.email}
+            name={[user.profile_first_name, user.profile_last_name].filter(Boolean).join(" ")}
+            sizeClassName="h-9 w-9"
+            userId={user.id}
+          />
           <button
             aria-controls="timiq-mobile-menu"
             aria-expanded={menuOpen}

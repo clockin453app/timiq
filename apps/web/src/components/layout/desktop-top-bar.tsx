@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 
+import { UserAvatar } from "../user-avatar";
 import { getDefaultLandingPath } from "../../config/navigation";
 import { formatSystemRole, LogoutButton, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
@@ -59,6 +60,12 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
         <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
           {!limited ? <MessagesHeaderButton activeHref={activeHref} /> : null}
           {!limited ? <NotificationBell /> : null}
+          <UserAvatar
+            email={user.email}
+            name={[user.profile_first_name, user.profile_last_name].filter(Boolean).join(" ")}
+            sizeClassName="h-9 w-9"
+            userId={user.id}
+          />
 
           <details className="relative shrink-0">
             <summary
