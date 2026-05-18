@@ -22,6 +22,7 @@ export type PayrollItemRow = {
   display_tax_amount: string | null;
   display_net_amount: string | null;
   payment_mode: string | null;
+  payment_mode_label: string;
   notes: string | null;
   policy_snapshot: Record<string, unknown>;
   status: string;

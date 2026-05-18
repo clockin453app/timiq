@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { WeekPickerBar } from "../../components/week-picker-bar";
 import { usePageLocationAction } from "../../components/layout/page-location-action-context";
@@ -113,6 +114,7 @@ function canShowLateAdjustmentForPaidRow(
 type RowActionMenuState = {
   row: PayrollItemRow;
   lateBlock: PayrollLateUnpaidEmployee | null;
+  anchor: HTMLButtonElement;
 };
 
 type PayrollUndoTarget = {
@@ -120,6 +122,32 @@ type PayrollUndoTarget = {
   employee_email: string | null;
   employee_name: string | null;
 };
+
+type FloatingMenuPosition = {
+  top: number;
+  left: number;
+  minWidth: number;
+  maxHeight: number;
+};
+
+function computeFloatingRowMenuPosition(anchor: HTMLElement): FloatingMenuPosition {
+  const rect = anchor.getBoundingClientRect();
+  const minWidth = 220;
+  const viewportPad = 8;
+  const maxHeight = Math.min(window.innerHeight * 0.7, 360);
+  let left = rect.right - minWidth;
+  if (left < viewportPad) {
+    left = viewportPad;
+  }
+  if (left + minWidth > window.innerWidth - viewportPad) {
+    left = window.innerWidth - minWidth - viewportPad;
+  }
+  let top = rect.bottom + 6;
+  if (top + maxHeight > window.innerHeight - viewportPad) {
+    top = Math.max(viewportPad, rect.top - maxHeight - 6);
+  }
+  return { top, left, minWidth, maxHeight };
+}
 
 function statusBadgeClass(status: string): string {
   if (status === "pending") {
@@ -166,6 +194,28 @@ function normalizePaymentMode(value: string | null | undefined): "net_payment" |
     return "net_payment";
   }
   return "net_payment";
+}
+
+function storedPaymentMode(value: string | null | undefined): "net_payment" | "gross_payment" | null {
+  const raw = (value ?? "").trim().toLowerCase();
+  if (raw === "gross_payment" || raw === "gross") {
+    return "gross_payment";
+  }
+  if (raw === "net_payment" || raw === "net") {
+    return "net_payment";
+  }
+  return null;
+}
+
+function paymentTypeBadgeClass(mode: "net_payment" | "gross_payment" | null): string {
+  const base = "inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold";
+  if (mode === "gross_payment") {
+    return `${base} border-slate-300 bg-slate-50 text-slate-900`;
+  }
+  if (mode === "net_payment") {
+    return `${base} border-blue-900/15 bg-blue-50 text-slate-900`;
+  }
+  return `${base} border-slate-200 bg-white text-slate-500`;
 }
 
 function formatShiftDateTime(iso: string, timeZone: string): string {
@@ -264,6 +314,111 @@ function PayrollEmployeeIdentity(props: {
   }
 
   return content;
+}
+
+function PayrollRowActionsPortal(props: {
+  state: RowActionMenuState | null;
+  report: PayrollReportResponse | null;
+  onClose: () => void;
+  onEdit: (row: PayrollItemRow) => void;
+  onOpenPayslip: (itemId: string) => void;
+  onUndoPaid: (row: PayrollItemRow) => void;
+  onLateAdjustment: (itemId: string) => void;
+  t: (key: string, fallback?: string) => string;
+}) {
+  const [position, setPosition] = useState<FloatingMenuPosition | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useLayoutEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!props.state) {
+      setPosition(null);
+      return;
+    }
+    const anchor = props.state.anchor;
+    const update = () => setPosition(computeFloatingRowMenuPosition(anchor));
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [props.state]);
+
+  if (!props.state || !mounted || !position) {
+    return null;
+  }
+
+  const { row, lateBlock } = props.state;
+
+  return createPortal(
+    <div
+      className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]"
+      data-payroll-row-menu
+      id={`payroll-row-actions-${row.id}`}
+      role="menu"
+      style={{
+        position: "fixed",
+        top: position.top,
+        left: position.left,
+        minWidth: position.minWidth,
+        maxWidth: "min(20rem, calc(100vw - 1rem))",
+        maxHeight: position.maxHeight,
+        overflowY: "auto",
+        zIndex: 120,
+      }}
+    >
+      <button
+        className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+        onClick={() => props.onEdit(row)}
+        role="menuitem"
+        type="button"
+      >
+        {props.t("payroll.report.payroll_adjustments", "Payroll adjustments")}
+      </button>
+      {row.status === "paid" ? (
+        <>
+          <button
+            className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+            onClick={() => {
+              props.onClose();
+              props.onOpenPayslip(row.id);
+            }}
+            role="menuitem"
+            type="button"
+          >
+            {props.t("payroll.report.payslip", "Payslip")}
+          </button>
+          <button
+            className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+            onClick={() => props.onUndoPaid(row)}
+            role="menuitem"
+            type="button"
+          >
+            {props.t("payroll.report.undo_paid", "Undo paid")}
+          </button>
+          {canShowLateAdjustmentForPaidRow(row, lateBlock, props.report) ? (
+            <button
+              className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+              onClick={() => {
+                props.onClose();
+                props.onLateAdjustment(row.id);
+              }}
+              role="menuitem"
+              type="button"
+            >
+              {props.t("payroll.report.adjustment", "Adjustment")}
+            </button>
+          ) : null}
+        </>
+      ) : null}
+    </div>,
+    document.body,
+  );
 }
 
 export function PayrollReportClient() {
@@ -641,11 +796,19 @@ export function PayrollReportClient() {
     setEditPaymentMode(normalizePaymentMode(row.payment_mode));
   }
 
+  function openUndoPaidFromMenu(row: PayrollItemRow) {
+    setUndoPaidRow(row);
+    setUndoPaidReason("");
+    setUndoPaidAckExport(false);
+    closeRowActionMenu();
+  }
+
   function openRowActionMenu(
     row: PayrollItemRow,
     lateBlock: PayrollLateUnpaidEmployee | null,
+    anchor: HTMLButtonElement,
   ) {
-    setRowActionMenu((prev) => (prev?.row.id === row.id ? null : { row, lateBlock }));
+    setRowActionMenu((prev) => (prev?.row.id === row.id ? null : { row, lateBlock, anchor }));
   }
 
   function openShiftEdit(row: TimeRecordShiftRow) {
@@ -1274,6 +1437,7 @@ export function PayrollReportClient() {
                     <TableHead>{t("payroll.report.col_gross", "Gross")}</TableHead>
                     <TableHead>{t("payroll.report.col_cis", "CIS tax")}</TableHead>
                     <TableHead>{t("payroll.report.col_net", "Net pay")}</TableHead>
+                    <TableHead>{t("payroll.report.col_payment_type", "Payment type")}</TableHead>
                     <TableHead>{t("payroll.report.col_other_ded", "Other ded.")}</TableHead>
                     <TableHead>{t("payroll.report.col_notes", "Notes")}</TableHead>
                     <TableHead>{t("payroll.report.col_status", "Status")}</TableHead>
@@ -1283,21 +1447,21 @@ export function PayrollReportClient() {
                 <TableBody>
                   {loading ? (
                     <TableRow>
-                      <TableCell className="py-8 text-center text-sm text-[var(--color-text-muted)]" colSpan={12}>
+                      <TableCell className="py-8 text-center text-sm text-[var(--color-text-muted)]" colSpan={13}>
                         {t("payroll.report.loading_table", "Loading…")}
                       </TableCell>
                     </TableRow>
                   ) : null}
                   {!loading && !hasCompany ? (
                     <TableRow>
-                      <TableCell className="py-8 text-center text-sm text-[#374151]" colSpan={12}>
+                      <TableCell className="py-8 text-center text-sm text-[#374151]" colSpan={13}>
                         {t("payroll.report.choose_company_table", "Choose a company in the toolbar to load this table.")}
                       </TableCell>
                     </TableRow>
                   ) : null}
                   {!loading && hasCompany && report && report.items.length === 0 ? (
                     <TableRow>
-                      <TableCell className="py-8 text-center text-sm text-[#374151]" colSpan={12}>
+                      <TableCell className="py-8 text-center text-sm text-[#374151]" colSpan={13}>
                         {payrollPeriodNotCalculated
                           ? t(
                               "payroll.report.empty_not_calc",
@@ -1315,6 +1479,8 @@ export function PayrollReportClient() {
                   {!loading && report
                     ? report.items.map((row) => {
                         const lateBlock = lateUnpaidBlockForUser(report, row.user_id);
+                        const payMode = storedPaymentMode(row.payment_mode);
+                        const paymentModeLabel = row.payment_mode_label || "Not provided";
                         return (
                         <Fragment key={row.id}>
                           <TableRow>
@@ -1348,7 +1514,7 @@ export function PayrollReportClient() {
                             <TableCell className="align-top text-xs tabular-nums">
                               {formatHoursFromSeconds(row.overtime_seconds)}
                             </TableCell>
-                            <TableCell className="align-top text-xs">
+                            <TableCell className={`align-top text-xs ${payMode === "gross_payment" ? "font-semibold text-[#111827]" : ""}`}>
                               {row.rate_missing
                                 ? t("payroll.report.rate_not_set", "Rate not set")
                                 : formatMoneyGBP(row.gross_amount)}
@@ -1362,8 +1528,11 @@ export function PayrollReportClient() {
                                 ),
                               )}
                             </TableCell>
-                            <TableCell className="align-top text-xs">
+                            <TableCell className={`align-top text-xs ${payMode === "net_payment" ? "font-semibold text-[#111827]" : ""}`}>
                               {formatMoneyGBP(row.display_net_amount ?? row.net_amount)}
+                            </TableCell>
+                            <TableCell className="align-top text-xs">
+                              <span className={paymentTypeBadgeClass(payMode)}>{paymentModeLabel}</span>
                             </TableCell>
                             <TableCell className="align-top text-xs">
                               {formatMoneyGBP(row.other_deductions_amount)}
@@ -1411,7 +1580,7 @@ export function PayrollReportClient() {
                                     </Button>
                                   </>
                                 ) : null}
-                                <span className="relative inline-block" data-payroll-row-menu>
+                                <span className="inline-block" data-payroll-row-menu>
                                   <Button
                                     aria-controls={`payroll-row-actions-${row.id}`}
                                     aria-expanded={rowActionMenu?.row.id === row.id}
@@ -1419,81 +1588,20 @@ export function PayrollReportClient() {
                                     aria-label={t("payroll.report.row_more_actions", "More payroll row actions")}
                                     className="min-h-8 px-2 py-1 text-xs"
                                     disabled={busyId === row.id}
-                                    onClick={() => openRowActionMenu(row, lateBlock)}
+                                    onClick={(event) => openRowActionMenu(row, lateBlock, event.currentTarget)}
                                     title={t("payroll.report.row_more_actions", "More payroll row actions")}
                                     type="button"
                                     variant="secondary"
                                   >
                                     ⋯
                                   </Button>
-                                  {rowActionMenu?.row.id === row.id ? (
-                                    <div
-                                      className="absolute right-0 top-full z-[80] mt-1 min-w-[13.75rem] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]"
-                                      id={`payroll-row-actions-${row.id}`}
-                                      role="menu"
-                                    >
-                                      <button
-                                        className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
-                                        onClick={() => {
-                                          openEdit(rowActionMenu.row);
-                                        }}
-                                        role="menuitem"
-                                        type="button"
-                                      >
-                                        {t("payroll.report.payroll_adjustments", "Payroll adjustments")}
-                                      </button>
-                                      {rowActionMenu.row.status === "paid" ? (
-                                        <>
-                                          <button
-                                            className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
-                                            onClick={() => {
-                                              const itemId = rowActionMenu.row.id;
-                                              closeRowActionMenu();
-                                              openPayrollItemPayslip(itemId);
-                                            }}
-                                            role="menuitem"
-                                            type="button"
-                                          >
-                                            {t("payroll.report.payslip", "Payslip")}
-                                          </button>
-                                          <button
-                                            className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
-                                            onClick={() => {
-                                              setUndoPaidRow(rowActionMenu.row);
-                                              setUndoPaidReason("");
-                                              setUndoPaidAckExport(false);
-                                              closeRowActionMenu();
-                                            }}
-                                            role="menuitem"
-                                            type="button"
-                                          >
-                                            {t("payroll.report.undo_paid", "Undo paid")}
-                                          </button>
-                                          {canShowLateAdjustmentForPaidRow(rowActionMenu.row, rowActionMenu.lateBlock, report) ? (
-                                            <button
-                                              className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
-                                              onClick={() => {
-                                                const itemId = rowActionMenu.row.id;
-                                                closeRowActionMenu();
-                                                void runCreateLateAdjustment(itemId);
-                                              }}
-                                              role="menuitem"
-                                              type="button"
-                                            >
-                                              {t("payroll.report.adjustment", "Adjustment")}
-                                            </button>
-                                          ) : null}
-                                        </>
-                                      ) : null}
-                                    </div>
-                                  ) : null}
                                 </span>
                               </div>
                             </TableCell>
                           </TableRow>
                           {expandedUserId === row.user_id ? (
                             <TableRow>
-                              <TableCell className="bg-[var(--color-header)]/50" colSpan={12}>
+                              <TableCell className="bg-[var(--color-header)]/50" colSpan={13}>
                                 <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[#374151]">
                                   Shift lines (this week)
                                 </p>
@@ -2257,6 +2365,16 @@ export function PayrollReportClient() {
             </div>
           </div>
         ) : null}
+        <PayrollRowActionsPortal
+          onClose={closeRowActionMenu}
+          onEdit={openEdit}
+          onLateAdjustment={(itemId) => void runCreateLateAdjustment(itemId)}
+          onOpenPayslip={openPayrollItemPayslip}
+          onUndoPaid={openUndoPaidFromMenu}
+          report={report}
+          state={rowActionMenu}
+          t={t}
+        />
       </SheetBody>
     </Sheet>
   );

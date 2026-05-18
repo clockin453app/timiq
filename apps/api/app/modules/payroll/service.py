@@ -1195,6 +1195,7 @@ def item_to_response(db_session: Session, item: PayrollItem) -> PayrollItemRespo
         display_tax_amount=_decimal_or_none(item.display_tax_amount),
         display_net_amount=_decimal_or_none(item.display_net_amount),
         payment_mode=_stored_payment_mode_or_none(item.payment_mode),
+        payment_mode_label=_payment_mode_label_for_item(item),
         notes=item.notes,
         policy_snapshot=item.policy_snapshot or {},
         status=item.status,

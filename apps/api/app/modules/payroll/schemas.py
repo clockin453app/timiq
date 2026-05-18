@@ -52,6 +52,7 @@ class PayrollItemResponse(BaseModel):
     display_tax_amount: Decimal | None
     display_net_amount: Decimal | None
     payment_mode: str | None
+    payment_mode_label: str = "Not provided"
     notes: str | None
     policy_snapshot: dict
     status: str
