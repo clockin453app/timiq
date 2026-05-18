@@ -12,6 +12,14 @@ type AuthGuardProps = {
   children: ReactNode;
 };
 
+function loginRedirectForCurrentLocation(): string {
+  const next =
+    typeof window === "undefined"
+      ? "/"
+      : `${window.location.pathname || "/"}${window.location.search || ""}`;
+  return `/login?next=${encodeURIComponent(next)}`;
+}
+
 export function AuthGuard({ children }: AuthGuardProps) {
   const router = useRouter();
   const t = useT();
@@ -24,7 +32,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     try {
       const currentUser = await getCurrentUser();
       if (!currentUser) {
-        router.replace("/login");
+        router.replace(loginRedirectForCurrentLocation());
         return;
       }
       setUser(currentUser);
@@ -54,13 +62,13 @@ export function AuthGuard({ children }: AuthGuardProps) {
         }
 
         if (!currentUser) {
-          router.replace("/login");
+          router.replace(loginRedirectForCurrentLocation());
           return;
         }
 
         setUser(currentUser);
       } catch {
-        router.replace("/login");
+        router.replace(loginRedirectForCurrentLocation());
       } finally {
         if (isMounted) {
           setIsLoading(false);

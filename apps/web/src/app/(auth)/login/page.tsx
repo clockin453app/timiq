@@ -1,8 +1,8 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { AuthShell } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
@@ -11,9 +11,18 @@ import { getDefaultLandingPath } from "../../../config/navigation";
 import { userHasLimitedAccess } from "../../../features/auth/limited-access";
 import { useT } from "../../../lib/i18n";
 
-export default function LoginPage() {
+function safeInternalNextPath(value: string | null): string | null {
+  const next = (value ?? "").trim();
+  if (!next || !next.startsWith("/") || next.startsWith("//")) {
+    return null;
+  }
+  return next;
+}
+
+function LoginForm() {
   const t = useT();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -29,11 +38,10 @@ export default function LoginPage() {
 
     try {
       const session = await loginWithEmailPassword(email, password);
-      router.replace(
-        getDefaultLandingPath(session.user.system_role, {
-          limitedAccess: userHasLimitedAccess(session.user),
-        }),
-      );
+      const fallback = getDefaultLandingPath(session.user.system_role, {
+        limitedAccess: userHasLimitedAccess(session.user),
+      });
+      router.replace(safeInternalNextPath(searchParams.get("next")) ?? fallback);
     } catch {
       setErrorMessage(t("auth.login.error_invalid", "Invalid email or password."));
     } finally {
@@ -128,5 +136,13 @@ export default function LoginPage() {
         </p>
       </form>
     </AuthShell>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   );
 }
