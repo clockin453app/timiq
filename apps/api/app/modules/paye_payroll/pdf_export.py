@@ -105,6 +105,9 @@ def build_monthly_paye_payslip_pdf(
 
     section("Pay and deductions", [
         ("Gross pay", _money(values["gross_pay"])),
+        ("Bonus pay", _money(values["bonus_pay"])),
+        ("Commission pay", _money(values["commission_pay"])),
+        ("Total additional pay", _money(values["component_pay"])),
         ("Taxable pay", _money(values["taxable_pay"])),
         ("PAYE tax", _money(values["paye_tax"])),
         ("Employee NI", _money(values["employee_ni"])),

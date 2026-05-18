@@ -19,16 +19,20 @@ import { listCompanies, type Company } from "../../features/companies/api";
 import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import {
   approveMonthlyPayePeriod,
+  deletePayePayComponent,
   downloadMonthlyPayePayslipPdf,
   fetchPayeCapabilities,
   fetchMonthlyPayeReportShell,
+  fetchPayePayComponents,
   markMonthlyPayePeriodPaid,
   openMonthlyPayePayslip,
   recalculateMonthlyPaye,
+  type PayePayComponent,
   type PayeCapabilitiesResponse,
   type MonthlyPayeItem,
   type MonthlyPayeReport,
 } from "../../features/paye-payroll/api";
+import { PayePayComponentModal } from "./paye-pay-component-modal";
 
 const TAX_YEAR = "2026-2027";
 
@@ -114,10 +118,13 @@ export function MonthlyPayeClient() {
   const [employeeUserId, setEmployeeUserId] = useState("");
   const [employees, setEmployees] = useState<AuthUser[]>([]);
   const [report, setReport] = useState<MonthlyPayeReport | null>(null);
+  const [components, setComponents] = useState<PayePayComponent[]>([]);
   const [capabilities, setCapabilities] = useState<PayeCapabilitiesResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
+  const [componentEmployee, setComponentEmployee] = useState<MonthlyPayeItem | null>(null);
+  const [editingComponent, setEditingComponent] = useState<PayePayComponent | null>(null);
 
   const activeCompanyId = administratorView ? companyScope.companyId : currentUser.company_id;
 
@@ -190,8 +197,16 @@ export function MonthlyPayeClient() {
         employeeUserId: employeeUserId || undefined,
       });
       setReport(data);
+      const componentRows = await fetchPayePayComponents({
+        companyId: administratorView ? activeCompanyId : undefined,
+        taxYear: TAX_YEAR,
+        taxMonth,
+        userId: employeeUserId || undefined,
+      });
+      setComponents(componentRows);
     } catch (e) {
       setReport(null);
+      setComponents([]);
       setError(e instanceof Error ? e.message : "Could not load Monthly PAYE Report.");
     } finally {
       setLoading(false);
@@ -242,6 +257,7 @@ export function MonthlyPayeClient() {
   const canApprove = report?.period?.status === "pending" && (report?.summary.unsupported_count ?? 0) === 0;
   const canMarkPaid = report?.period?.status === "approved";
   const canRecalculate = !report?.period || report.period.status === "pending";
+  const componentsLocked = report?.period?.status === "approved" || report?.period?.status === "paid";
   const capabilityRows = capabilities?.categories.flatMap((category) => category.capabilities) ?? [];
   const supportedCapabilityNames = capabilityRows
     .filter((capability) => capability.status === "enabled")
@@ -411,6 +427,9 @@ export function MonthlyPayeClient() {
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <SummaryCard label="Employees" value={String(report?.summary.employees ?? 0)} hint={`${report?.summary.unsupported_count ?? 0} unsupported`} />
           <SummaryCard label="Total gross" value={money(report?.summary.total_gross)} />
+          <SummaryCard label="Bonus pay" value={money(report?.summary.bonus_pay)} />
+          <SummaryCard label="Commission pay" value={money(report?.summary.commission_pay)} />
+          <SummaryCard label="Additional pay" value={money(report?.summary.component_pay)} />
           <SummaryCard label="Taxable pay" value={money(report?.summary.taxable_pay)} />
           <SummaryCard label="PAYE tax" value={money(report?.summary.paye_tax)} />
           <SummaryCard label="Employee NI" value={money(report?.summary.employee_ni)} />
@@ -436,6 +455,7 @@ export function MonthlyPayeClient() {
               <TableHead>Tax code</TableHead>
               <TableHead>NI category</TableHead>
               <TableHead>Gross pay</TableHead>
+              <TableHead>Additional pay</TableHead>
               <TableHead>Taxable pay</TableHead>
               <TableHead>PAYE tax</TableHead>
               <TableHead>Employee NI</TableHead>
@@ -459,6 +479,56 @@ export function MonthlyPayeClient() {
                 <TableCell>{row.tax_code || "Not set"}</TableCell>
                 <TableCell>{row.ni_category || "Not set"}</TableCell>
                 <TableCell>{rowMoney(row, "gross_pay")}</TableCell>
+                <TableCell>
+                  <div>{rowMoney(row, "component_pay")}</div>
+                  <button
+                    className="mt-1 text-xs font-semibold text-[var(--color-accent)] underline disabled:opacity-60"
+                    disabled={componentsLocked}
+                    onClick={() => {
+                      setComponentEmployee(row);
+                      setEditingComponent(null);
+                    }}
+                    type="button"
+                  >
+                    Add bonus/commission
+                  </button>
+                  {components.filter((component) => component.user_id === row.user_id).length ? (
+                    <div className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">
+                      {components
+                        .filter((component) => component.user_id === row.user_id)
+                        .map((component) => (
+                          <div className="flex flex-wrap items-center gap-1" key={component.id}>
+                            <span>
+                              {component.component_type}: {money(component.amount)}
+                            </span>
+                            <button
+                              className="font-semibold text-[var(--color-accent)] underline disabled:opacity-60"
+                              disabled={componentsLocked}
+                              onClick={() => {
+                                setComponentEmployee(row);
+                                setEditingComponent(component);
+                              }}
+                              type="button"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="font-semibold text-[var(--color-danger-700)] underline disabled:opacity-60"
+                              disabled={componentsLocked}
+                              onClick={() =>
+                                void deletePayePayComponent(component.id)
+                                  .then(load)
+                                  .catch((e) => setError(e instanceof Error ? e.message : "Could not delete PAYE component."))
+                              }
+                              type="button"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  ) : null}
+                </TableCell>
                 <TableCell>{rowMoney(row, "taxable_pay")}</TableCell>
                 <TableCell>{rowMoney(row, "paye_tax")}</TableCell>
                 <TableCell>{rowMoney(row, "employee_ni")}</TableCell>
@@ -507,7 +577,7 @@ export function MonthlyPayeClient() {
             ))}
             {!loading && (!report || report.rows.length === 0) ? (
               <TableRow>
-                <TableCell className="text-center text-[var(--color-text-muted)]" colSpan={15}>
+                <TableCell className="text-center text-[var(--color-text-muted)]" colSpan={16}>
                   No real PAYE rows yet. Select a company and tax month, then recalculate the month.
                 </TableCell>
               </TableRow>
@@ -515,6 +585,22 @@ export function MonthlyPayeClient() {
           </TableBody>
         </Table>
       </SheetBody>
+      {componentEmployee ? (
+        <PayePayComponentModal
+          companyId={activeCompanyId}
+          component={editingComponent}
+          employeeName={componentEmployee.employee_name || componentEmployee.employee_email || "Employee"}
+          employeeUserId={componentEmployee.user_id}
+          locked={Boolean(componentsLocked)}
+          onClose={() => {
+            setComponentEmployee(null);
+            setEditingComponent(null);
+          }}
+          onSaved={load}
+          taxMonth={taxMonth}
+          taxYear={TAX_YEAR}
+        />
+      ) : null}
     </Sheet>
   );
 }

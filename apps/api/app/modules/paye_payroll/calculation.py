@@ -211,6 +211,10 @@ def calculate_fixed_monthly_salary(
     pension_relief_method: str,
     student_loan_plan: str,
     postgraduate_loan: bool,
+    taxable_additions: Decimal = ZERO,
+    niable_additions: Decimal = ZERO,
+    pensionable_additions: Decimal = ZERO,
+    gross_additions: Decimal = ZERO,
     prior_ytd_taxable_pay: Decimal = ZERO,
     prior_ytd_paye_tax: Decimal = ZERO,
 ) -> dict[str, object]:
@@ -224,10 +228,12 @@ def calculate_fixed_monthly_salary(
     if tax_basis not in {"cumulative", "month1"}:
         return unsupported_result("Tax basis must be cumulative or month1 for Phase 2A.")
 
-    gross = money(monthly_salary)
-    niable = gross
+    base_salary = money(monthly_salary)
+    gross = money(base_salary + gross_additions)
+    niable = money(base_salary + niable_additions)
+    pensionable_gross = money(base_salary + pensionable_additions)
     pension = calculate_pension(
-        gross_pay=gross,
+        gross_pay=pensionable_gross,
         enrolment_status=pension_enrolment_status,
         basis=pension_scheme_basis,
         relief_method=pension_relief_method,
@@ -237,7 +243,7 @@ def calculate_fixed_monthly_salary(
     if pension.get("unsupported_reason"):
         return unsupported_result(str(pension["unsupported_reason"]))
 
-    taxable = money(gross - amount(pension["taxable_reduction"]))
+    taxable = money(base_salary + taxable_additions - amount(pension["taxable_reduction"]))
     paye_tax = calculate_paye_tax(
         taxable_pay=taxable,
         tax_code_allowance=allowance,

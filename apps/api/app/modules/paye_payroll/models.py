@@ -100,6 +100,64 @@ class PayeTaxYearRule(Base):
     )
 
 
+class MonthlyPayePayComponent(Base):
+    __tablename__ = "monthly_paye_pay_components"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    tax_year: Mapped[str] = mapped_column(String(9), nullable=False, index=True)
+    tax_month: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    period_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("monthly_paye_periods.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("monthly_paye_items.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    component_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    description: Mapped[str] = mapped_column(String(240), nullable=True)
+    amount: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
+    taxable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    niable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    pensionable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class MonthlyPayePeriod(Base):
     __tablename__ = "monthly_paye_periods"
     __table_args__ = (
@@ -197,6 +255,9 @@ class MonthlyPayeItem(Base):
     employer_pension_percent: Mapped[float] = mapped_column(Numeric(7, 4), nullable=True)
     pension_scheme_basis: Mapped[str] = mapped_column(String(32), nullable=False)
     pension_relief_method: Mapped[str] = mapped_column(String(32), nullable=False)
+    bonus_pay: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False, default=0)
+    commission_pay: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False, default=0)
+    component_pay: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False, default=0)
     gross_pay: Mapped[float] = mapped_column(Numeric(14, 4), nullable=True)
     taxable_pay: Mapped[float] = mapped_column(Numeric(14, 4), nullable=True)
     niable_pay: Mapped[float] = mapped_column(Numeric(14, 4), nullable=True)
@@ -235,6 +296,7 @@ class MonthlyPayeItem(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
+    component_snapshot: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     calculation_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     unsupported_reason: Mapped[str] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

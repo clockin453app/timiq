@@ -18,13 +18,17 @@ from app.modules.paye_payroll.calculation import (
     calculate_fixed_monthly_salary,
     tax_month_bounds,
 )
-from app.modules.paye_payroll.models import MonthlyPayeItem, MonthlyPayePeriod
+from app.modules.paye_payroll.models import MonthlyPayeItem, MonthlyPayePayComponent, MonthlyPayePeriod
+from app.modules.paye_payroll.schemas import PayePayComponentCreateRequest, PayePayComponentPatchRequest
 from app.modules.paye_payroll.service import (
     PayePayrollPermissionError,
     _assign_ytd,
+    _calculated_item,
     _summary,
     approve_monthly_paye_period,
+    create_pay_component,
     mark_monthly_paye_period_paid,
+    patch_pay_component,
     recalculate_monthly_paye,
 )
 
@@ -103,6 +107,35 @@ def _item(company_id: uuid.UUID, user_id: uuid.UUID, *, unsupported_reason: str 
     )
 
 
+def _component(
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    component_type: str = "bonus",
+    amount: Decimal = Decimal("100.00"),
+    taxable: bool = True,
+    niable: bool = True,
+    pensionable: bool = True,
+) -> MonthlyPayePayComponent:
+    now = datetime.now(timezone.utc)
+    return MonthlyPayePayComponent(
+        id=uuid.uuid4(),
+        company_id=company_id,
+        user_id=user_id,
+        tax_year="2026-2027",
+        tax_month=1,
+        component_type=component_type,
+        description=component_type,
+        amount=amount,
+        taxable=taxable,
+        niable=niable,
+        pensionable=pensionable,
+        created_by_user_id=uuid.uuid4(),
+        created_at=now,
+        updated_at=now,
+    )
+
+
 def test_paye_tax_month_date_boundaries() -> None:
     assert tax_month_bounds("2026-2027", 1) == (__import__("datetime").date(2026, 4, 6), __import__("datetime").date(2026, 5, 5))
     assert tax_month_bounds("2026-2027", 9) == (__import__("datetime").date(2026, 12, 6), __import__("datetime").date(2027, 1, 5))
@@ -164,6 +197,54 @@ def test_ni_category_a_employee_and_employer_ni_net_effect() -> None:
     assert out["employee_ni"] == Decimal("156.16")
     assert out["employer_ni"] == Decimal("387.45")
     assert out["net_pay"] == Decimal("2453.34")
+
+
+def test_bonus_and_commission_components_feed_gross_tax_ni_and_pension() -> None:
+    out = calculate_fixed_monthly_salary(
+        monthly_salary=Decimal("3000"),
+        tax_code="1257L",
+        tax_basis="month1",
+        tax_month=1,
+        ni_category="A",
+        pension_enrolment_status="enrolled",
+        employee_pension_percent=Decimal("5"),
+        employer_pension_percent=Decimal("3"),
+        pension_scheme_basis="qualifying_earnings",
+        pension_relief_method="net_pay_arrangement",
+        student_loan_plan="none",
+        postgraduate_loan=False,
+        taxable_additions=Decimal("300"),
+        niable_additions=Decimal("300"),
+        pensionable_additions=Decimal("300"),
+        gross_additions=Decimal("300"),
+    )
+    assert out["gross_pay"] == Decimal("3300.00")
+    assert out["taxable_pay"] == Decimal("3161.00")
+    assert out["niable_pay"] == Decimal("3300.00")
+    assert out["pensionable_pay"] == Decimal("2780.00")
+
+
+def test_non_pensionable_component_does_not_increase_pensionable_pay() -> None:
+    out = calculate_fixed_monthly_salary(
+        monthly_salary=Decimal("3000"),
+        tax_code="1257L",
+        tax_basis="month1",
+        tax_month=1,
+        ni_category="A",
+        pension_enrolment_status="enrolled",
+        employee_pension_percent=Decimal("5"),
+        employer_pension_percent=Decimal("3"),
+        pension_scheme_basis="qualifying_earnings",
+        pension_relief_method="net_pay_arrangement",
+        student_loan_plan="none",
+        postgraduate_loan=False,
+        taxable_additions=Decimal("100"),
+        niable_additions=Decimal("100"),
+        pensionable_additions=Decimal("0"),
+        gross_additions=Decimal("100"),
+    )
+    assert out["gross_pay"] == Decimal("3100.00")
+    assert out["pensionable_pay"] == Decimal("2480.00")
 
 
 def test_pension_employee_deducts_and_employer_does_not_reduce_net() -> None:
@@ -299,6 +380,121 @@ def test_ytd_uses_paye_items_only_and_cis_calculation_unchanged() -> None:
     assert cis["gross_amount"] == Decimal("10.0000")
     assert cis["tax_amount"] == Decimal("2.00")
     assert cis["net_amount"] == Decimal("8.00")
+
+
+def test_calculated_item_snapshots_and_links_bonus_commission_components() -> None:
+    company_id = uuid.uuid4()
+    user = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    period = _period(company_id)
+    settings = SimpleNamespace(
+        pay_frequency="monthly",
+        salary_type="fixed_monthly_salary",
+        monthly_salary=Decimal("3000"),
+        tax_code="1257L",
+        tax_basis="month1",
+        ni_category="A",
+        student_loan_plan="none",
+        postgraduate_loan=False,
+        pension_enrolment_status="not_eligible",
+        employee_pension_percent=Decimal("0"),
+        employer_pension_percent=Decimal("0"),
+        pension_scheme_basis="qualifying_earnings",
+        pension_relief_method="relief_at_source",
+    )
+    company_settings = SimpleNamespace(default_employee_pension_percent=None, default_employer_pension_percent=None)
+    bonus = _component(company_id, user.id, component_type="bonus", amount=Decimal("100"))
+    commission = _component(company_id, user.id, component_type="commission", amount=Decimal("50"))
+    with patch("app.modules.paye_payroll.repository.list_prior_items_for_user_tax_year", return_value=[]):
+        item = _calculated_item(
+            MagicMock(),
+            period=period,
+            user=user,
+            profile=SimpleNamespace(payroll_type="paye_employee"),
+            settings=settings,
+            company_settings=company_settings,
+            components=[bonus, commission],
+        )
+    assert item.bonus_pay == Decimal("100.00")
+    assert item.commission_pay == Decimal("50.00")
+    assert item.component_pay == Decimal("150.00")
+    assert item.gross_pay == Decimal("3150.00")
+    assert item.ytd_gross_pay == Decimal("3150.00")
+    assert item.component_snapshot[0]["type"] == "bonus"
+
+
+def test_component_management_permissions_and_locking() -> None:
+    company_id = uuid.uuid4()
+    other_company_id = uuid.uuid4()
+    employee = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    admin = _user(SystemRole.ADMIN, company_id=company_id)
+    other_admin = _user(SystemRole.ADMIN, company_id=other_company_id)
+    period = _period(company_id, status="pending")
+    db = MagicMock()
+    def _save_component(_db: MagicMock, component: MonthlyPayePayComponent) -> MonthlyPayePayComponent:
+        component.id = uuid.uuid4()
+        return component
+
+    with (
+        patch("app.modules.paye_payroll.repository.get_monthly_period", return_value=period),
+        patch("app.modules.paye_payroll.service.get_user_by_id", return_value=employee),
+        patch("app.modules.paye_payroll.repository.save_pay_component", side_effect=_save_component),
+    ):
+        created = create_pay_component(
+            db,
+            admin,
+            PayePayComponentCreateRequest(
+                company_id=company_id,
+                user_id=employee.id,
+                tax_year="2026-2027",
+                tax_month=1,
+                component_type="bonus",
+                amount=Decimal("100"),
+            ),
+        )
+    assert created.component_type == "bonus"
+
+    with patch("app.modules.paye_payroll.repository.get_monthly_period", return_value=period):
+        try:
+            create_pay_component(
+                db,
+                other_admin,
+                PayePayComponentCreateRequest(
+                    company_id=company_id,
+                    user_id=employee.id,
+                    tax_year="2026-2027",
+                    tax_month=1,
+                    component_type="commission",
+                    amount=Decimal("100"),
+                ),
+            )
+            raise AssertionError("Expected company admin scope block")
+        except PayePayrollPermissionError:
+            pass
+
+    component = _component(company_id, employee.id)
+    approved = _period(company_id, status="approved")
+    with (
+        patch("app.modules.paye_payroll.repository.get_pay_component_by_id", return_value=component),
+        patch("app.modules.paye_payroll.repository.get_monthly_period", return_value=approved),
+        patch("app.modules.paye_payroll.service.get_user_by_id", return_value=employee),
+    ):
+        try:
+            patch_pay_component(db, admin, component.id, PayePayComponentPatchRequest(amount=Decimal("200")))
+            raise AssertionError("Expected approved-period component lock")
+        except PayePayrollPermissionError:
+            pass
+
+    paid = _period(company_id, status="paid")
+    with (
+        patch("app.modules.paye_payroll.repository.get_pay_component_by_id", return_value=component),
+        patch("app.modules.paye_payroll.repository.get_monthly_period", return_value=paid),
+        patch("app.modules.paye_payroll.service.get_user_by_id", return_value=employee),
+    ):
+        try:
+            patch_pay_component(db, admin, component.id, PayePayComponentPatchRequest(amount=Decimal("200")))
+            raise AssertionError("Expected paid-period component lock")
+        except PayePayrollPermissionError:
+            pass
 
 
 def test_company_admin_scope_and_employee_blocked_for_phase_2a_endpoints() -> None:

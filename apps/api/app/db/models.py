@@ -29,6 +29,7 @@ from app.modules.paye_payroll.models import (
     CompanyPayeSettings,
     EmployeePayeSettings,
     MonthlyPayeItem,
+    MonthlyPayePayComponent,
     MonthlyPayePeriod,
     PayeTaxYearRule,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "EmployeeProfile",
     "EmployeePayeSettings",
     "MonthlyPayeItem",
+    "MonthlyPayePayComponent",
     "MonthlyPayePeriod",
     "EmployeeJobRole",
     "EmployeeLocationAccess",
