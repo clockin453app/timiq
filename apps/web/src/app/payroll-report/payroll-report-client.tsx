@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { FileDown, FileSpreadsheet, FileText, Printer } from "lucide-react";
 
 import { WeekPickerBar } from "../../components/week-picker-bar";
 import { usePageLocationAction } from "../../components/layout/page-location-action-context";
@@ -126,27 +127,31 @@ type PayrollUndoTarget = {
 type FloatingMenuPosition = {
   top: number;
   left: number;
-  minWidth: number;
-  maxHeight: number;
 };
 
-function computeFloatingRowMenuPosition(anchor: HTMLElement): FloatingMenuPosition {
+function computeFloatingRowMenuPosition(anchor: HTMLElement, menu: HTMLElement): FloatingMenuPosition {
   const rect = anchor.getBoundingClientRect();
-  const minWidth = 220;
   const viewportPad = 8;
-  const maxHeight = Math.min(window.innerHeight * 0.7, 360);
-  let left = rect.right - minWidth;
+  const menuRect = menu.getBoundingClientRect();
+  const menuWidth = menuRect.width;
+  const menuHeight = menuRect.height;
+  let left = rect.right - menuWidth;
   if (left < viewportPad) {
     left = viewportPad;
   }
-  if (left + minWidth > window.innerWidth - viewportPad) {
-    left = window.innerWidth - minWidth - viewportPad;
+  if (left + menuWidth > window.innerWidth - viewportPad) {
+    left = Math.max(viewportPad, window.innerWidth - menuWidth - viewportPad);
   }
-  let top = rect.bottom + 6;
-  if (top + maxHeight > window.innerHeight - viewportPad) {
-    top = Math.max(viewportPad, rect.top - maxHeight - 6);
+  const belowTop = rect.bottom + 4;
+  const aboveTop = rect.top - menuHeight - 4;
+  let top = belowTop;
+  if (belowTop + menuHeight > window.innerHeight - viewportPad && aboveTop >= viewportPad) {
+    top = aboveTop;
   }
-  return { top, left, minWidth, maxHeight };
+  if (top + menuHeight > window.innerHeight - viewportPad) {
+    top = Math.max(viewportPad, window.innerHeight - menuHeight - viewportPad);
+  }
+  return { top, left };
 }
 
 function statusBadgeClass(status: string): string {
@@ -328,6 +333,7 @@ function PayrollRowActionsPortal(props: {
 }) {
   const [position, setPosition] = useState<FloatingMenuPosition | null>(null);
   const [mounted, setMounted] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
 
   useLayoutEffect(() => {
     setMounted(true);
@@ -339,7 +345,13 @@ function PayrollRowActionsPortal(props: {
       return;
     }
     const anchor = props.state.anchor;
-    const update = () => setPosition(computeFloatingRowMenuPosition(anchor));
+    const update = () => {
+      const menu = menuRef.current;
+      if (!menu) {
+        return;
+      }
+      setPosition(computeFloatingRowMenuPosition(anchor, menu));
+    };
     update();
     window.addEventListener("resize", update);
     window.addEventListener("scroll", update, true);
@@ -349,7 +361,7 @@ function PayrollRowActionsPortal(props: {
     };
   }, [props.state]);
 
-  if (!props.state || !mounted || !position) {
+  if (!props.state || !mounted) {
     return null;
   }
 
@@ -357,19 +369,19 @@ function PayrollRowActionsPortal(props: {
 
   return createPortal(
     <div
-      className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]"
+      className="min-w-[14rem] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]"
       data-payroll-row-menu
       id={`payroll-row-actions-${row.id}`}
+      ref={menuRef}
       role="menu"
       style={{
         position: "fixed",
-        top: position.top,
-        left: position.left,
-        minWidth: position.minWidth,
+        top: position?.top ?? 0,
+        left: position?.left ?? 0,
         maxWidth: "min(20rem, calc(100vw - 1rem))",
-        maxHeight: position.maxHeight,
         overflowY: "auto",
-        zIndex: 120,
+        visibility: position ? "visible" : "hidden",
+        zIndex: 1000,
       }}
     >
       <button
@@ -1344,53 +1356,6 @@ export function PayrollReportClient() {
               )}
             </p>
 
-            <div className="border-t border-[var(--color-border-dark)] pt-3">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wide text-[#374151]">
-                {t("payroll.report.actions", "Actions")}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button disabled={loading || !activeCompanyId} onClick={runRecalculate} type="button">
-                  {payrollPeriodNotCalculated
-                    ? t("payroll.report.calculate", "Calculate payroll")
-                    : t("payroll.report.recalculate", "Recalculate")}
-                </Button>
-                <Button disabled={loading || !activeCompanyId || payrollNeedsRecalculation} onClick={runApproveAll} type="button">
-                  {t("payroll.report.approve_all_pending", "Approve all pending")}
-                </Button>
-                <Button disabled={loading || !activeCompanyId} onClick={handleCsv} type="button" variant="secondary">
-                  {t("payroll.report.export_csv", "Export payroll CSV")}
-                </Button>
-                <Button
-                  disabled={loading || !activeCompanyId}
-                  onClick={handleExcelDownload}
-                  type="button"
-                  variant="secondary"
-                >
-                  {t("payroll.report.export_xlsx", "Export Excel")}
-                </Button>
-                <Button
-                  disabled={loading || !activeCompanyId}
-                  onClick={handlePrint}
-                  type="button"
-                  variant="secondary"
-                >
-                  {t("payroll.report.print_report", "Print")}
-                </Button>
-                <Button
-                  disabled={loading || !activeCompanyId}
-                  onClick={handlePdfDownload}
-                  type="button"
-                  variant="secondary"
-                >
-                  {t("payroll.report.export_pdf", "Download payroll PDF")}
-                </Button>
-              </div>
-              {paidRowCount > 0 ? (
-                <p className="mt-2 text-xs font-medium text-slate-700">
-                  Payroll locked — paid rows cannot be rebuilt.
-                </p>
-              ) : null}
-            </div>
           </div>
         </div>
 
@@ -1421,10 +1386,83 @@ export function PayrollReportClient() {
         <div className="space-y-5">
           <div className="min-w-0 w-full space-y-5">
             <div className="w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-sm">
-              <p className="mb-1 text-sm font-semibold text-[#111827]">Weekly payroll review</p>
-              <p className="mb-3 text-xs text-[var(--color-text-muted)]">
-                Summary by employee for this payroll week. Use + to view shift lines for this employee.
-              </p>
+              <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <p className="mb-1 text-sm font-semibold text-[#111827]">Weekly payroll review</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Summary by employee for this payroll week. Use + to view shift lines for this employee.
+                  </p>
+                  {paidRowCount > 0 ? (
+                    <p className="mt-1.5 text-xs font-medium text-slate-700">
+                      Payroll locked — paid rows cannot be rebuilt.
+                    </p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 lg:justify-end" aria-label={t("payroll.report.actions", "Actions")}>
+                  <Button
+                    className="h-8 px-2.5 text-xs"
+                    disabled={loading || !activeCompanyId}
+                    onClick={runRecalculate}
+                    type="button"
+                  >
+                    {payrollPeriodNotCalculated
+                      ? t("payroll.report.calculate", "Calculate payroll")
+                      : t("payroll.report.recalculate", "Recalculate")}
+                  </Button>
+                  <Button
+                    className="h-8 border-[#1e3a8a] bg-[#1e3a8a] px-2.5 text-xs text-white hover:bg-[#1d4ed8]"
+                    disabled={loading || !activeCompanyId || payrollNeedsRecalculation}
+                    onClick={runApproveAll}
+                    type="button"
+                  >
+                    {t("payroll.report.approve_all_pending", "Approve all pending")}
+                  </Button>
+                  <Button
+                    aria-label={t("payroll.report.export_csv_short", "Export CSV")}
+                    className="h-8 w-8 px-0"
+                    disabled={loading || !activeCompanyId}
+                    onClick={handleCsv}
+                    title={t("payroll.report.export_csv_short", "Export CSV")}
+                    type="button"
+                    variant="secondary"
+                  >
+                    <FileDown aria-hidden="true" className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    aria-label={t("payroll.report.export_xlsx", "Export Excel")}
+                    className="h-8 w-8 px-0"
+                    disabled={loading || !activeCompanyId}
+                    onClick={handleExcelDownload}
+                    title={t("payroll.report.export_xlsx", "Export Excel")}
+                    type="button"
+                    variant="secondary"
+                  >
+                    <FileSpreadsheet aria-hidden="true" className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    aria-label={t("payroll.report.print_report", "Print report")}
+                    className="h-8 w-8 px-0"
+                    disabled={loading || !activeCompanyId}
+                    onClick={handlePrint}
+                    title={t("payroll.report.print_report", "Print report")}
+                    type="button"
+                    variant="secondary"
+                  >
+                    <Printer aria-hidden="true" className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    aria-label={t("payroll.report.export_pdf", "Download PDF report")}
+                    className="h-8 w-8 px-0"
+                    disabled={loading || !activeCompanyId}
+                    onClick={handlePdfDownload}
+                    title={t("payroll.report.export_pdf", "Download PDF report")}
+                    type="button"
+                    variant="secondary"
+                  >
+                    <FileText aria-hidden="true" className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
               <div className="timiq-scroll-x w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[13px] [&_thead_th]:font-semibold [&_thead_th]:text-[#111827]">
                 <Table className="min-w-full">
                 <TableHeader>
