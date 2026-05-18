@@ -145,6 +145,26 @@ def test_administrator_can_view_html_paye_payslip_for_approved_item() -> None:
     assert "subcontractor" not in body.lower()
 
 
+def test_paye_payslip_shows_hourly_overtime_breakdown() -> None:
+    company_id = uuid.uuid4()
+    owner = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    item = _item(company_id, owner.id)
+    item.salary_type = "hourly"
+    item.regular_hours = Decimal("8.0000")
+    item.overtime_hours = Decimal("4.0000")
+    item.hourly_rate = Decimal("10.0000")
+    item.regular_pay = Decimal("80.0000")
+    item.overtime_pay = Decimal("60.0000")
+    item.gross_hourly_pay = Decimal("140.0000")
+    period = _period(company_id)
+    item.period_id = period.id
+    with _patch_context(item, period, owner):
+        body = render_monthly_paye_payslip_html(MagicMock(), _user(SystemRole.ADMINISTRATOR), item.id)
+    assert "Regular hours x hourly rate" in body
+    assert "Overtime hours x overtime rate" in body
+    assert "CIS" not in body
+
+
 def test_administrator_can_download_paye_payslip_pdf() -> None:
     company_id = uuid.uuid4()
     owner = _user(SystemRole.EMPLOYEE, company_id=company_id)

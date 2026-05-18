@@ -111,6 +111,10 @@ function canOpenPayePayslip(row: MonthlyPayeItem): boolean {
   return !row.unsupported_reason && (row.status === "approved" || row.status === "paid");
 }
 
+function hasHourlyBreakdown(row: MonthlyPayeItem): boolean {
+  return row.salary_type === "hourly" && Boolean(row.gross_hourly_pay);
+}
+
 function componentLockLabel(row: MonthlyPayeItem): string | null {
   if (row.status === "approved") return "Locked — approved";
   if (row.status === "paid") return "Locked — paid";
@@ -518,7 +522,20 @@ export function MonthlyPayeClient() {
                 <TableCell>{report.period?.pay_date ?? "Not calculated"}</TableCell>
                 <TableCell>{row.tax_code || "Not set"}</TableCell>
                 <TableCell>{row.ni_category || "Not set"}</TableCell>
-                <TableCell>{rowMoney(row, "gross_pay")}</TableCell>
+                <TableCell>
+                  <div>{rowMoney(row, "gross_pay")}</div>
+                  {hasHourlyBreakdown(row) ? (
+                    <div className="mt-1 space-y-0.5 text-xs text-[var(--color-text-muted)]">
+                      <div>Rate: {money(row.hourly_rate)}</div>
+                      <div>
+                        Regular: {row.regular_hours ?? "0"}h / {money(row.regular_pay)}
+                      </div>
+                      <div>
+                        Overtime: {row.overtime_hours ?? "0"}h / {money(row.overtime_pay)}
+                      </div>
+                    </div>
+                  ) : null}
+                </TableCell>
                 <TableCell>
                   <div>{rowMoney(row, "component_pay")}</div>
                   {componentLockLabel(row) ? (

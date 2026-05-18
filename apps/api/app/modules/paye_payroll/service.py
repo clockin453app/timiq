@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import html
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,15 +13,20 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.auth.service import can_manage_user
 from app.modules.companies.repository import get_company_by_id
+from app.modules.companies.service import ensure_company_time_policy
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
+from app.modules.payroll_policies.service import effective_early_access_for_shift, effective_time_policy_for_shift, time_policy_source_for_shift
 from app.modules.paye_payroll import repository as paye_repo
 from app.modules.paye_payroll.calculation import (
+    FOUR_PLACES,
     amount,
     calculate_fixed_monthly_salary,
+    calculate_hourly_monthly_pay,
     money,
     tax_month_bounds,
 )
+from app.modules.time_records.calculation import compute_shift_metrics
 from app.modules.paye_payroll.capabilities import list_paye_capabilities
 from app.modules.paye_payroll.models import (
     CompanyPayeSettings,
@@ -640,6 +646,12 @@ def _paye_payslip_values(item: MonthlyPayeItem) -> dict[str, Decimal | None]:
         "bonus_pay": _decimal_field(item, "bonus_pay"),
         "commission_pay": _decimal_field(item, "commission_pay"),
         "component_pay": _decimal_field(item, "component_pay"),
+        "regular_hours": _decimal_field(item, "regular_hours"),
+        "overtime_hours": _decimal_field(item, "overtime_hours"),
+        "hourly_rate": _decimal_field(item, "hourly_rate"),
+        "gross_hourly_pay": _decimal_field(item, "gross_hourly_pay"),
+        "regular_pay": _decimal_field(item, "regular_pay"),
+        "overtime_pay": _decimal_field(item, "overtime_pay"),
         "taxable_pay": _decimal_field(item, "taxable_pay"),
         "paye_tax": _decimal_field(item, "paye_tax"),
         "employee_ni": _decimal_field(item, "employee_ni"),
@@ -713,6 +725,26 @@ def render_monthly_paye_payslip_html(db_session: Session, actor: User, item_id: 
     def row(label: str, value: str) -> str:
         return f"<div class=\"row\"><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>"
 
+    hourly_rows = ""
+    if item.salary_type == "hourly" and _decimal_field(item, "gross_hourly_pay") > 0:
+        overtime_rate = _decimal_field(item, "hourly_rate")
+        if _decimal_field(item, "overtime_hours") > 0 and _decimal_field(item, "hourly_rate") > 0:
+            regular_hours = _decimal_field(item, "regular_hours")
+            overtime_hours = _decimal_field(item, "overtime_hours")
+            regular_pay = _decimal_field(item, "regular_pay")
+            overtime_pay = _decimal_field(item, "overtime_pay")
+            multiplier = (overtime_pay / (overtime_hours * _decimal_field(item, "hourly_rate"))) if overtime_hours > 0 else Decimal("1")
+            overtime_rate = _decimal_field(item, "hourly_rate") * multiplier
+        else:
+            regular_hours = _decimal_field(item, "regular_hours")
+            overtime_hours = _decimal_field(item, "overtime_hours")
+            regular_pay = _decimal_field(item, "regular_pay")
+            overtime_pay = _decimal_field(item, "overtime_pay")
+        hourly_rows = (
+            row("Regular hours x hourly rate", f"{regular_hours} x {_money_html(_decimal_field(item, 'hourly_rate'))} = {_money_html(regular_pay)}")
+            + row("Overtime hours x overtime rate", f"{overtime_hours} x {_money_html(overtime_rate)} = {_money_html(overtime_pay)}")
+        )
+
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <title>Monthly PAYE Payslip</title>
@@ -774,6 +806,7 @@ h2 {{ color: #2f6f9e; font-size: 13px; margin: 0 0 10px; text-transform: upperca
       <div class="section">
         <h2>Pay and deductions</h2>
         {row("Taxable pay", _money_html(values["taxable_pay"]))}
+        {hourly_rows}
         {row("Bonus pay", _money_html(values["bonus_pay"]))}
         {row("Commission pay", _money_html(values["commission_pay"]))}
         {row("Total additional pay", _money_html(values["component_pay"]))}
@@ -837,6 +870,21 @@ def render_own_monthly_paye_payslip_html(db_session: Session, actor: User, item_
     def row(label: str, value: str) -> str:
         return f"<div class=\"row\"><span>{html.escape(label)}</span><strong>{html.escape(value)}</strong></div>"
 
+    hourly_rows = ""
+    if item.salary_type == "hourly" and _decimal_field(item, "gross_hourly_pay") > 0:
+        regular_hours = _decimal_field(item, "regular_hours")
+        overtime_hours = _decimal_field(item, "overtime_hours")
+        regular_pay = _decimal_field(item, "regular_pay")
+        overtime_pay = _decimal_field(item, "overtime_pay")
+        overtime_rate = _decimal_field(item, "hourly_rate")
+        if overtime_hours > 0 and _decimal_field(item, "hourly_rate") > 0:
+            multiplier = overtime_pay / (overtime_hours * _decimal_field(item, "hourly_rate"))
+            overtime_rate = _decimal_field(item, "hourly_rate") * multiplier
+        hourly_rows = (
+            row("Regular hours x hourly rate", f"{regular_hours} x {_money_html(_decimal_field(item, 'hourly_rate'))} = {_money_html(regular_pay)}")
+            + row("Overtime hours x overtime rate", f"{overtime_hours} x {_money_html(overtime_rate)} = {_money_html(overtime_pay)}")
+        )
+
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <title>Monthly PAYE Payslip</title>
@@ -898,6 +946,7 @@ h2 {{ color: #2f6f9e; font-size: 13px; margin: 0 0 10px; text-transform: upperca
       <div class="section">
         <h2>Pay and deductions</h2>
         {row("Taxable pay", _money_html(values["taxable_pay"]))}
+        {hourly_rows}
         {row("Bonus pay", _money_html(values["bonus_pay"]))}
         {row("Commission pay", _money_html(values["commission_pay"]))}
         {row("Total additional pay", _money_html(values["component_pay"]))}
@@ -1151,6 +1200,144 @@ def _component_summary(components: list[MonthlyPayePayComponent]) -> dict[str, D
     }
 
 
+def _tax_month_utc_bounds(db_session: Session, company_id: uuid.UUID, period: MonthlyPayePeriod) -> tuple[datetime, datetime, str]:
+    policy = ensure_company_time_policy(db_session, company_id)
+    try:
+        tz = ZoneInfo(policy.timezone_name)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    start_local = datetime.combine(period.period_start, time.min, tzinfo=tz)
+    end_local = datetime.combine(period.period_end + timedelta(days=1), time.min, tzinfo=tz)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc), str(tz.key)
+
+
+def _decimal_hours(seconds: int) -> Decimal:
+    return (Decimal(seconds) / Decimal(3600)).quantize(FOUR_PLACES)
+
+
+def _hourly_time_summary(
+    db_session: Session,
+    *,
+    period: MonthlyPayePeriod,
+    user: User,
+    profile: EmployeeProfile | None,
+) -> tuple[int, dict]:
+    start_utc, end_utc, timezone_name = _tax_month_utc_bounds(db_session, period.company_id, period)
+    if paye_repo.count_open_time_shifts_for_tax_month(
+        db_session,
+        company_id=period.company_id,
+        user_id=user.id,
+        start_utc=start_utc,
+        end_utc=end_utc,
+    ):
+        raise PayePayrollPermissionError("Open shifts exist in this PAYE tax month. Close shifts before recalculating.")
+    rows = paye_repo.list_completed_time_shifts_for_tax_month(
+        db_session,
+        company_id=period.company_id,
+        user_id=user.id,
+        start_utc=start_utc,
+        end_utc=end_utc,
+    )
+    if not rows:
+        raise PayePayrollPermissionError("No completed time shifts found for this PAYE tax month.")
+
+    total_rounded_seconds = 0
+    total_actual_seconds = 0
+    total_counted_seconds = 0
+    total_break_seconds = 0
+    total_break_deducted_seconds = 0
+    shift_rows: list[dict] = []
+    for shift, location in rows:
+        policy = effective_time_policy_for_shift(db_session, shift, location)
+        early_access = effective_early_access_for_shift(
+            db_session,
+            location,
+            profile_early_access=bool(getattr(profile, "early_access_enabled", False)),
+        )
+        metrics = compute_shift_metrics(
+            clock_in_at_utc=shift.clock_in_at,
+            clock_out_at_utc=shift.clock_out_at,
+            break_seconds_tracked=int(shift.break_seconds or 0),
+            early_access_enabled=early_access,
+            policy=policy,
+        )
+        rounded_seconds = int(metrics.rounded_seconds or 0)
+        actual_seconds = int(metrics.actual_seconds or 0)
+        counted_seconds = int(metrics.counted_seconds or 0)
+        total_rounded_seconds += rounded_seconds
+        total_actual_seconds += actual_seconds
+        total_counted_seconds += counted_seconds
+        total_break_seconds += int(metrics.break_seconds or 0)
+        total_break_deducted_seconds += int(metrics.break_deducted_seconds or 0)
+        shift_rows.append(
+            {
+                "shift_id": str(shift.id),
+                "location_id": str(location.id),
+                "location_name": location.name,
+                "clock_in_at": shift.clock_in_at.isoformat(),
+                "clock_out_at": shift.clock_out_at.isoformat() if shift.clock_out_at else None,
+                "actual_seconds": actual_seconds,
+                "counted_seconds": counted_seconds,
+                "rounded_seconds": rounded_seconds,
+                "break_seconds": int(metrics.break_seconds or 0),
+                "break_deducted_seconds": int(metrics.break_deducted_seconds or 0),
+                "policy_source": time_policy_source_for_shift(db_session, location),
+                "policy_timezone": policy.timezone_name,
+            }
+        )
+    if total_rounded_seconds <= 0:
+        raise PayePayrollPermissionError("No payable time found for this PAYE tax month.")
+    return total_rounded_seconds, {
+        "source": "completed_time_shifts",
+        "tax_month_start_utc": start_utc.isoformat(),
+        "tax_month_end_utc": end_utc.isoformat(),
+        "timezone": timezone_name,
+        "total_actual_seconds": total_actual_seconds,
+        "total_counted_seconds": total_counted_seconds,
+        "total_rounded_seconds": total_rounded_seconds,
+        "total_break_seconds": total_break_seconds,
+        "total_break_deducted_seconds": total_break_deducted_seconds,
+        "shifts": shift_rows,
+    }
+
+
+def _hourly_overtime_split(
+    *,
+    total_hours: Decimal,
+    hourly_rate: Decimal,
+    company_settings: CompanyPayeSettings,
+) -> dict[str, Decimal | dict]:
+    if not bool(company_settings.paye_overtime_enabled):
+        regular_hours = total_hours
+        overtime_hours = Decimal("0.0000")
+        multiplier = Decimal("1.0000")
+        threshold = None
+    else:
+        threshold = amount(company_settings.paye_overtime_threshold_hours)
+        multiplier = amount(company_settings.paye_overtime_multiplier)
+        if threshold <= 0:
+            raise PayePayrollPermissionError("PAYE overtime threshold hours must be greater than zero when overtime is enabled.")
+        if multiplier <= 0:
+            raise PayePayrollPermissionError("PAYE overtime multiplier must be greater than zero when overtime is enabled.")
+        regular_hours = min(total_hours, threshold)
+        overtime_hours = max(total_hours - threshold, Decimal("0.0000"))
+    regular_pay = (regular_hours * hourly_rate).quantize(FOUR_PLACES)
+    overtime_pay = (overtime_hours * hourly_rate * multiplier).quantize(FOUR_PLACES)
+    return {
+        "regular_hours": regular_hours.quantize(FOUR_PLACES),
+        "overtime_hours": overtime_hours.quantize(FOUR_PLACES),
+        "regular_pay": regular_pay,
+        "overtime_pay": overtime_pay,
+        "gross_hourly_pay": (regular_pay + overtime_pay).quantize(FOUR_PLACES),
+        "snapshot": {
+            "enabled": bool(company_settings.paye_overtime_enabled),
+            "rule": "monthly_threshold",
+            "threshold_hours": str(threshold) if threshold is not None else None,
+            "multiplier": str(multiplier),
+        },
+    }
+
+
 def _calculated_item(
     db_session: Session,
     *,
@@ -1257,6 +1444,170 @@ def _calculated_item(
     return item
 
 
+def _calculated_hourly_item(
+    db_session: Session,
+    *,
+    period: MonthlyPayePeriod,
+    user: User,
+    profile: EmployeeProfile | None,
+    settings: EmployeePayeSettings,
+    company_settings: CompanyPayeSettings,
+    components: list[MonthlyPayePayComponent] | None = None,
+) -> MonthlyPayeItem:
+    hourly_rate = amount(settings.paye_hourly_rate)
+    if hourly_rate <= 0:
+        return _unsupported_item(
+            period=period,
+            user=user,
+            profile=profile,
+            settings=settings,
+            reason="PAYE hourly rate must be greater than zero.",
+        )
+    if not bool(settings.paye_uses_time_records):
+        return _unsupported_item(
+            period=period,
+            user=user,
+            profile=profile,
+            settings=settings,
+            reason="Hourly PAYE requires time records in Phase 4C.",
+        )
+    if settings.paye_hour_source != "completed_time_shifts":
+        return _unsupported_item(
+            period=period,
+            user=user,
+            profile=profile,
+            settings=settings,
+            reason="Only completed time shifts are supported for Hourly PAYE in Phase 4C.",
+        )
+
+    try:
+        total_rounded_seconds, time_snapshot = _hourly_time_summary(
+            db_session,
+            period=period,
+            user=user,
+            profile=profile,
+        )
+        total_hours = _decimal_hours(total_rounded_seconds)
+        overtime = _hourly_overtime_split(
+            total_hours=total_hours,
+            hourly_rate=hourly_rate,
+            company_settings=company_settings,
+        )
+    except PayePayrollPermissionError as exc:
+        return _unsupported_item(
+            period=period,
+            user=user,
+            profile=profile,
+            settings=settings,
+            reason=str(exc),
+        )
+
+    now = _now()
+    employee_percent = amount(
+        settings.employee_pension_percent
+        if settings.employee_pension_percent is not None
+        else company_settings.default_employee_pension_percent
+    )
+    employer_percent = amount(
+        settings.employer_pension_percent
+        if settings.employer_pension_percent is not None
+        else company_settings.default_employer_pension_percent
+    )
+    prior_items = paye_repo.list_prior_items_for_user_tax_year(
+        db_session,
+        company_id=period.company_id,
+        user_id=user.id,
+        tax_year=period.tax_year,
+        before_tax_month=period.tax_month,
+    )
+    component_summary = _component_summary(components or [])
+    gross_hourly_pay = amount(overtime["gross_hourly_pay"])
+    calculation = calculate_hourly_monthly_pay(
+        gross_hourly_pay=gross_hourly_pay,
+        tax_code=settings.tax_code,
+        tax_basis=settings.tax_basis,
+        tax_month=period.tax_month,
+        ni_category=settings.ni_category,
+        pension_enrolment_status=settings.pension_enrolment_status,
+        employee_pension_percent=employee_percent,
+        employer_pension_percent=employer_percent,
+        pension_scheme_basis=settings.pension_scheme_basis,
+        pension_relief_method=settings.pension_relief_method,
+        student_loan_plan=settings.student_loan_plan,
+        postgraduate_loan=settings.postgraduate_loan,
+        taxable_additions=amount(component_summary["taxable_additions"]),
+        niable_additions=amount(component_summary["niable_additions"]),
+        pensionable_additions=amount(component_summary["pensionable_additions"]),
+        gross_additions=amount(component_summary["component_pay"]),
+        prior_ytd_taxable_pay=_sum_prior(prior_items, "taxable_pay"),
+        prior_ytd_paye_tax=_sum_prior(prior_items, "paye_tax"),
+    )
+    item = MonthlyPayeItem(
+        period_id=period.id,
+        company_id=period.company_id,
+        user_id=user.id,
+        payroll_type=getattr(profile, "payroll_type", None) or "paye_employee",
+        pay_frequency=settings.pay_frequency,
+        salary_type=settings.salary_type,
+        monthly_salary=settings.monthly_salary,
+        tax_code=(settings.tax_code or "").strip().upper() or None,
+        tax_basis=settings.tax_basis,
+        ni_category=(settings.ni_category or "").strip().upper() or None,
+        student_loan_plan=settings.student_loan_plan,
+        postgraduate_loan=settings.postgraduate_loan,
+        pension_enrolment_status=settings.pension_enrolment_status,
+        employee_pension_percent=employee_percent,
+        employer_pension_percent=employer_percent,
+        pension_scheme_basis=settings.pension_scheme_basis,
+        pension_relief_method=settings.pension_relief_method,
+        bonus_pay=amount(component_summary["bonus_pay"]),
+        commission_pay=amount(component_summary["commission_pay"]),
+        component_pay=amount(component_summary["component_pay"]),
+        regular_hours=amount(overtime["regular_hours"]),
+        overtime_hours=amount(overtime["overtime_hours"]),
+        hourly_rate=hourly_rate,
+        gross_hourly_pay=gross_hourly_pay,
+        regular_pay=amount(overtime["regular_pay"]),
+        overtime_pay=amount(overtime["overtime_pay"]),
+        status="pending",
+        component_snapshot=component_summary["snapshot"],
+        overtime_policy_snapshot=overtime["snapshot"],
+        time_record_source_snapshot=time_snapshot,
+        calculation_snapshot={
+            "phase": "4C",
+            "tax_year": period.tax_year,
+            "tax_month": period.tax_month,
+            "rules_source": SOURCE_NOTE,
+            "hourly_paye": True,
+            "overtime_rule": "monthly_threshold",
+            "pay_components_phase": "4A",
+        },
+        unsupported_reason=calculation["unsupported_reason"],
+        created_at=now,
+        updated_at=now,
+    )
+    for field in {
+        "gross_pay",
+        "taxable_pay",
+        "niable_pay",
+        "pensionable_pay",
+        "paye_tax",
+        "employee_ni",
+        "employer_ni",
+        "employee_pension",
+        "employer_pension",
+        "student_loan",
+        "postgraduate_loan_deduction",
+        "other_deductions",
+        "additions",
+        "total_deductions",
+        "net_pay",
+    }:
+        setattr(item, field, calculation[field])
+    _assign_ytd(item, prior_items)
+    return item
+
+
 def recalculate_monthly_paye(
     db_session: Session,
     actor: User,
@@ -1308,15 +1659,7 @@ def recalculate_monthly_paye(
                 settings=employee_settings,
                 reason="Only monthly PAYE frequency is supported in Phase 2A.",
             )
-        elif employee_settings.salary_type != "fixed_monthly_salary":
-            item = _unsupported_item(
-                period=period,
-                user=user,
-                profile=profile,
-                settings=employee_settings,
-                reason="Only fixed monthly salary is supported in Phase 2A.",
-            )
-        elif amount(employee_settings.monthly_salary) <= 0:
+        elif employee_settings.salary_type == "fixed_monthly_salary" and amount(employee_settings.monthly_salary) <= 0:
             item = _unsupported_item(
                 period=period,
                 user=user,
@@ -1324,7 +1667,7 @@ def recalculate_monthly_paye(
                 settings=employee_settings,
                 reason="Monthly salary must be greater than zero.",
             )
-        else:
+        elif employee_settings.salary_type == "fixed_monthly_salary":
             item = _calculated_item(
                 db_session,
                 period=period,
@@ -1339,6 +1682,30 @@ def recalculate_monthly_paye(
             for component in components:
                 component.item_id = item.id
             continue
+        elif employee_settings.salary_type == "hourly":
+            item = _calculated_hourly_item(
+                db_session,
+                period=period,
+                user=user,
+                profile=profile,
+                settings=employee_settings,
+                company_settings=settings,
+                components=components,
+            )
+            db_session.add(item)
+            db_session.flush()
+            if not item.unsupported_reason:
+                for component in components:
+                    component.item_id = item.id
+            continue
+        else:
+            item = _unsupported_item(
+                period=period,
+                user=user,
+                profile=profile,
+                settings=employee_settings,
+                reason="Only fixed monthly salary and Hourly PAYE are supported.",
+            )
         db_session.add(item)
         db_session.flush()
         if not item.unsupported_reason:

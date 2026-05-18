@@ -24,6 +24,7 @@ from app.modules.paye_payroll.service import (
     PayePayrollPermissionError,
     _assign_ytd,
     _calculated_item,
+    _calculated_hourly_item,
     _summary,
     approve_monthly_paye_period,
     create_pay_component,
@@ -506,12 +507,213 @@ def test_hourly_employee_remains_unsupported_until_hourly_calculation_phase() ->
         patch("app.modules.paye_payroll.repository.delete_pending_items_for_period"),
         patch("app.modules.paye_payroll.repository.list_paye_candidates_for_company", return_value=[(user, SimpleNamespace(payroll_type="paye_employee"), settings)]),
         patch("app.modules.paye_payroll.repository.list_pay_components", return_value=[]),
+        patch("app.modules.paye_payroll.repository.count_open_time_shifts_for_tax_month", return_value=0),
+        patch("app.modules.paye_payroll.repository.list_completed_time_shifts_for_tax_month", return_value=[]),
         patch("app.modules.paye_payroll.service.monthly_paye_report", return_value=MagicMock()),
     ):
         recalculate_monthly_paye(db, actor, company_id=company_id, tax_year="2026-2027", tax_month=1)
     added_items = [call.args[0] for call in db.add.call_args_list if isinstance(call.args[0], MonthlyPayeItem)]
     assert added_items
-    assert added_items[0].unsupported_reason == "Only fixed monthly salary is supported in Phase 2A."
+    assert added_items[0].unsupported_reason == "No completed time shifts found for this PAYE tax month."
+
+
+def test_hourly_paye_completed_shifts_calculate_gross_using_paye_rate_not_cis_rate() -> None:
+    company_id = uuid.uuid4()
+    user = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    period = _period(company_id)
+    settings = SimpleNamespace(
+        pay_frequency="monthly",
+        salary_type="hourly",
+        monthly_salary=None,
+        paye_hourly_rate=Decimal("20"),
+        paye_uses_time_records=True,
+        paye_hour_source="completed_time_shifts",
+        tax_code="1257L",
+        tax_basis="month1",
+        ni_category="A",
+        student_loan_plan="none",
+        postgraduate_loan=False,
+        pension_enrolment_status="not_eligible",
+        employee_pension_percent=Decimal("0"),
+        employer_pension_percent=Decimal("0"),
+        pension_scheme_basis="qualifying_earnings",
+        pension_relief_method="relief_at_source",
+    )
+    company_settings = SimpleNamespace(
+        default_employee_pension_percent=None,
+        default_employer_pension_percent=None,
+        paye_overtime_enabled=False,
+        paye_overtime_threshold_hours=None,
+        paye_overtime_multiplier=None,
+    )
+    shift = SimpleNamespace(
+        id=uuid.uuid4(),
+        clock_in_at=datetime(2026, 4, 7, 8, tzinfo=timezone.utc),
+        clock_out_at=datetime(2026, 4, 7, 18, tzinfo=timezone.utc),
+        break_seconds=0,
+    )
+    location = SimpleNamespace(id=uuid.uuid4(), name="Site A")
+    profile = SimpleNamespace(payroll_type="paye_employee", hourly_rate=Decimal("999"), early_access_enabled=False)
+    metrics = SimpleNamespace(
+        actual_seconds=36000,
+        counted_seconds=36000,
+        rounded_seconds=36000,
+        break_seconds=0,
+        break_deducted_seconds=0,
+    )
+    with (
+        patch("app.modules.paye_payroll.repository.list_prior_items_for_user_tax_year", return_value=[]),
+        patch("app.modules.paye_payroll.service.ensure_company_time_policy", return_value=SimpleNamespace(timezone_name="UTC")),
+        patch("app.modules.paye_payroll.repository.count_open_time_shifts_for_tax_month", return_value=0) as open_shifts,
+        patch("app.modules.paye_payroll.repository.list_completed_time_shifts_for_tax_month", return_value=[(shift, location)]) as completed_shifts,
+        patch("app.modules.paye_payroll.service.effective_time_policy_for_shift", return_value=SimpleNamespace(timezone_name="UTC")),
+        patch("app.modules.paye_payroll.service.effective_early_access_for_shift", return_value=False),
+        patch("app.modules.paye_payroll.service.time_policy_source_for_shift", return_value="company"),
+        patch("app.modules.paye_payroll.service.compute_shift_metrics", return_value=metrics),
+    ):
+        item = _calculated_hourly_item(
+            MagicMock(),
+            period=period,
+            user=user,
+            profile=profile,
+            settings=settings,
+            company_settings=company_settings,
+            components=[],
+        )
+    assert open_shifts.call_args.kwargs["start_utc"] == datetime(2026, 4, 6, 0, 0, tzinfo=timezone.utc)
+    assert open_shifts.call_args.kwargs["end_utc"] == datetime(2026, 5, 6, 0, 0, tzinfo=timezone.utc)
+    assert completed_shifts.call_args.kwargs["start_utc"] == datetime(2026, 4, 6, 0, 0, tzinfo=timezone.utc)
+    assert completed_shifts.call_args.kwargs["end_utc"] == datetime(2026, 5, 6, 0, 0, tzinfo=timezone.utc)
+    assert item.unsupported_reason is None
+    assert item.regular_hours == Decimal("10.0000")
+    assert item.overtime_hours == Decimal("0.0000")
+    assert item.hourly_rate == Decimal("20")
+    assert item.regular_pay == Decimal("200.0000")
+    assert item.gross_hourly_pay == Decimal("200.0000")
+    assert item.gross_pay == Decimal("200.00")
+    assert item.taxable_pay == Decimal("200.00")
+    assert item.niable_pay == Decimal("200.00")
+    assert item.time_record_source_snapshot["shifts"][0]["shift_id"] == str(shift.id)
+
+
+def test_hourly_paye_overtime_enabled_splits_monthly_threshold_and_components_stack() -> None:
+    company_id = uuid.uuid4()
+    user = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    period = _period(company_id)
+    settings = SimpleNamespace(
+        pay_frequency="monthly",
+        salary_type="hourly",
+        monthly_salary=None,
+        paye_hourly_rate=Decimal("10"),
+        paye_uses_time_records=True,
+        paye_hour_source="completed_time_shifts",
+        tax_code="1257L",
+        tax_basis="month1",
+        ni_category="A",
+        student_loan_plan="none",
+        postgraduate_loan=False,
+        pension_enrolment_status="enrolled",
+        employee_pension_percent=Decimal("5"),
+        employer_pension_percent=Decimal("3"),
+        pension_scheme_basis="total_earnings",
+        pension_relief_method="net_pay_arrangement",
+    )
+    company_settings = SimpleNamespace(
+        default_employee_pension_percent=None,
+        default_employer_pension_percent=None,
+        paye_overtime_enabled=True,
+        paye_overtime_threshold_hours=Decimal("8"),
+        paye_overtime_multiplier=Decimal("1.5"),
+    )
+    shift = SimpleNamespace(id=uuid.uuid4(), clock_in_at=datetime(2026, 4, 8, 8, tzinfo=timezone.utc), clock_out_at=datetime(2026, 4, 8, 20, tzinfo=timezone.utc), break_seconds=0)
+    location = SimpleNamespace(id=uuid.uuid4(), name="Site A")
+    metrics = SimpleNamespace(actual_seconds=43200, counted_seconds=43200, rounded_seconds=43200, break_seconds=0, break_deducted_seconds=0)
+    bonus = _component(company_id, user.id, component_type="bonus", amount=Decimal("50"), taxable=True, niable=True, pensionable=True)
+    with (
+        patch("app.modules.paye_payroll.repository.list_prior_items_for_user_tax_year", return_value=[]),
+        patch("app.modules.paye_payroll.service.ensure_company_time_policy", return_value=SimpleNamespace(timezone_name="UTC")),
+        patch("app.modules.paye_payroll.repository.count_open_time_shifts_for_tax_month", return_value=0),
+        patch("app.modules.paye_payroll.repository.list_completed_time_shifts_for_tax_month", return_value=[(shift, location)]),
+        patch("app.modules.paye_payroll.service.effective_time_policy_for_shift", return_value=SimpleNamespace(timezone_name="UTC")),
+        patch("app.modules.paye_payroll.service.effective_early_access_for_shift", return_value=False),
+        patch("app.modules.paye_payroll.service.time_policy_source_for_shift", return_value="company"),
+        patch("app.modules.paye_payroll.service.compute_shift_metrics", return_value=metrics),
+    ):
+        item = _calculated_hourly_item(
+            MagicMock(),
+            period=period,
+            user=user,
+            profile=SimpleNamespace(payroll_type="paye_employee", early_access_enabled=False),
+            settings=settings,
+            company_settings=company_settings,
+            components=[bonus],
+        )
+    assert item.regular_hours == Decimal("8.0000")
+    assert item.overtime_hours == Decimal("4.0000")
+    assert item.regular_pay == Decimal("80.0000")
+    assert item.overtime_pay == Decimal("60.0000")
+    assert item.gross_hourly_pay == Decimal("140.0000")
+    assert item.bonus_pay == Decimal("50.00")
+    assert item.gross_pay == Decimal("190.00")
+    assert item.taxable_pay == Decimal("180.50")
+    assert item.niable_pay == Decimal("190.00")
+    assert item.pensionable_pay == Decimal("190.00")
+    assert item.overtime_policy_snapshot["rule"] == "monthly_threshold"
+
+
+def test_hourly_paye_open_and_missing_completed_shifts_are_unsupported() -> None:
+    company_id = uuid.uuid4()
+    user = _user(SystemRole.EMPLOYEE, company_id=company_id)
+    period = _period(company_id)
+    settings = SimpleNamespace(
+        pay_frequency="monthly",
+        salary_type="hourly",
+        monthly_salary=None,
+        paye_hourly_rate=Decimal("20"),
+        paye_uses_time_records=True,
+        paye_hour_source="completed_time_shifts",
+        tax_code="1257L",
+        tax_basis="month1",
+        ni_category="A",
+        student_loan_plan="none",
+        postgraduate_loan=False,
+        pension_enrolment_status="not_eligible",
+        employee_pension_percent=Decimal("0"),
+        employer_pension_percent=Decimal("0"),
+        pension_scheme_basis="qualifying_earnings",
+        pension_relief_method="relief_at_source",
+    )
+    company_settings = SimpleNamespace(default_employee_pension_percent=None, default_employer_pension_percent=None, paye_overtime_enabled=False)
+    with (
+        patch("app.modules.paye_payroll.service.ensure_company_time_policy", return_value=SimpleNamespace(timezone_name="UTC")),
+        patch("app.modules.paye_payroll.repository.count_open_time_shifts_for_tax_month", return_value=1),
+    ):
+        open_item = _calculated_hourly_item(
+            MagicMock(),
+            period=period,
+            user=user,
+            profile=SimpleNamespace(payroll_type="paye_employee"),
+            settings=settings,
+            company_settings=company_settings,
+            components=[],
+        )
+    assert open_item.unsupported_reason == "Open shifts exist in this PAYE tax month. Close shifts before recalculating."
+
+    with (
+        patch("app.modules.paye_payroll.service.ensure_company_time_policy", return_value=SimpleNamespace(timezone_name="UTC")),
+        patch("app.modules.paye_payroll.repository.count_open_time_shifts_for_tax_month", return_value=0),
+        patch("app.modules.paye_payroll.repository.list_completed_time_shifts_for_tax_month", return_value=[]),
+    ):
+        empty_item = _calculated_hourly_item(
+            MagicMock(),
+            period=period,
+            user=user,
+            profile=SimpleNamespace(payroll_type="paye_employee"),
+            settings=settings,
+            company_settings=company_settings,
+            components=[],
+        )
+    assert empty_item.unsupported_reason == "No completed time shifts found for this PAYE tax month."
 
 
 def test_component_management_permissions_and_locking() -> None:

@@ -103,7 +103,7 @@ def build_monthly_paye_payslip_pdf(
         story.append(table)
         story.append(Spacer(1, 0.28 * cm))
 
-    section("Pay and deductions", [
+    pay_rows = [
         ("Gross pay", _money(values["gross_pay"])),
         ("Bonus pay", _money(values["bonus_pay"])),
         ("Commission pay", _money(values["commission_pay"])),
@@ -116,7 +116,21 @@ def build_monthly_paye_payslip_pdf(
         ("Postgraduate loan deduction", _money(values["postgraduate_loan"])),
         ("Other deductions", _money(values["other_deductions"])),
         ("Net pay", _money(values["net_pay"])),
-    ])
+    ]
+    if values.get("gross_hourly_pay"):
+        hourly_rate = Decimal(values.get("hourly_rate") or 0)
+        regular_hours = Decimal(values.get("regular_hours") or 0)
+        overtime_hours = Decimal(values.get("overtime_hours") or 0)
+        regular_pay = Decimal(values.get("regular_pay") or 0)
+        overtime_pay = Decimal(values.get("overtime_pay") or 0)
+        overtime_rate = hourly_rate
+        if overtime_hours > 0 and hourly_rate > 0:
+            overtime_rate = hourly_rate * (overtime_pay / (overtime_hours * hourly_rate))
+        pay_rows[1:1] = [
+            ("Regular hours x hourly rate", f"{regular_hours} x {_money(hourly_rate)} = {_money(regular_pay)}"),
+            ("Overtime hours x overtime rate", f"{overtime_hours} x {_money(overtime_rate)} = {_money(overtime_pay)}"),
+        ]
+    section("Pay and deductions", pay_rows)
     section("Year to date", [
         ("YTD gross pay", _money(values["ytd_gross_pay"])),
         ("YTD taxable pay", _money(values["ytd_taxable_pay"])),

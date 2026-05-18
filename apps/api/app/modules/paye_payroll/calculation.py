@@ -279,3 +279,87 @@ def calculate_fixed_monthly_salary(
         "total_deductions": total_deductions,
         "net_pay": net,
     }
+
+
+def calculate_hourly_monthly_pay(
+    *,
+    gross_hourly_pay: Decimal,
+    tax_code: str | None,
+    tax_basis: str,
+    tax_month: int,
+    ni_category: str | None,
+    pension_enrolment_status: str,
+    employee_pension_percent: Decimal,
+    employer_pension_percent: Decimal,
+    pension_scheme_basis: str,
+    pension_relief_method: str,
+    student_loan_plan: str,
+    postgraduate_loan: bool,
+    taxable_additions: Decimal = ZERO,
+    niable_additions: Decimal = ZERO,
+    pensionable_additions: Decimal = ZERO,
+    gross_additions: Decimal = ZERO,
+    prior_ytd_taxable_pay: Decimal = ZERO,
+    prior_ytd_paye_tax: Decimal = ZERO,
+) -> dict[str, object]:
+    if gross_hourly_pay <= 0:
+        return unsupported_result("Hourly PAYE pay must be greater than zero.")
+    allowance, tax_code_error = validate_numeric_l_tax_code(tax_code)
+    if tax_code_error is not None or allowance is None:
+        return unsupported_result(tax_code_error or "Tax code is not supported in Phase 4C.")
+    if (ni_category or "").strip().upper() != "A":
+        return unsupported_result("NI category must be A for Phase 4C.")
+    if tax_basis not in {"cumulative", "month1"}:
+        return unsupported_result("Tax basis must be cumulative or month1 for Phase 4C.")
+
+    base_pay = money(gross_hourly_pay)
+    gross = money(base_pay + gross_additions)
+    niable = money(base_pay + niable_additions)
+    pensionable_gross = money(base_pay + pensionable_additions)
+    pension = calculate_pension(
+        gross_pay=pensionable_gross,
+        enrolment_status=pension_enrolment_status,
+        basis=pension_scheme_basis,
+        relief_method=pension_relief_method,
+        employee_percent=employee_pension_percent,
+        employer_percent=employer_pension_percent,
+    )
+    if pension.get("unsupported_reason"):
+        return unsupported_result(str(pension["unsupported_reason"]))
+
+    taxable = money(base_pay + taxable_additions - amount(pension["taxable_reduction"]))
+    paye_tax = calculate_paye_tax(
+        taxable_pay=taxable,
+        tax_code_allowance=allowance,
+        tax_basis=tax_basis,
+        tax_month=tax_month,
+        prior_ytd_taxable_pay=prior_ytd_taxable_pay,
+        prior_ytd_paye_tax=prior_ytd_paye_tax,
+    )
+    employee_ni = calculate_employee_ni_category_a(niable)
+    employer_ni = calculate_employer_ni_category_a(niable)
+    student_loan = calculate_student_loan(student_loan_plan, niable)
+    postgraduate_loan_deduction = calculate_postgraduate_loan(postgraduate_loan, niable)
+    other_deductions = ZERO
+    additions = ZERO
+    employee_pension = amount(pension["employee_pension"])
+    total_deductions = money(paye_tax + employee_ni + employee_pension + student_loan + postgraduate_loan_deduction + other_deductions)
+    net = money(gross + additions - total_deductions)
+    return {
+        "unsupported_reason": None,
+        "gross_pay": gross,
+        "taxable_pay": taxable,
+        "niable_pay": niable,
+        "pensionable_pay": amount(pension["pensionable_pay"]),
+        "paye_tax": paye_tax,
+        "employee_ni": employee_ni,
+        "employer_ni": employer_ni,
+        "employee_pension": employee_pension,
+        "employer_pension": amount(pension["employer_pension"]),
+        "student_loan": student_loan,
+        "postgraduate_loan_deduction": postgraduate_loan_deduction,
+        "other_deductions": other_deductions,
+        "additions": additions,
+        "total_deductions": total_deductions,
+        "net_pay": net,
+    }

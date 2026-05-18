@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
 from app.modules.employee_profiles.models import EmployeeProfile
+from app.modules.locations.models import Location
 from app.modules.paye_payroll.models import (
     CompanyPayeSettings,
     EmployeePayeSettings,
@@ -15,6 +16,7 @@ from app.modules.paye_payroll.models import (
     MonthlyPayePeriod,
     PayeTaxYearRule,
 )
+from app.modules.time_clock.models import TimeShift
 
 
 def get_tax_year_rule(db_session: Session, tax_year: str) -> PayeTaxYearRule | None:
@@ -72,6 +74,48 @@ def list_pay_components(
     if user_id is not None:
         statement = statement.where(MonthlyPayePayComponent.user_id == user_id)
     return list(db_session.scalars(statement).all())
+
+
+def list_completed_time_shifts_for_tax_month(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    start_utc,
+    end_utc,
+) -> list[tuple[TimeShift, Location]]:
+    statement = (
+        select(TimeShift, Location)
+        .join(Location, TimeShift.location_id == Location.id)
+        .where(TimeShift.user_id == user_id)
+        .where(or_(TimeShift.company_id == company_id, Location.company_id == company_id))
+        .where(TimeShift.clock_in_at >= start_utc)
+        .where(TimeShift.clock_in_at < end_utc)
+        .where(TimeShift.status == "completed")
+        .where(TimeShift.clock_out_at.is_not(None))
+        .order_by(TimeShift.clock_in_at.asc())
+    )
+    return [(shift, location) for shift, location in db_session.execute(statement).all()]
+
+
+def count_open_time_shifts_for_tax_month(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    start_utc,
+    end_utc,
+) -> int:
+    statement = (
+        select(TimeShift)
+        .join(Location, TimeShift.location_id == Location.id)
+        .where(TimeShift.user_id == user_id)
+        .where(or_(TimeShift.company_id == company_id, Location.company_id == company_id))
+        .where(TimeShift.clock_in_at >= start_utc)
+        .where(TimeShift.clock_in_at < end_utc)
+        .where(TimeShift.status == "open")
+    )
+    return len(list(db_session.scalars(statement).all()))
 
 
 def save_pay_component(db_session: Session, component: MonthlyPayePayComponent) -> MonthlyPayePayComponent:
