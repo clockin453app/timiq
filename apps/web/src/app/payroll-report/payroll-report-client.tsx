@@ -209,6 +209,28 @@ const payrollExpandBtn = cn(
   "min-h-8 w-8 shrink-0 px-0 text-xs font-semibold tabular-nums",
   uiClasses.focusRing,
 );
+const payrollModalBackdrop =
+  "fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6";
+const payrollModalPanel = cn(
+  uiClasses.card,
+  "mx-auto my-4 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto sm:max-w-[min(42rem,calc(100vw-3rem))]",
+);
+const payrollModalHeader =
+  "flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border)] px-4 py-3";
+const payrollModalBody = "space-y-3 px-4 py-4 text-sm";
+const payrollModalFooter =
+  "flex flex-wrap justify-end gap-2 border-t border-[var(--color-border)] px-4 py-3";
+const payrollMenuPanel = cn(
+  "min-w-[14rem] rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1.5 shadow-[var(--shadow-dropdown)]",
+);
+const payrollMenuItem = cn(
+  "block w-full px-3 py-2.5 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]",
+  uiClasses.focusRing,
+);
+const payrollMenuItemDanger = cn(
+  "block w-full px-3 py-2.5 text-left text-sm font-medium text-[var(--color-danger-700)] hover:bg-[var(--color-danger-50)]",
+  uiClasses.focusRing,
+);
 
 function formatShiftDateTime(iso: string, timeZone: string): string {
   const d = new Date(iso);
@@ -366,7 +388,7 @@ function PayrollRowActionsPortal(props: {
 
   return createPortal(
     <div
-      className="min-w-[14rem] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]"
+      className={payrollMenuPanel}
       data-payroll-row-menu
       id={`payroll-row-actions-${row.id}`}
       ref={menuRef}
@@ -382,7 +404,7 @@ function PayrollRowActionsPortal(props: {
       }}
     >
       <button
-        className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+        className={payrollMenuItem}
         onClick={() => props.onEdit(row)}
         role="menuitem"
         type="button"
@@ -392,7 +414,7 @@ function PayrollRowActionsPortal(props: {
       {row.status === "paid" ? (
         <>
           <button
-            className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+            className={payrollMenuItem}
             onClick={() => {
               props.onClose();
               props.onOpenPayslip(row.id);
@@ -403,7 +425,7 @@ function PayrollRowActionsPortal(props: {
             {props.t("payroll.report.payslip", "Payslip")}
           </button>
           <button
-            className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+            className={payrollMenuItemDanger}
             onClick={() => props.onUndoPaid(row)}
             role="menuitem"
             type="button"
@@ -412,7 +434,7 @@ function PayrollRowActionsPortal(props: {
           </button>
           {canShowLateAdjustmentForPaidRow(row, lateBlock, props.report) ? (
             <button
-              className="block w-full px-3 py-2 text-left text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+              className={payrollMenuItem}
               onClick={() => {
                 props.onClose();
                 props.onLateAdjustment(row.id);
@@ -2148,95 +2170,102 @@ export function PayrollReportClient() {
         {editRow ? (
           <div
             aria-modal="true"
-            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6"
+            className={payrollModalBackdrop}
             role="dialog"
           >
-            <div className="timiq-sheet mx-auto my-4 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md sm:max-w-[min(42rem,calc(100vw-3rem))]">
-              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
-                <p className="text-sm font-bold text-[var(--color-text)]">
-                  {editRow.status === "paid" ? "Payroll adjustments (paid row notes only)" : "Payroll adjustments"}
-                </p>
-                <Button onClick={() => setEditRow(null)} type="button">
+            <div className={payrollModalPanel}>
+              <div className={payrollModalHeader}>
+                <div className="min-w-0">
+                  <p className="timiq-title-md">
+                    {editRow.status === "paid" ? "Payroll adjustments (paid row notes only)" : "Payroll adjustments"}
+                  </p>
+                </div>
+                <Button onClick={() => setEditRow(null)} size="sm" type="button" variant="secondary">
                   Close
                 </Button>
               </div>
-              <form className="mt-4 space-y-2 text-sm" onSubmit={saveEdit}>
-                <div className="text-xs text-[var(--color-text-muted)]">
+              <form onSubmit={saveEdit}>
+                <div className={payrollModalBody}>
                   <PayrollEmployeeIdentity
                     employee_email={editRow.employee_email}
                     employee_name={editRow.employee_name}
                     className="text-[var(--color-text)]"
                   />
-                  <p className="mt-1.5">
+                  <p className="timiq-caption">
                     Total rounded h: {formatHoursFromSeconds(editRow.rounded_total_seconds)}
                   </p>
-                  <p className="mt-2 rounded border border-slate-300 bg-slate-50 px-2 py-1.5 text-[11px] font-medium text-slate-900">
+                  <AlertBanner tone="info">
                     This modal edits payroll notes, deductions, payment mode, and display fields only. To change
                     hours, expand the employee row and use Edit shift.
-                  </p>
+                  </AlertBanner>
                   {editRow.status === "paid" ? (
-                    <p className="mt-2 rounded border border-slate-600/20 bg-slate-100 px-2 py-1.5 text-[11px] font-medium text-slate-900">
+                    <AlertBanner tone="warning">
                       This row is paid and locked. Hours and pay amounts cannot be changed here.
-                    </p>
+                    </AlertBanner>
                   ) : null}
+                  <label className={uiClasses.payeFilterLabel}>
+                    Notes
+                    <textarea
+                      className={cn(uiClasses.payeFilterInput, "mt-1 min-h-[3rem] py-2")}
+                      onChange={(event) => setEditNotes(event.target.value)}
+                      value={editNotes}
+                    />
+                  </label>
+                  <label className={uiClasses.payeFilterLabel}>
+                    Other deductions
+                    <input
+                      className={uiClasses.payeFilterInput}
+                      disabled={editRow.status === "paid"}
+                      onChange={(event) => setEditOtherDed(event.target.value)}
+                      type="text"
+                      value={editOtherDed}
+                    />
+                  </label>
+                  <label className={uiClasses.payeFilterLabel}>
+                    Display CIS tax
+                    <input
+                      className={uiClasses.payeFilterInput}
+                      disabled={editRow.status === "paid"}
+                      onChange={(event) => setEditDispTax(event.target.value)}
+                      type="text"
+                      value={editDispTax}
+                    />
+                  </label>
+                  <label className={uiClasses.payeFilterLabel}>
+                    Display net
+                    <input
+                      className={uiClasses.payeFilterInput}
+                      disabled={editRow.status === "paid"}
+                      onChange={(event) => setEditDispNet(event.target.value)}
+                      type="text"
+                      value={editDispNet}
+                    />
+                  </label>
+                  <label className={uiClasses.payeFilterLabel}>
+                    Payment mode
+                    <select
+                      className={uiClasses.payeFilterSelect}
+                      disabled={editRow.status === "paid"}
+                      onChange={(event) =>
+                        setEditPaymentMode(
+                          normalizePaymentMode(event.target.value),
+                        )
+                      }
+                      value={normalizePaymentMode(editPaymentMode)}
+                    >
+                      <option value="net_payment">Net payment</option>
+                      <option value="gross_payment">Gross payment</option>
+                    </select>
+                  </label>
                 </div>
-                <label className="block text-xs font-bold">
-                  Notes
-                  <textarea
-                    className="mt-1 min-h-[3rem] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1 text-sm"
-                    onChange={(event) => setEditNotes(event.target.value)}
-                    value={editNotes}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Other deductions
-                  <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    disabled={editRow.status === "paid"}
-                    onChange={(event) => setEditOtherDed(event.target.value)}
-                    type="text"
-                    value={editOtherDed}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Display CIS tax
-                  <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    disabled={editRow.status === "paid"}
-                    onChange={(event) => setEditDispTax(event.target.value)}
-                    type="text"
-                    value={editDispTax}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Display net
-                  <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    disabled={editRow.status === "paid"}
-                    onChange={(event) => setEditDispNet(event.target.value)}
-                    type="text"
-                    value={editDispNet}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Payment mode
-                  <select
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    disabled={editRow.status === "paid"}
-                    onChange={(event) =>
-                      setEditPaymentMode(
-                        normalizePaymentMode(event.target.value),
-                      )
-                    }
-                    value={normalizePaymentMode(editPaymentMode)}
-                  >
-                    <option value="net_payment">Net payment</option>
-                    <option value="gross_payment">Gross payment</option>
-                  </select>
-                </label>
-                <Button disabled={busyId === editRow.id} type="submit">
-                  {busyId === editRow.id ? "Saving…" : "Save edits"}
-                </Button>
+                <div className={payrollModalFooter}>
+                  <Button onClick={() => setEditRow(null)} size="sm" type="button" variant="secondary">
+                    Cancel
+                  </Button>
+                  <Button disabled={busyId === editRow.id} type="submit">
+                    {busyId === editRow.id ? "Saving…" : "Save edits"}
+                  </Button>
+                </div>
               </form>
             </div>
           </div>
@@ -2245,102 +2274,105 @@ export function PayrollReportClient() {
         {shiftEditRow ? (
           <div
             aria-modal="true"
-            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6"
+            className={payrollModalBackdrop}
             role="dialog"
           >
-            <div className="timiq-sheet mx-auto my-4 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md sm:max-w-[min(42rem,calc(100vw-3rem))]">
-              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
-                <div>
-                  <p className="text-sm font-bold text-[var(--color-text)]">Edit shift</p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+            <div className={payrollModalPanel}>
+              <div className={payrollModalHeader}>
+                <div className="min-w-0">
+                  <p className="timiq-title-md">Edit shift</p>
+                  <p className="timiq-caption mt-1">
                     Saves through Time Records and marks payroll as needing recalculation.
                   </p>
                 </div>
-                <Button onClick={closeShiftEdit} type="button">
+                <Button onClick={closeShiftEdit} size="sm" type="button" variant="secondary">
                   Close
                 </Button>
               </div>
-              <form className="mt-4 space-y-2 text-sm" onSubmit={saveShiftEdit}>
-                {shiftEditError ? (
-                  <p className="rounded border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-2 py-1 text-xs text-[var(--color-danger-700)]">
-                    {shiftEditError}
-                  </p>
-                ) : null}
-                <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-1.5 text-xs text-[var(--color-text-muted)]">
-                  <p>
-                    Employee:{" "}
-                    <span className="font-medium text-[var(--color-text)]">
-                      {shiftEditRow.employee_name ?? shiftEditRow.employee_email ?? shiftEditRow.user_id}
-                    </span>
-                  </p>
-                  <p className="mt-1">
-                    Current rounded hours:{" "}
-                    <span className="font-medium text-[var(--color-text)]">
-                      {shiftEditRow.rounded_seconds != null ? formatHoursFromSeconds(shiftEditRow.rounded_seconds) : "—"}
-                    </span>
-                  </p>
+              <form onSubmit={saveShiftEdit}>
+                <div className={payrollModalBody}>
+                  {shiftEditError ? <AlertBanner tone="danger">{shiftEditError}</AlertBanner> : null}
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 timiq-caption">
+                    <p>
+                      Employee:{" "}
+                      <span className="font-semibold text-[var(--color-text)]">
+                        {shiftEditRow.employee_name ?? shiftEditRow.employee_email ?? shiftEditRow.user_id}
+                      </span>
+                    </p>
+                    <p className="mt-1">
+                      Current rounded hours:{" "}
+                      <span className="font-semibold text-[var(--color-text)]">
+                        {shiftEditRow.rounded_seconds != null ? formatHoursFromSeconds(shiftEditRow.rounded_seconds) : "—"}
+                      </span>
+                    </p>
+                  </div>
+                  <label className={uiClasses.payeFilterLabel}>
+                    Location
+                    <select
+                      className={uiClasses.payeFilterSelect}
+                      onChange={(event) => setShiftEditLocationId(event.target.value)}
+                      value={shiftEditLocationId}
+                    >
+                      {shiftEditLocationOptions.length === 0 ? (
+                        <option value={shiftEditRow.location_id}>{shiftEditRow.location_name}</option>
+                      ) : (
+                        shiftEditLocationOptions.map((location) => (
+                          <option key={location.id} value={location.id}>
+                            {location.name}
+                          </option>
+                        ))
+                      )}
+                    </select>
+                  </label>
+                  <label className={uiClasses.payeFilterLabel}>
+                    Clock in
+                    <input
+                      className={uiClasses.payeFilterInput}
+                      onChange={(event) => setShiftEditClockInLocal(event.target.value)}
+                      required
+                      type="datetime-local"
+                      value={shiftEditClockInLocal}
+                    />
+                  </label>
+                  <label className={uiClasses.payeFilterLabel}>
+                    Clock out
+                    <input
+                      className={uiClasses.payeFilterInput}
+                      onChange={(event) => setShiftEditClockOutLocal(event.target.value)}
+                      required
+                      type="datetime-local"
+                      value={shiftEditClockOutLocal}
+                    />
+                  </label>
+                  <label className={uiClasses.payeFilterLabel}>
+                    Break minutes
+                    <input
+                      className={uiClasses.payeFilterInput}
+                      inputMode="numeric"
+                      min={0}
+                      onChange={(event) => setShiftEditBreakMinutes(event.target.value)}
+                      type="number"
+                      value={shiftEditBreakMinutes}
+                    />
+                  </label>
+                  <label className={uiClasses.payeFilterLabel}>
+                    Reason
+                    <textarea
+                      className={cn(uiClasses.payeFilterInput, "mt-1 min-h-[4rem] py-2")}
+                      onChange={(event) => setShiftEditReason(event.target.value)}
+                      required
+                      value={shiftEditReason}
+                    />
+                  </label>
                 </div>
-                <label className="block text-xs font-bold">
-                  Location
-                  <select
-                    className="timiq-select mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    onChange={(event) => setShiftEditLocationId(event.target.value)}
-                    value={shiftEditLocationId}
-                  >
-                    {shiftEditLocationOptions.length === 0 ? (
-                      <option value={shiftEditRow.location_id}>{shiftEditRow.location_name}</option>
-                    ) : (
-                      shiftEditLocationOptions.map((location) => (
-                        <option key={location.id} value={location.id}>
-                          {location.name}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
-                <label className="block text-xs font-bold">
-                  Clock in
-                  <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    onChange={(event) => setShiftEditClockInLocal(event.target.value)}
-                    required
-                    type="datetime-local"
-                    value={shiftEditClockInLocal}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Clock out
-                  <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    onChange={(event) => setShiftEditClockOutLocal(event.target.value)}
-                    required
-                    type="datetime-local"
-                    value={shiftEditClockOutLocal}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Break minutes
-                  <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    inputMode="numeric"
-                    min={0}
-                    onChange={(event) => setShiftEditBreakMinutes(event.target.value)}
-                    type="number"
-                    value={shiftEditBreakMinutes}
-                  />
-                </label>
-                <label className="block text-xs font-bold">
-                  Reason
-                  <textarea
-                    className="mt-1 min-h-[4rem] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1 text-sm"
-                    onChange={(event) => setShiftEditReason(event.target.value)}
-                    required
-                    value={shiftEditReason}
-                  />
-                </label>
-                <Button disabled={shiftEditBusy} type="submit">
-                  {shiftEditBusy ? "Saving…" : "Save shift"}
-                </Button>
+                <div className={payrollModalFooter}>
+                  <Button onClick={closeShiftEdit} size="sm" type="button" variant="secondary">
+                    Cancel
+                  </Button>
+                  <Button disabled={shiftEditBusy} type="submit">
+                    {shiftEditBusy ? "Saving…" : "Save shift"}
+                  </Button>
+                </div>
               </form>
             </div>
           </div>
@@ -2349,35 +2381,37 @@ export function PayrollReportClient() {
         {undoPaidRow ? (
           <div
             aria-modal="true"
-            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6"
+            className={payrollModalBackdrop}
             role="dialog"
           >
-            <div className="timiq-sheet mx-auto my-4 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md sm:max-w-[min(42rem,calc(100vw-3rem))]">
-              <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-3">
-                <p className="text-sm font-bold text-[var(--color-text)]">Undo paid</p>
+            <div className={payrollModalPanel}>
+              <div className={payrollModalHeader}>
+                <p className="timiq-title-md">Undo paid</p>
                 <Button
                   onClick={() => {
                     setUndoPaidRow(null);
                     setUndoPaidReason("");
                     setUndoPaidAckExport(false);
                   }}
+                  size="sm"
                   type="button"
+                  variant="secondary"
                 >
                   Close
                 </Button>
               </div>
-              <div className="mt-4 space-y-3 text-sm">
+              <div className={payrollModalBody}>
                 <PayrollEmployeeIdentity
                   employee_email={undoPaidRow.employee_email}
                   employee_name={undoPaidRow.employee_name}
                   className="text-[var(--color-text)]"
                 />
-                <p className="rounded border border-amber-800/25 bg-amber-50 px-2 py-2 text-xs font-medium text-amber-950">
+                <AlertBanner tone="warning">
                   Undoing paid moves this payroll item back to <span className="font-semibold">Approved</span>. Amounts
                   are not recalculated. Use only if payment was marked paid by mistake.
-                </p>
+                </AlertBanner>
                 {report?.accounting_payroll_export_overlaps ? (
-                  <label className="flex cursor-pointer items-start gap-2 text-xs text-[#111827]">
+                  <label className="flex cursor-pointer items-start gap-2 timiq-caption text-[var(--color-text)]">
                     <input
                       checked={undoPaidAckExport}
                       className="mt-0.5"
@@ -2390,19 +2424,34 @@ export function PayrollReportClient() {
                     </span>
                   </label>
                 ) : null}
-                <label className="block text-xs font-bold">
+                <label className={uiClasses.payeFilterLabel}>
                   Reason (required)
                   <textarea
-                    className="mt-1 min-h-[4rem] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-1 text-sm"
+                    className={cn(uiClasses.payeFilterInput, "mt-1 min-h-[4rem] py-2")}
                     onChange={(e) => setUndoPaidReason(e.target.value)}
                     placeholder="Explain why paid status is being reversed."
                     value={undoPaidReason}
                   />
                 </label>
+              </div>
+              <div className={payrollModalFooter}>
+                <Button
+                  onClick={() => {
+                    setUndoPaidRow(null);
+                    setUndoPaidReason("");
+                    setUndoPaidAckExport(false);
+                  }}
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                >
+                  Cancel
+                </Button>
                 <Button
                   disabled={busyId === undoPaidRow.id}
                   onClick={() => void submitUndoPaid()}
                   type="button"
+                  variant="danger"
                 >
                   {busyId === undoPaidRow.id ? "Working…" : "Confirm undo paid"}
                 </Button>
