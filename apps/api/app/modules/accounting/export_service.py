@@ -9,6 +9,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any
 
+from sqlalchemy.orm import Session
+
 from app.core.export_csv import safe_export_filename
 from app.modules.accounting.models import AccountingExportSettings
 from app.modules.accounting.repository import add_export_run
