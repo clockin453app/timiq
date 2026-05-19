@@ -26,6 +26,28 @@ def list_employee_users_for_company(
     return list(db_session.scalars(statement).all())
 
 
+def list_cis_employee_users_for_company(
+    db_session: Session,
+    company_id: uuid.UUID,
+) -> list[User]:
+    """Active company employees eligible for CIS weekly payroll (not PAYE monthly workers)."""
+    statement = (
+        select(User)
+        .outerjoin(EmployeeProfile, EmployeeProfile.user_id == User.id)
+        .where(User.company_id == company_id)
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
+        .where(
+            or_(
+                EmployeeProfile.id.is_(None),
+                EmployeeProfile.payroll_type == "cis_subcontractor",
+            ),
+        )
+        .order_by(User.email.asc())
+    )
+    return list(db_session.scalars(statement).all())
+
+
 def get_period_by_company_week(
     db_session: Session,
     company_id: uuid.UUID,

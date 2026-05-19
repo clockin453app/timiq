@@ -163,7 +163,7 @@ def _recalculate_saved_payment_modes(
         patch("app.modules.payroll.service.save_period", side_effect=save_period),
         patch("app.modules.payroll.service.list_items_for_period", side_effect=[existing_items, saved_items]),
         patch("app.modules.payroll.service.delete_pending_items_for_period"),
-        patch("app.modules.payroll.service.list_employee_users_for_company", return_value=[emp]),
+        patch("app.modules.payroll.service.list_cis_employee_users_for_company", return_value=[emp]),
         patch("app.modules.payroll.service.get_employee_profile_by_user_id", return_value=_profile(user_id=emp.id, company_id=company_id, payment_mode=profile_mode)),
         patch("app.modules.payroll.service.sum_rounded_seconds_payroll_week", return_value=3600),
         patch("app.modules.payroll.service.policy_snapshot_dict", return_value={}),

@@ -57,6 +57,7 @@ from app.modules.payroll.repository import (
     get_item_by_id,
     get_period_by_company_week,
     invalidate_period_calculation_for_company_week,
+    list_cis_employee_users_for_company,
     list_employee_users_for_company,
     list_completed_time_shifts_for_company_range,
     list_items_for_period,
@@ -1512,7 +1513,7 @@ def recalculate_payroll(
             pending_manual_modes[it.user_id] = pending_mode
     delete_pending_items_for_period(db_session, period.id)
 
-    employees = list_employee_users_for_company(db_session, company_id)
+    employees = list_cis_employee_users_for_company(db_session, company_id)
     now = datetime.now(timezone.utc)
     ot_mult = Decimal(str(policy.overtime_multiplier))
 
