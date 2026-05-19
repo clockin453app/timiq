@@ -12,6 +12,7 @@ import { useT } from "../../lib/i18n";
 
 import { DesktopTopNav } from "./desktop-top-nav";
 import { MessagesHeaderButton } from "./messages-header-button";
+import { NavItemIcon } from "./nav-item-icon";
 import { NotificationBell } from "./notification-bell";
 
 type DesktopTopBarProps = {
@@ -44,20 +45,20 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
       )}
     >
       <div className="flex min-h-[var(--layout-topbar-height)] w-full min-w-0 items-center pr-4">
-        <div className="flex min-h-[var(--layout-topbar-height)] w-[var(--layout-topbar-brand-width)] min-w-[9.5rem] max-w-[11.25rem] shrink-0 flex-col justify-center px-4">
+        <div className="flex min-h-[var(--layout-topbar-height)] w-[var(--layout-topbar-brand-width)] min-w-[9.5rem] max-w-[11.25rem] shrink-0 flex-col justify-center border-l-[3px] border-white/30 px-4">
           <Link
             className="min-w-0 no-underline"
             href={getDefaultLandingPath(user.system_role, { limitedAccess: limited })}
           >
-            <p className="text-base font-bold tracking-tight text-[var(--color-text)]">{t("nav.tagline", "TimIQ")}</p>
-            <p className="hidden text-[11px] leading-tight text-[var(--color-text-muted)] sm:block">
+            <p className={uiClasses.topBarBrandTitle}>{t("nav.tagline", "TimIQ")}</p>
+            <p className={cn(uiClasses.topBarBrandSubtitle, "hidden sm:block")}>
               {t("nav.tagline_sub", "Payroll & workforce")}
             </p>
           </Link>
         </div>
 
         <div
-          className="h-[var(--layout-topbar-divider-height)] shrink-0 border-l border-[var(--color-border)]"
+          className="h-[var(--layout-topbar-divider-height)] shrink-0 border-l border-white/20"
           aria-hidden
           role="presentation"
         />
@@ -79,18 +80,21 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
               aria-label={t("shell.account_menu", "Account menu")}
               className={cn(
                 "timiq-touch-target list-none [&::-webkit-details-marker]:hidden",
-                uiClasses.focusRing,
+                uiClasses.topBarFocusRing,
               )}
             >
               <span
                 className={cn(
-                  "inline-flex h-9 max-w-[10rem] cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border px-2.5 sm:max-w-[14rem]",
-                  uiClasses.headerIconButton,
+                  "inline-flex h-9 max-w-[10rem] cursor-pointer items-center gap-2 px-2.5 sm:max-w-[14rem]",
+                  uiClasses.topBarChromeButton,
                   uiClasses.transitionColors,
                 )}
                 title={t("shell.account_menu", "Account menu")}
               >
-                <span className="min-w-0 truncate text-xs font-medium" title={user.email}>
+                <span
+                  className="min-w-0 truncate text-xs font-semibold text-[var(--color-topbar-chrome-btn-fg)]"
+                  title={user.email}
+                >
                   {user.email}
                 </span>
               </span>
@@ -110,25 +114,21 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
                 </span>
               </p>
               <Link
-                className={cn(
-                  "block px-3 py-2 text-sm text-[var(--color-text)]",
-                  uiClasses.transitionColors,
-                  "hover:bg-[var(--color-header)]",
-                )}
+                className={cn(uiClasses.navDropdownItem, uiClasses.transitionColors)}
                 href="/profile"
+                role="menuitem"
               >
-                {t("nav.profile", "Profile")}
+                <NavItemIcon labelKey="nav.profile" />
+                <span className="min-w-0 flex-1">{t("nav.profile", "Profile")}</span>
               </Link>
               {!limited ? (
                 <Link
-                  className={cn(
-                    "block px-3 py-2 text-sm text-[var(--color-text)]",
-                    uiClasses.transitionColors,
-                    "hover:bg-[var(--color-header)]",
-                  )}
+                  className={cn(uiClasses.navDropdownItem, uiClasses.transitionColors)}
                   href="/settings"
+                  role="menuitem"
                 >
-                  {t("nav.settings", "Settings")}
+                  <NavItemIcon labelKey="nav.settings" />
+                  <span className="min-w-0 flex-1">{t("nav.settings", "Settings")}</span>
                 </Link>
               ) : null}
               <div className="border-t border-[var(--color-border)] px-2 py-2">

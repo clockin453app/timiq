@@ -14,9 +14,9 @@ import { useT } from "../../lib/i18n";
 import { cn } from "../../lib/cn";
 import { uiClasses } from "../../lib/ui-classes";
 
-import { navItemMatchesActive } from "./grouped-nav";
+import { groupContainsActiveRoute, navItemMatchesActive } from "./grouped-nav";
 import { NavDropdownPortal, navDropdownMenuContains } from "./nav-dropdown-portal";
-import { NavItemIcon } from "./nav-item-icon";
+import { NavGroupIcon, NavItemIcon } from "./nav-item-icon";
 
 type DesktopTopNavProps = {
   activeHref: string;
@@ -31,6 +31,7 @@ function NavGroupTrigger(props: {
   groupId: string;
   groupLabel: string;
   isOpen: boolean;
+  isChildActive: boolean;
   onFocusSwitch: (anchor: HTMLButtonElement) => void;
   onHoverSwitch: (anchor: HTMLButtonElement) => void;
   onToggle: (anchor: HTMLButtonElement) => void;
@@ -43,18 +44,23 @@ function NavGroupTrigger(props: {
       className={cn(
         uiClasses.navTriggerBase,
         uiClasses.transitionColors,
-        uiClasses.focusRing,
-        props.isOpen ? uiClasses.navTriggerOpen : uiClasses.navTriggerIdle,
+        uiClasses.topBarFocusRing,
+        props.isOpen
+          ? uiClasses.topBarNavTriggerOpen
+          : props.isChildActive
+            ? uiClasses.topBarNavLinkActive
+            : uiClasses.topBarNavTriggerIdle,
       )}
       type="button"
       onFocus={(event) => props.onFocusSwitch(event.currentTarget)}
       onMouseEnter={(event) => props.onHoverSwitch(event.currentTarget)}
       onClick={(event) => props.onToggle(event.currentTarget)}
     >
+      <NavGroupIcon groupId={props.groupId} />
       <span>{props.groupLabel}</span>
       <ChevronDown
         aria-hidden
-        className={["h-4 w-4 shrink-0 transition-transform", props.isOpen ? "rotate-180" : ""].join(" ")}
+        className={cn("h-4 w-4 shrink-0 opacity-70 transition-transform", props.isOpen && "rotate-180")}
       />
     </button>
   );
@@ -164,12 +170,12 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
                 className={cn(
                   uiClasses.navLinkBase,
                   uiClasses.transitionColors,
-                  uiClasses.focusRing,
-                  isDirectActive ? uiClasses.navLinkActive : uiClasses.navLinkIdle,
+                  uiClasses.topBarFocusRing,
+                  isDirectActive ? uiClasses.topBarNavLinkActive : uiClasses.topBarNavLinkIdle,
                 )}
                 href={only.href}
               >
-                <NavItemIcon labelKey={only.labelKey} className="h-4 w-4 shrink-0" />
+                <NavItemIcon labelKey={only.labelKey} />
                 <span>{t(only.labelKey, only.label)}</span>
                 {n > 0 ? (
                   <span className="rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-tight text-white">
@@ -181,11 +187,13 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
           }
 
           const isOpen = openMenu?.id === group.id;
+          const isChildActive = groupContainsActiveRoute(group, activeHref);
           return (
             <div key={group.id} className="relative shrink-0">
               <NavGroupTrigger
                 groupId={group.id}
                 groupLabel={groupLabel}
+                isChildActive={isChildActive}
                 isOpen={isOpen}
                 onFocusSwitch={(anchor) => switchOpenMenu(group.id, anchor)}
                 onHoverSwitch={(anchor) => switchOpenMenu(group.id, anchor)}
@@ -221,7 +229,7 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
                 role="menuitem"
                 onClick={closeMenus}
               >
-                <NavItemIcon labelKey={item.labelKey} className="h-4 w-4 shrink-0" />
+                <NavItemIcon labelKey={item.labelKey} />
                 <span className="min-w-0 flex-1">{t(item.labelKey, item.label)}</span>
                 {n > 0 ? (
                   <span className="shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-tight text-white">

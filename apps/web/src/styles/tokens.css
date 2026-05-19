@@ -7,6 +7,20 @@
   --color-header: #f8fafc;
   --color-table-header: #f1f5f9;
   --color-toolbar-well: #eef2f7;
+  --color-topbar-bg: #163b73;
+  --color-topbar-border: #0f2d56;
+  --color-topbar-fg: #ffffff;
+  --color-topbar-fg-muted: rgba(255, 255, 255, 0.88);
+  --color-topbar-fg-subtle: rgba(255, 255, 255, 0.72);
+  --color-topbar-hover-bg: rgba(255, 255, 255, 0.1);
+  --color-topbar-hover-border: rgba(255, 255, 255, 0.18);
+  --color-topbar-active-bg: #ffffff;
+  --color-topbar-active-fg: #163b73;
+  --color-topbar-active-border: rgba(255, 255, 255, 0.35);
+  --color-topbar-chrome-btn-bg: #ffffff;
+  --color-topbar-chrome-btn-border: rgba(255, 255, 255, 0.35);
+  --color-topbar-chrome-btn-hover: #f8fafc;
+  --color-topbar-chrome-btn-fg: #163b73;
 
   --color-border: #e2e8f0;
   --color-border-dark: #cbd5e1;
@@ -129,6 +143,7 @@
   --layout-mobile-keyboard-pad: 1rem;
 
   --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.25);
+  --focus-ring-topbar: 0 0 0 3px rgba(255, 255, 255, 0.35);
 
   --motion-duration-fast: 150ms;
   --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);

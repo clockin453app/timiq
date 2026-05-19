@@ -46,14 +46,47 @@ export const uiClasses = {
   touchTarget: "min-h-[44px] min-w-[44px] touch-manipulation",
 
   shellTopBar: [
-    "border-b border-[var(--color-border)] bg-[var(--color-sheet)]",
-    "shadow-[var(--shadow-card)]",
+    "border-b border-[var(--color-topbar-border)] bg-[var(--color-topbar-bg)]",
+    "text-[var(--color-topbar-fg-muted)] shadow-sm",
+  ].join(" "),
+
+  topBarFocusRing: "focus-visible:outline-none focus-visible:shadow-[var(--focus-ring-topbar)]",
+
+  topBarBrandTitle: "m-0 text-base font-semibold leading-snug tracking-tight text-[var(--color-topbar-fg)]",
+
+  topBarBrandSubtitle: "m-0 text-xs leading-tight text-[var(--color-topbar-fg-subtle)]",
+
+  topBarNavLinkIdle: [
+    "border-transparent text-[var(--color-topbar-fg-muted)]",
+    "hover:border-[var(--color-topbar-hover-border)] hover:bg-[var(--color-topbar-hover-bg)] hover:text-[var(--color-topbar-fg)]",
+  ].join(" "),
+
+  topBarNavLinkActive: [
+    "border-[var(--color-topbar-active-border)] bg-[var(--color-topbar-active-bg)] text-[var(--color-topbar-active-fg)]",
+    "hover:bg-[var(--color-topbar-active-bg)] hover:text-[var(--color-topbar-active-fg)]",
+  ].join(" "),
+
+  topBarNavTriggerIdle: [
+    "border-transparent text-[var(--color-topbar-fg-muted)]",
+    "hover:border-[var(--color-topbar-hover-border)] hover:bg-[var(--color-topbar-hover-bg)] hover:text-[var(--color-topbar-fg)]",
+  ].join(" "),
+
+  topBarNavTriggerOpen: [
+    "border-[var(--color-topbar-active-border)] bg-[var(--color-topbar-active-bg)] text-[var(--color-topbar-active-fg)]",
+    "hover:bg-[var(--color-topbar-active-bg)] hover:text-[var(--color-topbar-active-fg)]",
+  ].join(" "),
+
+  topBarChromeButton: [
+    "inline-flex shrink-0 items-center justify-center rounded-[var(--radius-md)] border",
+    "border-[var(--color-topbar-chrome-btn-border)] bg-[var(--color-topbar-chrome-btn-bg)]",
+    "text-[var(--color-topbar-chrome-btn-fg)]",
+    "hover:bg-[var(--color-topbar-chrome-btn-hover)] hover:text-[var(--color-topbar-chrome-btn-fg)]",
   ].join(" "),
 
   shellMain: "px-[var(--space-page-x)] py-[var(--space-page-y)]",
 
   navLinkBase:
-    "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-sm font-medium whitespace-nowrap",
+    "inline-flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius-md)] border px-2.5 text-sm font-semibold whitespace-nowrap",
 
   navLinkIdle: [
     "border-transparent text-[var(--color-text-muted)]",
@@ -65,7 +98,7 @@ export const uiClasses = {
   ].join(" "),
 
   navTriggerBase:
-    "inline-flex h-9 items-center gap-1 rounded-[var(--radius-md)] border px-2.5 text-sm font-medium whitespace-nowrap",
+    "inline-flex h-9 shrink-0 items-center gap-2 rounded-[var(--radius-md)] border px-2.5 text-sm font-semibold whitespace-nowrap",
 
   navTriggerIdle: [
     "border-transparent text-[var(--color-text-muted)]",
@@ -82,7 +115,7 @@ export const uiClasses = {
   ].join(" "),
 
   navDropdownItem: [
-    "mx-1 flex items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2.5 py-2",
+    "mx-1 flex items-center gap-2.5 rounded-[var(--radius-md)] border border-transparent px-2.5 py-2",
     "text-sm font-medium break-words text-[var(--color-text)]",
     "outline-none transition-colors",
     "hover:border-[var(--color-border)] hover:bg-[var(--color-header)]",

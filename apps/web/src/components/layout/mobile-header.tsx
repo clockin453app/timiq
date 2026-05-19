@@ -26,6 +26,7 @@ type MobileHeaderProps = {
 function mobileDrawerLinkClass(active: boolean): string {
   return cn(
     uiClasses.navDrawerLinkBase,
+    "gap-2.5",
     uiClasses.transitionColors,
     active ? uiClasses.navDrawerLinkActive : uiClasses.navDrawerLinkIdle,
   );
@@ -84,8 +85,10 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     >
       <div className="relative z-[60] flex min-w-0 items-center justify-between gap-3 px-3 py-2.5">
         <div className="min-w-0">
-          <p className="truncate font-bold tracking-tight text-[var(--color-text)]">{t("nav.tagline", "TimIQ")}</p>
-          <p className="truncate text-xs text-[var(--color-text-muted)]">{t("nav.tagline_sub", "Payroll & workforce")}</p>
+          <p className={cn(uiClasses.topBarBrandTitle, "truncate")}>{t("nav.tagline", "TimIQ")}</p>
+          <p className={cn(uiClasses.topBarBrandSubtitle, "truncate")}>
+            {t("nav.tagline_sub", "Payroll & workforce")}
+          </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
@@ -103,9 +106,9 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             aria-label={menuLabel}
             className={cn(
               "timiq-touch-target flex items-center px-3 text-sm font-semibold",
-              uiClasses.headerIconButton,
+              uiClasses.topBarChromeButton,
               uiClasses.transitionColors,
-              uiClasses.focusRing,
+              uiClasses.topBarFocusRing,
             )}
             type="button"
             onClick={toggleMenu}
@@ -188,19 +191,21 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
 
             <div className="shrink-0 border-t border-[var(--color-border)] bg-[var(--color-header)] p-2 pb-[max(0.75rem,calc(var(--layout-mobile-bottom-nav-height)+env(safe-area-inset-bottom,0px)))]">
               <Link
-                className="block min-h-[44px] rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+                className={mobileDrawerLinkClass(activeHref === "/profile")}
                 href="/profile"
                 onClick={closeMenu}
               >
-                {t("nav.profile", "Profile")}
+                <NavItemIcon labelKey="nav.profile" />
+                <span className="min-w-0 flex-1">{t("nav.profile", "Profile")}</span>
               </Link>
               {!limited ? (
                 <Link
-                  className="block min-h-[44px] rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
+                  className={mobileDrawerLinkClass(activeHref === "/settings")}
                   href="/settings"
                   onClick={closeMenu}
                 >
-                  {t("nav.settings", "Settings")}
+                  <NavItemIcon labelKey="nav.settings" />
+                  <span className="min-w-0 flex-1">{t("nav.settings", "Settings")}</span>
                 </Link>
               ) : null}
               <div className="mt-1 px-1">
