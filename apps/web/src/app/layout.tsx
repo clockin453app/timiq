@@ -6,7 +6,7 @@ import "../styles/globals.css";
 import "../styles/typography.css";
 
 export const viewport: Viewport = {
-  themeColor: "#eef0f2",
+  themeColor: "#f1f5f9",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

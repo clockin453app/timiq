@@ -1,72 +1,150 @@
 :root {
-  /* Silver-grey field / construction workspace */
-  --color-page: #eef0f2;
-  --color-sidebar-bg: #e8eaed;
+  /* App surfaces */
+  --color-page: #f1f5f9;
+  --color-sidebar-bg: #e8edf3;
   --color-sheet: #ffffff;
   --color-cell: #ffffff;
-  --color-header: #d5d9de;
-  --color-table-header: #d9dde2;
-  --color-toolbar-well: #c9d0d8;
+  --color-header: #f8fafc;
+  --color-table-header: #f1f5f9;
+  --color-toolbar-well: #eef2f7;
 
-  --color-border: #c8ced6;
-  --color-border-dark: #b8c0c8;
+  --color-border: #e2e8f0;
+  --color-border-dark: #cbd5e1;
 
-  --color-text: #1a1d21;
-  --color-text-muted: #3d4349;
-  --color-text-soft: #5c636b;
+  --color-text: #0f172a;
+  --color-text-muted: #475569;
+  --color-text-soft: #64748b;
 
-  /* Default field button (grey) */
-  --color-btn-default-bg: #f8f9fa;
-  --color-btn-default-border: #aeb6bf;
-  --color-btn-default-hover: #e9ecef;
+  /* Brand / link blue */
+  --color-brand: #2563eb;
+  --color-brand-hover: #1d4ed8;
+  --color-brand-foreground: #ffffff;
+  --color-brand-muted: #eff6ff;
+
+  /* Default neutral button */
+  --color-btn-default-bg: #ffffff;
+  --color-btn-default-border: #cbd5e1;
+  --color-btn-default-hover: #f8fafc;
   --color-btn-active-bg: #ffffff;
-  --color-btn-active-border: #8b95a1; /* active tab / segment */
+  --color-btn-active-border: #94a3b8;
 
-  /* Primary / action outline (blue, business software) */
-  --color-action-border: #2f6fae;
-  --color-action-text: #2f6fae;
-  --color-action-hover-bg: #eef5fc;
+  /* Solid primary button (Button variant="primary") */
+  --color-btn-primary-bg: var(--color-brand);
+  --color-btn-primary-border: var(--color-brand);
+  --color-btn-primary-fg: var(--color-brand-foreground);
+  --color-btn-primary-hover-bg: var(--color-brand-hover);
 
-  /* Legacy names used by timiq-button-primary + some Tailwind refs */
+  /* Outline / link actions (legacy pages + timiq-button-primary) */
+  --color-action-border: var(--color-brand);
+  --color-action-text: var(--color-brand);
+  --color-action-hover-bg: var(--color-brand-muted);
+
+  /*
+   * Legacy: white fill for outline-style controls in pages that predate solid primary.
+   * Prefer --color-brand for new code; migrate pages to Button in later UI batches.
+   */
   --color-primary: #ffffff;
-  --color-primary-hover: var(--color-action-hover-bg);
-  --color-primary-border: var(--color-action-border);
+  --color-primary-hover: var(--color-brand-muted);
+  --color-primary-border: var(--color-brand);
+  --color-primary-surface: #ffffff;
 
   --color-input: #ffffff;
 
-  --color-table-total-bg: #e8ebef;
-  --color-empty-panel-bg: #e4e7eb;
+  --color-table-total-bg: #f1f5f9;
+  --color-empty-panel-bg: #f1f5f9;
 
   --color-danger-50: #fef2f2;
   --color-danger-700: #991b1b;
 
-  --color-success-50: #e8f5eb;
-  --color-success-700: #166534;
+  --color-success-50: #ecfdf5;
+  --color-success-700: #047857;
 
-  --color-warning-50: #e8eaed;
+  --color-warning-50: #fffbeb;
   --color-warning-700: #b45309;
 
+  --color-info-50: #eff6ff;
+  --color-info-700: #1d4ed8;
+
+  /* Payroll status semantics */
+  --color-status-pending-bg: var(--color-warning-50);
+  --color-status-pending-fg: #92400e;
+  --color-status-pending-border: rgba(180, 83, 9, 0.25);
+
+  --color-status-approved-bg: var(--color-success-50);
+  --color-status-approved-fg: var(--color-success-700);
+  --color-status-approved-border: rgba(4, 120, 87, 0.25);
+
+  --color-status-paid-bg: #f1f5f9;
+  --color-status-paid-fg: #0f172a;
+  --color-status-paid-border: rgba(100, 116, 139, 0.35);
+
+  --color-status-muted-bg: var(--color-header);
+  --color-status-muted-fg: var(--color-text-muted);
+  --color-status-muted-border: var(--color-border-dark);
+
+  /* Payment mode badges */
+  --color-payment-net-bg: #fffbeb;
+  --color-payment-net-fg: #92400e;
+  --color-payment-net-border: rgba(217, 119, 6, 0.35);
+
+  --color-payment-gross-bg: #faf5ff;
+  --color-payment-gross-fg: #581c87;
+  --color-payment-gross-border: rgba(147, 51, 234, 0.3);
+
+  --color-payment-unknown-bg: #f8fafc;
+  --color-payment-unknown-fg: #64748b;
+  --color-payment-unknown-border: #e2e8f0;
+
   --font-sans:
-    Calibri, Arial, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
-    "Segoe UI", sans-serif;
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Arial, sans-serif;
 
-  --radius-sm: 0.125rem;
-  --radius-md: 0.1875rem;
-  --radius-lg: 0.25rem;
-  --radius-xl: 0.25rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 9999px;
 
-  --shadow-card: none;
-  --shadow-soft: none;
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-soft: 0 4px 12px rgba(15, 23, 42, 0.06);
+  --shadow-dropdown: 0 10px 30px rgba(15, 23, 42, 0.12);
+  --shadow-modal: 0 20px 50px rgba(15, 23, 42, 0.16);
+
+  --space-page-x: 1rem;
+  --space-page-y: 1rem;
+  --space-card: 1rem;
+  --space-section: 1.5rem;
+  --space-table-cell-x: 0.75rem;
+  --space-table-cell-y: 0.625rem;
+  --space-form-gap: 1rem;
+  --space-modal: 1.25rem;
 
   --layout-sidebar-width: 15.5rem;
   --layout-sidebar-collapsed: 4.25rem;
   --layout-topbar-height: 4rem;
   --layout-topbar-brand-width: 10.5rem;
   --layout-topbar-divider-height: 2rem;
-  /* Bottom bar + iOS home indicator / safe area (used by app shell padding) */
   --layout-mobile-bottom-nav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
-  /* Extra scroll room above bottom nav when the virtual keyboard is open */
   --layout-mobile-keyboard-pad: 1rem;
 
-  --focus-ring: 0 0 0 2px rgba(47, 111, 174, 0.35);
+  --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.25);
+
+  --motion-duration-fast: 150ms;
+  --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media (min-width: 640px) {
+  :root {
+    --space-page-x: 1.5rem;
+    --space-page-y: 1.25rem;
+    --space-card: 1.25rem;
+  }
+}
+
+@media (min-width: 1280px) {
+  :root {
+    --space-page-x: 2rem;
+    --space-page-y: 1.5rem;
+  }
 }

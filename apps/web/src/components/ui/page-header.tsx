@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 
 type PageHeaderProps = {
   title: string;
@@ -12,7 +13,7 @@ type PageHeaderProps = {
 
 export function PageHeader({ action, description, title, titleClassName }: PageHeaderProps) {
   return (
-    <div className="timiq-sheet-header flex w-full min-w-0 flex-col items-stretch gap-3 px-3 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-4 md:px-5 md:py-3.5">
+    <div className={cn(uiClasses.pageHeader)}>
       <div className="min-w-0 flex-1">
         <h1 className={cn("break-words", titleClassName ?? "timiq-title-lg")}>{title}</h1>
 

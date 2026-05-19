@@ -1,6 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 
 import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 type ButtonSize = "sm" | "md" | "lg";
@@ -13,11 +14,11 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "border border-[var(--color-action-border)] bg-[var(--color-primary)] text-[var(--color-action-text)] hover:bg-[var(--color-action-hover-bg)]",
+    "border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] text-[var(--color-btn-primary-fg)] hover:bg-[var(--color-btn-primary-hover-bg)] hover:border-[var(--color-btn-primary-hover-bg)]",
   secondary:
     "border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]",
   ghost:
-    "border border-transparent bg-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)]",
+    "border border-transparent bg-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]",
   danger:
     "border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] text-[var(--color-danger-700)] hover:bg-[var(--color-danger-700)] hover:text-white",
 };
@@ -37,6 +38,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       className={cn(
         "inline-flex items-center justify-center rounded-[var(--radius-md)] font-semibold disabled:pointer-events-none disabled:opacity-60",
+        uiClasses.transitionColors,
+        uiClasses.focusRing,
         variantClasses[variant],
         sizeClasses[size],
         className,
