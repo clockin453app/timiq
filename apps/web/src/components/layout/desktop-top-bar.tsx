@@ -102,19 +102,19 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
             <div
               className={cn(
                 "absolute right-0 z-[60] mt-1.5 w-60 max-w-[calc(100vw-1rem)]",
-                uiClasses.navDropdownPanel,
+                uiClasses.topBarDropdownPanel,
               )}
             >
-              <p className="truncate px-3 py-2 text-xs text-[var(--color-text-muted)]" title={user.email}>
+              <p className="truncate px-3 py-2 text-xs text-[var(--color-topbar-fg-subtle)]" title={user.email}>
                 {user.email}
               </p>
               <p className="px-3 pb-2">
-                <span className="inline-flex max-w-full truncate rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-header)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                <span className="inline-flex max-w-full truncate rounded-[var(--radius-full)] border border-[var(--color-topbar-hover-border)] bg-[var(--color-topbar-hover-bg)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--color-topbar-fg)]">
                   {t(roleLabelKey(user.system_role), formatSystemRole(user.system_role))}
                 </span>
               </p>
               <Link
-                className={cn(uiClasses.navDropdownItem, uiClasses.transitionColors)}
+                className={cn(uiClasses.topBarDropdownItem, uiClasses.transitionColors)}
                 href="/profile"
                 role="menuitem"
               >
@@ -123,7 +123,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
               </Link>
               {!limited ? (
                 <Link
-                  className={cn(uiClasses.navDropdownItem, uiClasses.transitionColors)}
+                  className={cn(uiClasses.topBarDropdownItem, uiClasses.transitionColors)}
                   href="/settings"
                   role="menuitem"
                 >
@@ -131,7 +131,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
                   <span className="min-w-0 flex-1">{t("nav.settings", "Settings")}</span>
                 </Link>
               ) : null}
-              <div className="border-t border-[var(--color-border)] px-2 py-2">
+              <div className="border-t border-[var(--color-topbar-hover-border)] px-2 py-2">
                 <LogoutButton className="w-full" />
               </div>
             </div>

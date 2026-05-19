@@ -3,6 +3,9 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
+
 type NavDropdownPortalProps = {
   anchorEl: HTMLElement | null;
   open: boolean;
@@ -74,7 +77,7 @@ export function NavDropdownPortal(props: NavDropdownPortalProps) {
   return createPortal(
     <div
       ref={menuRef}
-      className="timiq-nav-dropdown-panel rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[var(--shadow-dropdown)]"
+      className={cn("timiq-nav-dropdown-panel", uiClasses.topBarDropdownPanel)}
       id={props.menuId}
       role="menu"
       style={{

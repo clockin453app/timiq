@@ -220,9 +220,9 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
             return (
               <Link
                 className={cn(
-                  uiClasses.navDropdownItem,
+                  uiClasses.topBarDropdownItem,
                   uiClasses.transitionColors,
-                  isChildActive ? uiClasses.navDropdownItemActive : undefined,
+                  isChildActive ? uiClasses.topBarDropdownItemActive : undefined,
                 )}
                 href={item.href}
                 key={item.href}

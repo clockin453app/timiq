@@ -109,6 +109,7 @@ export const uiClasses = {
     "border-[var(--color-brand)]/25 bg-[var(--color-brand-muted)] text-[var(--color-text)]",
   ].join(" "),
 
+  /** White dropdown panels (mobile drawer, legacy). */
   navDropdownPanel: [
     "rounded-[var(--radius-lg)] border border-[var(--color-border-dark)]",
     "bg-[var(--color-sheet)] py-1 shadow-[var(--shadow-dropdown)]",
@@ -125,6 +126,25 @@ export const uiClasses = {
   navDropdownItemActive: [
     "border-[var(--color-brand)]/30 bg-[var(--color-brand-muted)] text-[var(--color-brand-hover)]",
     "hover:bg-[var(--color-brand-muted)]",
+  ].join(" "),
+
+  /** Navy-themed desktop top-bar dropdown (matches chrome). */
+  topBarDropdownPanel: [
+    "rounded-[var(--radius-lg)] border border-[var(--color-topbar-hover-border)]",
+    "bg-[var(--color-topbar-bg)] py-1.5 shadow-[var(--shadow-dropdown)]",
+  ].join(" "),
+
+  topBarDropdownItem: [
+    "mx-1 flex items-center gap-2.5 rounded-[var(--radius-md)] border border-transparent px-2.5 py-2",
+    "text-sm font-medium break-words text-[var(--color-topbar-fg-muted)]",
+    "outline-none transition-colors",
+    "hover:border-[var(--color-topbar-hover-border)] hover:bg-[var(--color-topbar-hover-bg)] hover:text-[var(--color-topbar-fg)]",
+    "focus-visible:shadow-[var(--focus-ring-topbar)]",
+  ].join(" "),
+
+  topBarDropdownItemActive: [
+    "border-[var(--color-topbar-active-border)] bg-[var(--color-topbar-active-bg)] font-semibold text-[var(--color-topbar-active-fg)]",
+    "hover:border-[var(--color-topbar-active-border)] hover:bg-[var(--color-topbar-active-bg)] hover:text-[var(--color-topbar-active-fg)]",
   ].join(" "),
 
   navDrawerLinkBase:
