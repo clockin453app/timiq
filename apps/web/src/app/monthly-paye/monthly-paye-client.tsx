@@ -298,17 +298,30 @@ export function MonthlyPayeClient() {
         title="Monthly PAYE Report"
         description="Monthly PAYE supports fixed monthly salary, hourly PAYE from completed time shifts, monthly-threshold overtime, bonus and commission components, PAYE payslips, and employee PAYE Pay History. RTI/HMRC submission, P45/P60, statutory pay, auto-enrolment assessment, and pension opt-out refunds are not enabled yet."
         action={
-          <Button
-            disabled={loading || actionLoading !== "" || !activeCompanyId || !canRecalculate}
-            onClick={() => void runAction("recalculate")}
-            size="sm"
-          >
-            {actionLoading === "recalculate" ? "Recalculating..." : "Recalculate month"}
-          </Button>
+          <div className="flex max-w-sm flex-col items-end gap-1">
+            <Button
+              disabled={loading || actionLoading !== "" || !activeCompanyId || !canRecalculate}
+              onClick={() => void runAction("recalculate")}
+              size="sm"
+            >
+              {actionLoading === "recalculate" ? "Recalculating..." : "Recalculate month"}
+            </Button>
+            <p className="timiq-caption max-w-sm text-right text-[var(--color-text-muted)]">
+              If time records or pay components changed, press Recalculate month before approving, marking paid, or
+              viewing payslips.
+            </p>
+          </div>
         }
       />
       <SheetBody className="space-y-4">
         {error ? <AlertBanner tone="danger">{error}</AlertBanner> : null}
+
+        <AlertBanner tone="info">
+          PAYE values are calculated and stored when you recalculate the selected tax month. Bonus, commission, and
+          additional pay are included according to their taxable, NI-able, and pensionable settings. Tax and YTD on each
+          row reflect the selected tax month; cumulative PAYE uses prior months in the same tax year, so amounts can
+          differ when you change month.
+        </AlertBanner>
 
         <SectionCard description={periodLabel} title="Period & filters">
           <form className="space-y-3" onSubmit={submit}>
@@ -485,6 +498,11 @@ export function MonthlyPayeClient() {
             />
           </div>
         </SectionCard>
+
+        <AlertBanner tone="info">
+          Gross pay can differ from taxable pay when a component is not taxable or not NI-able. Bonus and commission are
+          shown separately; Additional pay is the total of those components for the month.
+        </AlertBanner>
 
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
           <PayeStatCard
