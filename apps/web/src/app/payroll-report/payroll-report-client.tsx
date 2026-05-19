@@ -13,9 +13,11 @@ import {
   Button,
   Card,
   PageHeader,
+  PaymentBadge,
   SectionCard,
   Sheet,
   SheetBody,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
@@ -213,16 +215,13 @@ function storedPaymentMode(value: string | null | undefined): "net_payment" | "g
   return null;
 }
 
-function paymentTypeBadgeClass(mode: "net_payment" | "gross_payment" | null): string {
-  const base = "inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold";
-  if (mode === "gross_payment") {
-    return `${base} border-purple-300 bg-purple-50 text-purple-950`;
-  }
-  if (mode === "net_payment") {
-    return `${base} border-amber-300 bg-amber-50 text-amber-950`;
-  }
-  return `${base} border-slate-200 bg-slate-50 text-slate-600`;
-}
+const payrollTableCell = "align-top py-2 text-[13px]";
+const payrollTableMoney = "timiq-money tabular-nums";
+const payrollRowActionBtn = cn("min-h-8 px-2 py-1 text-xs", uiClasses.focusRing);
+const payrollExpandBtn = cn(
+  "min-h-8 w-8 shrink-0 px-0 text-xs font-semibold tabular-nums",
+  uiClasses.focusRing,
+);
 
 function formatShiftDateTime(iso: string, timeZone: string): string {
   const d = new Date(iso);
@@ -280,8 +279,18 @@ function PayrollEmployeeIdentity(props: {
   className?: string;
   linked?: boolean;
   withAvatar?: boolean;
+  nameClassName?: string;
+  emailClassName?: string;
 }) {
   const { primary, secondary } = payrollEmployeeDisplayLines(props);
+  const nameClass =
+    props.nameClassName ?? "text-[13px] font-medium leading-snug text-[#111827]";
+  const emailClass =
+    props.emailClassName ?? "mt-0.5 text-xs leading-snug text-[var(--color-text-muted)]";
+  const avatarNameClass =
+    props.nameClassName ?? "truncate text-[13px] font-medium leading-snug text-[#111827]";
+  const avatarEmailClass =
+    props.emailClassName ?? "mt-0.5 truncate text-xs leading-snug text-[var(--color-text-muted)]";
   const content =
     props.withAvatar && props.user_id ? (
       <div className={`flex min-w-0 items-center gap-2 ${props.className ?? ""}`}>
@@ -291,17 +300,17 @@ function PayrollEmployeeIdentity(props: {
           userId={props.user_id}
         />
         <div className="min-w-0">
-          <div className="truncate text-[13px] font-medium leading-snug text-[#111827]">{primary}</div>
+          <div className={avatarNameClass}>{primary}</div>
           {secondary ? (
-            <div className="mt-0.5 truncate text-xs leading-snug text-[var(--color-text-muted)]">{secondary}</div>
+            <div className={avatarEmailClass}>{secondary}</div>
           ) : null}
         </div>
       </div>
     ) : (
       <div className={props.className}>
-        <div className="text-[13px] font-medium leading-snug text-[#111827]">{primary}</div>
+        <div className={nameClass}>{primary}</div>
         {secondary ? (
-          <div className="mt-0.5 text-xs leading-snug text-[var(--color-text-muted)]">{secondary}</div>
+          <div className={emailClass}>{secondary}</div>
         ) : null}
       </div>
     );
@@ -1459,23 +1468,23 @@ export function PayrollReportClient() {
                   Payroll locked — paid rows cannot be rebuilt.
                 </AlertBanner>
               ) : null}
-              <div className="timiq-scroll-x w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[13px] [&_thead_th]:font-semibold [&_thead_th]:text-[#111827]">
+              <div className={cn(uiClasses.tableWrap, "timiq-scroll-x w-full min-w-0")}>
                 <Table className="min-w-full">
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-8" />
-                    <TableHead>{t("payroll.report.col_employee", "Employee")}</TableHead>
-                    <TableHead>{t("employees.col_role", "Role")}</TableHead>
-                    <TableHead>{t("payroll.report.col_hours", "Hours")}</TableHead>
-                    <TableHead>{t("payroll.report.col_ot_hours", "OT hours")}</TableHead>
-                    <TableHead>{t("payroll.report.col_gross", "Gross")}</TableHead>
-                    <TableHead>{t("payroll.report.col_cis", "CIS tax")}</TableHead>
-                    <TableHead>{t("payroll.report.col_net", "Net pay")}</TableHead>
-                    <TableHead>{t("payroll.report.col_payment_type", "Payment type")}</TableHead>
-                    <TableHead>{t("payroll.report.col_other_ded", "Other ded.")}</TableHead>
-                    <TableHead>{t("payroll.report.col_notes", "Notes")}</TableHead>
-                    <TableHead>{t("payroll.report.col_status", "Status")}</TableHead>
-                    <TableHead>{t("payroll.report.col_actions", "Actions")}</TableHead>
+                    <TableHead className="w-10 py-2 text-xs font-semibold normal-case tracking-normal" />
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_employee", "Employee")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("employees.col_role", "Role")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_hours", "Hours")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_ot_hours", "OT hours")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_gross", "Gross")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_cis", "CIS tax")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_net", "Net pay")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_payment_type", "Payment type")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_other_ded", "Other ded.")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_notes", "Notes")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_status", "Status")}</TableHead>
+                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_actions", "Actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1488,14 +1497,14 @@ export function PayrollReportClient() {
                   ) : null}
                   {!loading && !hasCompany ? (
                     <TableRow>
-                      <TableCell className="py-8 text-center text-sm text-[#374151]" colSpan={13}>
+                      <TableCell className="py-8 text-center text-sm text-[var(--color-text-muted)]" colSpan={13}>
                         {t("payroll.report.choose_company_table", "Choose a company in the toolbar to load this table.")}
                       </TableCell>
                     </TableRow>
                   ) : null}
                   {!loading && hasCompany && report && report.items.length === 0 ? (
                     <TableRow>
-                      <TableCell className="py-8 text-center text-sm text-[#374151]" colSpan={13}>
+                      <TableCell className="py-8 text-center text-sm text-[var(--color-text-muted)]" colSpan={13}>
                         {payrollPeriodNotCalculated
                           ? t(
                               "payroll.report.empty_not_calc",
@@ -1517,11 +1526,12 @@ export function PayrollReportClient() {
                         const paymentModeLabel = row.payment_mode_label || "Not provided";
                         return (
                         <Fragment key={row.id}>
-                          <TableRow>
-                            <TableCell className="align-top">
+                          <TableRow className="transition-colors hover:bg-[var(--color-header)]/40">
+                            <TableCell className={payrollTableCell}>
                               <Button
+                                aria-expanded={expandedUserId === row.user_id}
                                 aria-label="View shift details"
-                                className="min-h-8 px-1 py-0 text-xs"
+                                className={payrollExpandBtn}
                                 onClick={() => toggleExpandShifts(row.user_id)}
                                 title="View shift details"
                                 type="button"
@@ -1530,30 +1540,38 @@ export function PayrollReportClient() {
                                 {expandedUserId === row.user_id ? "−" : "+"}
                               </Button>
                             </TableCell>
-                            <TableCell className="max-w-[14rem] min-w-0 align-top text-[13px]">
+                            <TableCell className={cn(payrollTableCell, "max-w-[14rem] min-w-0")}>
                               <PayrollEmployeeIdentity
                                 employee_email={row.employee_email}
                                 employee_name={row.employee_name}
                                 linked
+                                nameClassName="truncate text-[13px] font-semibold leading-snug text-[var(--color-text)]"
+                                emailClassName="mt-0.5 truncate text-xs leading-snug text-[var(--color-text-muted)]"
                                 user_id={row.user_id}
                                 withAvatar
                               />
                             </TableCell>
-                            <TableCell className="max-w-[8rem] truncate align-top text-[13px] text-[var(--color-text-muted)]">
+                            <TableCell className={cn(payrollTableCell, "max-w-[8rem] truncate text-[var(--color-text-muted)]")}>
                               {row.employee_job_title ?? "—"}
                             </TableCell>
-                            <TableCell className="align-top text-[13px] tabular-nums">
+                            <TableCell className={cn(payrollTableCell, "tabular-nums")}>
                               {formatHoursFromSeconds(row.regular_seconds)}
                             </TableCell>
-                            <TableCell className="align-top text-[13px] tabular-nums">
+                            <TableCell className={cn(payrollTableCell, "tabular-nums")}>
                               {formatHoursFromSeconds(row.overtime_seconds)}
                             </TableCell>
-                            <TableCell className={`align-top text-[13px] ${payMode === "gross_payment" ? "font-semibold text-[#111827]" : ""}`}>
+                            <TableCell
+                              className={cn(
+                                payrollTableCell,
+                                payrollTableMoney,
+                                payMode === "gross_payment" && "font-semibold text-[var(--color-text)]",
+                              )}
+                            >
                               {row.rate_missing
                                 ? t("payroll.report.rate_not_set", "Rate not set")
                                 : formatMoneyGBP(row.gross_amount)}
                             </TableCell>
-                            <TableCell className="align-top text-[13px]">
+                            <TableCell className={cn(payrollTableCell, payrollTableMoney)}>
                               {formatMoneyGBP(
                                 effectiveDisplayedTaxAmount(
                                   row.display_tax_amount,
@@ -1562,31 +1580,38 @@ export function PayrollReportClient() {
                                 ),
                               )}
                             </TableCell>
-                            <TableCell className={`align-top text-[13px] ${payMode === "net_payment" ? "font-semibold text-[#111827]" : ""}`}>
+                            <TableCell
+                              className={cn(
+                                payrollTableCell,
+                                payrollTableMoney,
+                                payMode === "net_payment" && "font-semibold text-[var(--color-text)]",
+                              )}
+                            >
                               {formatMoneyGBP(row.display_net_amount ?? row.net_amount)}
                             </TableCell>
-                            <TableCell className="align-top text-[13px]">
-                              <span className={paymentTypeBadgeClass(payMode)}>{paymentModeLabel}</span>
+                            <TableCell className={payrollTableCell}>
+                              <PaymentBadge mode={payMode}>{paymentModeLabel}</PaymentBadge>
                             </TableCell>
-                            <TableCell className="align-top text-[13px]">
+                            <TableCell className={cn(payrollTableCell, payrollTableMoney)}>
                               {formatMoneyGBP(row.other_deductions_amount)}
                             </TableCell>
-                            <TableCell className="max-w-[8rem] truncate align-top text-[13px] text-[var(--color-text-muted)]">
-                              {row.notes?.trim() ? row.notes : "—"}
+                            <TableCell
+                              className={cn(payrollTableCell, "max-w-[10rem] min-w-0 text-[var(--color-text-muted)]")}
+                              title={row.notes?.trim() || undefined}
+                            >
+                              <span className="block truncate">{row.notes?.trim() ? row.notes : "—"}</span>
                             </TableCell>
-                            <TableCell className="align-top text-[13px]">
-                              <span
-                                className={`inline-block rounded px-2 py-0.5 text-xs font-bold uppercase ${statusBadgeClass(row.status)}`}
-                              >
+                            <TableCell className={payrollTableCell}>
+                              <StatusBadge status={row.status}>
                                 {statusBadgeLabel(t, row.status)}
                                 {row.status === "paid" ? t("payroll.report.locked_suffix", " · Locked") : ""}
-                              </span>
+                              </StatusBadge>
                             </TableCell>
-                            <TableCell className="align-top">
+                            <TableCell className={payrollTableCell}>
                               <div className="flex flex-nowrap gap-1">
                                 {row.status === "pending" ? (
                                   <Button
-                                    className="min-h-8 px-2 py-1 text-xs"
+                                    className={payrollRowActionBtn}
                                     disabled={busyId === row.id || payrollNeedsRecalculation}
                                     onClick={() => rowAction(row.id, "approve")}
                                     type="button"
@@ -1597,7 +1622,7 @@ export function PayrollReportClient() {
                                 {row.status === "approved" ? (
                                   <>
                                     <Button
-                                      className="min-h-8 px-2 py-1 text-xs"
+                                      className={payrollRowActionBtn}
                                       disabled={busyId === row.id}
                                       onClick={() => rowAction(row.id, "unlock")}
                                       type="button"
@@ -1605,7 +1630,7 @@ export function PayrollReportClient() {
                                       {t("payroll.report.unlock", "Unlock")}
                                     </Button>
                                     <Button
-                                      className="min-h-8 px-2 py-1 text-xs"
+                                      className={payrollRowActionBtn}
                                       disabled={busyId === row.id}
                                       onClick={() => rowAction(row.id, "paid")}
                                       type="button"
@@ -1620,7 +1645,7 @@ export function PayrollReportClient() {
                                     aria-expanded={rowActionMenu?.row.id === row.id}
                                     aria-haspopup="menu"
                                     aria-label={t("payroll.report.row_more_actions", "More payroll row actions")}
-                                    className="min-h-8 px-2 py-1 text-xs"
+                                    className={payrollRowActionBtn}
                                     disabled={busyId === row.id}
                                     onClick={(event) => openRowActionMenu(row, lateBlock, event.currentTarget)}
                                     title={t("payroll.report.row_more_actions", "More payroll row actions")}
@@ -1635,8 +1660,8 @@ export function PayrollReportClient() {
                           </TableRow>
                           {expandedUserId === row.user_id ? (
                             <TableRow>
-                              <TableCell className="bg-[var(--color-header)]/50" colSpan={13}>
-                                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-[#374151]">
+                              <TableCell className="bg-[var(--color-header)]/60 py-3" colSpan={13}>
+                                <p className="timiq-caption mb-2 font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
                                   Shift lines (this week)
                                 </p>
                                 <div className="mb-2">
@@ -1677,8 +1702,8 @@ export function PayrollReportClient() {
                                                 key={s.shift_id}
                                                 className={
                                                   isOpen
-                                                    ? "border-b border-amber-800/25 bg-amber-50/80"
-                                                    : "border-b border-[var(--color-border)]"
+                                                    ? "border-b border-[var(--color-warning-700)]/20 bg-[var(--color-warning-50)]"
+                                                    : "border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-header)]/30"
                                                 }
                                               >
                                                 <td className="py-1 pr-2 text-[var(--color-text-muted)]">
@@ -1702,9 +1727,9 @@ export function PayrollReportClient() {
                                                 </td>
                                                 <td className="py-1 pr-2">
                                                   {isOpen ? (
-                                                    <span className="inline-block rounded border border-amber-800/30 bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase text-amber-950">
+                                                    <Badge className="text-[10px]" tone="warning">
                                                       Open shift
-                                                    </span>
+                                                    </Badge>
                                                   ) : (
                                                     <span className="text-[var(--color-text-muted)]">{s.status}</span>
                                                   )}
@@ -1733,11 +1758,11 @@ export function PayrollReportClient() {
                                   </div>
                                 )}
                                 {lateBlock && lateBlock.shifts.length > 0 ? (
-                                  <div className="mt-4 border-t border-amber-800/25 pt-3">
-                                    <p className="mb-2 text-xs font-bold uppercase tracking-wide text-amber-950">
+                                  <div className="mt-4 border-t border-[var(--color-warning-700)]/25 pt-3">
+                                    <p className="timiq-caption mb-2 font-semibold uppercase tracking-wide text-[var(--color-warning-700)]">
                                       Unpaid late shifts (completed after payroll was paid)
                                     </p>
-                                    <p className="mb-2 text-[11px] leading-relaxed text-amber-950/90">
+                                    <p className="mb-2 text-[11px] leading-relaxed text-[var(--color-text-muted)]">
                                       Est. gross {formatMoneyGBP(lateBlock.estimated_gross_amount)} · CIS{" "}
                                       {formatMoneyGBP(lateBlock.estimated_cis_tax_amount)} · net{" "}
                                       {formatMoneyGBP(lateBlock.estimated_net_amount)} for these shifts (pending
@@ -1746,7 +1771,7 @@ export function PayrollReportClient() {
                                     <div className="min-w-0 max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
                                       <table className="w-full min-w-[28rem] border-collapse text-left text-xs">
                                         <thead>
-                                          <tr className="border-b border-amber-800/30 text-amber-950/80">
+                                          <tr className="border-b border-[var(--color-warning-700)]/30 text-[var(--color-warning-700)]">
                                             <th className="py-1 pr-2">Clock in</th>
                                             <th className="py-1 pr-2">Clock out</th>
                                             <th className="py-1 pr-2">Rounded</th>
@@ -1755,7 +1780,7 @@ export function PayrollReportClient() {
                                         </thead>
                                         <tbody>
                                           {lateBlock.shifts.map((ls) => (
-                                            <tr key={ls.shift_id} className="border-b border-amber-800/15">
+                                            <tr key={ls.shift_id} className="border-b border-[var(--color-border)]">
                                               <td className="py-1 pr-2 tabular-nums">
                                                 {formatShiftDateTime(ls.clock_in_at, policyTimeZone)}
                                               </td>
