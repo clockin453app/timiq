@@ -12,6 +12,8 @@ import {
 
 import { canAccessManagement, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 import { useT } from "../../lib/i18n";
 
 type MobileBottomNavProps = {
@@ -67,18 +69,22 @@ export function MobileBottomNav({ activeHref = "/dashboard" }: MobileBottomNavPr
 
   return (
     <nav
-      className={`timiq-print-hide-chrome fixed inset-x-0 bottom-0 z-30 grid ${colClass} border-t border-[var(--color-border-dark)] bg-[var(--color-header)] pb-[env(safe-area-inset-bottom,0px)] text-[11px] leading-tight xl:hidden`}
+      className={cn(
+        "timiq-print-hide-chrome fixed inset-x-0 bottom-0 z-30 grid pb-[env(safe-area-inset-bottom,0px)] text-[11px] leading-tight xl:hidden",
+        colClass,
+        uiClasses.bottomNavBar,
+      )}
     >
       {links.map((item) => {
         const Icon = item.Icon;
         const active = activeHref === item.href;
         return (
           <Link
-            className={
-              active
-                ? "flex min-h-[44px] min-w-0 flex-col items-center justify-center gap-0.5 border-r border-[var(--color-border)] bg-[var(--color-btn-active-bg)] px-1 py-1 text-center font-bold text-[var(--color-text)]"
-                : "flex min-h-[44px] min-w-0 flex-col items-center justify-center gap-0.5 border-r border-[var(--color-border)] px-1 py-1 text-center text-[var(--color-text-muted)] hover:bg-[var(--color-cell)]"
-            }
+            className={cn(
+              uiClasses.bottomNavItemBase,
+              uiClasses.transitionColors,
+              active ? uiClasses.bottomNavItemActive : uiClasses.bottomNavItemIdle,
+            )}
             href={item.href}
             key={item.href}
             aria-label={t(item.labelKey, item.fallback)}

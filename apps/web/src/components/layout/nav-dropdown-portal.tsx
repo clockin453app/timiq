@@ -74,7 +74,7 @@ export function NavDropdownPortal(props: NavDropdownPortalProps) {
   return createPortal(
     <div
       ref={menuRef}
-      className="timiq-nav-dropdown-panel rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]"
+      className="timiq-nav-dropdown-panel rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[var(--shadow-dropdown)]"
       id={props.menuId}
       role="menu"
       style={{

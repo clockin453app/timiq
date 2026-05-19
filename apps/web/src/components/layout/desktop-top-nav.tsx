@@ -11,6 +11,9 @@ import { useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { useT } from "../../lib/i18n";
 
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
+
 import { navItemMatchesActive } from "./grouped-nav";
 import { NavDropdownPortal, navDropdownMenuContains } from "./nav-dropdown-portal";
 import { NavItemIcon } from "./nav-item-icon";
@@ -23,16 +26,6 @@ type OpenMenuState = {
   id: string;
   anchor: HTMLButtonElement;
 } | null;
-
-const directLinkActiveClass =
-  "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)]";
-const directLinkIdleClass =
-  "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] hover:text-[var(--color-text)]";
-
-const dropdownTriggerOpenClass =
-  "border-[var(--color-border)] bg-[var(--color-cell)] text-[var(--color-text)]";
-const dropdownTriggerIdleClass =
-  "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] hover:text-[var(--color-text)]";
 
 function NavGroupTrigger(props: {
   groupId: string;
@@ -47,10 +40,12 @@ function NavGroupTrigger(props: {
       aria-controls={`timiq-nav-menu-${props.groupId}`}
       aria-expanded={props.isOpen}
       aria-haspopup="menu"
-      className={[
-        "inline-flex h-9 items-center gap-1 rounded-[var(--radius-md)] border px-2.5 text-sm font-medium whitespace-nowrap",
-        props.isOpen ? dropdownTriggerOpenClass : dropdownTriggerIdleClass,
-      ].join(" ")}
+      className={cn(
+        uiClasses.navTriggerBase,
+        uiClasses.transitionColors,
+        uiClasses.focusRing,
+        props.isOpen ? uiClasses.navTriggerOpen : uiClasses.navTriggerIdle,
+      )}
       type="button"
       onFocus={(event) => props.onFocusSwitch(event.currentTarget)}
       onMouseEnter={(event) => props.onHoverSwitch(event.currentTarget)}
@@ -166,10 +161,12 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
             return (
               <Link
                 key={group.id}
-                className={[
-                  "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-[var(--radius-md)] border px-2.5 text-sm font-medium whitespace-nowrap",
-                  isDirectActive ? directLinkActiveClass : directLinkIdleClass,
-                ].join(" ")}
+                className={cn(
+                  uiClasses.navLinkBase,
+                  uiClasses.transitionColors,
+                  uiClasses.focusRing,
+                  isDirectActive ? uiClasses.navLinkActive : uiClasses.navLinkIdle,
+                )}
                 href={only.href}
               >
                 <NavItemIcon labelKey={only.labelKey} className="h-4 w-4 shrink-0" />
@@ -214,12 +211,11 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
             const n = navBadges[item.href] ?? 0;
             return (
               <Link
-                className={[
-                  "mx-1 flex items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2.5 py-2 text-sm font-medium break-words outline-none transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] focus-visible:ring-offset-1",
-                  isChildActive
-                    ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-active-bg)]"
-                    : "text-[var(--color-text)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] focus-visible:border-[var(--color-border-dark)]",
-                ].join(" ")}
+                className={cn(
+                  uiClasses.navDropdownItem,
+                  uiClasses.transitionColors,
+                  isChildActive ? uiClasses.navDropdownItemActive : undefined,
+                )}
                 href={item.href}
                 key={item.href}
                 role="menuitem"

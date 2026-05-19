@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
 
 import type { NavigationGroupDefinition, SystemRole } from "../../config/navigation";
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 import { useT } from "../../lib/i18n";
 import { NavItemIcon } from "./nav-item-icon";
 
@@ -83,18 +85,22 @@ function clearLegacyNavStorage(scope: string, role: SystemRole) {
 }
 
 function linkClass(active: boolean, variant: GroupedNavVariant, withIcon: boolean): string {
-  const base =
-    variant === "sidebar"
-      ? withIcon
-        ? "flex min-w-0 max-w-full items-center gap-2 break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium text-[#1f2937] transition-colors"
-        : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium text-[#1f2937] transition-colors"
-      : withIcon
-        ? "flex min-h-[44px] min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-3 py-2.5 text-sm font-medium text-[#1f2937]"
-        : "block min-h-[44px] min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-3 py-2.5 text-sm font-medium text-[#1f2937]";
-  if (active) {
-    return `${base} border-[var(--color-border-dark)] bg-[#e5e7eb] font-semibold text-[#111827]`;
+  if (variant === "drawer") {
+    return cn(
+      uiClasses.navDrawerLinkBase,
+      uiClasses.transitionColors,
+      withIcon ? "gap-2.5" : "block",
+      active ? uiClasses.navDrawerLinkActive : uiClasses.navDrawerLinkIdle,
+    );
   }
-  return `${base} border-transparent hover:border-[var(--color-border)] hover:bg-[#e5e7eb] hover:text-[#111827]`;
+  const sidebarBase = withIcon
+    ? "flex min-w-0 max-w-full items-center gap-2 break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium"
+    : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium";
+  return cn(
+    sidebarBase,
+    uiClasses.transitionColors,
+    active ? uiClasses.navDrawerLinkActive : uiClasses.navDrawerLinkIdle,
+  );
 }
 
 export function GroupedNavBlock({
@@ -207,26 +213,26 @@ export function GroupedNavBlock({
           <div key={group.id}>
             <button
               aria-expanded={isOpen}
-              className={[
-                "flex w-full min-w-0 items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2 py-1.5 text-left text-sm font-medium text-[#1f2937]",
-                isOpen
-                  ? "border-[var(--color-border-dark)] bg-[#e5e7eb] text-[#111827]"
-                  : "border-transparent text-[#1f2937] hover:border-[var(--color-border)] hover:bg-[#e5e7eb]/80",
-              ].join(" ")}
+              className={cn(
+                uiClasses.navAccordionHeader,
+                uiClasses.transitionColors,
+                uiClasses.focusRing,
+                isOpen ? uiClasses.navAccordionHeaderOpen : uiClasses.navAccordionHeaderIdle,
+              )}
               type="button"
               onClick={() => onGroupHeaderClick(group.id)}
             >
               <span className="min-w-0 truncate">{t(group.groupLabelKey, group.label)}</span>
               <ChevronDown
                 aria-hidden
-                className={[
-                  "h-4 w-4 shrink-0 text-[#6b7280] transition-transform duration-150",
+                className={cn(
+                  "h-4 w-4 shrink-0 text-[var(--color-text-soft)] transition-transform duration-150",
                   isOpen ? "rotate-180" : "",
-                ].join(" ")}
+                )}
               />
             </button>
             {isOpen ? (
-              <div className="mt-1 space-y-0.5 border-l border-[var(--color-border-dark)] pl-2.5">
+              <div className="mt-1 space-y-0.5 border-l border-[var(--color-border)] pl-2.5">
                 {visible.map((item) => {
                   const active = navItemMatchesActive(item.href, activeHref);
                   const n = badgeByHref[item.href] ?? 0;

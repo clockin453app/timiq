@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  /* Legacy alias used by auth links and nav focus styles */
+  --color-accent: var(--color-brand);
+}
+
 * {
   box-sizing: border-box;
 }

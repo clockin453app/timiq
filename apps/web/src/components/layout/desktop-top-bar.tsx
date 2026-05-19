@@ -6,6 +6,8 @@ import { UserAvatar } from "../user-avatar";
 import { getDefaultLandingPath } from "../../config/navigation";
 import { formatSystemRole, LogoutButton, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 import { useT } from "../../lib/i18n";
 
 import { DesktopTopNav } from "./desktop-top-nav";
@@ -35,7 +37,12 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
   const t = useT();
 
   return (
-    <header className="timiq-print-hide-chrome sticky top-0 z-40 hidden min-h-[var(--layout-topbar-height)] w-full min-w-0 shrink-0 flex-col overflow-visible border-b border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[0_1px_0_rgba(15,23,42,0.04)] xl:flex">
+    <header
+      className={cn(
+        "timiq-print-hide-chrome sticky top-0 z-40 hidden min-h-[var(--layout-topbar-height)] w-full min-w-0 shrink-0 flex-col overflow-visible xl:flex",
+        uiClasses.shellTopBar,
+      )}
+    >
       <div className="flex min-h-[var(--layout-topbar-height)] w-full min-w-0 items-center pr-4">
         <div className="flex min-h-[var(--layout-topbar-height)] w-[var(--layout-topbar-brand-width)] min-w-[9.5rem] max-w-[11.25rem] shrink-0 flex-col justify-center px-4">
           <Link
@@ -50,7 +57,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
         </div>
 
         <div
-          className="h-[var(--layout-topbar-divider-height)] shrink-0 border-l border-[var(--color-border-dark)]"
+          className="h-[var(--layout-topbar-divider-height)] shrink-0 border-l border-[var(--color-border)]"
           aria-hidden
           role="presentation"
         />
@@ -70,10 +77,17 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
           <details className="relative shrink-0">
             <summary
               aria-label={t("shell.account_menu", "Account menu")}
-              className="timiq-touch-target list-none [&::-webkit-details-marker]:hidden"
+              className={cn(
+                "timiq-touch-target list-none [&::-webkit-details-marker]:hidden",
+                uiClasses.focusRing,
+              )}
             >
               <span
-                className="inline-flex h-9 max-w-[10rem] cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] px-2.5 text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)] sm:max-w-[14rem]"
+                className={cn(
+                  "inline-flex h-9 max-w-[10rem] cursor-pointer items-center gap-2 rounded-[var(--radius-md)] border px-2.5 sm:max-w-[14rem]",
+                  uiClasses.headerIconButton,
+                  uiClasses.transitionColors,
+                )}
                 title={t("shell.account_menu", "Account menu")}
               >
                 <span className="min-w-0 truncate text-xs font-medium" title={user.email}>
@@ -81,24 +95,37 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
                 </span>
               </span>
             </summary>
-            <div className="absolute right-0 z-[60] mt-1 w-60 max-w-[calc(100vw-1rem)] rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] py-1 shadow-[0_10px_28px_rgba(15,23,42,0.16)]">
+            <div
+              className={cn(
+                "absolute right-0 z-[60] mt-1.5 w-60 max-w-[calc(100vw-1rem)]",
+                uiClasses.navDropdownPanel,
+              )}
+            >
               <p className="truncate px-3 py-2 text-xs text-[var(--color-text-muted)]" title={user.email}>
                 {user.email}
               </p>
               <p className="px-3 pb-2">
-                <span className="inline-flex max-w-full truncate rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
+                <span className="inline-flex max-w-full truncate rounded-[var(--radius-full)] border border-[var(--color-border)] bg-[var(--color-header)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
                   {t(roleLabelKey(user.system_role), formatSystemRole(user.system_role))}
                 </span>
               </p>
               <Link
-                className="block px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-cell)]"
+                className={cn(
+                  "block px-3 py-2 text-sm text-[var(--color-text)]",
+                  uiClasses.transitionColors,
+                  "hover:bg-[var(--color-header)]",
+                )}
                 href="/profile"
               >
                 {t("nav.profile", "Profile")}
               </Link>
               {!limited ? (
                 <Link
-                  className="block px-3 py-2 text-sm text-[var(--color-text)] hover:bg-[var(--color-cell)]"
+                  className={cn(
+                    "block px-3 py-2 text-sm text-[var(--color-text)]",
+                    uiClasses.transitionColors,
+                    "hover:bg-[var(--color-header)]",
+                  )}
                   href="/settings"
                 >
                   {t("nav.settings", "Settings")}

@@ -25,7 +25,7 @@ export function AppShell({ activeHref = "/dashboard", children }: AppShellProps)
       <MobileHeader activeHref={activeHref} />
 
       <main className="timiq-app-main flex min-h-0 min-w-0 flex-1 flex-col overflow-x-clip">
-        <div className="box-border min-h-0 w-full min-w-0 flex-1 overflow-x-clip overflow-y-auto px-3 py-4 pb-[calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad))] sm:px-6 sm:py-5 xl:px-8 xl:py-6 xl:pb-6">
+        <div className="box-border min-h-0 w-full min-w-0 flex-1 overflow-x-clip overflow-y-auto px-[var(--space-page-x)] py-[var(--space-page-y)] pb-[calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad))] xl:pb-[var(--space-page-y)]">
           <PageLocationActionProvider>
             <PageLocationGuide activeHref={activeHref} />
             <LimitedAccessRouteGuard>{children}</LimitedAccessRouteGuard>
