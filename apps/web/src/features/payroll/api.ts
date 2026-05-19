@@ -313,6 +313,7 @@ export async function fetchPayrollMonthSummary(
 
 export async function fetchPayrollPaymentHistory(params: {
   companyId: string;
+  weekStart?: string;
   dateFrom?: string;
   dateTo?: string;
   employeeUserId?: string | null;
@@ -320,8 +321,9 @@ export async function fetchPayrollPaymentHistory(params: {
   const response = await fetch(
     `${API_URL}/api/payroll/payment-history?${qs({
       company_id: params.companyId,
-      date_from: params.dateFrom,
-      date_to: params.dateTo,
+      week_start: params.weekStart,
+      date_from: params.weekStart ? undefined : params.dateFrom,
+      date_to: params.weekStart ? undefined : params.dateTo,
       employee_user_id: params.employeeUserId ?? undefined,
     })}`,
     { credentials: "include" },

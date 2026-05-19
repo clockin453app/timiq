@@ -774,8 +774,7 @@ export function PayrollReportClient() {
     try {
       const rows = await fetchPayrollPaymentHistory({
         companyId: activeCompanyId,
-        dateFrom: exportDateFrom || undefined,
-        dateTo: exportDateTo || undefined,
+        weekStart,
         employeeUserId: appliedEmployeeId || null,
       });
       setPaymentHistory(rows);
@@ -804,7 +803,7 @@ export function PayrollReportClient() {
   useEffect(() => {
     loadPaymentHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCompanyId, exportDateFrom, exportDateTo, appliedEmployeeId]);
+  }, [activeCompanyId, weekStart, appliedEmployeeId]);
 
   useEffect(() => {
     if (!payrollSaveMessage) {

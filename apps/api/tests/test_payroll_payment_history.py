@@ -81,8 +81,81 @@ def test_payment_history_passes_date_and_employee_filters_to_repository() -> Non
     kwargs = repo.call_args.kwargs
     assert kwargs["company_id"] == company_id
     assert kwargs["employee_user_id"] == employee_id
+    assert kwargs.get("payroll_week_start") is None
     assert kwargs["paid_at_from"] == datetime(2026, 5, 1, tzinfo=timezone.utc)
     assert kwargs["paid_at_before"] == datetime(2026, 6, 1, tzinfo=timezone.utc)
+
+
+def test_payment_history_passes_week_start_to_repository() -> None:
+    company_id = uuid.uuid4()
+    employee_id = uuid.uuid4()
+    week = date(2026, 5, 18)
+
+    with (
+        patch("app.modules.payroll.service._assert_valid_range_filter") as validate_filter,
+        patch("app.modules.payroll.service.list_paid_items_for_company_payment_history", return_value=[]) as repo,
+    ):
+        list_payroll_payment_history(
+            MagicMock(),
+            _actor(),
+            company_id=company_id,
+            week_start=week,
+            employee_user_id=employee_id,
+        )
+
+    validate_filter.assert_called_once()
+    kwargs = repo.call_args.kwargs
+    assert kwargs["company_id"] == company_id
+    assert kwargs["employee_user_id"] == employee_id
+    assert kwargs["payroll_week_start"] == week
+    assert kwargs.get("paid_at_from") is None
+    assert kwargs.get("paid_at_before") is None
+
+
+def test_payment_history_week_start_ignores_date_range() -> None:
+    company_id = uuid.uuid4()
+
+    with (
+        patch("app.modules.payroll.service._assert_valid_range_filter"),
+        patch("app.modules.payroll.service.list_paid_items_for_company_payment_history", return_value=[]) as repo,
+    ):
+        list_payroll_payment_history(
+            MagicMock(),
+            _actor(),
+            company_id=company_id,
+            week_start=date(2026, 5, 18),
+            date_from=date(2026, 5, 1),
+            date_to=date(2026, 5, 31),
+        )
+
+    kwargs = repo.call_args.kwargs
+    assert kwargs["payroll_week_start"] == date(2026, 5, 18)
+    assert kwargs.get("paid_at_from") is None
+    assert kwargs.get("paid_at_before") is None
+
+
+def test_payment_history_includes_selected_payroll_week() -> None:
+    company_id = uuid.uuid4()
+    paid = _item(status="paid")
+    period = SimpleNamespace(week_start=date(2026, 5, 18))
+
+    with (
+        patch(
+            "app.modules.payroll.service.list_paid_items_for_company_payment_history",
+            return_value=[(paid, period)],
+        ),
+        patch("app.modules.payroll.service._employee_display", return_value=("employee@example.com", "Employee", None)),
+    ):
+        rows = list_payroll_payment_history(
+            MagicMock(),
+            _actor(),
+            company_id=company_id,
+            week_start=date(2026, 5, 18),
+        )
+
+    assert len(rows) == 1
+    assert rows[0].week_start == date(2026, 5, 18)
+    assert rows[0].week_end == date(2026, 5, 24)
 
 
 def test_payment_history_rejects_invalid_date_range() -> None:

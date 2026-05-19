@@ -130,6 +130,7 @@ def payroll_month_summary(
 @router.get("/payment-history", response_model=list[PayrollPaymentHistoryRow])
 def payroll_payment_history(
     company_id: uuid.UUID = Query(...),
+    week_start: date | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     employee_user_id: uuid.UUID | None = Query(default=None),
@@ -141,6 +142,7 @@ def payroll_payment_history(
             db_session,
             current_user,
             company_id=company_id,
+            week_start=week_start,
             date_from=date_from,
             date_to=date_to,
             employee_user_id=employee_user_id,

@@ -281,6 +281,7 @@ def list_paid_items_for_company_payment_history(
     db_session: Session,
     *,
     company_id: uuid.UUID,
+    payroll_week_start: date | None = None,
     paid_at_from: datetime | None = None,
     paid_at_before: datetime | None = None,
     employee_user_id: uuid.UUID | None = None,
@@ -292,6 +293,8 @@ def list_paid_items_for_company_payment_history(
         .where(PayrollItem.status == "paid")
         .where(PayrollItem.paid_at.is_not(None))
     )
+    if payroll_week_start is not None:
+        statement = statement.where(PayrollPeriod.week_start == payroll_week_start)
     if paid_at_from is not None:
         statement = statement.where(PayrollItem.paid_at >= paid_at_from)
     if paid_at_before is not None:

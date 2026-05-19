@@ -2335,32 +2335,42 @@ def list_payroll_payment_history(
     actor: User,
     *,
     company_id: uuid.UUID,
+    week_start: date | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     employee_user_id: uuid.UUID | None = None,
 ) -> list[PayrollPaymentHistoryRow]:
+    """Paid payroll history. When ``week_start`` is set, filter by payroll period week (ignores paid date range)."""
     assert_payroll_admin_or_administrator(actor)
     assert_payroll_company_scope(actor, company_id)
-    if date_from is not None and date_to is not None and date_from > date_to:
-        raise PayrollError("date_from must be before or equal to date_to.")
     _assert_valid_range_filter(
         db_session,
         company_id=company_id,
         employee_user_id=employee_user_id,
     )
-    paid_at_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
-    paid_at_before = (
-        datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
-        if date_to
-        else None
-    )
-    rows = list_paid_items_for_company_payment_history(
-        db_session,
-        company_id=company_id,
-        paid_at_from=paid_at_from,
-        paid_at_before=paid_at_before,
-        employee_user_id=employee_user_id,
-    )
+    if week_start is not None:
+        rows = list_paid_items_for_company_payment_history(
+            db_session,
+            company_id=company_id,
+            payroll_week_start=week_start,
+            employee_user_id=employee_user_id,
+        )
+    else:
+        if date_from is not None and date_to is not None and date_from > date_to:
+            raise PayrollError("date_from must be before or equal to date_to.")
+        paid_at_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
+        paid_at_before = (
+            datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
+            if date_to
+            else None
+        )
+        rows = list_paid_items_for_company_payment_history(
+            db_session,
+            company_id=company_id,
+            paid_at_from=paid_at_from,
+            paid_at_before=paid_at_before,
+            employee_user_id=employee_user_id,
+        )
     out: list[PayrollPaymentHistoryRow] = []
     for item, period in rows:
         if item.status != "paid" or item.paid_at is None:
