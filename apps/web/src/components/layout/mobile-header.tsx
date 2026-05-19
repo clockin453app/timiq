@@ -81,7 +81,8 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   return (
     <header
       className={cn(
-        "timiq-print-hide-chrome sticky top-0 z-30 w-full min-w-0 overflow-x-clip pt-[env(safe-area-inset-top,0px)] xl:hidden",
+        "timiq-print-hide-chrome sticky top-0 w-full min-w-0 overflow-x-clip pt-[env(safe-area-inset-top,0px)] xl:hidden",
+        menuOpen ? "z-[1100]" : "z-30",
         uiClasses.shellTopBar,
       )}
     >
