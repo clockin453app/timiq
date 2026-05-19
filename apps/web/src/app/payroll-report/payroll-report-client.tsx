@@ -8,8 +8,11 @@ import { FileDown, FileSpreadsheet, FileText, Printer } from "lucide-react";
 import { WeekPickerBar } from "../../components/week-picker-bar";
 import { usePageLocationAction } from "../../components/layout/page-location-action-context";
 import {
+  AlertBanner,
+  Badge,
   Button,
   PageHeader,
+  SectionCard,
   Sheet,
   SheetBody,
   Table,
@@ -19,6 +22,8 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui";
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 import { isAdministrator, listManagedUsers, useCurrentUser, type AuthUser } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
 import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
@@ -174,20 +179,6 @@ function payrollSplitBarPercent(value: string | null | undefined, total: string 
     return 0;
   }
   return Math.max(0, Math.min(100, (amount / gross) * 100));
-}
-
-function payrollStatusChipClass(tone: "info" | "warning" | "danger" | "success"): string {
-  const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold";
-  if (tone === "danger") {
-    return `${base} border-red-800/25 bg-red-50 text-red-900`;
-  }
-  if (tone === "warning") {
-    return `${base} border-amber-800/25 bg-amber-50 text-amber-950`;
-  }
-  if (tone === "success") {
-    return `${base} border-emerald-800/25 bg-emerald-50 text-emerald-900`;
-  }
-  return `${base} border-slate-300 bg-slate-50 text-slate-800`;
 }
 
 function normalizePaymentMode(value: string | null | undefined): "net_payment" | "gross_payment" {
@@ -1237,13 +1228,13 @@ export function PayrollReportClient() {
       return null;
     }
     return (
-      <>
+      <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5">
         {chipGroups.attention.map((chip) => (
-          <span className={payrollStatusChipClass(chip.tone)} key={chip.label}>
+          <Badge key={chip.label} tone={chip.tone}>
             {chip.label}
-          </span>
+          </Badge>
         ))}
-      </>
+      </div>
     );
   }, [chipGroups.attention]);
 
@@ -1262,18 +1253,21 @@ export function PayrollReportClient() {
           "payroll.report.subtitle",
           "Weekly payroll, approvals, and exports. Week is defined by the company time policy timezone.",
         )}
-        titleClassName="text-xl font-bold tracking-tight text-[#111827] md:text-2xl"
       />
       <SheetBody className="min-w-0 space-y-5">
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-sm">
+        <SectionCard
+          description={t(
+            "payroll.report.range_export_help",
+            "Recalculate and approval apply to the selected payroll week. PDF/CSV downloads use the selected date range and employee filter.",
+          )}
+          title={t("payroll.report.filters_title", "Payroll week & filters")}
+        >
           <div className="space-y-4">
             {isAdministrator(user) ? (
-              <div>
-                <label className="block text-xs font-bold text-[#111827]">
-                  {t("payroll.report.company", "Company")}
-                </label>
+              <label className={uiClasses.payeFilterLabel}>
+                {t("payroll.report.company", "Company")}
                 <select
-                  className="timiq-select mt-1.5 h-10 w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] pl-3 text-sm font-medium text-[#111827]"
+                  className={uiClasses.payeFilterSelect}
                   onChange={(event) => companyScope.setCompanyId(event.target.value)}
                   value={companyScope.companyId ?? ""}
                 >
@@ -1284,9 +1278,9 @@ export function PayrollReportClient() {
                     </option>
                   ))}
                 </select>
-              </div>
+              </label>
             ) : (
-              <p className="text-sm text-[var(--color-text-muted)]">
+              <p className="timiq-caption">
                 {t("payroll.report.company_scope_admin", "Company scope: your assigned company only.")}
               </p>
             )}
@@ -1301,28 +1295,28 @@ export function PayrollReportClient() {
                   weekStartIso={weekStart}
                 />
               </div>
-              <label className="block text-xs font-bold text-[#111827] xl:w-36">
+              <label className={cn(uiClasses.payeFilterLabel, "xl:w-36")}>
                 {t("payroll.report.date_from", "Date from")}
                 <input
-                  className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-3 text-sm font-medium text-[#111827]"
+                  className={uiClasses.payeFilterInput}
                   onChange={(event) => setExportDateFrom(event.target.value)}
                   type="date"
                   value={exportDateFrom}
                 />
               </label>
-              <label className="block text-xs font-bold text-[#111827] xl:w-36">
+              <label className={cn(uiClasses.payeFilterLabel, "xl:w-36")}>
                 {t("payroll.report.date_to", "Date to")}
                 <input
-                  className="mt-1.5 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-3 text-sm font-medium text-[#111827]"
+                  className={uiClasses.payeFilterInput}
                   onChange={(event) => setExportDateTo(event.target.value)}
                   type="date"
                   value={exportDateTo}
                 />
               </label>
-              <label className="block w-full min-w-0 text-xs font-bold text-[#111827] sm:min-w-[12rem] xl:w-56">
+              <label className={cn(uiClasses.payeFilterLabel, "w-full min-w-0 sm:min-w-[12rem] xl:w-56")}>
                 {t("payroll.report.employee_label", "Employee")}
                 <select
-                  className="timiq-select mt-1.5 h-10 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] pl-3 text-sm font-medium text-[#111827]"
+                  className={uiClasses.payeFilterSelect}
                   disabled={!activeCompanyId}
                   onChange={(event) => setDraftEmployeeId(event.target.value)}
                   value={draftEmployeeId}
@@ -1335,74 +1329,51 @@ export function PayrollReportClient() {
                   ))}
                 </select>
               </label>
-              <div className="flex flex-wrap gap-2">
+              <div className={uiClasses.payeActionToolbar}>
                 <Button
                   disabled={loading || !activeCompanyId}
                   onClick={applyEmployeeFilter}
+                  size="sm"
                   type="button"
                   variant="secondary"
                 >
                   {t("payroll.report.apply_filter", "Apply filter")}
                 </Button>
-                <Button disabled={loading || !activeCompanyId} onClick={() => loadReport()} type="button">
+                <Button
+                  disabled={loading || !activeCompanyId}
+                  onClick={() => loadReport()}
+                  size="sm"
+                  type="button"
+                >
                   {t("payroll.report.refresh", "Refresh")}
                 </Button>
               </div>
             </div>
-            <p className="text-xs leading-relaxed text-[var(--color-text-muted)]">
-              {t(
-                "payroll.report.range_export_help",
-                "Recalculate and approval apply to the selected payroll week. PDF/CSV downloads use the selected date range and employee filter.",
-              )}
-            </p>
-
           </div>
-        </div>
+        </SectionCard>
 
         {!hasCompany && isAdministrator(user) ? (
-          <div
-            className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-4 py-3 text-sm font-medium text-[#1f2937]"
-            role="status"
-          >
+          <AlertBanner tone="info">
             {t("payroll.report.select_company_banner", "Select a company to load payroll.")}
-          </div>
+          </AlertBanner>
         ) : null}
 
-        {error ? (
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
-            {error}
-          </div>
-        ) : null}
+        {error ? <AlertBanner tone="danger">{error}</AlertBanner> : null}
 
-        {payrollSaveMessage ? (
-          <div
-            className="rounded-[var(--radius-md)] border border-emerald-800/25 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-950"
-            role="status"
-          >
-            {payrollSaveMessage}
-          </div>
-        ) : null}
+        {payrollSaveMessage ? <AlertBanner tone="success">{payrollSaveMessage}</AlertBanner> : null}
 
         <div className="space-y-5">
           <div className="min-w-0 w-full space-y-5">
-            <div className="w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-sm">
-              <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0">
-                  <p className="mb-1 text-sm font-semibold text-[#111827]">Weekly payroll review</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    Summary by employee for this payroll week. Use + to view shift lines for this employee.
-                  </p>
-                  {paidRowCount > 0 ? (
-                    <p className="mt-1.5 text-xs font-medium text-slate-700">
-                      Payroll locked — paid rows cannot be rebuilt.
-                    </p>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 lg:justify-end" aria-label={t("payroll.report.actions", "Actions")}>
+            <SectionCard
+              action={
+                <div
+                  aria-label={t("payroll.report.actions", "Actions")}
+                  className={cn(uiClasses.payeActionToolbar, "gap-1.5")}
+                >
                   <Button
-                    className="h-8 px-2.5 text-xs"
                     disabled={loading || !activeCompanyId}
                     onClick={runRecalculate}
+                    size="sm"
                     type="button"
                   >
                     {payrollPeriodNotCalculated
@@ -1410,18 +1381,19 @@ export function PayrollReportClient() {
                       : t("payroll.report.recalculate", "Recalculate")}
                   </Button>
                   <Button
-                    className="h-8 border-[#1e3a8a] bg-[#1e3a8a] px-2.5 text-xs text-white hover:bg-[#1d4ed8]"
                     disabled={loading || !activeCompanyId || payrollNeedsRecalculation}
                     onClick={runApproveAll}
+                    size="sm"
                     type="button"
                   >
                     {t("payroll.report.approve_all_pending", "Approve all pending")}
                   </Button>
                   <Button
                     aria-label={t("payroll.report.export_csv_short", "Export CSV")}
-                    className="h-8 w-8 px-0"
+                    className="w-8 px-0"
                     disabled={loading || !activeCompanyId}
                     onClick={handleCsv}
+                    size="sm"
                     title={t("payroll.report.export_csv_short", "Export CSV")}
                     type="button"
                     variant="secondary"
@@ -1430,9 +1402,10 @@ export function PayrollReportClient() {
                   </Button>
                   <Button
                     aria-label={t("payroll.report.export_xlsx", "Export Excel")}
-                    className="h-8 w-8 px-0"
+                    className="w-8 px-0"
                     disabled={loading || !activeCompanyId}
                     onClick={handleExcelDownload}
+                    size="sm"
                     title={t("payroll.report.export_xlsx", "Export Excel")}
                     type="button"
                     variant="secondary"
@@ -1441,9 +1414,10 @@ export function PayrollReportClient() {
                   </Button>
                   <Button
                     aria-label={t("payroll.report.print_report", "Print report")}
-                    className="h-8 w-8 px-0"
+                    className="w-8 px-0"
                     disabled={loading || !activeCompanyId}
                     onClick={handlePrint}
+                    size="sm"
                     title={t("payroll.report.print_report", "Print report")}
                     type="button"
                     variant="secondary"
@@ -1452,9 +1426,10 @@ export function PayrollReportClient() {
                   </Button>
                   <Button
                     aria-label={t("payroll.report.export_pdf", "Download PDF report")}
-                    className="h-8 w-8 px-0"
+                    className="w-8 px-0"
                     disabled={loading || !activeCompanyId}
                     onClick={handlePdfDownload}
+                    size="sm"
                     title={t("payroll.report.export_pdf", "Download PDF report")}
                     type="button"
                     variant="secondary"
@@ -1462,7 +1437,18 @@ export function PayrollReportClient() {
                     <FileText aria-hidden="true" className="h-4 w-4" />
                   </Button>
                 </div>
-              </div>
+              }
+              description={t(
+                "payroll.report.weekly_review_help",
+                "Summary by employee for this payroll week. Use + to view shift lines for this employee.",
+              )}
+              title={t("payroll.report.weekly_review_title", "Weekly payroll review")}
+            >
+              {paidRowCount > 0 ? (
+                <AlertBanner className="mb-3" tone="warning">
+                  Payroll locked — paid rows cannot be rebuilt.
+                </AlertBanner>
+              ) : null}
               <div className="timiq-scroll-x w-full min-w-0 [&_thead]:bg-[#d4d4d8] [&_thead_th]:border-[var(--color-border-dark)] [&_thead_th]:text-[13px] [&_thead_th]:font-semibold [&_thead_th]:text-[#111827]">
                 <Table className="min-w-full">
                 <TableHeader>
@@ -1793,7 +1779,7 @@ export function PayrollReportClient() {
                 </TableBody>
               </Table>
               </div>
-            </div>
+            </SectionCard>
 
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">

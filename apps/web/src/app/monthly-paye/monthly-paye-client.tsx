@@ -3,10 +3,14 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
+  AlertBanner,
   Button,
+  Card,
   PageHeader,
+  SectionCard,
   Sheet,
   SheetBody,
+  StatusBadge,
   Table,
   TableBody,
   TableCell,
@@ -14,6 +18,8 @@ import {
   TableHeader,
   TableRow,
 } from "../../components/ui";
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 import { isAdministrator, listManagedUsers, useCurrentUser, type AuthUser } from "../../features/auth";
 import { listCompanies, type Company } from "../../features/companies/api";
 import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
@@ -64,39 +70,30 @@ function money(value: string | number | null | undefined): string {
   return new Intl.NumberFormat("en-GB", { currency: "GBP", style: "currency" }).format(n);
 }
 
-function statusBadgeClass(status: string): string {
-  if (status === "pending") return "border-amber-800/25 bg-amber-50 text-amber-950";
-  if (status === "approved") return "border-emerald-800/25 bg-emerald-50 text-emerald-900";
-  if (status === "paid") return "border-slate-500/25 bg-slate-100 text-slate-900";
-  return "border-slate-300 bg-slate-50 text-slate-700";
-}
-
-function SummaryCard(props: { label: string; value: string; hint?: string }) {
+function PayeStatCard(props: { label: string; value: string; hint?: string; emphasize?: boolean }) {
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">{props.label}</p>
-      <p className="mt-1 text-sm font-bold text-[var(--color-text)]">{props.value}</p>
-      {props.hint ? <p className="mt-1 text-xs text-[var(--color-text-muted)]">{props.hint}</p> : null}
-    </div>
+    <Card padded>
+      <p className={uiClasses.payeStatLabel}>{props.label}</p>
+      <p className={props.emphasize ? uiClasses.payeStatValueLg : uiClasses.payeStatValue}>{props.value}</p>
+      {props.hint ? <p className="timiq-caption mt-1">{props.hint}</p> : null}
+    </Card>
   );
 }
 
-function CapabilityList(props: { title: string; items: string[]; tone: "ok" | "warn" | "soon" }) {
-  const toneClass =
-    props.tone === "ok"
-      ? "border-emerald-800/20 bg-emerald-50 text-emerald-950"
-      : props.tone === "soon"
-        ? "border-blue-800/20 bg-blue-50 text-blue-950"
-        : "border-amber-800/25 bg-amber-50 text-amber-950";
+function PayeCapabilityPanel(props: {
+  title: string;
+  items: string[];
+  tone: "ok" | "warn" | "soon";
+}) {
+  const alertTone = props.tone === "ok" ? "success" : props.tone === "soon" ? "info" : "warning";
   return (
-    <div className={`rounded-[var(--radius-md)] border p-3 ${toneClass}`}>
-      <p className="text-xs font-bold uppercase tracking-wide">{props.title}</p>
-      <ul className="mt-2 space-y-1 text-xs">
+    <AlertBanner className="h-full" title={props.title} tone={alertTone}>
+      <ul className="space-y-1 text-xs leading-snug">
         {props.items.slice(0, 8).map((item) => (
-          <li key={item}>- {item}</li>
+          <li key={item}>{item}</li>
         ))}
       </ul>
-    </div>
+    </AlertBanner>
   );
 }
 
@@ -311,133 +308,134 @@ export function MonthlyPayeClient() {
         }
       />
       <SheetBody className="space-y-4">
-        {error ? (
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
-            {error}
-          </div>
-        ) : null}
+        {error ? <AlertBanner tone="danger">{error}</AlertBanner> : null}
 
-        <form
-          className="grid gap-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3 md:grid-cols-4"
-          onSubmit={submit}
-        >
-          {administratorView ? (
-            <label className="block text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-              Company
-              <select
-                className="mt-1 h-10 w-full rounded border border-[var(--color-border-dark)] bg-white px-2 text-sm"
-                onChange={(event) => companyScope.setCompanyId(event.target.value)}
-                value={companyScope.companyId ?? ""}
-              >
-                <option value="">Select company</option>
-                {companyScope.companies.map((company) => (
-                  <option key={company.id} value={company.id}>
-                    {company.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-sm">
-              Company: {selectedCompanyName ?? "Your company"}
+        <SectionCard description={periodLabel} title="Period & filters">
+          <form className="space-y-3" onSubmit={submit}>
+            {report?.period?.status ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="timiq-caption text-[var(--color-text-muted)]">Period status</span>
+                <StatusBadge status={report.period.status}>{report.period.status}</StatusBadge>
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 md:grid-cols-4">
+              {administratorView ? (
+                <label className={uiClasses.payeFilterLabel}>
+                  Company
+                  <select
+                    className={uiClasses.payeFilterSelect}
+                    onChange={(event) => companyScope.setCompanyId(event.target.value)}
+                    value={companyScope.companyId ?? ""}
+                  >
+                    <option value="">Select company</option>
+                    {companyScope.companies.map((company) => (
+                      <option key={company.id} value={company.id}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <Card className="flex items-center px-3 py-2 text-sm text-[var(--color-text)]" padded>
+                  Company: {selectedCompanyName ?? "Your company"}
+                </Card>
+              )}
+
+              <label className={uiClasses.payeFilterLabel}>
+                Tax year
+                <select className={uiClasses.payeFilterSelect} value={TAX_YEAR} disabled>
+                  <option value={TAX_YEAR}>2026-2027</option>
+                </select>
+              </label>
+
+              <label className={uiClasses.payeFilterLabel}>
+                Tax month
+                <select
+                  className={uiClasses.payeFilterSelect}
+                  onChange={(event) => setTaxMonth(Number(event.target.value))}
+                  value={taxMonth}
+                >
+                  {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+                    <option key={month} value={month}>
+                      Tax month {month}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className={uiClasses.payeFilterLabel}>
+                Employee
+                <select
+                  className={uiClasses.payeFilterSelect}
+                  onChange={(event) => setEmployeeUserId(event.target.value)}
+                  value={employeeUserId}
+                >
+                  <option value="">All employees</option>
+                  {employees.map((employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employeeName(employee)}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
-          )}
 
-          <label className="block text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-            Tax year
-            <select className="mt-1 h-10 w-full rounded border border-[var(--color-border-dark)] bg-white px-2 text-sm" value={TAX_YEAR} disabled>
-              <option value={TAX_YEAR}>2026-2027</option>
-            </select>
-          </label>
+            <div className={cn(uiClasses.payeActionToolbar, "md:col-span-4")}>
+              <Button disabled={loading || !activeCompanyId} size="sm" type="submit">
+                Apply filters
+              </Button>
+              <Button
+                disabled={actionLoading !== "" || !report?.period || !canApprove}
+                onClick={() => void runAction("approve")}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                {actionLoading === "approve" ? "Approving..." : "Approve pending"}
+              </Button>
+              <Button
+                disabled={actionLoading !== "" || !report?.period || !canMarkPaid}
+                onClick={() => void runAction("paid")}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                {actionLoading === "paid" ? "Marking paid..." : "Mark paid"}
+              </Button>
+              <Button
+                disabled={actionLoading !== "" || !report?.period || !canUnlockApproved}
+                onClick={() => void runAction("unlockApproved")}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                {actionLoading === "unlockApproved" ? "Unlocking..." : "Unlock approved"}
+              </Button>
+              <Button
+                disabled={actionLoading !== "" || !report?.period || !canUndoPaid}
+                onClick={() => void runAction("undoPaid")}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                {actionLoading === "undoPaid" ? "Undoing paid..." : "Undo paid"}
+              </Button>
+            </div>
+          </form>
+        </SectionCard>
 
-          <label className="block text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-            Tax month
-            <select
-              className="mt-1 h-10 w-full rounded border border-[var(--color-border-dark)] bg-white px-2 text-sm"
-              onChange={(event) => setTaxMonth(Number(event.target.value))}
-              value={taxMonth}
-            >
-              {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
-                <option key={month} value={month}>
-                  Tax month {month}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-            Employee
-            <select
-              className="mt-1 h-10 w-full rounded border border-[var(--color-border-dark)] bg-white px-2 text-sm"
-              onChange={(event) => setEmployeeUserId(event.target.value)}
-              value={employeeUserId}
-            >
-              <option value="">All employees</option>
-              {employees.map((employee) => (
-                <option key={employee.id} value={employee.id}>
-                  {employeeName(employee)}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex flex-wrap gap-2 md:col-span-4">
-            <Button disabled={loading || !activeCompanyId} size="sm" type="submit">
-              Apply filters
-            </Button>
-            <Button
-              disabled={actionLoading !== "" || !report?.period || !canApprove}
-              onClick={() => void runAction("approve")}
-              size="sm"
-              type="button"
-              variant="secondary"
-            >
-              {actionLoading === "approve" ? "Approving..." : "Approve pending"}
-            </Button>
-            <Button
-              disabled={actionLoading !== "" || !report?.period || !canMarkPaid}
-              onClick={() => void runAction("paid")}
-              size="sm"
-              type="button"
-              variant="secondary"
-            >
-              {actionLoading === "paid" ? "Marking paid..." : "Mark paid"}
-            </Button>
-            <Button
-              disabled={actionLoading !== "" || !report?.period || !canUnlockApproved}
-              onClick={() => void runAction("unlockApproved")}
-              size="sm"
-              type="button"
-              variant="secondary"
-            >
-              {actionLoading === "unlockApproved" ? "Unlocking..." : "Unlock approved"}
-            </Button>
-            <Button
-              disabled={actionLoading !== "" || !report?.period || !canUndoPaid}
-              onClick={() => void runAction("undoPaid")}
-              size="sm"
-              type="button"
-              variant="secondary"
-            >
-              {actionLoading === "undoPaid" ? "Undoing paid..." : "Undo paid"}
-            </Button>
-          </div>
-        </form>
-
-        <div className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+        <AlertBanner tone="warning">
           RTI/HMRC submission, P45/P60, statutory pay, auto-enrolment assessment, and pension opt-out refunds are not
           enabled yet. Use the coverage matrix below for full detail.
-        </div>
+        </AlertBanner>
 
-        <section className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
-          <div className="mb-3">
-            <p className="text-sm font-bold text-[var(--color-text)]">PAYE calculation coverage</p>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-              Informational matrix only. Unsupported features are not calculated and will continue to show as not supported.
-            </p>
-          </div>
+        <SectionCard
+          description="Informational matrix only. Unsupported features are not calculated and will continue to show as not supported."
+          title="PAYE calculation coverage"
+        >
           <div className="grid gap-2 lg:grid-cols-3">
-            <CapabilityList
+            <PayeCapabilityPanel
               title="Currently supported"
               items={
                 supportedCapabilityNames.length
@@ -458,7 +456,7 @@ export function MonthlyPayeClient() {
               }
               tone="ok"
             />
-            <CapabilityList
+            <PayeCapabilityPanel
               title="Not supported yet"
               items={
                 unsupportedCapabilityNames.length
@@ -476,7 +474,7 @@ export function MonthlyPayeClient() {
               }
               tone="warn"
             />
-            <CapabilityList
+            <PayeCapabilityPanel
               title="Coming next"
               items={
                 comingSoonCapabilityNames.length
@@ -486,186 +484,198 @@ export function MonthlyPayeClient() {
               tone="soon"
             />
           </div>
-        </section>
+        </SectionCard>
 
         <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
-          <SummaryCard label="Employees" value={String(report?.summary.employees ?? 0)} hint={`${report?.summary.unsupported_count ?? 0} unsupported`} />
-          <SummaryCard label="Total gross" value={money(report?.summary.total_gross)} />
-          <SummaryCard label="Bonus pay" value={money(report?.summary.bonus_pay)} />
-          <SummaryCard label="Commission pay" value={money(report?.summary.commission_pay)} />
-          <SummaryCard label="Additional pay" value={money(report?.summary.component_pay)} />
-          <SummaryCard label="Taxable pay" value={money(report?.summary.taxable_pay)} />
-          <SummaryCard label="PAYE tax" value={money(report?.summary.paye_tax)} />
-          <SummaryCard label="Employee NI" value={money(report?.summary.employee_ni)} />
-          <SummaryCard label="Employer NI" value={money(report?.summary.employer_ni)} />
-          <SummaryCard label="Employee pension" value={money(report?.summary.employee_pension)} />
-          <SummaryCard label="Employer pension" value={money(report?.summary.employer_pension)} />
-          <SummaryCard
+          <PayeStatCard
+            hint={`${report?.summary.unsupported_count ?? 0} unsupported`}
+            label="Employees"
+            value={String(report?.summary.employees ?? 0)}
+          />
+          <PayeStatCard label="Total gross" value={money(report?.summary.total_gross)} />
+          <PayeStatCard label="Bonus pay" value={money(report?.summary.bonus_pay)} />
+          <PayeStatCard label="Commission pay" value={money(report?.summary.commission_pay)} />
+          <PayeStatCard label="Additional pay" value={money(report?.summary.component_pay)} />
+          <PayeStatCard label="Taxable pay" value={money(report?.summary.taxable_pay)} />
+          <PayeStatCard label="PAYE tax" value={money(report?.summary.paye_tax)} />
+          <PayeStatCard label="Employee NI" value={money(report?.summary.employee_ni)} />
+          <PayeStatCard label="Employer NI" value={money(report?.summary.employer_ni)} />
+          <PayeStatCard label="Employee pension" value={money(report?.summary.employee_pension)} />
+          <PayeStatCard label="Employer pension" value={money(report?.summary.employer_pension)} />
+          <PayeStatCard
             label="Student/Postgraduate"
             value={money((Number(report?.summary.student_loans ?? 0) + Number(report?.summary.postgraduate_loans ?? 0)).toFixed(2))}
           />
-          <SummaryCard label="Net pay" value={money(report?.summary.net_pay)} />
+          <PayeStatCard emphasize label="Net pay" value={money(report?.summary.net_pay)} />
         </div>
 
-        {report?.message ? <p className="text-sm text-[var(--color-text-muted)]">{report.message}</p> : null}
-        {loading ? <p className="text-sm text-[var(--color-text-muted)]">Loading...</p> : null}
+        {report?.message ? <p className="timiq-caption">{report.message}</p> : null}
+        {loading ? <p className="timiq-caption">Loading...</p> : null}
 
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Employee</TableHead>
-              <TableHead>Pay period</TableHead>
-              <TableHead>Pay date</TableHead>
-              <TableHead>Tax code</TableHead>
-              <TableHead>NI category</TableHead>
-              <TableHead>Gross pay</TableHead>
-              <TableHead>Additional pay</TableHead>
-              <TableHead>Taxable pay</TableHead>
-              <TableHead>PAYE tax</TableHead>
-              <TableHead>Employee NI</TableHead>
-              <TableHead>Employer NI</TableHead>
-              <TableHead>Pension</TableHead>
-              <TableHead>Student/Postgraduate loan</TableHead>
-              <TableHead>Net pay</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Unsupported reason / Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {report?.rows.map((row) => (
-              <TableRow key={row.id}>
-                <TableCell>
-                  <div className="font-semibold">{row.employee_name || row.employee_email}</div>
-                  <div className="text-xs text-[var(--color-text-muted)]">{row.employee_email}</div>
-                </TableCell>
-                <TableCell>{periodLabel}</TableCell>
-                <TableCell>{report.period?.pay_date ?? "Not calculated"}</TableCell>
-                <TableCell>{row.tax_code || "Not set"}</TableCell>
-                <TableCell>{row.ni_category || "Not set"}</TableCell>
-                <TableCell>
-                  <div>{rowMoney(row, "gross_pay")}</div>
-                  {hasHourlyBreakdown(row) ? (
-                    <div className="mt-1 space-y-0.5 text-xs text-[var(--color-text-muted)]">
-                      <div>Rate: {money(row.hourly_rate)}</div>
-                      <div>
-                        Regular: {row.regular_hours ?? "0"}h / {money(row.regular_pay)}
-                      </div>
-                      <div>
-                        Overtime: {row.overtime_hours ?? "0"}h / {money(row.overtime_pay)}
-                      </div>
-                    </div>
-                  ) : null}
-                </TableCell>
-                <TableCell>
-                  <div>{rowMoney(row, "component_pay")}</div>
-                  {componentLockLabel(row) ? (
-                    <div className="mt-1 text-xs font-semibold text-[var(--color-text-muted)]">{componentLockLabel(row)}</div>
-                  ) : (
-                    <button
-                      className="mt-1 text-xs font-semibold text-[var(--color-accent)] underline"
-                      onClick={() => {
-                        setComponentEmployee(row);
-                        setEditingComponent(null);
-                      }}
-                      type="button"
-                    >
-                      Add bonus/commission
-                    </button>
-                  )}
-                  {components.filter((component) => component.user_id === row.user_id).length ? (
-                    <div className="mt-2 space-y-1 text-xs text-[var(--color-text-muted)]">
-                      {components
-                        .filter((component) => component.user_id === row.user_id)
-                        .map((component) => (
-                          <div className="flex flex-wrap items-center gap-1" key={component.id}>
-                            <span>
-                              {component.component_type}: {money(component.amount)}
-                            </span>
-                            {!componentLockLabel(row) ? (
-                              <>
-                                <button
-                                  className="font-semibold text-[var(--color-accent)] underline"
-                                  onClick={() => {
-                                    setComponentEmployee(row);
-                                    setEditingComponent(component);
-                                  }}
-                                  type="button"
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  className="font-semibold text-[var(--color-danger-700)] underline"
-                                  onClick={() =>
-                                    void deletePayePayComponent(component.id)
-                                      .then(load)
-                                      .catch((e) => setError(e instanceof Error ? e.message : "Could not delete PAYE component."))
-                                  }
-                                  type="button"
-                                >
-                                  Delete
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
-                        ))}
-                    </div>
-                  ) : null}
-                </TableCell>
-                <TableCell>{rowMoney(row, "taxable_pay")}</TableCell>
-                <TableCell>{rowMoney(row, "paye_tax")}</TableCell>
-                <TableCell>{rowMoney(row, "employee_ni")}</TableCell>
-                <TableCell>{rowMoney(row, "employer_ni")}</TableCell>
-                <TableCell>
-                  {row.unsupported_reason
-                    ? "Not supported"
-                    : `${money(row.employee_pension)} / ${money(row.employer_pension)}`}
-                </TableCell>
-                <TableCell>
-                  {row.unsupported_reason
-                    ? "Not supported"
-                    : `${money(row.student_loan)} / ${money(row.postgraduate_loan_deduction)}`}
-                </TableCell>
-                <TableCell>{rowMoney(row, "net_pay")}</TableCell>
-                <TableCell>
-                  <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold ${statusBadgeClass(row.status)}`}>
-                    {row.unsupported_reason ? "Not supported" : row.status}
-                  </span>
-                </TableCell>
-                <TableCell>
-                  {row.unsupported_reason ? (
-                    <span className="text-xs text-amber-950">{row.unsupported_reason}</span>
-                  ) : canOpenPayePayslip(row) ? (
-                    <div className="flex flex-col gap-1">
-                      <button
-                        className="text-left text-xs font-semibold text-[var(--color-accent)] underline"
-                        onClick={() => openMonthlyPayePayslip(row.id)}
-                        type="button"
-                      >
-                        View payslip
-                      </button>
-                      <button
-                        className="text-left text-xs font-semibold text-[var(--color-accent)] underline"
-                        onClick={() => void downloadMonthlyPayePayslipPdf(row.id).catch((e) => setError(e instanceof Error ? e.message : "Could not download PAYE payslip PDF."))}
-                        type="button"
-                      >
-                        Download PDF
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="text-xs text-[var(--color-text-muted)]">Managed by period actions</span>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-            {!loading && (!report || report.rows.length === 0) ? (
+        <div className={uiClasses.tableWrap}>
+          <Table>
+            <TableHeader>
               <TableRow>
-                <TableCell className="text-center text-[var(--color-text-muted)]" colSpan={16}>
-                  No real PAYE rows yet. Select a company and tax month, then recalculate the month.
-                </TableCell>
+                <TableHead>Employee</TableHead>
+                <TableHead>Pay period</TableHead>
+                <TableHead>Pay date</TableHead>
+                <TableHead>Tax code</TableHead>
+                <TableHead>NI category</TableHead>
+                <TableHead>Gross pay</TableHead>
+                <TableHead>Additional pay</TableHead>
+                <TableHead>Taxable pay</TableHead>
+                <TableHead>PAYE tax</TableHead>
+                <TableHead>Employee NI</TableHead>
+                <TableHead>Employer NI</TableHead>
+                <TableHead>Pension</TableHead>
+                <TableHead>Student/Postgraduate loan</TableHead>
+                <TableHead>Net pay</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Unsupported reason / Actions</TableHead>
               </TableRow>
-            ) : null}
-          </TableBody>
-        </Table>
+            </TableHeader>
+            <TableBody>
+              {report?.rows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <div className="font-semibold">{row.employee_name || row.employee_email}</div>
+                    <div className="timiq-caption">{row.employee_email}</div>
+                  </TableCell>
+                  <TableCell>{periodLabel}</TableCell>
+                  <TableCell>{report.period?.pay_date ?? "Not calculated"}</TableCell>
+                  <TableCell>{row.tax_code || "Not set"}</TableCell>
+                  <TableCell>{row.ni_category || "Not set"}</TableCell>
+                  <TableCell>
+                    <div>{rowMoney(row, "gross_pay")}</div>
+                    {hasHourlyBreakdown(row) ? (
+                      <div className={uiClasses.payeTableMeta}>
+                        <div>Rate: {money(row.hourly_rate)}</div>
+                        <div>
+                          Regular: {row.regular_hours ?? "0"}h / {money(row.regular_pay)}
+                        </div>
+                        <div>
+                          Overtime: {row.overtime_hours ?? "0"}h / {money(row.overtime_pay)}
+                        </div>
+                      </div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell>
+                    <div>{rowMoney(row, "component_pay")}</div>
+                    {componentLockLabel(row) ? (
+                      <div className={cn("mt-1", uiClasses.payeTableMeta, "font-semibold")}>{componentLockLabel(row)}</div>
+                    ) : (
+                      <button
+                        className={cn(uiClasses.payeLinkButton, "mt-1")}
+                        onClick={() => {
+                          setComponentEmployee(row);
+                          setEditingComponent(null);
+                        }}
+                        type="button"
+                      >
+                        Add bonus/commission
+                      </button>
+                    )}
+                    {components.filter((component) => component.user_id === row.user_id).length ? (
+                      <div className={uiClasses.payeTableMeta}>
+                        {components
+                          .filter((component) => component.user_id === row.user_id)
+                          .map((component) => (
+                            <div className="flex flex-wrap items-center gap-1" key={component.id}>
+                              <span>
+                                {component.component_type}: {money(component.amount)}
+                              </span>
+                              {!componentLockLabel(row) ? (
+                                <>
+                                  <button
+                                    className={uiClasses.payeLinkButton}
+                                    onClick={() => {
+                                      setComponentEmployee(row);
+                                      setEditingComponent(component);
+                                    }}
+                                    type="button"
+                                  >
+                                    Edit
+                                  </button>
+                                  <button
+                                    className={cn(uiClasses.payeLinkButton, "text-[var(--color-danger-700)]")}
+                                    onClick={() =>
+                                      void deletePayePayComponent(component.id)
+                                        .then(load)
+                                        .catch((e) => setError(e instanceof Error ? e.message : "Could not delete PAYE component."))
+                                    }
+                                    type="button"
+                                  >
+                                    Delete
+                                  </button>
+                                </>
+                              ) : null}
+                            </div>
+                          ))}
+                      </div>
+                    ) : null}
+                  </TableCell>
+                  <TableCell>{rowMoney(row, "taxable_pay")}</TableCell>
+                  <TableCell>{rowMoney(row, "paye_tax")}</TableCell>
+                  <TableCell>{rowMoney(row, "employee_ni")}</TableCell>
+                  <TableCell>{rowMoney(row, "employer_ni")}</TableCell>
+                  <TableCell>
+                    {row.unsupported_reason
+                      ? "Not supported"
+                      : `${money(row.employee_pension)} / ${money(row.employer_pension)}`}
+                  </TableCell>
+                  <TableCell>
+                    {row.unsupported_reason
+                      ? "Not supported"
+                      : `${money(row.student_loan)} / ${money(row.postgraduate_loan_deduction)}`}
+                  </TableCell>
+                  <TableCell>{rowMoney(row, "net_pay")}</TableCell>
+                  <TableCell>
+                    {row.unsupported_reason ? (
+                      <StatusBadge status="muted">Not supported</StatusBadge>
+                    ) : (
+                      <StatusBadge status={row.status}>{row.status}</StatusBadge>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {row.unsupported_reason ? (
+                      <span className="text-xs text-[var(--color-warning-700)]">{row.unsupported_reason}</span>
+                    ) : canOpenPayePayslip(row) ? (
+                      <div className="flex flex-col gap-1">
+                        <button
+                          className={cn(uiClasses.payeLinkButton, "text-left")}
+                          onClick={() => openMonthlyPayePayslip(row.id)}
+                          type="button"
+                        >
+                          View payslip
+                        </button>
+                        <button
+                          className={cn(uiClasses.payeLinkButton, "text-left")}
+                          onClick={() =>
+                            void downloadMonthlyPayePayslipPdf(row.id).catch((e) =>
+                              setError(e instanceof Error ? e.message : "Could not download PAYE payslip PDF."),
+                            )
+                          }
+                          type="button"
+                        >
+                          Download PDF
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="timiq-caption">Managed by period actions</span>
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!loading && (!report || report.rows.length === 0) ? (
+                <TableRow>
+                  <TableCell className="text-center text-[var(--color-text-muted)]" colSpan={16}>
+                    No real PAYE rows yet. Select a company and tax month, then recalculate the month.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
+        </div>
       </SheetBody>
       {componentEmployee ? (
         <PayePayComponentModal

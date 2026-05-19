@@ -142,6 +142,27 @@ export const uiClasses = {
   headerIconButtonActive: [
     "border-[var(--color-brand)]/30 bg-[var(--color-brand-muted)] text-[var(--color-brand-hover)]",
   ].join(" "),
+
+  payeFilterLabel: "timiq-label block text-[10px] uppercase tracking-wide text-[var(--color-text-soft)]",
+
+  payeFilterSelect:
+    "timiq-select mt-1 h-10 w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]",
+
+  payeFilterInput:
+    "timiq-input mt-1 h-10 w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]",
+
+  payeStatLabel: "timiq-caption font-semibold uppercase tracking-wide text-[var(--color-text-soft)]",
+
+  payeStatValue: "timiq-money mt-1 block text-[var(--color-text)]",
+
+  payeStatValueLg: "timiq-money-lg mt-1 block text-[var(--color-text)]",
+
+  payeLinkButton:
+    "text-xs font-semibold text-[var(--color-accent)] underline hover:text-[var(--color-brand-hover)]",
+
+  payeTableMeta: "mt-1 space-y-0.5 text-xs leading-snug text-[var(--color-text-muted)]",
+
+  payeActionToolbar: "flex flex-wrap items-center gap-2",
 } as const;
 
 export type UiClassKey = keyof typeof uiClasses;
