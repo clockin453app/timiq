@@ -11,6 +11,7 @@ import {
   AlertBanner,
   Badge,
   Button,
+  Card,
   PageHeader,
   SectionCard,
   Sheet,
@@ -179,6 +180,15 @@ function payrollSplitBarPercent(value: string | null | undefined, total: string 
     return 0;
   }
   return Math.max(0, Math.min(100, (amount / gross) * 100));
+}
+
+function PayrollStatCard(props: { label: string; value: string; emphasize?: boolean }) {
+  return (
+    <Card padded>
+      <p className={uiClasses.payeStatLabel}>{props.label}</p>
+      <p className={props.emphasize ? uiClasses.payeStatValueLg : uiClasses.payeStatValue}>{props.value}</p>
+    </Card>
+  );
 }
 
 function normalizePaymentMode(value: string | null | undefined): "net_payment" | "gross_payment" {
@@ -1782,44 +1792,34 @@ export function PayrollReportClient() {
             </SectionCard>
 
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
-                  {t("payroll.report.total_hours", "Total hours")}
-                </p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
-                  {showMetricFigures ? formatHoursFromSeconds(totalHoursSeconds) : "—"}
-                </p>
-              </div>
-              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
-                  {t("payroll.report.gross_pay", "Gross pay")}
-                </p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
-                  {showMetricFigures ? formatMoneyGBP(report?.period.total_gross) : "—"}
-                </p>
-              </div>
-              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
-                  {t("payroll.report.cis_tax", "CIS tax")}
-                </p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
-                  {showMetricFigures ? formatMoneyGBP(report?.period.total_tax) : "—"}
-                </p>
-              </div>
-              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">
-                  {t("payroll.report.net_pay", "Net pay")}
-                </p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
-                  {showMetricFigures ? formatMoneyGBP(report?.period.total_net) : "—"}
-                </p>
-              </div>
-              <div className="border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 text-sm shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-wide text-[#4b5563]">Employees</p>
-                <p className="mt-1 text-lg font-semibold tabular-nums text-[#111827]">
-                  {showMetricFigures ? period?.total_items : "—"}
-                </p>
-              </div>
+              <PayrollStatCard
+                label={t("payroll.report.total_hours", "Total hours")}
+                value={showMetricFigures ? formatHoursFromSeconds(totalHoursSeconds) : "—"}
+              />
+              <PayrollStatCard
+                emphasize
+                label={t("payroll.report.gross_pay", "Gross pay")}
+                value={showMetricFigures ? formatMoneyGBP(report?.period.total_gross) : "—"}
+              />
+              <PayrollStatCard
+                label={t("payroll.report.cis_tax", "CIS tax")}
+                value={showMetricFigures ? formatMoneyGBP(report?.period.total_tax) : "—"}
+              />
+              <PayrollStatCard
+                emphasize
+                label={t("payroll.report.net_pay", "Net pay")}
+                value={showMetricFigures ? formatMoneyGBP(report?.period.total_net) : "—"}
+              />
+              <PayrollStatCard
+                label="Employees"
+                value={
+                  showMetricFigures
+                    ? period?.total_items != null
+                      ? String(period.total_items)
+                      : "—"
+                    : "—"
+                }
+              />
             </div>
 
             <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-sm">
@@ -1951,174 +1951,171 @@ export function PayrollReportClient() {
               </div>
             </div>
 
-            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
-              <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
-                Supporting details
-              </p>
-              <div className="mt-3 grid gap-3 xl:grid-cols-2">
-                <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
-                    Monthly payroll summary
-                  </p>
+            <SectionCard title="Supporting details">
+              <div className="grid gap-3 xl:grid-cols-2">
+                <SectionCard title="Monthly payroll summary">
                   {!hasCompany ? (
-                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">Choose a company in the toolbar first.</p>
+                    <p className="timiq-caption">Choose a company in the toolbar first.</p>
                   ) : null}
                   {hasCompany && monthLoading ? (
-                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">Loading month totals…</p>
+                    <p className="timiq-caption">Loading month totals…</p>
                   ) : null}
                   {hasCompany && !monthLoading && monthSummary ? (
-                    <div className="mt-2 grid gap-2 text-xs sm:grid-cols-2">
-                      <p className="text-[var(--color-text-muted)]">
+                    <div className="mt-1 grid gap-2 text-xs sm:grid-cols-2">
+                      <p className="timiq-caption">
                         <span className="font-semibold text-[var(--color-text)]">Month: </span>
                         {monthSummary.year}-{String(monthSummary.month).padStart(2, "0")}
                       </p>
-                      <p className="text-[var(--color-text-muted)]">
+                      <p className="timiq-caption">
                         <span className="font-semibold text-[var(--color-text)]">Payroll weeks: </span>
                         {monthSummary.payroll_weeks}
                       </p>
-                      <p className="text-[var(--color-text-muted)]">
+                      <p className="timiq-caption">
                         <span className="font-semibold text-[var(--color-text)]">Employees: </span>
                         {monthSummary.distinct_employees}
                       </p>
-                      <p className="text-[var(--color-text-muted)]">
+                      <p className="timiq-caption">
                         <span className="font-semibold text-[var(--color-text)]">Total hours: </span>
                         {formatHoursFromSeconds(monthSummary.total_rounded_seconds)}
                       </p>
-                      <p className="text-[var(--color-text-muted)]">
+                      <p className="timiq-caption">
                         <span className="font-semibold text-[var(--color-text)]">Gross: </span>
-                        {formatMoneyGBP(monthSummary.total_gross)}
+                        <span className="timiq-money">{formatMoneyGBP(monthSummary.total_gross)}</span>
                       </p>
-                      <p className="text-[var(--color-text-muted)]">
+                      <p className="timiq-caption">
                         <span className="font-semibold text-[var(--color-text)]">CIS tax: </span>
-                        {formatMoneyGBP(monthSummary.total_tax)}
+                        <span className="timiq-money">{formatMoneyGBP(monthSummary.total_tax)}</span>
                       </p>
-                      <p className="text-[var(--color-text-muted)]">
+                      <p className="timiq-caption">
                         <span className="font-semibold text-[var(--color-text)]">Net: </span>
-                        {formatMoneyGBP(monthSummary.total_net)}
+                        <span className="timiq-money">{formatMoneyGBP(monthSummary.total_net)}</span>
                       </p>
                     </div>
                   ) : null}
                   {hasCompany && !monthLoading && !monthSummary ? (
-                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">No month data loaded.</p>
+                    <p className="timiq-caption">No month data loaded.</p>
                   ) : null}
-                </div>
+                </SectionCard>
 
                 {report ? (
-                  <div className="rounded-[var(--radius-md)] border border-slate-200 bg-slate-50/90 px-3 py-2.5 text-xs text-slate-900">
-                    <p className="text-[10px] font-bold uppercase tracking-wide text-slate-600">Approved leave (review)</p>
-                    <p className="mt-1 leading-relaxed text-slate-700">
+                  <SectionCard
+                    title="Approved leave (review)"
+                    action={
+                      (report.approved_leave_in_week?.length ?? 0) > 0 ? (
+                        <Badge tone="info">{report.approved_leave_in_week?.length ?? 0} in week</Badge>
+                      ) : null
+                    }
+                  >
+                    <AlertBanner className="mb-3" tone="info">
                       {report.payroll_leave_review_note ??
                         "Leave is shown for review only. Automatic paid leave in gross totals is not enabled in this batch."}
-                    </p>
+                    </AlertBanner>
                     {(report.approved_leave_in_week?.length ?? 0) > 0 ? (
-                      <div className="mt-2 overflow-x-auto">
+                      <div className={uiClasses.tableWrap}>
                         <table className="w-full min-w-[520px] border-collapse text-left text-[11px]">
                           <thead>
-                            <tr className="border-b border-slate-300 text-slate-600">
-                              <th className="py-1 pr-2 font-semibold">Employee</th>
-                              <th className="py-1 pr-2 font-semibold">Type</th>
-                              <th className="py-1 pr-2 font-semibold">Dates</th>
-                              <th className="py-1 pr-2 font-semibold">Days</th>
+                            <tr className="border-b border-[var(--color-border-dark)] text-[var(--color-text-soft)]">
+                              <th className="py-1.5 pr-2 font-semibold">Employee</th>
+                              <th className="py-1.5 pr-2 font-semibold">Type</th>
+                              <th className="py-1.5 pr-2 font-semibold">Dates</th>
+                              <th className="py-1.5 pr-2 font-semibold">Days</th>
                             </tr>
                           </thead>
                           <tbody>
                             {(report.approved_leave_in_week ?? []).map((lv) => (
-                              <tr className="border-b border-slate-200/80" key={`${lv.user_id}-${lv.date_from}-${lv.date_to}-${lv.leave_type}`}>
-                                <td className="py-1 pr-2">
-                                  {lv.employee_name?.trim() || lv.employee_email || lv.user_id}
-                                </td>
-                                <td className="py-1 pr-2">{leaveTypeLabel(lv.leave_type)}</td>
-                                <td className="py-1 pr-2 tabular-nums text-slate-600">
+                              <tr
+                                className="border-b border-[var(--color-border)]"
+                                key={`${lv.user_id}-${lv.date_from}-${lv.date_to}-${lv.leave_type}`}
+                              >
+                                <td className="py-1.5 pr-2">{lv.employee_name?.trim() || lv.employee_email || lv.user_id}</td>
+                                <td className="py-1.5 pr-2">{leaveTypeLabel(lv.leave_type)}</td>
+                                <td className="py-1.5 pr-2 tabular-nums text-[var(--color-text-muted)]">
                                   {lv.date_from} → {lv.date_to}
                                 </td>
-                                <td className="py-1 pr-2 tabular-nums">{lv.total_days}</td>
+                                <td className="py-1.5 pr-2 tabular-nums">{lv.total_days}</td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
                     ) : (
-                      <p className="mt-2 text-[11px] text-slate-600">No approved leave overlaps this payroll week.</p>
+                      <p className="timiq-caption">No approved leave overlaps this payroll week.</p>
                     )}
-                  </div>
+                  </SectionCard>
                 ) : null}
 
-                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-sheet)] p-3 text-sm">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">Payroll summary</p>
-                  {!hasCompany ? (
-                    <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">—</p>
-                  ) : null}
+                <SectionCard title="Payroll summary">
+                  {!hasCompany ? <p className="timiq-caption">—</p> : null}
                   {hasCompany && period ? (
-                    <ul className="mt-2 space-y-1.5 text-xs text-[#111827]">
+                    <ul className="space-y-1.5 text-xs">
                       <li className="flex justify-between gap-2">
                         <span className="text-[var(--color-text-muted)]">Employees</span>
-                        <span className="font-semibold tabular-nums">{period.total_items}</span>
+                        <span className="timiq-money font-semibold tabular-nums">{period.total_items}</span>
                       </li>
                       <li className="flex justify-between gap-2">
                         <span className="text-[var(--color-text-muted)]">Total hours</span>
-                        <span className="font-semibold tabular-nums">
+                        <span className="timiq-money font-semibold tabular-nums">
                           {formatHoursFromSeconds(totalHoursSeconds)}
                         </span>
                       </li>
                       <li className="flex justify-between gap-2">
                         <span className="text-[var(--color-text-muted)]">Gross pay</span>
-                        <span className="font-semibold tabular-nums">{formatMoneyGBP(period.total_gross)}</span>
+                        <span className="timiq-money font-semibold tabular-nums">{formatMoneyGBP(period.total_gross)}</span>
                       </li>
                       <li className="flex justify-between gap-2">
                         <span className="text-[var(--color-text-muted)]">CIS tax</span>
-                        <span className="font-semibold tabular-nums">{formatMoneyGBP(period.total_tax)}</span>
+                        <span className="timiq-money font-semibold tabular-nums">{formatMoneyGBP(period.total_tax)}</span>
                       </li>
                       <li className="flex justify-between gap-2">
                         <span className="text-[var(--color-text-muted)]">Net pay</span>
-                        <span className="font-semibold tabular-nums">{formatMoneyGBP(period.total_net)}</span>
+                        <span className="timiq-money font-semibold tabular-nums">{formatMoneyGBP(period.total_net)}</span>
                       </li>
                     </ul>
                   ) : null}
                   {hasCompany && !period ? (
-                    <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">
-                      Load a report to see totals.
-                    </p>
+                    <p className="timiq-caption">Load a report to see totals.</p>
                   ) : null}
-                </div>
+                </SectionCard>
 
-                <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-sheet)] p-3 text-sm">
-                  <p className="text-[10px] font-bold uppercase tracking-wide text-[#374151]">
-                    Payroll split (pre-tax wages)
-                  </p>
-                  {!hasCompany ? <p className="mt-2 text-xs text-[var(--color-text-muted)]">—</p> : null}
+                <SectionCard title="Payroll split (pre-tax wages)">
+                  {!hasCompany ? <p className="timiq-caption">—</p> : null}
                   {hasCompany && split ? (
-                    <div className="mt-3 space-y-3 text-xs">
+                    <div className="space-y-3 text-xs">
                       {[
-                        { label: "Regular wages", value: split.regular_pay, tone: "bg-slate-700" },
-                        { label: "Overtime wages", value: split.overtime_pay, tone: "bg-slate-500" },
-                        { label: "Other pay", value: split.other_pay, tone: "bg-slate-400" },
-                        { label: "Total gross (payroll)", value: split.total_gross, tone: "bg-[var(--color-accent)]" },
+                        { label: "Regular wages", value: split.regular_pay, barClass: "bg-[var(--color-text-soft)]" },
+                        { label: "Overtime wages", value: split.overtime_pay, barClass: "bg-[var(--color-border-dark)]" },
+                        { label: "Other pay", value: split.other_pay, barClass: "bg-[var(--color-border)]" },
+                        {
+                          label: "Total gross (payroll)",
+                          value: split.total_gross,
+                          barClass: "bg-[var(--color-brand)]",
+                        },
                       ].map((row) => (
                         <div key={row.label}>
-                          <div className="flex justify-between gap-2 text-[var(--color-text)]">
+                          <div className="flex justify-between gap-2">
                             <span className="text-[var(--color-text-muted)]">{row.label}</span>
-                            <span className="font-semibold tabular-nums">{formatMoneyGBP(row.value)}</span>
+                            <span className="timiq-money font-semibold tabular-nums">{formatMoneyGBP(row.value)}</span>
                           </div>
-                          <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                          <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[var(--color-header)]">
                             <div
-                              className={`h-2 rounded-full ${row.tone}`}
+                              className={cn("h-2 rounded-full", row.barClass)}
                               style={{ width: `${payrollSplitBarPercent(row.value, split.total_gross)}%` }}
                             />
                           </div>
                         </div>
                       ))}
-                      <p className="border-t border-[var(--color-border)] pt-2 text-[10px] leading-snug text-[var(--color-text-muted)]">
+                      <p className="border-t border-[var(--color-border)] pt-2 timiq-caption leading-snug">
                         Regular and overtime lines are derived from stored hours and rate snapshots; total
                         gross matches summed payroll item gross.
                       </p>
                     </div>
                   ) : null}
                   {hasCompany && !split ? (
-                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">Load payroll to view split.</p>
+                    <p className="timiq-caption">Load payroll to view split.</p>
                   ) : null}
-                </div>
+                </SectionCard>
               </div>
-            </div>
+            </SectionCard>
 
           </div>
 
