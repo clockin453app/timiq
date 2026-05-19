@@ -925,6 +925,133 @@ def _missing_tax_identifier_counts(db_session: Session, all_items: list[PayrollI
     return utr_missing, nino_missing
 
 
+_POLICY_SNAPSHOT_COMPARE_KEYS = (
+    "standard_start_time",
+    "overtime_after_hours",
+    "overtime_multiplier",
+    "rounding_increment_minutes",
+    "rounding_mode",
+    "break_deduction_minutes",
+    "break_deduction_after_minutes",
+    "rule_effective_from",
+    "timezone_name",
+)
+
+
+def _decimal_snapshots_equal(current: Decimal | None, stored: float | Decimal | None) -> bool:
+    current_q = _decimal_or_none(current)
+    stored_q = _decimal_or_none(stored)
+    if current_q is None and stored_q is None:
+        return True
+    if current_q is None or stored_q is None:
+        return False
+    return current_q.quantize(Decimal("0.0001")) == stored_q.quantize(Decimal("0.0001"))
+
+
+def _normalize_policy_snapshot_field(key: str, value: object | None) -> str:
+    if value is None:
+        return ""
+    if key == "standard_start_time":
+        if hasattr(value, "strftime"):
+            return value.strftime("%H:%M")
+        text = str(value).strip()
+        if len(text) >= 5 and text[2] == ":":
+            return text[:5]
+        return text
+    if key in ("overtime_after_hours", "overtime_multiplier"):
+        return format(Decimal(str(value)).quantize(Decimal("0.0001")), "f")
+    if key in ("rounding_increment_minutes", "break_deduction_minutes", "break_deduction_after_minutes"):
+        return str(int(value))
+    return str(value).strip()
+
+
+def _policy_snapshots_equal(current: dict, stored: dict | None) -> bool:
+    stored_map = stored if isinstance(stored, dict) else {}
+    for key in _POLICY_SNAPSHOT_COMPARE_KEYS:
+        if _normalize_policy_snapshot_field(key, current.get(key)) != _normalize_policy_snapshot_field(
+            key,
+            stored_map.get(key),
+        ):
+            return False
+    return True
+
+
+def _resolve_current_cis_payment_mode_for_item(item: PayrollItem, profile: object | None) -> str:
+    source = _stored_payment_mode_source_or_none(getattr(item, "payment_mode_source", None))
+    if item.status == "pending" and source == "manual":
+        return normalize_payroll_payment_mode(item.payment_mode)
+    profile_mode = _stored_payment_mode_or_none(getattr(profile, "payment_mode", None) if profile else None)
+    return profile_mode or "net_payment"
+
+
+def _payroll_item_inputs_stale(
+    db_session: Session,
+    *,
+    item: PayrollItem,
+    profile: object | None,
+    company_default_tax: float | None,
+    workplace_tax: float | None,
+    company_policy: object,
+    week_start: date,
+) -> bool:
+    """Read-only: true when live CIS inputs differ from values snapshotted on the payroll item."""
+    current_hourly = None
+    if profile is not None and getattr(profile, "hourly_rate", None) is not None:
+        current_hourly = Decimal(str(profile.hourly_rate))
+    if not _decimal_snapshots_equal(current_hourly, item.hourly_rate_snapshot):
+        return True
+
+    current_tax = resolve_effective_tax_rate_percent(profile, company_default_tax, workplace_tax)
+    if not _decimal_snapshots_equal(current_tax, item.tax_rate_snapshot):
+        return True
+
+    current_mode = _resolve_current_cis_payment_mode_for_item(item, profile)
+    if current_mode != normalize_payroll_payment_mode(item.payment_mode):
+        return True
+
+    current_policy_snapshot = policy_snapshot_dict(company_policy)
+    if not _policy_snapshots_equal(current_policy_snapshot, item.policy_snapshot):
+        return True
+
+    live_seconds = sum_rounded_seconds_payroll_week(
+        db_session,
+        company_id=item.company_id,
+        user_id=item.user_id,
+        week_start=week_start,
+        policy=company_policy,
+    )
+    if int(live_seconds) != int(item.rounded_total_seconds or 0):
+        return True
+
+    return False
+
+
+def _payroll_period_has_stale_item_inputs(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    policy: object,
+    week_start: date,
+    all_items: list[PayrollItem],
+) -> bool:
+    company = get_company_by_id(db_session, company_id)
+    default_tax = float(company.default_tax_rate) if company is not None and company.default_tax_rate is not None else None
+    workplace_tax = first_workplace_tax(db_session, company_id)
+    for item in all_items:
+        profile = get_employee_profile_by_user_id(db_session, item.user_id)
+        if _payroll_item_inputs_stale(
+            db_session,
+            item=item,
+            profile=profile,
+            company_default_tax=default_tax,
+            workplace_tax=workplace_tax,
+            company_policy=policy,
+            week_start=week_start,
+        ):
+            return True
+    return False
+
+
 def _build_report_alerts(
     db_session: Session,
     *,
@@ -958,6 +1085,14 @@ def _build_report_alerts(
         )
         if max_shift_updated is not None and max_shift_updated > period.calculated_at:
             needs_recalc = True
+        if not needs_recalc and has_items:
+            needs_recalc = _payroll_period_has_stale_item_inputs(
+                db_session,
+                company_id=company_id,
+                policy=policy,
+                week_start=week_start,
+                all_items=all_items,
+            )
     approved_n = sum(1 for i in all_items if i.status == "approved")
     paid_n = sum(1 for i in all_items if i.status == "paid")
     can_auto = not_calculated and approved_n == 0 and paid_n == 0
