@@ -222,12 +222,7 @@ export function ClockClient() {
 
   useEffect(() => {
     const mapFlowOk = flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites";
-    if (
-      clockMapSessionOff ||
-      viewportClockMapMode !== "wide" ||
-      !mapFlowOk ||
-      !stableGeoMapKey
-    ) {
+    if (clockMapSessionOff || !mapFlowOk || !stableGeoMapKey) {
       setMapMountDeferred(false);
       return;
     }

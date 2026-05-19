@@ -34,14 +34,8 @@ function StatusBadge(props: { tone: "success" | "warning" | "muted"; children: s
   );
 }
 
-function clockActionLabel(clockStatus: ClockStatus | null, t: EmployeeDashboardClockCardProps["t"]): string {
-  if (!clockStatus) {
-    return t("dashboard.open_clock", "Open clock");
-  }
-  if (clockStatus.has_open_shift) {
-    return t("dashboard.action_clock_out", "Clock out");
-  }
-  return t("dashboard.action_clock_in", "Clock in");
+function clockActionLabel(t: EmployeeDashboardClockCardProps["t"]): string {
+  return t("dashboard.open_clock", "Open clock");
 }
 
 function timerDisplay(
@@ -62,13 +56,25 @@ function timerDisplay(
   return t("dashboard.not_clocked_in", "Not clocked in");
 }
 
+function statusBadgeLabel(
+  clockStatus: ClockStatus,
+  onShift: boolean,
+  t: EmployeeDashboardClockCardProps["t"],
+): string {
+  if (onShift) {
+    return t("dashboard.clocked_in_badge", "Clocked in");
+  }
+  if (clockStatus.status === "clocked_out") {
+    return t("dashboard.clocked_out_badge", "Clocked out");
+  }
+  return t("dashboard.not_clocked_in", "Not clocked in");
+}
+
 export function EmployeeDashboardClockCard({
   clockStatus,
   clockLoading,
   clockError,
   onShiftDurationParts,
-  formatClockLine,
-  describeShift,
   t,
 }: EmployeeDashboardClockCardProps) {
   const onShift = Boolean(clockStatus?.has_open_shift);
@@ -76,56 +82,37 @@ export function EmployeeDashboardClockCard({
   const displayTimer = timerDisplay(clockLoading, clockStatus, onShiftDurationParts, t);
 
   return (
-    <div className="w-full max-w-[20rem] min-w-0">
-      <div className="flex aspect-square w-full min-w-0 flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-card)]">
-        <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-            {t("dashboard.clock_shift_section", "Clock & shift")}
-          </p>
-          <div className="flex shrink-0 flex-wrap justify-end gap-1">
-            {clockStatus && onShift ? (
-              <StatusBadge tone="success">{t("dashboard.on_shift_badge", "On shift")}</StatusBadge>
-            ) : clockStatus ? (
-              <StatusBadge tone="muted">{t("dashboard.off_shift_badge", "Off shift")}</StatusBadge>
-            ) : null}
-            {clockStatus && !clockLoading ? (
-              <StatusBadge tone={onShift ? "success" : "muted"}>
-                {onShift
-                  ? t("dashboard.clocked_in_badge", "Clocked in")
-                  : t("dashboard.clocked_out_badge", "Clocked out")}
-              </StatusBadge>
-            ) : null}
-          </div>
+    <div className="w-full min-w-0">
+      <div className="w-full min-w-0 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-card)]">
+        <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] bg-[var(--color-header)] px-4 py-2.5">
+          <p className="text-sm font-semibold text-[var(--color-text)]">{t("nav.clock", "Clock In / Out")}</p>
+          {clockStatus && !clockLoading ? (
+            <StatusBadge tone={onShift ? "success" : "muted"}>
+              {statusBadgeLabel(clockStatus, onShift, t)}
+            </StatusBadge>
+          ) : null}
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col px-4 py-4">
-          <div
-            className="flex min-h-0 flex-1 flex-col items-center justify-center text-center"
-            suppressHydrationWarning
-          >
+        <div className="px-4 py-5">
+          <div className="py-6 text-center" suppressHydrationWarning>
             <p
               className={
                 showLiveTimer
-                  ? "font-mono text-4xl font-bold tabular-nums tracking-tight text-[var(--color-text)] sm:text-[2.75rem]"
-                  : "text-xl font-semibold leading-snug text-[var(--color-text-muted)] sm:text-2xl"
+                  ? "font-mono text-4xl font-bold tabular-nums tracking-tight text-[var(--color-text)] sm:text-5xl"
+                  : "text-2xl font-semibold leading-snug text-[var(--color-text-muted)]"
               }
             >
               {displayTimer}
             </p>
-            {showLiveTimer && onShiftDurationParts.compact ? (
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]" suppressHydrationWarning>
-                {onShiftDurationParts.compact}
-              </p>
-            ) : null}
           </div>
 
           {clockError ? (
-            <p className="mb-2 text-center text-xs text-[var(--color-danger-700)]">{clockError}</p>
+            <p className="mb-3 text-center text-xs text-[var(--color-danger-700)]">{clockError}</p>
           ) : null}
 
           <Link
             className={cn(
-              "inline-flex w-full min-h-[2.75rem] items-center justify-center rounded-[var(--radius-md)] border text-base font-semibold no-underline",
+              "inline-flex w-full min-h-[3rem] items-center justify-center rounded-[var(--radius-md)] border text-base font-semibold no-underline",
               "border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] text-[var(--color-btn-primary-fg)]",
               "hover:bg-[var(--color-btn-primary-hover-bg)] hover:border-[var(--color-btn-primary-hover-bg)]",
               uiClasses.transitionColors,
@@ -133,42 +120,23 @@ export function EmployeeDashboardClockCard({
             )}
             href="/clock"
           >
-            {clockActionLabel(clockStatus, t)}
+            {clockActionLabel(t)}
           </Link>
 
           {!clockLoading && clockStatus ? (
-            <dl className="mt-4 grid gap-2 border-t border-[var(--color-border)] pt-3 text-xs">
-              <div className="flex items-start justify-between gap-2">
-                <dt className="text-[var(--color-text-muted)]">
-                  {t("dashboard.current_clock_status", "Current clock status")}
-                </dt>
-                <dd className="text-right font-semibold text-[var(--color-text)]">
-                  {formatClockLine(clockStatus)}
-                </dd>
-              </div>
-              <div className="flex items-start justify-between gap-2">
-                <dt className="text-[var(--color-text-muted)]">
-                  {t("dashboard.shift_status", "Shift status")}
-                </dt>
-                <dd className="max-w-[11rem] text-right font-medium leading-snug text-[var(--color-text)]">
-                  {describeShift(clockStatus)}
-                </dd>
-              </div>
-              <div className="flex items-start justify-between gap-2">
-                <dt className="text-[var(--color-text-muted)]">{t("dashboard.today_hours", "Today hours")}</dt>
-                <dd className="text-right font-medium text-[var(--color-text)]">
-                  {t("dashboard.today_hours_hint", "Calculated after clock-out")}
-                </dd>
-              </div>
-              <div className="flex items-start justify-between gap-2">
-                <dt className="text-[var(--color-text-muted)]">
-                  {t("dashboard.assigned_locations", "Assigned active locations")}
-                </dt>
-                <dd className="font-semibold tabular-nums text-[var(--color-text)]">
+            <div className="mt-4 space-y-1 border-t border-[var(--color-border)] pt-3 text-center text-xs text-[var(--color-text-muted)]">
+              {onShift && clockStatus.open_shift_location_name ? (
+                <p className="truncate font-medium text-[var(--color-text)]">
+                  {clockStatus.open_shift_location_name}
+                </p>
+              ) : null}
+              <p>
+                {t("dashboard.assigned_locations", "Assigned active locations")}:{" "}
+                <span className="font-semibold tabular-nums text-[var(--color-text)]">
                   {clockStatus.active_location_count}
-                </dd>
-              </div>
-            </dl>
+                </span>
+              </p>
+            </div>
           ) : null}
         </div>
       </div>
