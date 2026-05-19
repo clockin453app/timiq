@@ -33,6 +33,8 @@ def test_capability_catalog_has_stable_phase_2b_keys() -> None:
     assert "pay_type.fixed_monthly_salary" in keys
     assert "pension.salary_sacrifice" in keys
     assert "reporting.rti_fps_eps" in keys
+    assert "reporting.paye_payslips" in keys
+    assert "reporting.employee_paye_pay_history" in keys
 
 
 def test_phase_2a_capabilities_are_enabled() -> None:
@@ -45,6 +47,8 @@ def test_phase_2a_capabilities_are_enabled() -> None:
         "pay_type.fixed_monthly_salary",
         "pay_type.hourly",
         "pay_type.overtime",
+        "pay_type.bonus",
+        "pay_type.commission",
         "pension.qualifying_earnings",
         "pension.total_earnings",
         "pension.relief_at_source",
@@ -55,6 +59,8 @@ def test_phase_2a_capabilities_are_enabled() -> None:
         "loans.student_plan_5",
         "loans.postgraduate",
         "ytd.paye_items_only",
+        "reporting.paye_payslips",
+        "reporting.employee_paye_pay_history",
     }:
         assert capabilities[key].status == "enabled"
         assert capabilities[key].tax_years_supported == ("2026-2027",)

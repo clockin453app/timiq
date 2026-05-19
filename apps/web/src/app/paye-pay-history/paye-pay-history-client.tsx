@@ -99,7 +99,7 @@ export function PayePayHistoryClient() {
     <Sheet>
       <PageHeader
         title="PAYE Pay History"
-        description="Monthly PAYE payslips for your approved or paid payroll."
+        description="Monthly PAYE payslips from approved or paid payroll only."
       />
       <SheetBody className="space-y-4">
         {error ? (

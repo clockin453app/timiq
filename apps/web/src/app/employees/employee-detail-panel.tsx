@@ -672,8 +672,13 @@ export function EmployeeDetailPanel({
                 PAYE monthly settings
               </p>
               <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Phase 2A supports fixed monthly salary, numeric L tax codes such as 1257L, NI category A,
-                basic pensions, and student/postgraduate loans. Other PAYE cases show as not supported until activated.
+                Monthly PAYE supports fixed monthly salary, hourly PAYE from completed time shifts, monthly-threshold
+                overtime, bonus and commission components, PAYE payslips, and employee PAYE Pay History. RTI/HMRC
+                submission, P45/P60, statutory pay, auto-enrolment assessment, pension opt-out refunds, salary sacrifice,
+                and HMRC submission are not enabled yet.
+              </p>
+              <p className="mt-1 text-xs font-medium text-amber-900">
+                Open shifts in the PAYE tax month will block recalculation until closed.
               </p>
               {profileLoadError ? (
                 <p className="mt-1 text-xs text-[var(--color-text-muted)]">
@@ -716,14 +721,9 @@ export function EmployeeDetailPanel({
                       }
                       value={payeSalaryType}
                     >
-                      <option value="hourly">Hourly — not supported yet</option>
-                      <option value="fixed_monthly_salary">Fixed monthly salary — supported</option>
+                      <option value="hourly">Hourly</option>
+                      <option value="fixed_monthly_salary">Fixed monthly salary</option>
                     </select>
-                    {payeSalaryType === "hourly" ? (
-                      <p className="mt-1 text-[11px] font-medium text-amber-900">
-                        Hourly PAYE is not calculated yet. This employee will remain not supported in Monthly PAYE Report until hourly calculation is enabled.
-                      </p>
-                    ) : null}
                   </label>
                   <label className="block text-xs font-bold text-[var(--color-text)]">
                     Monthly salary
@@ -741,11 +741,12 @@ export function EmployeeDetailPanel({
                       className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
                       disabled={isSavingPayeSettings}
                       onChange={(event) => setPayeHourlyRate(event.target.value)}
-                      placeholder="Stored for future hourly PAYE"
+                      placeholder="e.g. 18.50"
                       value={payeHourlyRate}
                     />
                     <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                      Hourly PAYE foundation is stored for future use. Hourly PAYE calculation is not enabled yet.
+                      Hourly PAYE is calculated from completed time shifts when salary type is Hourly, uses time records
+                      is enabled, and hour source is completed time shifts.
                     </p>
                   </label>
                   <label className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
@@ -779,7 +780,7 @@ export function EmployeeDetailPanel({
                       value={payeTaxCode}
                     />
                     <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                      Only numeric L tax codes such as 1257L are calculated in Phase 2A. BR, D0, K, NT, S and C codes are not supported yet.
+                      Only numeric L tax codes such as 1257L are calculated. BR, D0, K, NT, S and C codes are not supported yet.
                     </p>
                   </label>
                   <label className="block text-xs font-bold text-[var(--color-text)]">
@@ -804,7 +805,7 @@ export function EmployeeDetailPanel({
                       value={payeNiCategory}
                     />
                     <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                      Only NI category A is calculated in Phase 2A. Other categories will be marked not supported.
+                      Only NI category A is calculated. Other NI categories are not supported yet.
                     </p>
                   </label>
                   <label className="block text-xs font-bold text-[var(--color-text)]">
@@ -897,7 +898,7 @@ export function EmployeeDetailPanel({
                     </select>
                     {payePensionReliefMethod === "salary_sacrifice" ? (
                       <p className="mt-1 text-[11px] font-medium text-amber-900">
-                        Salary sacrifice is not supported in Phase 2A and will block calculation.
+                        Salary sacrifice is not supported yet and will block calculation.
                       </p>
                     ) : null}
                   </label>

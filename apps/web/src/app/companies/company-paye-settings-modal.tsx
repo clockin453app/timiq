@@ -232,9 +232,10 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
             </section>
 
             <section className="space-y-3 border border-[var(--color-border)] bg-[var(--color-cell)] p-3">
-              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">PAYE overtime foundation</p>
+              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">PAYE overtime</p>
               <p className="text-xs text-[var(--color-text-muted)]">
-                PAYE overtime settings are stored for future use. PAYE overtime calculation is not enabled yet.
+                PAYE overtime uses a monthly threshold in Monthly PAYE Report. Daily and weekly overtime rules are not
+                enabled yet.
               </p>
               <label className="flex items-center gap-2 text-xs font-bold text-[var(--color-text)]">
                 <input checked={payeOvertimeEnabled} disabled={isSaving} onChange={(e) => setPayeOvertimeEnabled(e.target.checked)} type="checkbox" />

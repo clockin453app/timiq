@@ -299,7 +299,7 @@ export function MonthlyPayeClient() {
     <Sheet>
       <PageHeader
         title="Monthly PAYE Report"
-        description="Limited PAYE monthly payroll for fixed salary employees. PAYE payslips and RTI are not enabled."
+        description="Monthly PAYE supports fixed monthly salary, hourly PAYE from completed time shifts, monthly-threshold overtime, bonus and commission components, PAYE payslips, and employee PAYE Pay History. RTI/HMRC submission, P45/P60, statutory pay, auto-enrolment assessment, and pension opt-out refunds are not enabled yet."
         action={
           <Button
             disabled={loading || actionLoading !== "" || !activeCompanyId || !canRecalculate}
@@ -425,8 +425,8 @@ export function MonthlyPayeClient() {
         </form>
 
         <div className="rounded-[var(--radius-md)] border border-amber-800/25 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-          Supported in this phase: fixed monthly salary, numeric L tax codes only, NI category A only.
-          Payslips and RTI/HMRC submission are not enabled.
+          RTI/HMRC submission, P45/P60, statutory pay, auto-enrolment assessment, and pension opt-out refunds are not
+          enabled yet. Use the coverage matrix below for full detail.
         </div>
 
         <section className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
@@ -444,9 +444,16 @@ export function MonthlyPayeClient() {
                   ? supportedCapabilityNames
                   : [
                       "Fixed monthly salary",
+                      "Hourly PAYE",
+                      "PAYE overtime (monthly threshold)",
+                      "Bonus pay",
+                      "Commission pay",
                       "Numeric L tax codes",
                       "NI category A",
-                      "Student and postgraduate loans",
+                      "Student/postgraduate loans",
+                      "Basic pensions",
+                      "PAYE payslips",
+                      "Employee PAYE Pay History",
                     ]
               }
               tone="ok"
@@ -456,13 +463,26 @@ export function MonthlyPayeClient() {
               items={
                 unsupportedCapabilityNames.length
                   ? unsupportedCapabilityNames
-                  : ["Hourly PAYE", "Other NI categories", "RTI/HMRC submission"]
+                  : [
+                      "Scottish/Welsh tax codes",
+                      "Other NI categories",
+                      "Salary sacrifice",
+                      "Statutory pay",
+                      "Benefits in kind",
+                      "Attachment of earnings",
+                      "RTI/FPS/EPS/HMRC submission",
+                      "P45/P60",
+                    ]
               }
               tone="warn"
             />
             <CapabilityList
               title="Coming next"
-              items={comingSoonCapabilityNames.length ? comingSoonCapabilityNames : ["Hourly PAYE", "Overtime", "Statutory pay"]}
+              items={
+                comingSoonCapabilityNames.length
+                  ? comingSoonCapabilityNames
+                  : ["Auto-enrolment assessment", "Pension opt-out refunds", "Daily/weekly overtime rules"]
+              }
               tone="soon"
             />
           </div>

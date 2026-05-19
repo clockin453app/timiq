@@ -109,6 +109,18 @@ PAYE_CAPABILITIES: tuple[PayeCapability, ...] = (
     _not_supported("deductions.child_maintenance", "Child maintenance deductions", "deductions", "Child maintenance deduction orders."),
     _not_supported("benefits.payrolled_benefits", "Payrolled benefits", "benefits", "Payrolled benefits and Class 1A handling."),
     _enabled("ytd.paye_items_only", "PAYE-only YTD totals", "reporting", "YTD totals use Monthly PAYE items only."),
+    _enabled(
+        "reporting.paye_payslips",
+        "PAYE payslips",
+        "reporting",
+        "Approved or paid Monthly PAYE items can generate separate PAYE payslips.",
+    ),
+    _enabled(
+        "reporting.employee_paye_pay_history",
+        "Employee PAYE Pay History",
+        "reporting",
+        "Employees can view and download their own approved or paid Monthly PAYE payslips.",
+    ),
     _not_supported("reporting.p45", "P45-ready data", "reporting", "P45-ready reporting fields."),
     _not_supported("reporting.p60", "P60-ready data", "reporting", "P60-ready reporting fields."),
     _not_supported("reporting.rti_fps_eps", "RTI FPS/EPS", "reporting", "HMRC RTI FPS/EPS submission workflow."),
