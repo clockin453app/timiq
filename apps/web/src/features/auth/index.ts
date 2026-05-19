@@ -38,6 +38,7 @@ export {
   type AuthUser,
   type LoginResponse,
 } from "./api";
+export { authUserAvatarName, formatAuthUserDisplayName } from "../../lib/user-display";
 export {
   acceptInvite,
   changeMyPassword,

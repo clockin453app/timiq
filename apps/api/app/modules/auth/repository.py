@@ -17,6 +17,35 @@ def get_user_by_id(db_session: Session, user_id) -> User | None:
     return db_session.scalar(statement)
 
 
+def _profile_field_value(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def get_employee_profile_fields_for_user(
+    db_session: Session,
+    user_id: uuid.UUID,
+) -> tuple[str | None, str | None, str | None]:
+    """Current user's employee profile names for auth session responses."""
+    ep = EmployeeProfile
+    row = db_session.execute(
+        select(ep.first_name, ep.last_name, ep.job_title).where(ep.user_id == user_id),
+    ).first()
+    if row is None:
+        return None, None, None
+
+    try:
+        return (
+            _profile_field_value(row[0]),
+            _profile_field_value(row[1]),
+            _profile_field_value(row[2]),
+        )
+    except (IndexError, TypeError):
+        return None, None, None
+
+
 def list_users(db_session: Session) -> list[User]:
     statement = select(User).order_by(User.created_at.desc())
     return list(db_session.scalars(statement).all())

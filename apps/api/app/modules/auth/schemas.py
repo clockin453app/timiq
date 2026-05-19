@@ -124,9 +124,22 @@ class UserResponse(BaseModel):
     password_changed_at: Optional[datetime] = None
 
 
-def build_user_response(user: User) -> UserResponse:
+def build_user_response(
+    user: User,
+    *,
+    profile_first_name: str | None = None,
+    profile_last_name: str | None = None,
+    profile_job_title: str | None = None,
+) -> UserResponse:
     base = UserResponse.model_validate(user)
-    return base.model_copy(update={"limited_access": has_limited_access(user)})
+    return base.model_copy(
+        update={
+            "limited_access": has_limited_access(user),
+            "profile_first_name": profile_first_name,
+            "profile_last_name": profile_last_name,
+            "profile_job_title": profile_job_title,
+        },
+    )
 
 
 class LoginResponse(BaseModel):

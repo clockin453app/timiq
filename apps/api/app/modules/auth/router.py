@@ -14,6 +14,7 @@ from app.modules.auth.dependencies import (
 )
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import (
+    get_employee_profile_fields_for_user,
     get_user_by_id,
     list_users_visible_to_user_with_profile_names,
     set_user_active_session_id,
@@ -75,6 +76,16 @@ from app.modules.auth.account_access_service import (
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
+def _build_authenticated_user_response(db_session: Session, user: User) -> UserResponse:
+    first_name, last_name, job_title = get_employee_profile_fields_for_user(db_session, user.id)
+    return build_user_response(
+        user,
+        profile_first_name=first_name,
+        profile_last_name=last_name,
+        profile_job_title=job_title,
+    )
+
+
 def _session_cookie_params() -> dict[str, bool | str]:
     """Local: Secure=false, SameSite=lax. Non-local: Secure=true; SameSite from SESSION_COOKIE_SAMESITE (default lax).
 
@@ -122,7 +133,7 @@ def login(
         **cookie_kw,
     )
 
-    return LoginResponse(user=build_user_response(user))
+    return LoginResponse(user=_build_authenticated_user_response(db_session, user))
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
@@ -250,8 +261,11 @@ def verify_email_route(
 
 
 @router.get("/me", response_model=UserResponse)
-def me(current_user: User = Depends(get_authenticated_user)) -> UserResponse:
-    return build_user_response(current_user)
+def me(
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_authenticated_user),
+) -> UserResponse:
+    return _build_authenticated_user_response(db_session, current_user)
 
 
 @router.post("/logout")

@@ -9,6 +9,7 @@ import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { cn } from "../../lib/cn";
 import { uiClasses } from "../../lib/ui-classes";
 import { useT } from "../../lib/i18n";
+import { authUserAvatarName, formatAuthUserDisplayName } from "../../lib/user-display";
 
 import { DesktopTopNav } from "./desktop-top-nav";
 import { MessagesHeaderButton } from "./messages-header-button";
@@ -36,6 +37,9 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
   const user = useCurrentUser();
   const limited = userHasLimitedAccess(user);
   const t = useT();
+  const displayName = formatAuthUserDisplayName(user);
+  const avatarName = authUserAvatarName(user);
+  const showNameInDropdown = Boolean(avatarName);
 
   return (
     <header
@@ -70,7 +74,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
           {!limited ? <NotificationBell /> : null}
           <UserAvatar
             email={user.email}
-            name={[user.profile_first_name, user.profile_last_name].filter(Boolean).join(" ")}
+            name={avatarName}
             sizeClassName="h-9 w-9"
             userId={user.id}
           />
@@ -93,9 +97,9 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
               >
                 <span
                   className="min-w-0 truncate text-xs font-semibold text-[var(--color-topbar-chrome-btn-fg)]"
-                  title={user.email}
+                  title={displayName}
                 >
-                  {user.email}
+                  {displayName}
                 </span>
               </span>
             </summary>
@@ -105,7 +109,21 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
                 uiClasses.topBarDropdownPanel,
               )}
             >
-              <p className="truncate px-3 py-2 text-xs text-[var(--color-topbar-fg-subtle)]" title={user.email}>
+              {showNameInDropdown ? (
+                <p
+                  className="truncate px-3 pt-2 text-sm font-semibold text-[var(--color-topbar-fg)]"
+                  title={displayName}
+                >
+                  {displayName}
+                </p>
+              ) : null}
+              <p
+                className={cn(
+                  "truncate px-3 text-xs text-[var(--color-topbar-fg-subtle)]",
+                  showNameInDropdown ? "pb-2 pt-1" : "py-2",
+                )}
+                title={user.email}
+              >
                 {user.email}
               </p>
               <p className="px-3 pb-2">

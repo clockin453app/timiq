@@ -13,6 +13,7 @@ import { useT } from "../../lib/i18n";
 
 import { cn } from "../../lib/cn";
 import { uiClasses } from "../../lib/ui-classes";
+import { authUserAvatarName } from "../../lib/user-display";
 
 import { GroupedNavBlock, navItemMatchesActive } from "./grouped-nav";
 import { MessagesHeaderButton } from "./messages-header-button";
@@ -75,6 +76,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
 
   const menuLabel = menuOpen ? t("nav.close_menu", "Close menu") : t("nav.menu", "Menu");
   const roleLabel = employeeRoleLabel(t, user.system_role);
+  const avatarName = authUserAvatarName(user);
 
   return (
     <header
@@ -96,7 +98,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
           <NotificationBell />
           <UserAvatar
             email={user.email}
-            name={[user.profile_first_name, user.profile_last_name].filter(Boolean).join(" ")}
+            name={avatarName}
             sizeClassName="h-9 w-9"
             userId={user.id}
           />
