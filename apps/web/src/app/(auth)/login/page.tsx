@@ -3,7 +3,12 @@
 import { Suspense } from "react";
 
 import { LoginForm } from "../../../components/public/login-form";
-import { LoginMarketingPanel } from "../../../components/public/login-marketing-panel";
+import {
+  LoginBenefitsGrid,
+  LoginPageFooter,
+  LoginPageIntro,
+} from "../../../components/public/login-marketing-panel";
+import { PublicDemoCta } from "../../../components/public/public-demo-cta";
 import { PublicSiteShell } from "../../../components/public/public-site-shell";
 import { uiClasses } from "../../../lib/ui-classes";
 
@@ -12,10 +17,13 @@ function LoginPageContent() {
     <PublicSiteShell activePath="/login" variant="login">
       <div className={uiClasses.publicMain}>
         <div className={uiClasses.publicLoginGrid}>
-          <LoginMarketingPanel />
-          <div className="w-full min-w-0 lg:pt-1">
+          <LoginPageIntro className={uiClasses.publicLoginIntroSlot} />
+          <div className={uiClasses.publicLoginFormSlot}>
             <LoginForm />
           </div>
+          <PublicDemoCta className={uiClasses.publicLoginDemoSlot} />
+          <LoginBenefitsGrid className={uiClasses.publicLoginBenefitsSlot} />
+          <LoginPageFooter className={uiClasses.publicLoginFooterSlot} />
         </div>
       </div>
     </PublicSiteShell>

@@ -24,10 +24,15 @@ function navLinkClass(isActive: boolean): string {
   );
 }
 
+function signInHref(pathname: string): string {
+  return pathname === "/login" ? "#sign-in" : "/login";
+}
+
 export function PublicSiteShell({ children, activePath, variant = "marketing" }: PublicSiteShellProps) {
   const pathname = usePathname();
   const current = activePath ?? pathname;
   const [menuOpen, setMenuOpen] = useState(false);
+  const loginHref = signInHref(pathname);
 
   return (
     <div className={cn(uiClasses.publicPage, "timiq-public-page")}>
@@ -50,7 +55,7 @@ export function PublicSiteShell({ children, activePath, variant = "marketing" }:
                 "ml-2 min-h-[36px] px-3 text-sm font-semibold no-underline",
                 current === "/login" && "ring-2 ring-white/30",
               )}
-              href="/login"
+              href={loginHref}
             >
               Sign in
             </Link>
@@ -95,7 +100,7 @@ export function PublicSiteShell({ children, activePath, variant = "marketing" }:
                     uiClasses.topBarChromeButton,
                     "mt-1 flex min-h-[44px] w-full items-center justify-center text-sm font-semibold no-underline",
                   )}
-                  href="/login"
+                  href={loginHref}
                   onClick={() => setMenuOpen(false)}
                 >
                   Sign in
@@ -127,7 +132,7 @@ export function PublicSiteShell({ children, activePath, variant = "marketing" }:
             ))}
             <Link
               className="text-[var(--color-public-on-dark-muted)] underline-offset-2 hover:text-[var(--color-public-on-dark-fg)] hover:underline"
-              href="/login"
+              href={loginHref}
             >
               Sign in
             </Link>

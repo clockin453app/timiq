@@ -8,6 +8,7 @@ import { Button, Input } from "../ui";
 import { loginWithEmailPassword } from "../../features/auth/api";
 import { getDefaultLandingPath } from "../../config/navigation";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
+import { cn } from "../../lib/cn";
 import { useT } from "../../lib/i18n";
 import { uiClasses } from "../../lib/ui-classes";
 
@@ -52,7 +53,12 @@ export function LoginForm() {
   }
 
   return (
-    <section aria-labelledby="login-form-title" className={uiClasses.publicLoginCard}>
+    <section
+      aria-labelledby="login-form-title"
+      className={cn(uiClasses.publicLoginCard, uiClasses.publicSignInTarget)}
+      id="sign-in"
+      tabIndex={-1}
+    >
       <div className="border-b border-[var(--color-border)] px-5 py-4">
         <h2 className="timiq-title-md" id="login-form-title">
           {t("auth.login.title", "Welcome back")}

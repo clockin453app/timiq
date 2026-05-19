@@ -231,11 +231,23 @@ export const uiClasses = {
     "font-semibold text-[var(--color-public-on-dark-link)] underline decoration-white/40 underline-offset-2 hover:decoration-white",
 
   publicLoginGrid:
-    "grid min-w-0 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:gap-10 lg:items-start xl:gap-12",
+    "grid min-w-0 grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:gap-10 lg:items-start xl:gap-12",
+
+  publicLoginIntroSlot: "order-1 min-w-0 lg:col-start-1 lg:row-start-1",
+
+  publicLoginFormSlot: "order-2 min-w-0 w-full lg:col-start-2 lg:row-start-1 lg:row-span-4 lg:pt-1",
+
+  publicLoginDemoSlot: "order-3 min-w-0 lg:col-start-1 lg:row-start-2",
+
+  publicLoginBenefitsSlot: "order-4 min-w-0 lg:col-start-1 lg:row-start-3",
+
+  publicLoginFooterSlot: "order-5 min-w-0 lg:col-start-1 lg:row-start-4",
+
+  publicSignInTarget: "scroll-mt-[calc(var(--layout-topbar-height)+1rem)]",
 
   publicLoginCard: [
     "w-full min-w-0 max-w-[28rem] rounded-[var(--radius-lg)] border border-[var(--color-border-dark)]",
-    "bg-[var(--color-sheet)] shadow-[var(--shadow-card)] lg:max-w-none",
+    "bg-[var(--color-sheet)] shadow-[var(--shadow-card)] lg:mx-0 lg:max-w-none",
   ].join(" "),
 
   publicFeatureCard: [
