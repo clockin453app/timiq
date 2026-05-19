@@ -2,7 +2,9 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
-import { Button } from "../../components/ui";
+import { AlertBanner, Button } from "../../components/ui";
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 import {
   createPayePayComponent,
   patchPayePayComponent,
@@ -102,92 +104,108 @@ export function PayePayComponentModal({
   return (
     <div
       aria-modal="true"
-      className="fixed inset-0 z-[2100] flex items-start justify-center overflow-y-auto bg-black/45 p-3 md:p-6"
+      className="fixed inset-0 z-[2100] flex items-start justify-center overflow-y-auto bg-black/40 p-3 md:p-6"
       role="dialog"
     >
-      <div className="timiq-sheet mx-auto my-4 w-full max-w-[calc(100vw-1.5rem)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md sm:max-w-lg">
-        <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border-dark)] pb-3">
-          <div>
-            <p className="text-sm font-bold text-[var(--color-text)]">
-              {component ? "Edit PAYE component" : "Add PAYE component"}
-            </p>
-            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+      <div
+        className={cn(
+          uiClasses.card,
+          "mx-auto my-4 w-full max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto sm:max-w-lg",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-[var(--color-border)] px-4 py-3">
+          <div className="min-w-0">
+            <p className="timiq-title-md">{component ? "Edit PAYE component" : "Add PAYE component"}</p>
+            <p className="timiq-caption mt-1">
               {employeeName} · {taxYear} tax month {taxMonth}
             </p>
           </div>
-          <Button onClick={onClose} type="button" variant="secondary">
+          <Button onClick={onClose} size="sm" type="button" variant="secondary">
             Close
           </Button>
         </div>
 
-        {locked ? (
-          <div className="mt-3 rounded border border-amber-800/25 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-            Components are locked once a PAYE period is approved or paid.
-          </div>
-        ) : null}
-        {error ? (
-          <div className="mt-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
-            {error}
-          </div>
-        ) : null}
+        <div className="space-y-3 px-4 py-4">
+          {locked ? (
+            <AlertBanner tone="warning">
+              Components are locked once a PAYE period is approved or paid.
+            </AlertBanner>
+          ) : null}
+          {error ? <AlertBanner tone="danger">{error}</AlertBanner> : null}
 
-        <form className="mt-4 space-y-3" onSubmit={submit}>
-          <label className="block text-xs font-bold text-[var(--color-text)]">
-            Type
-            <select
-              className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-              disabled={saving || locked || Boolean(component)}
-              onChange={(event) => setComponentType(event.target.value as PayePayComponentType)}
-              value={componentType}
-            >
-              <option value="bonus">Bonus</option>
-              <option value="commission">Commission</option>
-            </select>
-          </label>
-          <label className="block text-xs font-bold text-[var(--color-text)]">
-            Description
-            <input
-              className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-              disabled={saving || locked}
-              onChange={(event) => setDescription(event.target.value)}
-              value={description}
-            />
-          </label>
-          <label className="block text-xs font-bold text-[var(--color-text)]">
-            Amount
-            <input
-              className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-              disabled={saving || locked}
-              min="0"
-              onChange={(event) => setAmount(event.target.value)}
-              step="0.01"
-              type="number"
-              value={amount}
-            />
-          </label>
-          <div className="grid gap-2 text-xs font-bold text-[var(--color-text)] sm:grid-cols-3">
-            <label className="flex items-center gap-2">
-              <input checked={taxable} disabled={saving || locked} onChange={(event) => setTaxable(event.target.checked)} type="checkbox" />
-              Taxable
+          <form className="space-y-3" onSubmit={submit}>
+            <label className={uiClasses.payeFilterLabel}>
+              Type
+              <select
+                className={uiClasses.payeFilterSelect}
+                disabled={saving || locked || Boolean(component)}
+                onChange={(event) => setComponentType(event.target.value as PayePayComponentType)}
+                value={componentType}
+              >
+                <option value="bonus">Bonus</option>
+                <option value="commission">Commission</option>
+              </select>
             </label>
-            <label className="flex items-center gap-2">
-              <input checked={niable} disabled={saving || locked} onChange={(event) => setNiable(event.target.checked)} type="checkbox" />
-              NIable
+            <label className={uiClasses.payeFilterLabel}>
+              Description
+              <input
+                className={uiClasses.payeFilterInput}
+                disabled={saving || locked}
+                onChange={(event) => setDescription(event.target.value)}
+                value={description}
+              />
             </label>
-            <label className="flex items-center gap-2">
-              <input checked={pensionable} disabled={saving || locked} onChange={(event) => setPensionable(event.target.checked)} type="checkbox" />
-              Pensionable
+            <label className={uiClasses.payeFilterLabel}>
+              Amount
+              <input
+                className={uiClasses.payeFilterInput}
+                disabled={saving || locked}
+                min="0"
+                onChange={(event) => setAmount(event.target.value)}
+                step="0.01"
+                type="number"
+                value={amount}
+              />
             </label>
-          </div>
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button disabled={saving || locked || !amount || !companyId} type="submit">
-              {saving ? "Saving..." : component ? "Save component" : "Add component"}
-            </Button>
-            <Button disabled={saving} onClick={onClose} type="button" variant="secondary">
-              Cancel
-            </Button>
-          </div>
-        </form>
+            <div className="grid gap-2 text-xs font-semibold text-[var(--color-text)] sm:grid-cols-3">
+              <label className="flex items-center gap-2">
+                <input
+                  checked={taxable}
+                  disabled={saving || locked}
+                  onChange={(event) => setTaxable(event.target.checked)}
+                  type="checkbox"
+                />
+                Taxable
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  checked={niable}
+                  disabled={saving || locked}
+                  onChange={(event) => setNiable(event.target.checked)}
+                  type="checkbox"
+                />
+                NIable
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  checked={pensionable}
+                  disabled={saving || locked}
+                  onChange={(event) => setPensionable(event.target.checked)}
+                  type="checkbox"
+                />
+                Pensionable
+              </label>
+            </div>
+            <div className={cn(uiClasses.payeActionToolbar, "pt-1")}>
+              <Button disabled={saving || locked || !amount || !companyId} size="sm" type="submit">
+                {saving ? "Saving..." : component ? "Save component" : "Add component"}
+              </Button>
+              <Button disabled={saving} onClick={onClose} size="sm" type="button" variant="secondary">
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

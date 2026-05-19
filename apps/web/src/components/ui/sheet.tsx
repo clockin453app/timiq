@@ -16,7 +16,7 @@ type SheetBodyProps = HTMLAttributes<HTMLDivElement> & {
 
 export function Sheet({ children, className, ...props }: SheetProps) {
   return (
-    <section className={cn("timiq-sheet w-full min-w-0 max-w-full", className)} {...props}>
+    <section className={cn("timiq-sheet w-full min-w-0 max-w-full overflow-hidden", className)} {...props}>
       {children}
     </section>
   );

@@ -130,7 +130,6 @@ a {
   border-radius: var(--radius-lg);
   background: var(--color-sheet);
   box-shadow: var(--shadow-card);
-  overflow: hidden;
 }
 
 .timiq-sheet-header {
