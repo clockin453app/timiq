@@ -130,12 +130,14 @@ export function PublicSiteShell({ children, activePath, variant = "marketing" }:
                 {item.label}
               </Link>
             ))}
-            <Link
-              className="text-[var(--color-public-on-dark-muted)] underline-offset-2 hover:text-[var(--color-public-on-dark-fg)] hover:underline"
-              href={loginHref}
-            >
-              Sign in
-            </Link>
+            {pathname !== "/login" ? (
+              <Link
+                className="text-[var(--color-public-on-dark-muted)] underline-offset-2 hover:text-[var(--color-public-on-dark-fg)] hover:underline"
+                href={loginHref}
+              >
+                Sign in
+              </Link>
+            ) : null}
           </div>
         </div>
       </footer>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 
 import { PUBLIC_HERO, PUBLIC_LOGIN_BENEFITS } from "./public-copy";
 import { PublicComplianceNote } from "./public-compliance-note";
@@ -43,13 +44,13 @@ export function LoginBenefitsGrid({ className }: SlotClassProps) {
 export function LoginPageFooter({ className }: SlotClassProps) {
   return (
     <div className={cn("min-w-0 space-y-4 lg:max-w-xl", className)}>
-      <PublicComplianceNote variant="onDark" />
-      <p className="text-sm text-[var(--color-public-on-dark-soft)]">
-        <Link className="font-semibold text-[var(--color-topbar-fg)] underline" href="/features">
+      <PublicComplianceNote variant="sheet" />
+      <p className={uiClasses.publicExploreText}>
+        <Link className={uiClasses.publicExploreLink} href="/features">
           Explore all features
         </Link>{" "}
         or read our{" "}
-        <Link className="font-semibold text-[var(--color-topbar-fg)] underline" href="/security">
+        <Link className={uiClasses.publicExploreLink} href="/security">
           security overview
         </Link>
         .

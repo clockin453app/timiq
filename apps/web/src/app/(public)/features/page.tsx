@@ -6,6 +6,7 @@ import { PublicDemoCta } from "../../../components/public/public-demo-cta";
 import { PublicFeatureCard } from "../../../components/public/public-feature-card";
 import { PUBLIC_FEATURE_GROUPS } from "../../../components/public/public-copy";
 import { PublicHero } from "../../../components/public/public-hero";
+import { cn } from "../../../lib/cn";
 import { uiClasses } from "../../../lib/ui-classes";
 
 export const metadata: Metadata = {
@@ -39,17 +40,13 @@ export default function FeaturesPage() {
         ))}
       </section>
 
-      <PublicComplianceNote className="mt-8" variant="onDark" />
+      <PublicComplianceNote className="mt-8" variant="sheet" />
 
       <PublicDemoCta className="mt-10" />
 
-      <p className="mt-8 text-center text-sm text-[var(--color-public-on-dark-soft)]">
-        <Link className="font-semibold text-[var(--color-public-on-dark-link)] underline decoration-white/40" href="/product">
+      <p className={cn("mt-8 text-center", uiClasses.publicExploreText)}>
+        <Link className={uiClasses.publicExploreLink} href="/product">
           Product overview
-        </Link>
-        {" · "}
-        <Link className="font-semibold text-[var(--color-public-on-dark-link)] underline decoration-white/40" href="/login">
-          Sign in
         </Link>
       </p>
     </div>

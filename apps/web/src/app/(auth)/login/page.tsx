@@ -21,7 +21,7 @@ function LoginPageContent() {
           <div className={uiClasses.publicLoginFormSlot}>
             <LoginForm />
           </div>
-          <PublicDemoCta className={uiClasses.publicLoginDemoSlot} />
+          <PublicDemoCta className={uiClasses.publicLoginDemoSlot} showSignIn={false} />
           <LoginBenefitsGrid className={uiClasses.publicLoginBenefitsSlot} />
           <LoginPageFooter className={uiClasses.publicLoginFooterSlot} />
         </div>

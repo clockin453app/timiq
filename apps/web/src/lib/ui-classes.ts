@@ -259,6 +259,17 @@ export const uiClasses = {
     "rounded-[var(--radius-lg)] border border-white/15 bg-white/5 p-4 backdrop-blur-sm sm:p-5",
   ].join(" "),
 
+  /** Readable compliance / info card on pale gradient areas. */
+  publicComplianceSheet: [
+    "border-[var(--color-border-dark)] bg-[var(--color-sheet)] text-[var(--color-text-muted)]",
+    "shadow-[var(--shadow-card)]",
+  ].join(" "),
+
+  publicExploreText: "text-sm text-[var(--color-text-muted)]",
+
+  publicExploreLink:
+    "font-semibold text-[var(--color-brand)] underline decoration-[var(--color-brand)]/30 underline-offset-2 hover:text-[var(--color-brand-hover)]",
+
   publicContentCard: [
     "rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)]",
     "p-5 shadow-[var(--shadow-card)] sm:p-6",

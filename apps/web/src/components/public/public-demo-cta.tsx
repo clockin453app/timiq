@@ -7,9 +7,10 @@ import { PUBLIC_DEMO_CTA } from "./public-copy";
 
 type PublicDemoCtaProps = {
   className?: string;
+  showSignIn?: boolean;
 };
 
-export function PublicDemoCta({ className }: PublicDemoCtaProps) {
+export function PublicDemoCta({ className, showSignIn = true }: PublicDemoCtaProps) {
   return (
     <section
       aria-labelledby="public-demo-cta-title"
@@ -32,18 +33,20 @@ export function PublicDemoCta({ className }: PublicDemoCtaProps) {
         >
           {PUBLIC_DEMO_CTA.primaryLabel}
         </a>
-        <Link
-          className={cn(
-            "inline-flex min-h-[44px] items-center justify-center rounded-[var(--radius-md)]",
-            "border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-4",
-            "text-sm font-semibold text-[var(--color-text)] no-underline",
-            "hover:bg-[var(--color-header)]",
-            uiClasses.focusRing,
-          )}
-          href="/login"
-        >
-          {PUBLIC_DEMO_CTA.secondaryLabel}
-        </Link>
+        {showSignIn ? (
+          <Link
+            className={cn(
+              "inline-flex min-h-[44px] items-center justify-center rounded-[var(--radius-md)]",
+              "border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-4",
+              "text-sm font-semibold text-[var(--color-text)] no-underline",
+              "hover:bg-[var(--color-header)]",
+              uiClasses.focusRing,
+            )}
+            href="/login"
+          >
+            {PUBLIC_DEMO_CTA.secondaryLabel}
+          </Link>
+        ) : null}
       </div>
     </section>
   );

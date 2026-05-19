@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 
 import { PublicComplianceNote } from "../../../components/public/public-compliance-note";
 import { PublicDemoCta } from "../../../components/public/public-demo-cta";
@@ -32,20 +31,14 @@ export default function SecurityPage() {
         ))}
       </section>
 
-      <PublicComplianceNote className="mt-8" variant="onDark" />
+      <PublicComplianceNote className="mt-8" variant="sheet" />
 
-      <p className="mt-6 text-sm text-[var(--color-public-on-dark-soft)]">
+      <p className="mt-6 text-sm text-[var(--color-text-muted)]">
         TimIQ does not provide tax advice or legal compliance guarantees. Some payroll compliance workflows,
         including RTI/HMRC submission, are not enabled yet. See the product pages for current capability.
       </p>
 
       <PublicDemoCta className="mt-10" />
-
-      <p className="mt-6 text-center text-sm text-[var(--color-public-on-dark-soft)]">
-        <Link className="font-semibold text-[var(--color-public-on-dark-link)] underline decoration-white/40" href="/login">
-          Sign in to TimIQ
-        </Link>
-      </p>
     </div>
   );
 }

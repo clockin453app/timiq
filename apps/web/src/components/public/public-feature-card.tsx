@@ -59,24 +59,26 @@ export function PublicFeatureCard({
   return (
     <article
       className={cn(
-        onDark ? uiClasses.publicFeatureCardOnDark : uiClasses.publicFeatureCard,
+        uiClasses.publicFeatureCard,
+        onDark &&
+          "lg:border-white/15 lg:bg-white/5 lg:shadow-none lg:backdrop-blur-sm",
         className,
       )}
     >
       <div
         className={cn(
           "mb-3 inline-flex h-10 w-10 items-center justify-center rounded-[var(--radius-md)]",
-          onDark
-            ? "border border-white/20 bg-white/10 text-[var(--color-topbar-fg)]"
-            : "border border-[var(--color-border)] bg-[var(--color-header)] text-[var(--color-brand)]",
+          "border border-[var(--color-border)] bg-[var(--color-header)] text-[var(--color-brand)]",
+          onDark &&
+            "lg:border-white/20 lg:bg-white/10 lg:text-[var(--color-topbar-fg)]",
         )}
       >
         <Icon aria-hidden className="h-5 w-5" />
       </div>
       <h3
         className={cn(
-          "text-sm font-semibold leading-snug",
-          onDark ? "text-[var(--color-topbar-fg)]" : "text-[var(--color-text)]",
+          "text-sm font-semibold leading-snug text-[var(--color-text)]",
+          onDark && "lg:text-[var(--color-topbar-fg)]",
         )}
       >
         {title}
@@ -84,8 +86,8 @@ export function PublicFeatureCard({
       {description ? (
         <p
           className={cn(
-            "mt-1.5 text-sm leading-relaxed",
-            onDark ? "text-[var(--color-public-on-dark-muted)]" : "text-[var(--color-text-muted)]",
+            "mt-1.5 text-sm leading-relaxed text-[var(--color-text-muted)]",
+            onDark && "lg:text-[var(--color-public-on-dark-muted)]",
           )}
         >
           {description}
