@@ -3,8 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { CLOCK_MAP_FALLBACK_MESSAGE, ClockSitesMap } from "../../components/maps";
 import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
+import { ClockLocationPanel } from "../../features/time-clock/clock-location-panel";
 import {
   breakEnd,
   breakStart,
@@ -755,6 +755,26 @@ export function ClockClient() {
           </div>
         ) : null}
 
+        <ClockLocationPanel
+          assignedSites={clockStatus?.assigned_sites ?? EMPTY_ASSIGNED_SITES}
+          clockMapSessionOff={clockMapSessionOff}
+          clockStatus={clockStatus}
+          flowStatus={flowStatus}
+          geoCapture={geoCapture}
+          gpsAcquiring={gpsAcquiring}
+          gpsStatusLine={gpsStatusLine}
+          isRefreshing={isRefreshing}
+          isSubmitting={isSubmitting}
+          mapMountDeferred={mapMountDeferred}
+          nearestSiteSummary={nearestSiteSummary}
+          onMapFault={handleClockMapFault}
+          onRetryGps={handleRetryGps}
+          selfieCaptureActive={activeSelfiePhase !== null}
+          showGpsRetry={showGpsRetry}
+          t={t}
+          viewportClockMapMode={viewportClockMapMode}
+        />
+
         {clockStatus && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
           <div className="rounded-[var(--radius-md)] border-2 border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 sm:p-5">
             {flowStatus === "on_shift" || flowStatus === "open_break" ? (
@@ -910,29 +930,6 @@ export function ClockClient() {
           </div>
         ) : null}
 
-        {clockStatus && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
-          <div className="min-w-0 rounded border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5 text-sm">
-            <p className="font-medium text-[var(--color-text)]">{gpsStatusLine}</p>
-            {geoCapture ? (
-              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
-                Accuracy {Math.round(geoCapture.payload.accuracy_meters)}m · Sites{" "}
-                {clockStatus?.active_location_count ?? 0}
-              </p>
-            ) : null}
-            {showGpsRetry ? (
-              <Button
-                className="mt-2"
-                disabled={gpsAcquiring || isSubmitting || activeSelfiePhase !== null}
-                onClick={handleRetryGps}
-                type="button"
-                variant="secondary"
-              >
-                Retry location
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-
         <details className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] text-sm">
           <summary className="cursor-pointer px-3 py-2.5 font-medium text-[var(--color-text)]">
             {t("clock.details_gps_checklist", "GPS details & checklist")}
@@ -1009,52 +1006,6 @@ export function ClockClient() {
             ) : null}
           </div>
         </details>
-
-        {geoCapture && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
-          <div className="min-w-0 rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-sm">
-            <p className="font-bold text-[var(--color-text)]">Map</p>
-            {(clockStatus?.assigned_sites ?? []).length === 0 ? (
-              <p className="mt-1 text-[var(--color-text-muted)]">No map data.</p>
-            ) : (
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Supporting view only - GPS validation still runs on the server.
-              </p>
-            )}
-            <div className="mt-2 w-full min-w-0 max-w-full overflow-x-hidden">
-              {viewportClockMapMode === "narrow" ? (
-                <div className="flex min-h-[120px] w-full flex-col justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-4 text-center text-sm text-[var(--color-text-muted)]">
-                  <p>{CLOCK_MAP_FALLBACK_MESSAGE}</p>
-                  <p className="mt-2 text-xs">
-                    Live map is omitted on small screens for stability. Your GPS and nearest site details stay above.
-                  </p>
-                </div>
-              ) : clockMapSessionOff ? (
-                <div className="flex min-h-[120px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-4 text-center text-sm text-[var(--color-text-muted)]">
-                  {CLOCK_MAP_FALLBACK_MESSAGE}
-                </div>
-              ) : !mapMountDeferred ? (
-                <div className="flex min-h-[80px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-3 text-center text-xs text-[var(--color-text-muted)]">
-                  {isSubmitting || isRefreshing
-                    ? "Map paused while the clock status updates…"
-                    : "Preparing map…"}
-                </div>
-              ) : Number.isFinite(geoCapture.payload.latitude) &&
-                Number.isFinite(geoCapture.payload.longitude) ? (
-                <ClockSitesMap
-                  accuracyMeters={geoCapture.payload.accuracy_meters}
-                  employeeLatitude={geoCapture.payload.latitude}
-                  employeeLongitude={geoCapture.payload.longitude}
-                  onMapFault={handleClockMapFault}
-                  sites={clockStatus?.assigned_sites ?? EMPTY_ASSIGNED_SITES}
-                />
-              ) : (
-                <div className="flex min-h-[80px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-3 text-center text-sm text-[var(--color-text-muted)]">
-                  {CLOCK_MAP_FALLBACK_MESSAGE}
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
 
         {flowStatus === "on_shift" && breakStartEnabled ? (
           <div className="rounded border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3 text-sm">

@@ -8,6 +8,7 @@ import { isAdministrator, isEmployee, useCurrentUser } from "../../features/auth
 import { readStoredCompanyId } from "../../features/companies/selected-company";
 import { fetchManagementSummary, type ManagementSummary } from "../../features/dashboard/api";
 import { getClockStatus, type ClockStatus } from "../../features/time-clock/api";
+import { EmployeeDashboardClockCard } from "../../features/time-clock/employee-dashboard-clock-card";
 import { useLiveShiftDurationParts } from "../../features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "../../features/timesheets/week-utils";
 import { payrollStatusLabel } from "../../lib/i18n/display-labels";
@@ -158,82 +159,15 @@ function EmployeeDashboard() {
       />
 
       <SheetBody className="min-w-0 space-y-4 md:p-5">
-        <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-              {t("dashboard.clock_shift_section", "Clock & shift")}
-            </p>
-            {clockStatus && clockStatus.has_open_shift ? (
-              <StatusBadge tone="success">{t("dashboard.on_shift_badge", "On shift")}</StatusBadge>
-            ) : clockStatus ? (
-              <StatusBadge tone="muted">{t("dashboard.off_shift_badge", "Off shift")}</StatusBadge>
-            ) : null}
-          </div>
-
-          <div className="p-4">
-            {clockLoading ? (
-              <p className="text-sm text-[var(--color-text-muted)]">
-                {t("dashboard.loading_clock", "Loading clock status…")}
-              </p>
-            ) : null}
-
-            {!clockLoading && clockError ? (
-              <p className="text-sm text-[var(--color-danger-700)]">{clockError}</p>
-            ) : null}
-
-            {!clockLoading && clockStatus ? (
-              <dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2">
-                <div className="flex min-w-0 flex-col gap-1">
-                  <dt className="text-xs text-[var(--color-text-muted)]">
-                    {t("dashboard.current_clock_status", "Current clock status")}
-                  </dt>
-                  <dd className="font-semibold text-[var(--color-text)]">{formatClockLine(clockStatus)}</dd>
-                </div>
-                <div className="flex min-w-0 flex-col gap-1">
-                  <dt className="text-xs text-[var(--color-text-muted)]">
-                    {t("dashboard.today_hours", "Today hours")}
-                  </dt>
-                  <dd className="font-semibold text-[var(--color-text)]">
-                    {t("dashboard.today_hours_hint", "Calculated after clock-out")}
-                  </dd>
-                </div>
-                {clockStatus.has_open_shift && clockStatus.open_shift_clock_in_at ? (
-                  <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
-                    <dt className="text-xs text-[var(--color-text-muted)]">
-                      {t("dashboard.live_shift_time", "Live shift time")}
-                    </dt>
-                    <dd className="font-semibold text-[var(--color-text)]" suppressHydrationWarning>
-                      {t("dashboard.on_shift_for", "On shift for")}{" "}
-                      <span className="font-mono">
-                        {onShiftDurationParts.hms || onShiftDurationParts.compact || "—"}
-                      </span>
-                      {onShiftDurationParts.compact && onShiftDurationParts.hms ? (
-                        <span className="font-normal text-[var(--color-text-muted)]">
-                          {" "}
-                          ({onShiftDurationParts.compact})
-                        </span>
-                      ) : null}
-                    </dd>
-                  </div>
-                ) : null}
-                <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
-                  <dt className="text-xs text-[var(--color-text-muted)]">
-                    {t("dashboard.shift_status", "Shift status")}
-                  </dt>
-                  <dd className="font-semibold text-[var(--color-text)]">{describeShift(clockStatus)}</dd>
-                </div>
-                <div className="flex min-w-0 flex-col gap-1 sm:col-span-2">
-                  <dt className="text-xs text-[var(--color-text-muted)]">
-                    {t("dashboard.assigned_locations", "Assigned active locations")}
-                  </dt>
-                  <dd className="font-semibold tabular-nums text-[var(--color-text)]">
-                    {clockStatus.active_location_count}
-                  </dd>
-                </div>
-              </dl>
-            ) : null}
-          </div>
-        </div>
+        <EmployeeDashboardClockCard
+          clockError={clockError}
+          clockLoading={clockLoading}
+          clockStatus={clockStatus}
+          describeShift={describeShift}
+          formatClockLine={formatClockLine}
+          onShiftDurationParts={onShiftDurationParts}
+          t={t}
+        />
 
         <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
           <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
