@@ -216,6 +216,69 @@ export const uiClasses = {
   payeTableMeta: "mt-1 space-y-0.5 text-xs leading-snug text-[var(--color-text-muted)]",
 
   payeActionToolbar: "flex flex-wrap items-center gap-2",
+
+  publicPage: "timiq-public-page flex min-h-dvh w-full min-w-0 flex-col",
+
+  publicMain: "mx-auto w-full min-w-0 max-w-6xl flex-1 px-4 py-8 sm:px-6 sm:py-10",
+
+  publicHeroTitle: "m-0 text-2xl font-bold leading-tight tracking-tight text-[var(--color-public-on-dark-fg)] sm:text-3xl lg:text-4xl",
+
+  publicHeroSubtitle: "mt-3 max-w-2xl text-sm leading-relaxed text-[var(--color-public-on-dark-muted)] sm:text-base",
+
+  publicMutedOnDark: "text-[var(--color-public-on-dark-soft)]",
+
+  publicLinkOnDark:
+    "font-semibold text-[var(--color-public-on-dark-link)] underline decoration-white/40 underline-offset-2 hover:decoration-white",
+
+  publicLoginGrid:
+    "grid min-w-0 items-start gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,28rem)] lg:gap-10 lg:items-start xl:gap-12",
+
+  publicLoginCard: [
+    "w-full min-w-0 max-w-[28rem] rounded-[var(--radius-lg)] border border-[var(--color-border-dark)]",
+    "bg-[var(--color-sheet)] shadow-[var(--shadow-card)] lg:max-w-none",
+  ].join(" "),
+
+  publicFeatureCard: [
+    "rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)]",
+    "p-4 shadow-[var(--shadow-card)] sm:p-5",
+  ].join(" "),
+
+  publicFeatureCardOnDark: [
+    "rounded-[var(--radius-lg)] border border-white/15 bg-white/5 p-4 backdrop-blur-sm sm:p-5",
+  ].join(" "),
+
+  publicContentCard: [
+    "rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)]",
+    "p-5 shadow-[var(--shadow-card)] sm:p-6",
+  ].join(" "),
+
+  publicCtaPrimary: [
+    "inline-flex min-h-[44px] items-center justify-center rounded-[var(--radius-md)]",
+    "border border-[var(--color-topbar-chrome-btn-border)] bg-[var(--color-topbar-chrome-btn-bg)]",
+    "px-4 text-sm font-semibold text-[var(--color-topbar-chrome-btn-fg)]",
+    "hover:bg-[var(--color-topbar-chrome-btn-hover)]",
+  ].join(" "),
+
+  publicCtaSecondary: [
+    "inline-flex min-h-[44px] items-center justify-center rounded-[var(--radius-md)]",
+    "border border-white/25 bg-white/10 px-4 text-sm font-semibold text-[var(--color-topbar-fg)]",
+    "hover:bg-white/15",
+  ].join(" "),
+
+  publicNavLink: [
+    "rounded-[var(--radius-md)] px-2.5 py-1.5 text-sm font-medium text-[var(--color-topbar-fg-muted)]",
+    "hover:bg-[var(--color-topbar-hover-bg)] hover:text-[var(--color-topbar-fg)]",
+  ].join(" "),
+
+  publicNavLinkActive: [
+    "rounded-[var(--radius-md)] bg-[var(--color-topbar-active-bg)] px-2.5 py-1.5",
+    "text-sm font-semibold text-[var(--color-topbar-active-fg)]",
+  ].join(" "),
+
+  publicDemoCta: [
+    "rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)]",
+    "p-6 shadow-[var(--shadow-card)] sm:p-8",
+  ].join(" "),
 } as const;
 
 export type UiClassKey = keyof typeof uiClasses;

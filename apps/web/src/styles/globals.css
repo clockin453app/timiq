@@ -40,6 +40,15 @@ body {
   max-width: 100%;
 }
 
+.timiq-public-page {
+  background: linear-gradient(165deg, #163b73 0%, #1a457f 32%, #e8eef5 72%, #f1f5f9 100%);
+  color: var(--color-text);
+}
+
+.timiq-public-page-content {
+  background: transparent;
+}
+
 .timiq-desktop-sidebar nav {
   scrollbar-gutter: stable;
 }
