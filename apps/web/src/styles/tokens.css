@@ -22,6 +22,12 @@
   --color-topbar-chrome-btn-hover: #f8fafc;
   --color-topbar-chrome-btn-fg: #163b73;
 
+  /* Public marketing pages on navy gradient */
+  --color-public-on-dark-fg: #ffffff;
+  --color-public-on-dark-muted: rgba(255, 255, 255, 0.86);
+  --color-public-on-dark-soft: rgba(255, 255, 255, 0.78);
+  --color-public-on-dark-link: #ffffff;
+
   --color-border: #e2e8f0;
   --color-border-dark: #cbd5e1;
 
