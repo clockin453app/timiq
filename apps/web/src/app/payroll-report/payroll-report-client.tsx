@@ -1379,6 +1379,13 @@ export function PayrollReportClient() {
           </div>
         </SectionCard>
 
+        <AlertBanner tone="info">
+          {t(
+            "payroll.report.cis_scope_note",
+            "This CIS report includes CIS subcontractors only. PAYE employees with time records are handled in Monthly PAYE.",
+          )}
+        </AlertBanner>
+
         {!hasCompany && isAdministrator(user) ? (
           <AlertBanner tone="info">
             {t("payroll.report.select_company_banner", "Select a company to load payroll.")}
