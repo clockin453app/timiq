@@ -162,19 +162,6 @@ function computeFloatingRowMenuPosition(anchor: HTMLElement, menu: HTMLElement):
   return { top, left };
 }
 
-function statusBadgeClass(status: string): string {
-  if (status === "pending") {
-    return "bg-amber-100 text-amber-900 border border-amber-800/20";
-  }
-  if (status === "approved") {
-    return "bg-emerald-50 text-emerald-900 border border-emerald-800/20";
-  }
-  if (status === "paid") {
-    return "bg-slate-200 text-slate-900 border border-slate-600/20";
-  }
-  return "bg-[var(--color-cell)] text-[var(--color-text)] border border-[var(--color-border-dark)]";
-}
-
 function payrollSplitBarPercent(value: string | null | undefined, total: string | null | undefined): number {
   const amount = Number(value ?? 0);
   const gross = Number(total ?? 0);
@@ -1847,134 +1834,146 @@ export function PayrollReportClient() {
               />
             </div>
 
-            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-[#111827]">Payment history</p>
-                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                    Paid payroll rows only. Uses the selected date range and employee filter.
-                  </p>
-                </div>
+            <SectionCard
+              action={
                 <Button
                   disabled={!activeCompanyId || paymentHistoryLoading}
                   onClick={() => void loadPaymentHistory()}
+                  size="sm"
                   type="button"
                   variant="secondary"
                 >
                   {paymentHistoryLoading ? "Loading…" : "Refresh history"}
                 </Button>
-              </div>
-              <div className="mt-3 timiq-scroll-x w-full min-w-0">
-                <table className="w-full min-w-[58rem] border-collapse text-left text-xs">
-                  <thead className="bg-[#d4d4d8] text-[#111827]">
-                    <tr>
-                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Paid date</th>
-                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Payroll week</th>
-                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Employee</th>
-                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Gross</th>
-                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">CIS</th>
-                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Net paid</th>
-                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Payment mode</th>
-                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Status</th>
-                      <th className="border border-[var(--color-border-dark)] px-2 py-1.5">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+              }
+              description="Paid payroll rows only. Uses the selected date range and employee filter."
+              title="Payment history"
+            >
+              <div className={cn(uiClasses.tableWrap, "timiq-scroll-x w-full min-w-0")}>
+                <Table className="min-w-[58rem] text-xs">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">
+                        Paid date
+                      </TableHead>
+                      <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">
+                        Payroll week
+                      </TableHead>
+                      <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">
+                        Employee
+                      </TableHead>
+                      <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">Gross</TableHead>
+                      <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">CIS</TableHead>
+                      <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">Net paid</TableHead>
+                      <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">
+                        Payment mode
+                      </TableHead>
+                      <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">Status</TableHead>
+                      <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
                     {!hasCompany ? (
-                      <tr>
-                        <td className="border border-[var(--color-border)] px-2 py-6 text-center text-[#374151]" colSpan={9}>
+                      <TableRow>
+                        <TableCell className="py-6 text-center timiq-caption text-[var(--color-text-muted)]" colSpan={9}>
                           Select a company to load payment history.
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ) : null}
                     {hasCompany && paymentHistoryLoading ? (
-                      <tr>
-                        <td className="border border-[var(--color-border)] px-2 py-6 text-center text-[var(--color-text-muted)]" colSpan={9}>
+                      <TableRow>
+                        <TableCell className="py-6 text-center timiq-caption text-[var(--color-text-muted)]" colSpan={9}>
                           Loading payment history…
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ) : null}
                     {hasCompany && !paymentHistoryLoading && paymentHistory.length === 0 ? (
-                      <tr>
-                        <td className="border border-[var(--color-border)] px-2 py-6 text-center text-[#374151]" colSpan={9}>
+                      <TableRow>
+                        <TableCell className="py-6 text-center timiq-caption text-[var(--color-text-muted)]" colSpan={9}>
                           No paid payroll rows match the selected filters.
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     ) : null}
                     {hasCompany && !paymentHistoryLoading
-                      ? paymentHistory.map((row) => (
-                          <tr className="border-b border-[var(--color-border)]" key={row.item_id}>
-                            <td className="border border-[var(--color-border)] px-2 py-1.5 tabular-nums">
-                              {formatShiftDateTime(row.paid_at, policyTimeZone)}
-                            </td>
-                            <td className="border border-[var(--color-border)] px-2 py-1.5 tabular-nums">
-                              {row.week_start} → {row.week_end}
-                            </td>
-                            <td className="border border-[var(--color-border)] px-2 py-1.5">
-                              <PayrollEmployeeIdentity
-                                employee_email={row.employee_email}
-                                employee_name={row.employee_name}
-                                user_id={row.user_id}
-                                withAvatar
-                              />
-                            </td>
-                            <td className="border border-[var(--color-border)] px-2 py-1.5">
-                              {formatMoneyGBP(row.gross_amount)}
-                            </td>
-                            <td className="border border-[var(--color-border)] px-2 py-1.5">
-                              {formatMoneyGBP(row.cis_tax_amount)}
-                            </td>
-                            <td className="border border-[var(--color-border)] px-2 py-1.5">
-                              {formatMoneyGBP(row.net_paid_amount)}
-                            </td>
-                            <td className="border border-[var(--color-border)] px-2 py-1.5">
-                              {row.payment_mode_label}
-                            </td>
-                            <td className="border border-[var(--color-border)] px-2 py-1.5">
-                              <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-bold uppercase ${statusBadgeClass(row.status)}`}>
-                                {statusBadgeLabel(t, row.status)}
-                              </span>
-                            </td>
-                            <td className="border border-[var(--color-border)] px-2 py-1.5">
-                              <div className="flex flex-wrap gap-1">
-                                {row.can_open_payslip ? (
-                                  <Button
-                                    className="min-h-8 px-2 py-1 text-xs"
-                                    onClick={() => openPayrollItemPayslip(row.item_id)}
-                                    type="button"
-                                    variant="secondary"
-                                  >
-                                    Payslip
-                                  </Button>
-                                ) : null}
-                                {row.can_undo_paid ? (
-                                  <Button
-                                    className="min-h-8 px-2 py-1 text-xs"
-                                    disabled={busyId === row.item_id}
-                                    onClick={() => {
-                                      setUndoPaidRow({
-                                        id: row.item_id,
-                                        employee_email: row.employee_email,
-                                        employee_name: row.employee_name,
-                                      });
-                                      setUndoPaidReason("");
-                                      setUndoPaidAckExport(false);
-                                    }}
-                                    type="button"
-                                    variant="secondary"
-                                  >
-                                    Undo paid
-                                  </Button>
-                                ) : null}
-                              </div>
-                            </td>
-                          </tr>
-                        ))
+                      ? paymentHistory.map((row) => {
+                          const historyPayMode = storedPaymentMode(row.payment_mode);
+                          return (
+                            <TableRow
+                              className="transition-colors hover:bg-[var(--color-header)]/40"
+                              key={row.item_id}
+                            >
+                              <TableCell className={cn(payrollTableCell, "tabular-nums text-[var(--color-text-muted)]")}>
+                                {formatShiftDateTime(row.paid_at, policyTimeZone)}
+                              </TableCell>
+                              <TableCell className={cn(payrollTableCell, "tabular-nums text-[var(--color-text-muted)]")}>
+                                {row.week_start} → {row.week_end}
+                              </TableCell>
+                              <TableCell className={cn(payrollTableCell, "max-w-[14rem] min-w-0")}>
+                                <PayrollEmployeeIdentity
+                                  emailClassName="mt-0.5 truncate text-xs leading-snug text-[var(--color-text-muted)]"
+                                  employee_email={row.employee_email}
+                                  employee_name={row.employee_name}
+                                  nameClassName="truncate text-[13px] font-semibold leading-snug text-[var(--color-text)]"
+                                  user_id={row.user_id}
+                                  withAvatar
+                                />
+                              </TableCell>
+                              <TableCell className={cn(payrollTableCell, payrollTableMoney)}>
+                                {formatMoneyGBP(row.gross_amount)}
+                              </TableCell>
+                              <TableCell className={cn(payrollTableCell, payrollTableMoney)}>
+                                {formatMoneyGBP(row.cis_tax_amount)}
+                              </TableCell>
+                              <TableCell className={cn(payrollTableCell, payrollTableMoney)}>
+                                {formatMoneyGBP(row.net_paid_amount)}
+                              </TableCell>
+                              <TableCell className={payrollTableCell}>
+                                <PaymentBadge mode={historyPayMode}>{row.payment_mode_label}</PaymentBadge>
+                              </TableCell>
+                              <TableCell className={payrollTableCell}>
+                                <StatusBadge status={row.status}>{statusBadgeLabel(t, row.status)}</StatusBadge>
+                              </TableCell>
+                              <TableCell className={payrollTableCell}>
+                                <div className="flex flex-wrap gap-1">
+                                  {row.can_open_payslip ? (
+                                    <Button
+                                      className={payrollRowActionBtn}
+                                      onClick={() => openPayrollItemPayslip(row.item_id)}
+                                      type="button"
+                                      variant="secondary"
+                                    >
+                                      Payslip
+                                    </Button>
+                                  ) : null}
+                                  {row.can_undo_paid ? (
+                                    <Button
+                                      className={payrollRowActionBtn}
+                                      disabled={busyId === row.item_id}
+                                      onClick={() => {
+                                        setUndoPaidRow({
+                                          id: row.item_id,
+                                          employee_email: row.employee_email,
+                                          employee_name: row.employee_name,
+                                        });
+                                        setUndoPaidReason("");
+                                        setUndoPaidAckExport(false);
+                                      }}
+                                      type="button"
+                                      variant="secondary"
+                                    >
+                                      Undo paid
+                                    </Button>
+                                  ) : null}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })
                       : null}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
-            </div>
+            </SectionCard>
 
             <SectionCard title="Supporting details">
               <div className="grid gap-3 xl:grid-cols-2">
