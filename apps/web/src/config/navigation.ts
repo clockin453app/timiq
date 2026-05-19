@@ -69,7 +69,7 @@ const PAYE_PAY_HISTORY: NavigationItem = {
   label: "PAYE Pay History",
   labelKey: "nav.paye_pay_history",
   href: "/paye-pay-history",
-  allowedRoles: ["administrator", "admin", "employee"],
+  allowedRoles: ["employee"],
 };
 
 const SITE_PROGRESS: NavigationItem = {
