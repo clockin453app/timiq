@@ -491,6 +491,7 @@ export const EN_STRINGS: Record<string, string> = {
   "nav.group.mgmt_sites": "Sites",
   "nav.group.mgmt_system": "System",
   "nav.group.mgmt_work": "Work",
+  "nav.admin_guide": "Administrator guide",
   "nav.help": "Help centre",
   "nav.leave": "Leave",
   "nav.leave_manage": "Leave management",

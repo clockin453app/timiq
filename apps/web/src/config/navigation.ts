@@ -326,6 +326,13 @@ const SYSTEM_HEALTH: NavigationItem = {
   allowedRoles: ["administrator"],
 };
 
+const ADMIN_GUIDE: NavigationItem = {
+  label: "Administrator guide",
+  labelKey: "nav.admin_guide",
+  href: "/admin-guide",
+  allowedRoles: ["administrator"],
+};
+
 const EMPLOYEE_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
   { id: "emp-home", label: "Home", groupLabelKey: "nav.group.emp_home", items: [DASHBOARD, MESSAGES] },
   {
@@ -380,7 +387,7 @@ const MANAGEMENT_NAV_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mgmt-system",
     label: "System",
     groupLabelKey: "nav.group.mgmt_system",
-    items: [AUDIT_LOG, LIVE_LOGS, SYSTEM_HEALTH, SETTINGS],
+    items: [AUDIT_LOG, LIVE_LOGS, SYSTEM_HEALTH, ADMIN_GUIDE, SETTINGS],
   },
 ];
 
@@ -529,7 +536,7 @@ const MOBILE_DRAWER_MANAGEMENT_GROUP_DEFS: NavigationGroupDefinition[] = [
     id: "mobile-mgmt-system",
     label: "System",
     groupLabelKey: "nav.group.mgmt_system",
-    items: [HELP_CENTRE, LIVE_LOGS, SYSTEM_HEALTH, AUDIT_LOG],
+    items: [HELP_CENTRE, LIVE_LOGS, SYSTEM_HEALTH, ADMIN_GUIDE, AUDIT_LOG],
   },
 ];
 
@@ -709,7 +716,7 @@ const DESKTOP_TOP_NAV_MANAGEMENT: NavigationGroupDefinition[] = [
     id: "desk-system",
     label: "System",
     groupLabelKey: "nav.group.desk_system",
-    items: [AUDIT_LOG, SYSTEM_HEALTH, SETTINGS, HELP_CENTRE],
+    items: [AUDIT_LOG, SYSTEM_HEALTH, ADMIN_GUIDE, SETTINGS, HELP_CENTRE],
   },
 ];
 
