@@ -474,6 +474,7 @@ export function PayrollReportClient() {
   const [paymentHistoryLoading, setPaymentHistoryLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [payrollSaveMessage, setPayrollSaveMessage] = useState("");
+  const [payrollSaveMessageTone, setPayrollSaveMessageTone] = useState<"success" | "warning">("success");
   const [editRow, setEditRow] = useState<PayrollItemRow | null>(null);
   const [editNotes, setEditNotes] = useState("");
   const [editOtherDed, setEditOtherDed] = useState("");
@@ -511,10 +512,12 @@ export function PayrollReportClient() {
     setDraftEmployeeId("");
     setAppliedEmployeeId("");
     setPayrollSaveMessage("");
+    setPayrollSaveMessageTone("success");
   }, [activeCompanyId]);
 
   useEffect(() => {
     setPayrollSaveMessage("");
+    setPayrollSaveMessageTone("success");
     setExportDateFrom(weekStart);
     setExportDateTo(addDaysIsoYmd(weekStart, 6));
   }, [weekStart]);
@@ -676,6 +679,7 @@ export function PayrollReportClient() {
       });
       setReport(data);
       if (!silent && data.payroll_auto_recalculated) {
+        setPayrollSaveMessageTone("success");
         setPayrollSaveMessage(t("payroll.report.refreshed", "Payroll refreshed from latest time records."));
       }
       if (!silent) {
@@ -816,6 +820,7 @@ export function PayrollReportClient() {
   function openEdit(row: PayrollItemRow) {
     closeRowActionMenu();
     setPayrollSaveMessage("");
+    setPayrollSaveMessageTone("success");
     setEditRow(row);
     setEditNotes(row.notes ?? "");
     setEditOtherDed(row.other_deductions_amount ?? "0");
@@ -843,6 +848,7 @@ export function PayrollReportClient() {
 
   function openShiftEdit(row: TimeRecordShiftRow) {
     setPayrollSaveMessage("");
+    setPayrollSaveMessageTone("success");
     setShiftEditError("");
     setShiftEditRow(row);
     setShiftEditClockInLocal(toDatetimeLocalValue(row.clock_in_at));
@@ -880,6 +886,7 @@ export function PayrollReportClient() {
         });
       }
       setEditRow(null);
+      setPayrollSaveMessageTone("success");
       setPayrollSaveMessage(t("payroll.report.row_saved", "Payroll row saved."));
       await loadReport();
     } catch (err) {
@@ -896,6 +903,7 @@ export function PayrollReportClient() {
     }
     setShiftEditError("");
     setPayrollSaveMessage("");
+    setPayrollSaveMessageTone("success");
     const clockInAt = fromDatetimeLocalToIso(shiftEditClockInLocal);
     const clockOutAt = fromDatetimeLocalToIso(shiftEditClockOutLocal);
     if (!clockInAt || !clockOutAt) {
@@ -914,7 +922,7 @@ export function PayrollReportClient() {
     setShiftEditBusy(true);
     setBusyId(shiftEditRow.shift_id);
     try {
-      await adminPatchCompletedShift(shiftEditRow.shift_id, {
+      const res = await adminPatchCompletedShift(shiftEditRow.shift_id, {
         clock_in_at: clockInAt,
         clock_out_at: clockOutAt,
         location_id: shiftEditLocationId !== shiftEditRow.location_id ? shiftEditLocationId : undefined,
@@ -925,7 +933,18 @@ export function PayrollReportClient() {
       closeShiftEdit();
       await reloadShiftRows(userId);
       await loadReport();
-      setPayrollSaveMessage("Shift updated. Payroll needs recalculation.");
+      if (res.payroll_recalculation_required) {
+        setPayrollSaveMessageTone("warning");
+        setPayrollSaveMessage(
+          t(
+            "payroll.report.shift_saved_needs_recalc",
+            "Shift time saved. Payroll was not updated automatically. Recalculate to refresh pending amounts.",
+          ),
+        );
+      } else {
+        setPayrollSaveMessageTone("success");
+        setPayrollSaveMessage(t("payroll.report.shift_saved", "Shift time saved."));
+      }
     } catch (err) {
       setShiftEditError(err instanceof Error ? err.message : "Could not update shift.");
     } finally {
@@ -955,6 +974,7 @@ export function PayrollReportClient() {
     try {
       const data = await recalculatePayroll(activeCompanyId, weekStart);
       setReport(data);
+      setPayrollSaveMessageTone("success");
       setPayrollSaveMessage(t("payroll.report.refreshed", "Payroll refreshed from latest time records."));
     } catch (err) {
       setError(err instanceof Error ? err.message : t("payroll.report.recalc_failed", "Recalculate failed."));
@@ -1010,6 +1030,7 @@ export function PayrollReportClient() {
     setError("");
     try {
       await createPayrollLateShiftAdjustment(paidItemId, { confirm: true });
+      setPayrollSaveMessageTone("success");
       setPayrollSaveMessage(
         t("payroll.report.adjustment_created", "Pending adjustment row created for late shifts."),
       );
@@ -1047,6 +1068,7 @@ export function PayrollReportClient() {
       setUndoPaidRow(null);
       setUndoPaidReason("");
       setUndoPaidAckExport(false);
+      setPayrollSaveMessageTone("success");
       setPayrollSaveMessage(t("payroll.report.undo_paid_success", "Payroll row moved back to Approved."));
       await loadReport();
       await loadPaymentHistory();
@@ -1192,6 +1214,41 @@ export function PayrollReportClient() {
   const payrollNeedsRecalculation = Boolean(alerts?.payroll_needs_recalculation);
   const paidRowCount = period?.paid_count ?? 0;
   const approvedRowCount = period?.approved_count ?? 0;
+  const payrollRecalcBlocked =
+    payrollNeedsRecalculation && (approvedRowCount > 0 || paidRowCount > 0);
+  const payrollReviewRecalcStatus = useMemo(() => {
+    if (!hasCompany || !report) {
+      return null;
+    }
+    if (payrollPeriodNotCalculated) {
+      return {
+        badgeTone: "warning" as const,
+        badgeLabel: t("payroll.report.recalc_status_pending", "Not calculated"),
+        message: t(
+          "payroll.report.recalc_status_not_calculated",
+          "Payroll not calculated for this week yet.",
+        ),
+      };
+    }
+    if (payrollNeedsRecalculation) {
+      return {
+        badgeTone: "warning" as const,
+        badgeLabel: t("payroll.report.recalc_status_stale", "Needs recalculation"),
+        message: t(
+          "payroll.report.recalc_status_stale_body",
+          "Needs recalculation — time records changed after payroll was calculated.",
+        ),
+      };
+    }
+    return {
+      badgeTone: "success" as const,
+      badgeLabel: t("payroll.report.recalc_status_current", "Up to date"),
+      message: t(
+        "payroll.report.recalc_status_current_body",
+        "Payroll up to date — no recalculation needed.",
+      ),
+    };
+  }, [hasCompany, payrollNeedsRecalculation, payrollPeriodNotCalculated, report, t]);
   const lateShiftDetected = Boolean(report?.has_late_unpaid_shifts);
   const lateDetectedCount = report?.late_shift_count_detected ?? report?.late_shift_count ?? 0;
   const canAdjustLateShiftsGlobally =
@@ -1394,7 +1451,9 @@ export function PayrollReportClient() {
 
         {error ? <AlertBanner tone="danger">{error}</AlertBanner> : null}
 
-        {payrollSaveMessage ? <AlertBanner tone="success">{payrollSaveMessage}</AlertBanner> : null}
+        {payrollSaveMessage ? (
+          <AlertBanner tone={payrollSaveMessageTone}>{payrollSaveMessage}</AlertBanner>
+        ) : null}
 
         <div className="space-y-5">
           <div className="min-w-0 w-full space-y-5">
@@ -1405,10 +1464,22 @@ export function PayrollReportClient() {
                   className={cn(uiClasses.payeActionToolbar, "gap-1.5")}
                 >
                   <Button
+                    className={
+                      !payrollPeriodNotCalculated && !payrollNeedsRecalculation
+                        ? "border-[var(--color-success-700)] bg-[var(--color-success-50)] text-[var(--color-success-700)] hover:border-[var(--color-success-700)] hover:bg-[var(--color-success-700)] hover:text-white"
+                        : undefined
+                    }
                     disabled={loading || !activeCompanyId}
                     onClick={runRecalculate}
                     size="sm"
                     type="button"
+                    variant={
+                      payrollPeriodNotCalculated
+                        ? "primary"
+                        : payrollNeedsRecalculation
+                          ? "danger"
+                          : "primary"
+                    }
                   >
                     {payrollPeriodNotCalculated
                       ? t("payroll.report.calculate", "Calculate payroll")
@@ -1482,6 +1553,26 @@ export function PayrollReportClient() {
                 <AlertBanner className="mb-3" tone="warning">
                   Payroll locked — paid rows cannot be rebuilt.
                 </AlertBanner>
+              ) : null}
+              {payrollReviewRecalcStatus ? (
+                <div className="mb-3 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={payrollReviewRecalcStatus.badgeTone}>
+                      {payrollReviewRecalcStatus.badgeLabel}
+                    </Badge>
+                    <span className="text-sm text-[var(--color-text)]">
+                      {payrollReviewRecalcStatus.message}
+                    </span>
+                  </div>
+                  {payrollRecalcBlocked ? (
+                    <p className="timiq-caption text-[var(--color-text-muted)]">
+                      {t(
+                        "payroll.report.recalc_unlock_before_recalc",
+                        "Unlock approved or undo paid before recalculating.",
+                      )}
+                    </p>
+                  ) : null}
+                </div>
               ) : null}
               <div className={cn(uiClasses.tableWrap, "timiq-scroll-x w-full min-w-0")}>
                 <Table className="min-w-full">
