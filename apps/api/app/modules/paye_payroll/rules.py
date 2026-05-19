@@ -19,6 +19,16 @@ SOURCE_NOTE = (
     "fixed monthly salary, numeric L tax codes, NI category A only; not HMRC-certified payroll software."
 )
 
+INCOMPLETE_TAX_YEAR_RULES_MESSAGE = (
+    "PAYE rules for this tax year are incomplete. Load or repair the tax-year rules before recalculating."
+)
+
+
+def tax_year_rules_json_is_complete(rules_json: object | None) -> bool:
+    if not isinstance(rules_json, dict) or not rules_json:
+        return False
+    return "income_tax" in rules_json and "national_insurance" in rules_json
+
 
 def paye_rules_2026_2027() -> dict:
     return {

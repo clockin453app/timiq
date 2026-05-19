@@ -4,11 +4,13 @@ import html
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.auth.service import can_manage_user
@@ -37,7 +39,13 @@ from app.modules.paye_payroll.models import (
     PayeTaxYearRule,
 )
 from app.modules.paye_payroll.pdf_export import build_monthly_paye_payslip_pdf
-from app.modules.paye_payroll.rules import SOURCE_NOTE, SUPPORTED_TAX_YEAR, paye_rules_2026_2027
+from app.modules.paye_payroll.rules import (
+    INCOMPLETE_TAX_YEAR_RULES_MESSAGE,
+    SOURCE_NOTE,
+    SUPPORTED_TAX_YEAR,
+    paye_rules_2026_2027,
+    tax_year_rules_json_is_complete,
+)
 from app.modules.paye_payroll.schemas import (
     CompanyPayeSettingsPatchRequest,
     CompanyPayeSettingsResponse,
@@ -69,6 +77,88 @@ class PayePayrollNotFoundError(ValueError):
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _log_paye_audit(
+    db_session: Session,
+    actor: User,
+    *,
+    action: str,
+    entity_type: str,
+    entity_id: str,
+    company_id: uuid.UUID,
+    details: dict[str, Any] | None = None,
+) -> None:
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action=action,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        company_id=company_id,
+        details=details or {},
+    )
+
+
+def _money_total_str(items: list[MonthlyPayeItem]) -> dict[str, str]:
+    gross = Decimal("0")
+    paye_tax = Decimal("0")
+    employee_ni = Decimal("0")
+    net_pay = Decimal("0")
+    has_gross = has_paye = has_ni = has_net = False
+    for item in items:
+        if item.unsupported_reason:
+            continue
+        if item.gross_pay is not None:
+            gross += Decimal(str(item.gross_pay))
+            has_gross = True
+        if item.paye_tax is not None:
+            paye_tax += Decimal(str(item.paye_tax))
+            has_paye = True
+        if item.employee_ni is not None:
+            employee_ni += Decimal(str(item.employee_ni))
+            has_ni = True
+        if item.net_pay is not None:
+            net_pay += Decimal(str(item.net_pay))
+            has_net = True
+    totals: dict[str, str] = {}
+    if has_gross:
+        totals["total_gross"] = str(gross)
+    if has_paye:
+        totals["total_paye_tax"] = str(paye_tax)
+    if has_ni:
+        totals["total_employee_ni"] = str(employee_ni)
+    if has_net:
+        totals["total_net_pay"] = str(net_pay)
+    return totals
+
+
+def _period_audit_details(
+    *,
+    period: MonthlyPayePeriod,
+    company_id: uuid.UUID,
+    items: list[MonthlyPayeItem],
+    status_before: str | None,
+    status_after: str,
+    employee_count: int | None = None,
+    items_affected: int | None = None,
+) -> dict[str, Any]:
+    details: dict[str, Any] = {
+        "company_id": str(company_id),
+        "tax_year": period.tax_year,
+        "tax_month": period.tax_month,
+        "period_id": str(period.id),
+        "status_before": status_before,
+        "status_after": status_after,
+        "item_count": len(items),
+        "unsupported_count": sum(1 for item in items if item.unsupported_reason),
+    }
+    if employee_count is not None:
+        details["employee_count"] = employee_count
+    if items_affected is not None:
+        details["items_affected"] = items_affected
+    details.update(_money_total_str(items))
+    return details
 
 
 def _trim_or_none(value: str | None) -> str | None:
@@ -162,6 +252,7 @@ def patch_employee_paye_settings(
     target = _target_employee_for_actor(db_session, actor, user_id)
     row = _get_or_create_employee_settings(db_session, target)
     data = request.model_dump(exclude_unset=True)
+    changed_fields = sorted(data.keys())
     for field, value in data.items():
         if field in {"tax_code", "ni_category"}:
             value = _trim_or_none(value)
@@ -170,6 +261,19 @@ def patch_employee_paye_settings(
     db_session.add(row)
     db_session.commit()
     db_session.refresh(row)
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_employee_settings_updated",
+        entity_type="employee_paye_settings",
+        entity_id=str(user_id),
+        company_id=target.company_id,
+        details={
+            "company_id": str(target.company_id),
+            "user_id": str(user_id),
+            "changed_fields": changed_fields,
+        },
+    )
     return EmployeePayeSettingsResponse.model_validate(row)
 
 
@@ -215,6 +319,7 @@ def patch_company_paye_settings(
     cid = _resolve_company_id(actor, request.company_id)
     row = _get_or_create_company_settings(db_session, cid)
     data = request.model_dump(exclude_unset=True, exclude={"company_id"})
+    changed_fields = sorted(data.keys())
     for field, value in data.items():
         if field in {
             "paye_reference",
@@ -229,6 +334,18 @@ def patch_company_paye_settings(
     db_session.add(row)
     db_session.commit()
     db_session.refresh(row)
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_company_settings_updated",
+        entity_type="company_paye_settings",
+        entity_id=str(cid),
+        company_id=cid,
+        details={
+            "company_id": str(cid),
+            "changed_fields": changed_fields,
+        },
+    )
     return CompanyPayeSettingsResponse.model_validate(row)
 
 
@@ -324,14 +441,18 @@ def _assert_supported_tax_year(tax_year: str) -> None:
 def _ensure_tax_year_rule(db_session: Session, tax_year: str) -> PayeTaxYearRule:
     _assert_supported_tax_year(tax_year)
     row = paye_repo.get_tax_year_rule(db_session, tax_year)
-    if row is not None and row.rules_json:
-        return row
+    if row is not None:
+        if tax_year_rules_json_is_complete(row.rules_json):
+            return row
+        raise PayePayrollPermissionError(INCOMPLETE_TAX_YEAR_RULES_MESSAGE)
     now = _now()
-    if row is None:
-        row = PayeTaxYearRule(tax_year=tax_year, created_at=now, updated_at=now)
-    row.rules_json = paye_rules_2026_2027()
-    row.source_note = SOURCE_NOTE
-    row.updated_at = now
+    row = PayeTaxYearRule(
+        tax_year=tax_year,
+        rules_json=paye_rules_2026_2027(),
+        source_note=SOURCE_NOTE,
+        created_at=now,
+        updated_at=now,
+    )
     paye_repo.save_tax_year_rule(db_session, row)
     return row
 
@@ -1106,6 +1227,29 @@ def create_pay_component(
     )
     paye_repo.save_pay_component(db_session, component)
     db_session.commit()
+    component_details: dict[str, Any] = {
+        "company_id": str(cid),
+        "user_id": str(request.user_id),
+        "tax_year": request.tax_year,
+        "tax_month": request.tax_month,
+        "component_id": str(component.id),
+        "component_type": component.component_type,
+        "amount": str(component.amount),
+        "taxable": component.taxable,
+        "niable": component.niable,
+        "pensionable": component.pensionable,
+    }
+    if period is not None:
+        component_details["period_id"] = str(period.id)
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_component_created",
+        entity_type="monthly_paye_pay_component",
+        entity_id=str(component.id),
+        company_id=cid,
+        details=component_details,
+    )
     return _component_response(component)
 
 
@@ -1126,6 +1270,7 @@ def patch_pay_component(
         tax_year=component.tax_year,
         tax_month=component.tax_month,
     )
+    changed_fields = sorted(request.model_dump(exclude_unset=True).keys())
     if request.description is not None:
         component.description = _trim_or_none(request.description)
     if request.amount is not None:
@@ -1138,6 +1283,24 @@ def patch_pay_component(
         component.pensionable = request.pensionable
     component.updated_at = _now()
     db_session.commit()
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_component_updated",
+        entity_type="monthly_paye_pay_component",
+        entity_id=str(component.id),
+        company_id=component.company_id,
+        details={
+            "company_id": str(component.company_id),
+            "user_id": str(component.user_id),
+            "tax_year": component.tax_year,
+            "tax_month": component.tax_month,
+            "period_id": str(component.period_id) if component.period_id is not None else None,
+            "component_id": str(component.id),
+            "component_type": component.component_type,
+            "changed_fields": changed_fields,
+        },
+    )
     return _component_response(component)
 
 
@@ -1153,8 +1316,31 @@ def delete_pay_component(db_session: Session, actor: User, component_id: uuid.UU
         tax_year=component.tax_year,
         tax_month=component.tax_month,
     )
+    deleted_id = component.id
+    deleted_details = {
+        "company_id": str(component.company_id),
+        "user_id": str(component.user_id),
+        "tax_year": component.tax_year,
+        "tax_month": component.tax_month,
+        "period_id": str(component.period_id) if component.period_id is not None else None,
+        "component_id": str(deleted_id),
+        "component_type": component.component_type,
+        "amount": str(component.amount),
+        "taxable": component.taxable,
+        "niable": component.niable,
+        "pensionable": component.pensionable,
+    }
     paye_repo.delete_pay_component(db_session, component)
     db_session.commit()
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_component_deleted",
+        entity_type="monthly_paye_pay_component",
+        entity_id=str(deleted_id),
+        company_id=component.company_id,
+        details=deleted_details,
+    )
 
 
 def _component_summary(components: list[MonthlyPayePayComponent]) -> dict[str, Decimal | list[dict]]:
@@ -1620,6 +1806,7 @@ def recalculate_monthly_paye(
     cid = _resolve_company_id(actor, company_id)
     settings = _get_or_create_company_settings(db_session, cid)
     period = paye_repo.get_monthly_period(db_session, company_id=cid, tax_year=tax_year, tax_month=tax_month)
+    status_before = period.status if period is not None else None
     if period is None:
         period = _period_for_tax_month(company_id=cid, tax_year=tax_year, tax_month=tax_month, actor_id=actor.id)
         db_session.add(period)
@@ -1633,7 +1820,9 @@ def recalculate_monthly_paye(
         paye_repo.clear_component_item_links_for_period(db_session, period.id)
         paye_repo.delete_pending_items_for_period(db_session, period.id)
 
+    employee_count = 0
     for user, profile, employee_settings in paye_repo.list_paye_candidates_for_company(db_session, company_id=cid):
+        employee_count += 1
         components = paye_repo.list_pay_components(
             db_session,
             company_id=cid,
@@ -1712,6 +1901,23 @@ def recalculate_monthly_paye(
             for component in components:
                 component.item_id = item.id
     db_session.commit()
+    items = paye_repo.list_items_for_period(db_session, period.id)
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_monthly_recalculated",
+        entity_type="monthly_paye_period",
+        entity_id=str(period.id),
+        company_id=cid,
+        details=_period_audit_details(
+            period=period,
+            company_id=cid,
+            items=items,
+            status_before=status_before,
+            status_after=period.status,
+            employee_count=employee_count,
+        ),
+    )
     return monthly_paye_report(
         db_session,
         actor,
@@ -1736,6 +1942,8 @@ def approve_monthly_paye_period(
     items = paye_repo.list_items_for_period(db_session, period.id)
     if any(item.unsupported_reason for item in items):
         raise PayePayrollPermissionError("Cannot approve PAYE period while unsupported rows are present.")
+    status_before = period.status
+    items_affected = sum(1 for item in items if item.status == "pending")
     now = _now()
     period.status = "approved"
     period.approved_at = now
@@ -1748,6 +1956,22 @@ def approve_monthly_paye_period(
             item.approved_by_user_id = actor.id
             item.updated_at = now
     db_session.commit()
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_period_approved",
+        entity_type="monthly_paye_period",
+        entity_id=str(period.id),
+        company_id=period.company_id,
+        details=_period_audit_details(
+            period=period,
+            company_id=period.company_id,
+            items=items,
+            status_before=status_before,
+            status_after=period.status,
+            items_affected=items_affected,
+        ),
+    )
     return monthly_paye_report(
         db_session,
         actor,
@@ -1770,6 +1994,8 @@ def unlock_approved_monthly_paye_period(
     if period.status != "approved":
         raise PayePayrollPermissionError("Only approved PAYE periods can be unlocked.")
     items = paye_repo.list_items_for_period(db_session, period.id)
+    status_before = period.status
+    items_affected = sum(1 for item in items if item.status == "approved")
     now = _now()
     period.status = "pending"
     period.approved_at = None
@@ -1782,6 +2008,22 @@ def unlock_approved_monthly_paye_period(
             item.approved_by_user_id = None
             item.updated_at = now
     db_session.commit()
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_period_unlocked_to_pending",
+        entity_type="monthly_paye_period",
+        entity_id=str(period.id),
+        company_id=period.company_id,
+        details=_period_audit_details(
+            period=period,
+            company_id=period.company_id,
+            items=items,
+            status_before=status_before,
+            status_after=period.status,
+            items_affected=items_affected,
+        ),
+    )
     return monthly_paye_report(
         db_session,
         actor,
@@ -1806,6 +2048,8 @@ def mark_monthly_paye_period_paid(
     items = paye_repo.list_items_for_period(db_session, period.id)
     if any(item.status != "approved" for item in items):
         raise PayePayrollPermissionError("All PAYE items must be approved before marking paid.")
+    status_before = period.status
+    items_affected = len(items)
     now = _now()
     period.status = "paid"
     period.paid_at = now
@@ -1817,6 +2061,22 @@ def mark_monthly_paye_period_paid(
         item.paid_by_user_id = actor.id
         item.updated_at = now
     db_session.commit()
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_period_marked_paid",
+        entity_type="monthly_paye_period",
+        entity_id=str(period.id),
+        company_id=period.company_id,
+        details=_period_audit_details(
+            period=period,
+            company_id=period.company_id,
+            items=items,
+            status_before=status_before,
+            status_after=period.status,
+            items_affected=items_affected,
+        ),
+    )
     return monthly_paye_report(
         db_session,
         actor,
@@ -1839,6 +2099,8 @@ def undo_paid_monthly_paye_period(
     if period.status != "paid":
         raise PayePayrollPermissionError("Only paid PAYE periods can be moved back to approved.")
     items = paye_repo.list_items_for_period(db_session, period.id)
+    status_before = period.status
+    items_affected = sum(1 for item in items if item.status == "paid")
     now = _now()
     period.status = "approved"
     period.paid_at = None
@@ -1851,6 +2113,22 @@ def undo_paid_monthly_paye_period(
             item.paid_by_user_id = None
             item.updated_at = now
     db_session.commit()
+    _log_paye_audit(
+        db_session,
+        actor,
+        action="paye_period_undo_paid",
+        entity_type="monthly_paye_period",
+        entity_id=str(period.id),
+        company_id=period.company_id,
+        details=_period_audit_details(
+            period=period,
+            company_id=period.company_id,
+            items=items,
+            status_before=status_before,
+            status_after=period.status,
+            items_affected=items_affected,
+        ),
+    )
     return monthly_paye_report(
         db_session,
         actor,
