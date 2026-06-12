@@ -32,6 +32,30 @@
   --color-payroll-table-header-fg: #f4faf7;
   --color-payroll-table-header-border: rgba(255, 255, 255, 0.14);
 
+  --color-payroll-section-payment-bg: #e8eef6;
+  --color-payroll-section-payment-fg: #1e3a5f;
+  --color-payroll-section-payment-border: #c7d7e8;
+
+  --color-payroll-section-supporting-bg: #eceef8;
+  --color-payroll-section-supporting-fg: #3730a6;
+  --color-payroll-section-supporting-border: #d4d7f0;
+
+  --color-payroll-section-monthly-bg: #f0f5fa;
+  --color-payroll-section-monthly-fg: #1e4976;
+  --color-payroll-section-monthly-border: #d8e4ef;
+
+  --color-payroll-section-leave-bg: #f3f2fb;
+  --color-payroll-section-leave-fg: #4c4686;
+  --color-payroll-section-leave-border: #ddd9f0;
+
+  --color-payroll-section-summary-bg: #f0f7f6;
+  --color-payroll-section-summary-fg: #1f4f4a;
+  --color-payroll-section-summary-border: #d2e8e4;
+
+  --color-payroll-section-split-bg: #f2f8f4;
+  --color-payroll-section-split-fg: #2f5f48;
+  --color-payroll-section-split-border: #d5e8dc;
+
   --color-border: #e2e8f0;
   --color-border-dark: #cbd5e1;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { FileDown, FileSpreadsheet, FileText, Printer } from "lucide-react";
 
@@ -13,7 +13,6 @@ import {
   Card,
   PageHeader,
   PaymentBadge,
-  SectionCard,
   Sheet,
   SheetBody,
   StatusBadge,
@@ -180,6 +179,79 @@ function PayrollStatCard(props: { label: string; value: string; emphasize?: bool
   );
 }
 
+type PayrollSectionTone = "payment" | "supporting" | "monthly" | "leave" | "summary" | "split";
+
+const PAYROLL_SECTION_TONE: Record<
+  PayrollSectionTone,
+  { header: string; title: string; card?: string }
+> = {
+  payment: {
+    header:
+      "border-b border-[var(--color-payroll-section-payment-border)] bg-[var(--color-payroll-section-payment-bg)]",
+    title: "text-[var(--color-payroll-section-payment-fg)]",
+  },
+  supporting: {
+    header:
+      "border-b border-[var(--color-payroll-section-supporting-border)] bg-[var(--color-payroll-section-supporting-bg)]",
+    title: "text-[var(--color-payroll-section-supporting-fg)]",
+  },
+  monthly: {
+    header:
+      "border-b border-[var(--color-payroll-section-monthly-border)] bg-[var(--color-payroll-section-monthly-bg)]",
+    title: "text-[var(--color-payroll-section-monthly-fg)]",
+    card: "border-[var(--color-payroll-section-monthly-border)]",
+  },
+  leave: {
+    header:
+      "border-b border-[var(--color-payroll-section-leave-border)] bg-[var(--color-payroll-section-leave-bg)]",
+    title: "text-[var(--color-payroll-section-leave-fg)]",
+    card: "border-[var(--color-payroll-section-leave-border)]",
+  },
+  summary: {
+    header:
+      "border-b border-[var(--color-payroll-section-summary-border)] bg-[var(--color-payroll-section-summary-bg)]",
+    title: "text-[var(--color-payroll-section-summary-fg)]",
+    card: "border-[var(--color-payroll-section-summary-border)]",
+  },
+  split: {
+    header:
+      "border-b border-[var(--color-payroll-section-split-border)] bg-[var(--color-payroll-section-split-bg)]",
+    title: "text-[var(--color-payroll-section-split-fg)]",
+    card: "border-[var(--color-payroll-section-split-border)]",
+  },
+};
+
+function PayrollTintedSection(props: {
+  action?: ReactNode;
+  children: ReactNode;
+  nested?: boolean;
+  title: string;
+  tone: PayrollSectionTone;
+}) {
+  const tone = PAYROLL_SECTION_TONE[props.tone];
+  return (
+    <section
+      className={cn(
+        uiClasses.card,
+        "overflow-hidden",
+        tone.card,
+        props.nested ? "shadow-none" : undefined,
+      )}
+    >
+      <div
+        className={cn(
+          "flex flex-col gap-2 px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between sm:px-4",
+          tone.header,
+        )}
+      >
+        <h2 className={cn("timiq-title-md", tone.title)}>{props.title}</h2>
+        {props.action ? <div className="flex shrink-0 flex-wrap gap-2">{props.action}</div> : null}
+      </div>
+      <div className={cn(uiClasses.cardBody, props.nested && "py-3")}>{props.children}</div>
+    </section>
+  );
+}
+
 function normalizePaymentMode(value: string | null | undefined): "net_payment" | "gross_payment" {
   const raw = (value ?? "").trim().toLowerCase();
   if (raw === "gross_payment" || raw === "gross") {
@@ -209,6 +281,8 @@ const payrollCompactFilterInput =
 const payrollCompactFilterSelect =
   "timiq-select h-8 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[var(--color-text)]";
 const payrollToolbarField = "flex min-w-0 flex-col gap-0.5";
+const payrollWeekChip =
+  "inline-flex min-w-0 max-w-full shrink items-center rounded-[var(--radius-full)] border border-[var(--color-border)] bg-white/70 px-2.5 py-1 text-xs font-medium leading-snug text-[var(--color-text)]";
 const payrollTableCell = "align-top px-3 py-3 text-[0.9375rem] leading-snug";
 const payrollTableHead =
   "border-r border-[var(--color-payroll-table-header-border)] px-3 py-3 text-sm font-bold normal-case tracking-normal text-[var(--color-payroll-table-header-fg)] last:border-r-0";
@@ -1258,6 +1332,12 @@ export function PayrollReportClient() {
       ),
     };
   }, [hasCompany, payrollNeedsRecalculation, payrollPeriodNotCalculated, report, t]);
+  const weekWorkbenchContext = useMemo(
+    () => ({
+      chipLabel: formatPayrollWeekUkLabel(weekStart, policyTimeZone, true),
+    }),
+    [policyTimeZone, weekStart],
+  );
   const lateShiftDetected = Boolean(report?.has_late_unpaid_shifts);
   const lateDetectedCount = report?.late_shift_count_detected ?? report?.late_shift_count ?? 0;
   const canAdjustLateShiftsGlobally =
@@ -1340,21 +1420,25 @@ export function PayrollReportClient() {
 
   return (
     <Sheet>
-      <PageHeader
-        title={t("payroll.report.title", "CIS Payroll Report")}
-        description={t(
-          "payroll.report.subtitle",
-          "Weekly payroll, approvals, and exports. Week is defined by the company time policy timezone.",
-        )}
-      />
-      <SheetBody className="min-w-0 space-y-4">
-        <AlertBanner className="py-2 text-sm" tone="info">
-          {t(
-            "payroll.report.cis_scope_note",
-            "This CIS report includes CIS subcontractors only. PAYE employees with time records are handled in Monthly PAYE.",
+      <div className="[&>div]:!py-2 [&>div]:sm:!py-2.5">
+        <PageHeader
+          action={
+            <p className="max-w-md rounded-[var(--radius-full)] border border-[var(--color-info-700)]/20 bg-[var(--color-info-50)] px-3 py-1.5 text-xs leading-snug text-[var(--color-info-700)]">
+              {t(
+                "payroll.report.cis_scope_note",
+                "CIS subcontractors only · PAYE employees with time records are handled in Monthly PAYE.",
+              )}
+            </p>
+          }
+          description={t(
+            "payroll.report.subtitle",
+            "Weekly CIS payroll, approvals, and exports. Week is defined by the company time policy timezone.",
           )}
-        </AlertBanner>
-
+          title={t("payroll.report.title", "CIS Payroll Report")}
+          titleClassName="timiq-title-md"
+        />
+      </div>
+      <SheetBody className="min-w-0 space-y-4">
         {!hasCompany && isAdministrator(user) ? (
           <AlertBanner className="py-2 text-sm" tone="info">
             {t("payroll.report.select_company_banner", "Select a company to load payroll.")}
@@ -1369,45 +1453,49 @@ export function PayrollReportClient() {
 
         <div className="space-y-4">
           <div className="min-w-0 w-full space-y-4">
-            <section className={cn(uiClasses.card, "overflow-hidden")}>
-              <div className="border-b border-[var(--color-border)] bg-[var(--color-toolbar-well)] px-3 py-3 sm:px-4">
-                <h2 className="timiq-title-md mb-3">
-                  {t("payroll.report.weekly_review_title", "Weekly payroll review")}
-                </h2>
-
-                <div className="flex flex-col gap-3 2xl:flex-row 2xl:flex-wrap 2xl:items-end 2xl:justify-between">
-                  <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
-                    <div className="min-w-0 sm:min-w-[14rem] sm:flex-1">
-                      <p className="text-sm font-semibold leading-snug text-[var(--color-text)]">
-                        {formatPayrollWeekUkLabel(weekStart, policyTimeZone, false)}
-                      </p>
-                      {period?.timezone_name ? (
-                        <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{period.timezone_name}</p>
-                      ) : null}
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                        <Button
-                          disabled={loading}
-                          onClick={() => setWeekStart(addDaysIsoYmd(weekStart, -7))}
-                          size="sm"
-                          type="button"
-                          variant="secondary"
-                        >
-                          {t("payroll.report.previous_week", "Previous")}
-                        </Button>
-                        <Button
-                          disabled={loading}
-                          onClick={() => setWeekStart(addDaysIsoYmd(weekStart, 7))}
-                          size="sm"
-                          type="button"
-                          variant="secondary"
-                        >
-                          {t("payroll.report.next_week", "Next")}
-                        </Button>
-                      </div>
+            <section
+              className={cn(
+                uiClasses.card,
+                "overflow-hidden shadow-[var(--shadow-soft)] ring-1 ring-[var(--color-payroll-table-header-bg)]/12",
+              )}
+            >
+              <div className="border-b border-[var(--color-border)] bg-[var(--color-toolbar-well)] px-3 py-2 sm:px-4">
+                <div className="grid w-full min-w-0 grid-cols-1 items-center gap-2 min-[1280px]:grid-cols-[minmax(0,1fr)_auto] 2xl:grid-cols-[minmax(0,1.2fr)_minmax(28rem,2fr)_auto]">
+                  <div className="flex min-w-0 flex-col gap-2 justify-self-start min-[1280px]:col-start-1 min-[1280px]:row-start-1 2xl:col-start-1 2xl:row-start-1">
+                    <span
+                      className={cn(payrollWeekChip, "min-[1280px]:hidden")}
+                      title={weekWorkbenchContext.chipLabel}
+                    >
+                      {weekWorkbenchContext.chipLabel}
+                    </span>
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <Button
+                        disabled={loading}
+                        onClick={() => setWeekStart(addDaysIsoYmd(weekStart, -7))}
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                      >
+                        {t("payroll.report.previous_week", "← Previous")}
+                      </Button>
+                      <span
+                        className={cn(payrollWeekChip, "hidden min-[1280px]:inline-flex")}
+                        title={weekWorkbenchContext.chipLabel}
+                      >
+                        {weekWorkbenchContext.chipLabel}
+                      </span>
+                      <Button
+                        disabled={loading}
+                        onClick={() => setWeekStart(addDaysIsoYmd(weekStart, 7))}
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                      >
+                        {t("payroll.report.next_week", "Next →")}
+                      </Button>
                     </div>
-
                     {isAdministrator(user) ? (
-                      <label className={cn(payrollToolbarField, "w-full min-w-0 sm:w-44")}>
+                      <label className={cn(payrollToolbarField, "w-full min-w-0 max-w-xs min-[1280px]:max-w-[11rem]")}>
                         <span className={payrollCompactFilterLabel}>
                           {t("payroll.report.company", "Company")}
                         </span>
@@ -1425,75 +1513,80 @@ export function PayrollReportClient() {
                         </select>
                       </label>
                     ) : (
-                      <p className="pb-1 text-xs text-[var(--color-text-muted)] sm:max-w-[12rem]">
+                      <p className="max-w-xs text-xs text-[var(--color-text-muted)]">
                         {t("payroll.report.company_scope_admin", "Company scope: your assigned company only.")}
                       </p>
                     )}
                   </div>
 
-                  <div className="flex flex-wrap items-end gap-2">
-                    <label className={cn(payrollToolbarField, "w-[8.5rem]")}>
-                      <span className={payrollCompactFilterLabel}>
-                        {t("payroll.report.date_from", "Date from")}
-                      </span>
-                      <input
-                        className={payrollCompactFilterInput}
-                        onChange={(event) => setExportDateFrom(event.target.value)}
-                        type="date"
-                        value={exportDateFrom}
-                      />
-                    </label>
-                    <label className={cn(payrollToolbarField, "w-[8.5rem]")}>
-                      <span className={payrollCompactFilterLabel}>
-                        {t("payroll.report.date_to", "Date to")}
-                      </span>
-                      <input
-                        className={payrollCompactFilterInput}
-                        onChange={(event) => setExportDateTo(event.target.value)}
-                        type="date"
-                        value={exportDateTo}
-                      />
-                    </label>
-                    <label className={cn(payrollToolbarField, "w-full min-w-0 sm:w-44")}>
-                      <span className={payrollCompactFilterLabel}>
-                        {t("payroll.report.employee_label", "Employee")}
-                      </span>
-                      <select
-                        className={payrollCompactFilterSelect}
-                        disabled={!activeCompanyId}
-                        onChange={(event) => setDraftEmployeeId(event.target.value)}
-                        value={draftEmployeeId}
+                  <div className="min-w-0 w-full min-[1280px]:col-span-2 min-[1280px]:col-start-1 min-[1280px]:row-start-2 2xl:col-span-1 2xl:col-start-2 2xl:row-start-1">
+                    <div className="flex w-full min-w-0 flex-wrap items-end justify-center gap-2">
+                      <label className={cn(payrollToolbarField, "w-[8.5rem]")}>
+                        <span className={payrollCompactFilterLabel}>
+                          {t("payroll.report.date_from", "Date from")}
+                        </span>
+                        <input
+                          className={payrollCompactFilterInput}
+                          onChange={(event) => setExportDateFrom(event.target.value)}
+                          type="date"
+                          value={exportDateFrom}
+                        />
+                      </label>
+                      <label className={cn(payrollToolbarField, "w-[8.5rem]")}>
+                        <span className={payrollCompactFilterLabel}>
+                          {t("payroll.report.date_to", "Date to")}
+                        </span>
+                        <input
+                          className={payrollCompactFilterInput}
+                          onChange={(event) => setExportDateTo(event.target.value)}
+                          type="date"
+                          value={exportDateTo}
+                        />
+                      </label>
+                      <label className={cn(payrollToolbarField, "w-full min-w-0 sm:w-52")}>
+                        <span className={payrollCompactFilterLabel}>
+                          {t("payroll.report.employee_label", "Employee")}
+                        </span>
+                        <select
+                          className={payrollCompactFilterSelect}
+                          disabled={!activeCompanyId}
+                          onChange={(event) => setDraftEmployeeId(event.target.value)}
+                          value={draftEmployeeId}
+                        >
+                          <option value="">{t("payroll.report.all_employees", "All employees")}</option>
+                          {employeeOptions.map((u) => (
+                            <option key={u.id} value={u.id}>
+                              {u.email}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <Button
+                        disabled={loading || !activeCompanyId}
+                        onClick={applyEmployeeFilter}
+                        size="sm"
+                        type="button"
+                        variant="secondary"
                       >
-                        <option value="">{t("payroll.report.all_employees", "All employees")}</option>
-                        {employeeOptions.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.email}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <Button
-                      disabled={loading || !activeCompanyId}
-                      onClick={applyEmployeeFilter}
-                      size="sm"
-                      type="button"
-                      variant="secondary"
-                    >
-                      {t("payroll.report.apply_filter", "Apply filter")}
-                    </Button>
-                    <Button
-                      disabled={loading || !activeCompanyId}
-                      onClick={() => loadReport()}
-                      size="sm"
-                      type="button"
-                    >
-                      {t("payroll.report.refresh", "Refresh")}
-                    </Button>
+                        {t("payroll.report.apply_filter", "Apply filter")}
+                      </Button>
+                      <Button
+                        disabled={loading || !activeCompanyId}
+                        onClick={() => loadReport()}
+                        size="sm"
+                        type="button"
+                      >
+                        {t("payroll.report.refresh", "Refresh")}
+                      </Button>
+                    </div>
                   </div>
 
                   <div
                     aria-label={t("payroll.report.actions", "Actions")}
-                    className={cn(uiClasses.payeActionToolbar, "gap-1.5")}
+                    className={cn(
+                      uiClasses.payeActionToolbar,
+                      "min-w-0 justify-end gap-1.5 min-[1280px]:col-start-2 min-[1280px]:row-start-1 min-[1280px]:justify-self-end 2xl:col-start-3 2xl:row-start-1",
+                    )}
                   >
                     <Button
                       className={
@@ -1979,7 +2072,7 @@ export function PayrollReportClient() {
               />
             </div>
 
-            <SectionCard
+            <PayrollTintedSection
               action={
                 <Button
                   disabled={!activeCompanyId || paymentHistoryLoading}
@@ -1991,8 +2084,8 @@ export function PayrollReportClient() {
                   {paymentHistoryLoading ? "Loading…" : "Refresh history"}
                 </Button>
               }
-              description="Paid payroll rows only. Uses the selected date range and employee filter."
               title="Payment history"
+              tone="payment"
             >
               <div className={cn(uiClasses.tableWrap, "timiq-scroll-x w-full min-w-0")}>
                 <Table className="min-w-[58rem] text-xs">
@@ -2118,11 +2211,11 @@ export function PayrollReportClient() {
                   </TableBody>
                 </Table>
               </div>
-            </SectionCard>
+            </PayrollTintedSection>
 
-            <SectionCard title="Supporting details">
+            <PayrollTintedSection title="Supporting details" tone="supporting">
               <div className="grid gap-3 xl:grid-cols-2">
-                <SectionCard title="Monthly payroll summary">
+                <PayrollTintedSection nested title="Monthly payroll summary" tone="monthly">
                   {!hasCompany ? (
                     <p className="timiq-caption">Choose a company in the toolbar first.</p>
                   ) : null}
@@ -2164,16 +2257,18 @@ export function PayrollReportClient() {
                   {hasCompany && !monthLoading && !monthSummary ? (
                     <p className="timiq-caption">No month data loaded.</p>
                   ) : null}
-                </SectionCard>
+                </PayrollTintedSection>
 
                 {report ? (
-                  <SectionCard
-                    title="Approved leave (review)"
+                  <PayrollTintedSection
                     action={
                       (report.approved_leave_in_week?.length ?? 0) > 0 ? (
                         <Badge tone="info">{report.approved_leave_in_week?.length ?? 0} in week</Badge>
                       ) : null
                     }
+                    nested
+                    title="Approved leave (review)"
+                    tone="leave"
                   >
                     <AlertBanner className="mb-3" tone="info">
                       {report.payroll_leave_review_note ??
@@ -2210,10 +2305,10 @@ export function PayrollReportClient() {
                     ) : (
                       <p className="timiq-caption">No approved leave overlaps this payroll week.</p>
                     )}
-                  </SectionCard>
+                  </PayrollTintedSection>
                 ) : null}
 
-                <SectionCard title="Payroll summary">
+                <PayrollTintedSection nested title="Payroll summary" tone="summary">
                   {!hasCompany ? <p className="timiq-caption">—</p> : null}
                   {hasCompany && period ? (
                     <ul className="space-y-1.5 text-xs">
@@ -2244,9 +2339,9 @@ export function PayrollReportClient() {
                   {hasCompany && !period ? (
                     <p className="timiq-caption">Load a report to see totals.</p>
                   ) : null}
-                </SectionCard>
+                </PayrollTintedSection>
 
-                <SectionCard title="Payroll split (pre-tax wages)">
+                <PayrollTintedSection nested title="Payroll split (pre-tax wages)" tone="split">
                   {!hasCompany ? <p className="timiq-caption">—</p> : null}
                   {hasCompany && split ? (
                     <div className="space-y-3 text-xs">
@@ -2282,9 +2377,9 @@ export function PayrollReportClient() {
                   {hasCompany && !split ? (
                     <p className="timiq-caption">Load payroll to view split.</p>
                   ) : null}
-                </SectionCard>
+                </PayrollTintedSection>
               </div>
-            </SectionCard>
+            </PayrollTintedSection>
 
           </div>
 
