@@ -1,17 +1,46 @@
 "use client";
 
 import Link from "next/link";
+import type { LucideIcon } from "lucide-react";
+import {
+  Activity,
+  AlertTriangle,
+  ArrowRight,
+  CheckCircle2,
+  CircleAlert,
+  Info,
+  MapPin,
+  Users,
+  Wallet,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { Button, PageHeader, Sheet, SheetBody } from "../../components/ui";
+import {
+  Badge,
+  Button,
+  PageHeader,
+  SectionCard,
+  Sheet,
+  SheetBody,
+  StatusBadge,
+} from "../../components/ui";
 import { isAdministrator, useCurrentUser } from "../../features/auth";
-import { fetchManagementOverview, type OverviewData } from "../../features/dashboard/api";
+import {
+  fetchManagementOverview,
+  type NeedsAttentionItem,
+  type OverviewData,
+  type PayrollReadinessPanel,
+  type SetupHealthPanel,
+  type TodayLiveRow,
+} from "../../features/dashboard/api";
 import { CompanySelector } from "../../features/companies/company-selector";
 import { listCompanies, type Company } from "../../features/companies/api";
 import { useAdministratorCompanyScope } from "../../features/companies/selected-company";
 import { formatMoneyGBP } from "../../features/payroll/format";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
+import { cn } from "../../lib/cn";
 import { payrollStatusLabel, useT } from "../../lib/i18n";
+import { uiClasses } from "../../lib/ui-classes";
 
 function toneForPayrollStatus(status: string): "success" | "warning" | "muted" {
   if (status === "paid") {
@@ -26,22 +55,32 @@ function toneForPayrollStatus(status: string): "success" | "warning" | "muted" {
   return "warning";
 }
 
-const NEEDS_ATTENTION_SEVERITY_CLASS: Record<string, string> = {
-  critical: "border-l-[3px] border-[#b91c1c] bg-[#fef2f2]",
-  warning: "border-l-[3px] border-[#b45309] bg-[#fffbeb]",
-  info: "border-l-[3px] border-[#64748b] bg-[#f8fafc]",
+function badgeToneFromPayroll(tone: "success" | "warning" | "muted"): "success" | "warning" | "default" {
+  if (tone === "success") {
+    return "success";
+  }
+  if (tone === "warning") {
+    return "warning";
+  }
+  return "default";
+}
+
+const NEEDS_ATTENTION_ROW_CLASS: Record<string, string> = {
+  critical:
+    "border-[var(--color-danger-700)]/20 bg-[var(--color-danger-50)] hover:border-[var(--color-danger-700)]/35",
+  warning:
+    "border-[var(--color-warning-700)]/25 bg-[var(--color-warning-50)] hover:border-[var(--color-warning-700)]/40",
+  info: "border-[var(--color-border-dark)] bg-[var(--color-header)] hover:border-[var(--color-border)]",
 };
 
-function PanelFrame(props: { title: string; children: ReactNode; headerRight?: ReactNode }) {
-  return (
-    <div className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">{props.title}</p>
-        {props.headerRight}
-      </div>
-      {props.children}
-    </div>
-  );
+function NeedsAttentionIcon(props: { severity: string }) {
+  if (props.severity === "critical") {
+    return <CircleAlert aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-danger-700)]" />;
+  }
+  if (props.severity === "warning") {
+    return <AlertTriangle aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-warning-700)]" />;
+  }
+  return <Info aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-text-soft)]" />;
 }
 
 function formatPercent(rate: number | null | undefined): string {
@@ -51,83 +90,366 @@ function formatPercent(rate: number | null | undefined): string {
   return `${Math.round(rate * 1000) / 10}%`;
 }
 
-function BarChartBlock(props: {
-  title: string;
-  emptyHint: string;
-  rows: { key: string; label: string; value: number; display: string; max: number }[];
-}) {
-  const max = Math.max(1, ...props.rows.map((r) => r.max));
-  if (props.rows.length === 0) {
-    return (
-      <div className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-        <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">{props.title}</p>
-        </div>
-        <div className="p-4 text-sm text-[var(--color-text-muted)]">{props.emptyHint}</div>
-      </div>
-    );
-  }
-  return (
-    <div className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">{props.title}</p>
-      </div>
-      <div className="space-y-2.5 overflow-x-auto p-4">
-        {props.rows.map((row) => (
-          <div className="min-w-[12rem]" key={row.key}>
-            <div className="flex justify-between gap-2 text-xs text-[var(--color-text-muted)]">
-              <span className="min-w-0 truncate">{row.label}</span>
-              <span className="shrink-0 tabular-nums text-[var(--color-text)]">{row.display}</span>
-            </div>
-            <div className="mt-1 h-2.5 w-full overflow-hidden rounded bg-[var(--color-header)]">
-              <div
-                className="h-full rounded-sm bg-[#9ca3af]"
-                style={{ width: `${Math.min(100, (row.value / max) * 100)}%` }}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function OverviewCard(props: {
+function OverviewMetricCard(props: {
   href: string;
   title: string;
   primary: string;
   secondary?: string;
   badge?: string;
   badgeTone?: "success" | "warning" | "muted";
+  icon: LucideIcon;
 }) {
+  const Icon = props.icon;
   const badgeTone = props.badgeTone ?? "muted";
-  const badgeClass =
-    badgeTone === "success"
-      ? "border-[var(--color-success-700)] bg-[var(--color-success-50)] text-[var(--color-success-700)]"
-      : badgeTone === "warning"
-        ? "border-[var(--color-warning-700)] bg-[var(--color-warning-50)] text-[var(--color-warning-700)]"
-        : "border-[var(--color-border-dark)] bg-[var(--color-header)] text-[var(--color-text-muted)]";
+
   return (
     <Link
-      className="block min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] shadow-sm transition-colors hover:border-[var(--color-border)] hover:bg-[#f3f4f6]"
+      className={cn(
+        uiClasses.card,
+        "group block min-w-0 transition-[border-color,box-shadow,transform]",
+        "duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-standard)]",
+        "hover:border-[var(--color-brand)]/25 hover:shadow-[var(--shadow-soft)]",
+      )}
       href={props.href}
     >
-      <div className="flex flex-wrap items-start justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-3">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">{props.title}</p>
-        {props.badge ? (
-          <span
-            className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${badgeClass}`}
-          >
-            {props.badge}
+      <div className="flex items-start justify-between gap-3 p-4 sm:p-5">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-brand-muted)] text-[var(--color-brand)]">
+            <Icon aria-hidden className="h-5 w-5" />
           </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+              {props.title}
+            </p>
+            <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-[var(--color-text)]">
+              {props.primary}
+            </p>
+            {props.secondary ? (
+              <p className="mt-2 text-sm leading-snug text-[var(--color-text-muted)]">{props.secondary}</p>
+            ) : null}
+          </div>
+        </div>
+        {props.badge ? (
+          <Badge className="shrink-0" tone={badgeToneFromPayroll(badgeTone)}>
+            {props.badge}
+          </Badge>
         ) : null}
       </div>
-      <div className="px-4 py-5">
-        <p className="text-2xl font-semibold tabular-nums tracking-tight text-[var(--color-text)]">{props.primary}</p>
-        {props.secondary ? (
-          <p className="mt-2 text-xs text-[var(--color-text-muted)]">{props.secondary}</p>
-        ) : null}
+    </Link>
+  );
+}
+
+function OverviewAttentionCard(props: {
+  title: string;
+  scopeNote: string | null;
+  emptyLabel: string;
+  items: NeedsAttentionItem[];
+}) {
+  return (
+    <SectionCard
+      className="border-[var(--color-warning-700)]/20 shadow-[var(--shadow-card)]"
+      description={props.scopeNote ?? undefined}
+      title={props.title}
+    >
+      {props.items.length === 0 ? (
+        <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
+          <CheckCircle2 aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-success-700)]" />
+          <span>{props.emptyLabel}</span>
+        </div>
+      ) : (
+        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          {props.items.map((item) => (
+            <li key={item.code}>
+              <Link
+                className={cn(
+                  "flex items-center justify-between gap-3 rounded-[var(--radius-md)] border px-3 py-3 text-sm transition-colors",
+                  NEEDS_ATTENTION_ROW_CLASS[item.severity] ?? NEEDS_ATTENTION_ROW_CLASS.info,
+                )}
+                href={item.href}
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <NeedsAttentionIcon severity={item.severity} />
+                  <span className="min-w-0 font-medium text-[var(--color-text)]">{item.label}</span>
+                </span>
+                <span className="inline-flex min-w-[2rem] shrink-0 items-center justify-center rounded-[var(--radius-full)] bg-white/80 px-2 py-0.5 text-sm font-bold tabular-nums text-[var(--color-text)] shadow-sm">
+                  {item.count}
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+function ReadinessStatChip(props: { label: string; value: ReactNode }) {
+  return (
+    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+        {props.label}
+      </p>
+      <p className="mt-1 text-base font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
+    </div>
+  );
+}
+
+function OverviewReadinessPanel(props: {
+  readiness: PayrollReadinessPanel | null;
+  unavailableLabel: string;
+  t: ReturnType<typeof useT>;
+}) {
+  const { readiness, t } = props;
+
+  if (!readiness) {
+    return (
+      <SectionCard title={t("overview.payroll_readiness", "Payroll readiness")}>
+        <p className="text-sm text-[var(--color-text-muted)]">{props.unavailableLabel}</p>
+      </SectionCard>
+    );
+  }
+
+  const yesNo = (value: boolean) => (value ? t("common.yes", "Yes") : t("common.no", "No"));
+
+  return (
+    <SectionCard
+      action={
+        <Link
+          className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
+          href={readiness.href}
+        >
+          {t("overview.open_payroll_report")}
+          <ArrowRight aria-hidden className="h-3.5 w-3.5" />
+        </Link>
+      }
+      description={readiness.scope_note ?? undefined}
+      title={t("overview.payroll_readiness", "Payroll readiness")}
+    >
+      <div className="space-y-4">
+        <StatusBadge status={readiness.payroll_status}>
+          {payrollStatusLabel(t, readiness.payroll_status)}
+        </StatusBadge>
+
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <ReadinessStatChip label={t("overview.readiness_items", "Items")} value={readiness.total_items} />
+          <ReadinessStatChip label={t("overview.readiness_pending", "Pending")} value={readiness.pending_count} />
+          <ReadinessStatChip label={t("overview.readiness_approved", "Approved")} value={readiness.approved_count} />
+          <ReadinessStatChip label={t("overview.readiness_paid", "Paid")} value={readiness.paid_count} />
+          <ReadinessStatChip
+            label={t("overview.readiness_rate_missing", "Rate missing")}
+            value={readiness.rate_missing_count}
+          />
+          <ReadinessStatChip
+            label={t("overview.readiness_open_shifts_week", "Open shifts (week)")}
+            value={readiness.open_shifts_started_in_week_count}
+          />
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Badge tone={readiness.payroll_period_not_calculated ? "warning" : "default"}>
+            {t("overview.readiness_not_calculated", "Not calculated")}: {yesNo(readiness.payroll_period_not_calculated)}
+          </Badge>
+          <Badge tone={readiness.payroll_needs_recalculation ? "warning" : "default"}>
+            {t("overview.readiness_needs_recalc", "Needs recalc")}: {yesNo(readiness.payroll_needs_recalculation)}
+          </Badge>
+        </div>
+
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-3 py-3">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+            {t("overview.readiness_gross_hours", "Gross / hours")}
+          </p>
+          <p className="mt-1 text-lg font-semibold tabular-nums text-[var(--color-text)]">
+            {readiness.total_gross != null ? formatMoneyGBP(String(readiness.total_gross)) : "—"} ·{" "}
+            {formatDurationSeconds(readiness.total_hours_seconds)}
+          </p>
+        </div>
       </div>
+    </SectionCard>
+  );
+}
+
+function HealthCheckRow(props: {
+  label: string;
+  value: ReactNode;
+  href?: string;
+  bordered?: boolean;
+}) {
+  const valueNode = props.href ? (
+    <Link className="font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]" href={props.href}>
+      {props.value}
+    </Link>
+  ) : (
+    <span className="font-semibold text-[var(--color-text)]">{props.value}</span>
+  );
+
+  return (
+    <li
+      className={cn(
+        "flex items-center justify-between gap-3 py-2.5 text-sm",
+        props.bordered ? "border-t border-[var(--color-border)] pt-3" : undefined,
+      )}
+    >
+      <span className="text-[var(--color-text-muted)]">{props.label}</span>
+      {valueNode}
+    </li>
+  );
+}
+
+function OverviewHealthPanel(props: {
+  health: SetupHealthPanel | null;
+  noScopeLabel: string;
+  thresholdNote: string;
+  t: ReturnType<typeof useT>;
+}) {
+  const { health, t } = props;
+
+  if (!health) {
+    return (
+      <SectionCard title={t("overview.setup_health", "Setup health")}>
+        <p className="text-sm text-[var(--color-text-muted)]">{props.noScopeLabel}</p>
+      </SectionCard>
+    );
+  }
+
+  return (
+    <SectionCard description={health.scope_note ?? undefined} title={t("overview.setup_health", "Setup health")}>
+      <ul className="divide-y divide-[var(--color-border)]">
+        <HealthCheckRow
+          label={t("overview.setup_active_employees")}
+          value={health.active_employee_count}
+        />
+        <HealthCheckRow
+          label={t("overview.setup_active_locations")}
+          value={health.active_location_count}
+        />
+        <HealthCheckRow
+          href="/employees"
+          label={t("overview.setup_missing_hourly_rate")}
+          value={health.employees_missing_hourly_rate_count}
+        />
+        <HealthCheckRow
+          href="/site-access"
+          label={t("overview.setup_no_site_access")}
+          value={health.employees_without_site_access_count}
+        />
+        <HealthCheckRow
+          bordered
+          label={t("overview.setup_time_policy")}
+          value={
+            health.time_policy_row_present ? (
+              <Badge tone="success">{t("overview.legend_present", "Present")}</Badge>
+            ) : (
+              "—"
+            )
+          }
+        />
+        <HealthCheckRow
+          label={t("overview.setup_time_policy_config")}
+          value={
+            <Badge tone={health.time_policy_configured ? "success" : "default"}>
+              {health.time_policy_configured
+                ? t("overview.legend_policy", "Likely yes")
+                : t("overview.legend_default", "Default-like")}
+            </Badge>
+          }
+        />
+      </ul>
+      <p className="mt-3 text-xs leading-snug text-[var(--color-text-soft)]">{props.thresholdNote}</p>
+    </SectionCard>
+  );
+}
+
+function OverviewTrendCard(props: {
+  title: string;
+  emptyHint: string;
+  rows: { key: string; label: string; value: number; display: string; max: number }[];
+}) {
+  const max = Math.max(1, ...props.rows.map((r) => r.max));
+
+  return (
+    <SectionCard title={props.title}>
+      {props.rows.length === 0 ? (
+        <p className="text-sm text-[var(--color-text-muted)]">{props.emptyHint}</p>
+      ) : (
+        <div className="space-y-3">
+          {props.rows.map((row) => (
+            <div className="min-w-0" key={row.key}>
+              <div className="flex justify-between gap-3 text-sm">
+                <span className="min-w-0 truncate text-[var(--color-text-muted)]">{row.label}</span>
+                <span className="shrink-0 tabular-nums font-medium text-[var(--color-text)]">{row.display}</span>
+              </div>
+              <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-[var(--color-header)]">
+                <div
+                  className="h-full rounded-full bg-[var(--color-brand)]/55 transition-[width] duration-[var(--motion-duration-fast)]"
+                  style={{ width: `${Math.min(100, (row.value / max) * 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
+
+function TodayLivePanel(props: {
+  title: string;
+  viewAllLabel: string;
+  emptyLabel: string;
+  rows: TodayLiveRow[];
+}) {
+  return (
+    <SectionCard
+      action={
+        <Link
+          className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
+          href="/live-attendance"
+        >
+          {props.viewAllLabel}
+          <ArrowRight aria-hidden className="h-3.5 w-3.5" />
+        </Link>
+      }
+      title={props.title}
+    >
+      {props.rows.length === 0 ? (
+        <p className="text-sm text-[var(--color-text-muted)]">{props.emptyLabel}</p>
+      ) : (
+        <ul className="space-y-2">
+          {props.rows.map((row, idx) => (
+            <li key={`${row.display_name}-${row.clock_in_at}-${idx}`}>
+              <Link
+                className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-transparent px-3 py-2.5 text-sm transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-header)] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                href={row.href}
+              >
+                <div className="min-w-0">
+                  <p className="font-medium text-[var(--color-text)]">{row.display_name}</p>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    {row.location_name ?? "—"}
+                    {row.email ? ` · ${row.email}` : null}
+                  </p>
+                </div>
+                <p className="shrink-0 text-xs tabular-nums text-[var(--color-text-muted)] sm:text-right">
+                  {formatDurationSeconds(row.running_seconds)}
+                  <span className="hidden sm:inline"> · </span>
+                  <span className="block sm:inline">{new Date(row.clock_in_at).toLocaleString()}</span>
+                </p>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </SectionCard>
+  );
+}
+
+function OverviewListLink(props: { href: string; label: string }) {
+  return (
+    <Link
+      className="flex items-center justify-between gap-2 rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-header)]"
+      href={props.href}
+    >
+      <span className="min-w-0">{props.label}</span>
+      <ArrowRight aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-text-soft)]" />
     </Link>
   );
 }
@@ -259,6 +581,14 @@ export function OverviewClient() {
     }));
   }, [data, payrollTrendLabelFn]);
 
+  const thresholdNote = data
+    ? t(
+        "overview.long_open_shift_note",
+        "Long-open shift threshold on this page: {{hours}}h UTC since clock-in.",
+        { hours: data.long_open_shift_threshold_hours },
+      )
+    : "";
+
   return (
     <Sheet>
       <PageHeader
@@ -289,6 +619,22 @@ export function OverviewClient() {
         {companyScope.scopeLabel ? (
           <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
         ) : null}
+
+        {data?.generated_at && !loading ? (
+          <p className="text-xs text-[var(--color-text-muted)]">
+            {t("overview.last_updated", "Last updated {{time}}", {
+              time: new Date(data.generated_at).toLocaleString(),
+            })}
+            <span className="mx-2 text-[var(--color-border-dark)]" aria-hidden>
+              ·
+            </span>
+            {t(
+              "overview.auto_refresh_note",
+              "Auto-refreshes every 45 seconds when this tab is visible.",
+            )}
+          </p>
+        ) : null}
+
         {loading ? (
           <p className="text-sm text-[var(--color-text-muted)]">{t("overview.loading", "Loading overview…")}</p>
         ) : null}
@@ -302,38 +648,41 @@ export function OverviewClient() {
 
         {data && !loading ? (
           <>
-
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <OverviewCard
+              <OverviewMetricCard
                 badge={t("overview.badge_active", "Active")}
                 badgeTone="muted"
                 href="/employees"
+                icon={Users}
                 primary={String(data.active_employee_count)}
                 secondary={t("overview.employees_subline")}
                 title={t("overview.employees", "Employees")}
               />
-              <OverviewCard
+              <OverviewMetricCard
                 badge={t("overview.badge_sites", "Sites")}
                 badgeTone="muted"
                 href="/locations"
+                icon={MapPin}
                 primary={String(data.active_location_count)}
                 secondary={t("overview.locations_sites_sub", "Operational sites for clocking and access")}
                 title={t("overview.active_locations", "Active locations")}
               />
-              <OverviewCard
+              <OverviewMetricCard
                 badge={formatPercent(data.live_attendance_rate)}
                 badgeTone="success"
                 href="/live-attendance"
+                icon={Activity}
                 primary={`${data.live_present_today} / ${data.live_total_employees}`}
                 secondary={t("overview.attendance_now_sub", "{{open}} open shift(s) now · attendance today", {
                   open: data.live_open_shifts,
                 })}
                 title={t("overview.attendance_today", "Attendance today")}
               />
-              <OverviewCard
+              <OverviewMetricCard
                 badge={payrollStatusLabel(t, data.payroll_status)}
                 badgeTone={toneForPayrollStatus(data.payroll_status)}
                 href="/payroll-report"
+                icon={Wallet}
                 primary={
                   data.payroll_total_gross != null ? formatMoneyGBP(String(data.payroll_total_gross)) : "—"
                 }
@@ -348,280 +697,80 @@ export function OverviewClient() {
               />
             </div>
 
+            <OverviewAttentionCard
+              emptyLabel={t("overview.empty_attention")}
+              items={data.needs_attention}
+              scopeNote={data.needs_attention_scope_note}
+              title={t("overview.needs_attention", "Needs attention")}
+            />
+
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <PanelFrame title={t("overview.needs_attention", "Needs attention")}>
-                <div className="p-3">
-                  {data.needs_attention_scope_note ? (
-                    <p className="mb-3 text-[11px] text-[var(--color-text-muted)]">{data.needs_attention_scope_note}</p>
-                  ) : null}
-                  {data.needs_attention.length === 0 ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.empty_attention")}</p>
-                  ) : (
-                    <ul className="divide-y divide-[var(--color-border)]">
-                      {data.needs_attention.map((item) => (
-                        <li key={item.code}>
-                          <Link
-                            className={`flex items-center justify-between gap-3 px-3 py-2.5 text-sm transition-colors hover:bg-[var(--color-header)] ${NEEDS_ATTENTION_SEVERITY_CLASS[item.severity] ?? NEEDS_ATTENTION_SEVERITY_CLASS.info}`}
-                            href={item.href}
-                          >
-                            <span className="min-w-0 font-medium text-[var(--color-text)]">{item.label}</span>
-                            <span className="shrink-0 tabular-nums font-semibold text-[var(--color-text)]">
-                              {item.count}
-                            </span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </PanelFrame>
-
-              <PanelFrame
-                headerRight={
-                  <Link className="text-xs font-medium text-[var(--color-link)] underline" href="/live-attendance">
-                    {t("common.view_all", "View all")}
-                  </Link>
-                }
-                title={t("overview.today_live", "Today live")}
-              >
-                <div className="p-3">
-                  {data.today_live.length === 0 ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_open_shifts")}</p>
-                  ) : (
-                    <ul className="divide-y divide-[var(--color-border)]">
-                      {data.today_live.map((row, idx) => (
-                        <li key={`${row.display_name}-${row.clock_in_at}-${idx}`}>
-                          <Link
-                            className="flex flex-col gap-0.5 px-3 py-2.5 text-sm transition-colors hover:bg-[var(--color-header)] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
-                            href={row.href}
-                          >
-                            <div className="min-w-0">
-                              <p className="font-medium text-[var(--color-text)]">{row.display_name}</p>
-                              <p className="text-xs text-[var(--color-text-muted)]">
-                                {row.location_name ?? "—"}
-                                {row.email ? ` · ${row.email}` : null}
-                              </p>
-                            </div>
-                            <p className="shrink-0 text-xs tabular-nums text-[var(--color-text-muted)] sm:text-right">
-                              {formatDurationSeconds(row.running_seconds)}
-                              <span className="hidden sm:inline"> · </span>
-                              <span className="block sm:inline">
-                                {new Date(row.clock_in_at).toLocaleString()}
-                              </span>
-                            </p>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </PanelFrame>
-
-              <PanelFrame title={t("overview.payroll_readiness", "Payroll readiness")}>
-                <div className="space-y-3 p-3">
-                  {!data.payroll_readiness ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">
-                      {t("overview.payroll_readiness_unavailable")}
-                    </p>
-                  ) : (
-                    <>
-                      {data.payroll_readiness.scope_note ? (
-                        <p className="text-[11px] text-[var(--color-text-muted)]">{data.payroll_readiness.scope_note}</p>
-                      ) : null}
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span
-                          className={`inline-flex items-center rounded border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                            toneForPayrollStatus(data.payroll_readiness.payroll_status) === "success"
-                              ? "border-[var(--color-success-700)] bg-[var(--color-success-50)] text-[var(--color-success-700)]"
-                              : toneForPayrollStatus(data.payroll_readiness.payroll_status) === "muted"
-                                ? "border-[var(--color-border-dark)] bg-[var(--color-header)] text-[var(--color-text-muted)]"
-                                : "border-[var(--color-warning-700)] bg-[var(--color-warning-50)] text-[var(--color-warning-700)]"
-                          }`}
-                        >
-                          {payrollStatusLabel(t, data.payroll_readiness.payroll_status)}
-                        </span>
-                        <Link
-                          className="text-xs font-medium text-[var(--color-link)] underline"
-                          href={data.payroll_readiness.href}
-                        >
-                          {t("overview.open_payroll_report")}
-                        </Link>
-                      </div>
-                      <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs sm:grid-cols-3">
-                        <div>
-                          <dt className="text-[var(--color-text-soft)]">{t("overview.readiness_items", "Items")}</dt>
-                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.total_items}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-[var(--color-text-soft)]">{t("overview.readiness_pending", "Pending")}</dt>
-                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.pending_count}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-[var(--color-text-soft)]">{t("overview.readiness_approved", "Approved")}</dt>
-                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.approved_count}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-[var(--color-text-soft)]">{t("overview.readiness_paid", "Paid")}</dt>
-                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.paid_count}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-[var(--color-text-soft)]">
-                            {t("overview.readiness_rate_missing", "Rate missing")}
-                          </dt>
-                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.rate_missing_count}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-[var(--color-text-soft)]">
-                            {t("overview.readiness_open_shifts_week", "Open shifts (week)")}
-                          </dt>
-                          <dd className="tabular-nums font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.open_shifts_started_in_week_count}
-                          </dd>
-                        </div>
-                        <div className="col-span-2 sm:col-span-3">
-                          <dt className="text-[var(--color-text-soft)]">
-                            {t("overview.readiness_not_calculated", "Not calculated")}
-                          </dt>
-                          <dd className="font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.payroll_period_not_calculated
-                              ? t("common.yes", "Yes")
-                              : t("common.no", "No")}
-                          </dd>
-                        </div>
-                        <div className="col-span-2 sm:col-span-3">
-                          <dt className="text-[var(--color-text-soft)]">
-                            {t("overview.readiness_needs_recalc", "Needs recalc")}
-                          </dt>
-                          <dd className="font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.payroll_needs_recalculation
-                              ? t("common.yes", "Yes")
-                              : t("common.no", "No")}
-                          </dd>
-                        </div>
-                        <div className="col-span-2 sm:col-span-3">
-                          <dt className="text-[var(--color-text-soft)]">
-                            {t("overview.readiness_gross_hours", "Gross / hours")}
-                          </dt>
-                          <dd className="font-medium text-[var(--color-text)]">
-                            {data.payroll_readiness.total_gross != null
-                              ? formatMoneyGBP(String(data.payroll_readiness.total_gross))
-                              : "—"}{" "}
-                            · {formatDurationSeconds(data.payroll_readiness.total_hours_seconds)}
-                          </dd>
-                        </div>
-                      </dl>
-                    </>
-                  )}
-                </div>
-              </PanelFrame>
-
-              <PanelFrame title={t("overview.setup_health", "Setup health")}>
-                <div className="p-3">
-                  {!data.setup_health ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_company_scope")}</p>
-                  ) : (
-                    <>
-                      {data.setup_health.scope_note ? (
-                        <p className="mb-3 text-[11px] text-[var(--color-text-muted)]">{data.setup_health.scope_note}</p>
-                      ) : null}
-                      <ul className="space-y-1.5 text-xs text-[var(--color-text)]">
-                        <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_active_employees")}</span>
-                          <span className="tabular-nums font-medium">{data.setup_health.active_employee_count}</span>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_active_locations")}</span>
-                          <span className="tabular-nums font-medium">{data.setup_health.active_location_count}</span>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_missing_hourly_rate")}</span>
-                          <Link className="font-medium text-[var(--color-link)] underline" href="/employees">
-                            {data.setup_health.employees_missing_hourly_rate_count}
-                          </Link>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_no_site_access")}</span>
-                          <Link className="font-medium text-[var(--color-link)] underline" href="/site-access">
-                            {data.setup_health.employees_without_site_access_count}
-                          </Link>
-                        </li>
-                        <li className="flex justify-between gap-2 border-t border-[var(--color-border)] pt-2">
-                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_time_policy")}</span>
-                          <span className="font-medium">
-                            {data.setup_health.time_policy_row_present
-                              ? t("overview.legend_present", "Present")
-                              : "—"}
-                          </span>
-                        </li>
-                        <li className="flex justify-between gap-2">
-                          <span className="text-[var(--color-text-muted)]">{t("overview.setup_time_policy_config")}</span>
-                          <span className="font-medium">
-                            {data.setup_health.time_policy_configured
-                              ? t("overview.legend_policy", "Likely yes")
-                              : t("overview.legend_default", "Default-like")}
-                          </span>
-                        </li>
-                      </ul>
-                      <p className="mt-2 text-[10px] text-[var(--color-text-soft)]">
-                        {t(
-                          "overview.long_open_shift_note",
-                          "Long-open shift threshold on this page: {{hours}}h UTC since clock-in.",
-                          { hours: data.long_open_shift_threshold_hours },
-                        )}
-                      </p>
-                    </>
-                  )}
-                </div>
-              </PanelFrame>
+              <OverviewReadinessPanel
+                readiness={data.payroll_readiness}
+                t={t}
+                unavailableLabel={t("overview.payroll_readiness_unavailable")}
+              />
+              <OverviewHealthPanel
+                health={data.setup_health}
+                noScopeLabel={t("overview.no_company_scope")}
+                t={t}
+                thresholdNote={thresholdNote}
+              />
             </div>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <BarChartBlock
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              <TodayLivePanel
+                emptyLabel={t("overview.no_open_shifts")}
+                rows={data.today_live}
+                title={t("overview.today_live", "Today live")}
+                viewAllLabel={t("common.view_all", "View all")}
+              />
+              <OverviewTrendCard
                 emptyHint={t("overview.trend_attendance_empty")}
                 rows={attendanceRows}
                 title={t("overview.trend_attendance")}
               />
-              <BarChartBlock
-                emptyHint={
-                  data.payroll_status === "not_calculated"
-                    ? t("overview.payroll_not_calc_weeks")
-                    : t("overview.trend_payroll_empty_no_history")
-                }
-                rows={payrollRows}
-                title={t("overview.trend_payroll")}
-              />
             </div>
 
+            <OverviewTrendCard
+              emptyHint={
+                data.payroll_status === "not_calculated"
+                  ? t("overview.payroll_not_calc_weeks")
+                  : t("overview.trend_payroll_empty_no_history")
+              }
+              rows={payrollRows}
+              title={t("overview.trend_payroll")}
+            />
+
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-              <div className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] lg:col-span-2">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                    {t("overview.recent_activity")}
-                  </p>
-                  {user.system_role === "administrator" ? (
-                    <Link className="text-xs font-medium text-[var(--color-link)] underline" href="/system/audit-log">
+              <SectionCard
+                action={
+                  user.system_role === "administrator" ? (
+                    <Link
+                      className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
+                      href="/system/audit-log"
+                    >
                       {t("overview.view_all_activity")}
+                      <ArrowRight aria-hidden className="h-3.5 w-3.5" />
                     </Link>
                   ) : (
-                    <span className="text-xs text-[var(--color-text-muted)]">{t("overview.company_scoped_events")}</span>
-                  )}
-                </div>
-                <ul className="max-h-80 divide-y divide-[var(--color-border)] overflow-y-auto">
-                  {data.recent_activity.length === 0 ? (
-                    <li className="px-4 py-6 text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</li>
-                  ) : (
-                    data.recent_activity.map((row, idx) => (
-                      <li className="px-4 py-3 text-sm" key={`${row.occurred_at}-${idx}`}>
+                    <span className="text-xs text-[var(--color-text-muted)]">
+                      {t("overview.company_scoped_events")}
+                    </span>
+                  )
+                }
+                className="lg:col-span-2"
+                title={t("overview.recent_activity")}
+              >
+                {data.recent_activity.length === 0 ? (
+                  <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</p>
+                ) : (
+                  <ul className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                    {data.recent_activity.map((row, idx) => (
+                      <li
+                        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5 text-sm"
+                        key={`${row.occurred_at}-${idx}`}
+                      >
                         <p className="font-medium text-[var(--color-text)]">{row.summary}</p>
                         {row.detail ? (
                           <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{row.detail}</p>
@@ -630,18 +779,13 @@ export function OverviewClient() {
                           {new Date(row.occurred_at).toLocaleString()}
                         </p>
                       </li>
-                    ))
-                  )}
-                </ul>
-              </div>
+                    ))}
+                  </ul>
+                )}
+              </SectionCard>
 
-              <div className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-                <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                    {t("overview.quick_actions")}
-                  </p>
-                </div>
-                <ul className="divide-y divide-[var(--color-border)]">
+              <SectionCard title={t("overview.quick_actions")}>
+                <ul className="space-y-1">
                   {[
                     { key: "emp", label: t("overview.quick_add_employee"), href: "/employees" },
                     { key: "loc", label: t("overview.quick_add_location"), href: "/locations" },
@@ -651,19 +795,11 @@ export function OverviewClient() {
                     { key: "site", label: t("overview.link_site_progress"), href: "/work-progress-review" },
                   ].map((item) => (
                     <li key={item.key}>
-                      <Link
-                        className="flex items-center justify-between gap-2 px-4 py-3 text-sm font-medium text-[var(--color-text)] hover:bg-[var(--color-header)]"
-                        href={item.href}
-                      >
-                        <span>{item.label}</span>
-                        <span aria-hidden className="text-[var(--color-text-soft)]">
-                          →
-                        </span>
-                      </Link>
+                      <OverviewListLink href={item.href} label={item.label} />
                     </li>
                   ))}
                 </ul>
-              </div>
+              </SectionCard>
             </div>
           </>
         ) : null}
