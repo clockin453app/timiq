@@ -90,6 +90,265 @@ function formatPercent(rate: number | null | undefined): string {
   return `${Math.round(rate * 1000) / 10}%`;
 }
 
+function formatShortDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split("-").map(Number);
+  if (!y || !m || !d) {
+    return isoDate;
+  }
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit" }).format(
+    new Date(Date.UTC(y, m - 1, d, 12, 0, 0)),
+  );
+}
+
+type ChartPoint = {
+  key: string;
+  label: string;
+  value: number;
+  tooltip: string;
+};
+
+function buildLineGeometry(
+  values: number[],
+  width: number,
+  height: number,
+  padding: { top: number; right: number; bottom: number; left: number },
+) {
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+  const max = Math.max(1, ...values);
+  const step = values.length > 1 ? innerW / (values.length - 1) : 0;
+
+  const coords = values.map((value, index) => {
+    const x = padding.left + index * step;
+    const y = padding.top + innerH - (value / max) * innerH;
+    return { x, y, value };
+  });
+
+  const linePath =
+    coords.length > 0
+      ? `M ${coords.map((point) => `${point.x} ${point.y}`).join(" L ")}`
+      : "";
+
+  const areaPath =
+    coords.length > 0
+      ? `${linePath} L ${coords[coords.length - 1]?.x ?? padding.left} ${padding.top + innerH} L ${coords[0]?.x ?? padding.left} ${padding.top + innerH} Z`
+      : "";
+
+  return { coords, linePath, areaPath, max, innerH, padding };
+}
+
+function OverviewSparkline(props: { values: number[]; tone?: "brand" | "success" }) {
+  const { values, tone = "brand" } = props;
+  if (values.length < 2) {
+    return null;
+  }
+
+  const width = 72;
+  const height = 28;
+  const { linePath } = buildLineGeometry(values, width, height, {
+    top: 2,
+    right: 2,
+    bottom: 2,
+    left: 2,
+  });
+  const stroke =
+    tone === "success" ? "var(--color-success-700)" : "var(--color-brand)";
+
+  return (
+    <svg
+      aria-hidden
+      className="mt-2 opacity-80"
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      width={width}
+    >
+      <path
+        d={linePath}
+        fill="none"
+        stroke={stroke}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="2"
+      />
+    </svg>
+  );
+}
+
+function OverviewLineChart(props: { points: ChartPoint[]; emptyHint: string }) {
+  const width = 480;
+  const height = 200;
+  const padding = { top: 16, right: 16, bottom: 32, left: 40 };
+  const values = props.points.map((point) => point.value);
+
+  if (props.points.length === 0) {
+    return <p className="text-sm text-[var(--color-text-muted)]">{props.emptyHint}</p>;
+  }
+
+  const { coords, linePath, areaPath, max, innerH, padding: pad } = buildLineGeometry(
+    values,
+    width,
+    height,
+    padding,
+  );
+  const yTicks = [0, Math.round(max / 2), max];
+
+  return (
+    <div className="w-full min-w-0">
+      <svg
+        aria-label="Attendance trend chart"
+        className="h-auto w-full max-w-full"
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        {yTicks.map((tick, index) => {
+          const y = pad.top + innerH - (tick / max) * innerH;
+          return (
+            <g key={`attendance-y-grid-${index}`}>
+              <line
+                stroke="var(--color-border)"
+                strokeDasharray="4 4"
+                strokeOpacity="0.6"
+                x1={pad.left}
+                x2={width - pad.right}
+                y1={y}
+                y2={y}
+              />
+              <text
+                fill="var(--color-text-soft)"
+                fontSize="10"
+                textAnchor="end"
+                x={pad.left - 6}
+                y={y + 3}
+              >
+                {tick}
+              </text>
+            </g>
+          );
+        })}
+        <path d={areaPath} fill="var(--color-brand)" fillOpacity="0.12" />
+        <path
+          d={linePath}
+          fill="none"
+          stroke="var(--color-brand)"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth="2.5"
+        />
+        {coords.map((point, index) => (
+          <g key={props.points[index]?.key ?? index}>
+            <circle cx={point.x} cy={point.y} fill="var(--color-brand)" r="4" />
+            <title>{props.points[index]?.tooltip}</title>
+          </g>
+        ))}
+        {props.points.map((point, index) => {
+          const x = coords[index]?.x ?? pad.left;
+          return (
+            <text
+              fill="var(--color-text-muted)"
+              fontSize="10"
+              key={point.key}
+              textAnchor="middle"
+              x={x}
+              y={height - 10}
+            >
+              {point.label}
+            </text>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function OverviewBarChart(props: {
+  points: ChartPoint[];
+  currentKey?: string | null;
+  emptyHint: string;
+}) {
+  const width = 480;
+  const height = 200;
+  const padding = { top: 16, right: 16, bottom: 36, left: 48 };
+
+  if (props.points.length === 0) {
+    return <p className="text-sm text-[var(--color-text-muted)]">{props.emptyHint}</p>;
+  }
+
+  const values = props.points.map((point) => point.value);
+  const max = Math.max(1, ...values);
+  const innerW = width - padding.left - padding.right;
+  const innerH = height - padding.top - padding.bottom;
+  const barGap = 10;
+  const barWidth = Math.max(18, (innerW - barGap * (props.points.length - 1)) / props.points.length);
+
+  return (
+    <div className="w-full min-w-0">
+      <svg
+        aria-label="Payroll trend chart"
+        className="h-auto w-full max-w-full"
+        role="img"
+        viewBox={`0 0 ${width} ${height}`}
+      >
+        {[0, Math.round(max / 2), max].map((tick, index) => {
+          const y = padding.top + innerH - (tick / max) * innerH;
+          return (
+            <g key={`payroll-y-grid-${index}`}>
+              <line
+                stroke="var(--color-border)"
+                strokeDasharray="4 4"
+                strokeOpacity="0.6"
+                x1={padding.left}
+                x2={width - padding.right}
+                y1={y}
+                y2={y}
+              />
+              <text
+                fill="var(--color-text-soft)"
+                fontSize="10"
+                textAnchor="end"
+                x={padding.left - 6}
+                y={y + 3}
+              >
+                {tick >= 1000 ? `£${Math.round(tick / 1000)}k` : `£${tick}`}
+              </text>
+            </g>
+          );
+        })}
+        {props.points.map((point, index) => {
+          const barHeight = (point.value / max) * innerH;
+          const x = padding.left + index * (barWidth + barGap);
+          const y = padding.top + innerH - barHeight;
+          const isCurrent = props.currentKey === point.key;
+          return (
+            <g key={point.key}>
+              <rect
+                fill={isCurrent ? "var(--color-brand)" : "var(--color-brand-muted)"}
+                height={barHeight}
+                rx="4"
+                stroke={isCurrent ? "var(--color-brand-hover)" : "var(--color-border)"}
+                strokeWidth={isCurrent ? 1.5 : 1}
+                width={barWidth}
+                x={x}
+                y={y}
+              >
+                <title>{point.tooltip}</title>
+              </rect>
+              <text
+                fill="var(--color-text-muted)"
+                fontSize="9"
+                textAnchor="middle"
+                x={x + barWidth / 2}
+                y={height - 12}
+              >
+                {point.label}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
 function OverviewMetricCard(props: {
   href: string;
   title: string;
@@ -98,6 +357,8 @@ function OverviewMetricCard(props: {
   badge?: string;
   badgeTone?: "success" | "warning" | "muted";
   icon: LucideIcon;
+  sparklineValues?: number[];
+  sparklineTone?: "brand" | "success";
 }) {
   const Icon = props.icon;
   const badgeTone = props.badgeTone ?? "muted";
@@ -106,7 +367,7 @@ function OverviewMetricCard(props: {
     <Link
       className={cn(
         uiClasses.card,
-        "group block min-w-0 transition-[border-color,box-shadow,transform]",
+        "group block min-w-0 shadow-[var(--shadow-card)] transition-[border-color,box-shadow,transform]",
         "duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-standard)]",
         "hover:border-[var(--color-brand)]/25 hover:shadow-[var(--shadow-soft)]",
       )}
@@ -114,18 +375,21 @@ function OverviewMetricCard(props: {
     >
       <div className="flex items-start justify-between gap-3 p-4 sm:p-5">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-brand-muted)] text-[var(--color-brand)]">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-brand-muted)] text-[var(--color-brand)] shadow-[var(--shadow-xs)]">
             <Icon aria-hidden className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
               {props.title}
             </p>
-            <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-[var(--color-text)]">
+            <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-[var(--color-text)] lg:text-4xl">
               {props.primary}
             </p>
             {props.secondary ? (
-              <p className="mt-2 text-sm leading-snug text-[var(--color-text-muted)]">{props.secondary}</p>
+              <p className="mt-1.5 text-sm leading-snug text-[var(--color-text-muted)]">{props.secondary}</p>
+            ) : null}
+            {props.sparklineValues && props.sparklineValues.length >= 2 ? (
+              <OverviewSparkline tone={props.sparklineTone} values={props.sparklineValues} />
             ) : null}
           </div>
         </div>
@@ -147,32 +411,41 @@ function OverviewAttentionCard(props: {
 }) {
   return (
     <SectionCard
-      className="border-[var(--color-warning-700)]/20 shadow-[var(--shadow-card)]"
+      className="border-[var(--color-warning-700)]/25 shadow-[var(--shadow-soft)]"
       description={props.scopeNote ?? undefined}
       title={props.title}
     >
       {props.items.length === 0 ? (
-        <div className="flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-4 py-3 text-sm text-[var(--color-text-muted)]">
-          <CheckCircle2 aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-success-700)]" />
-          <span>{props.emptyLabel}</span>
+        <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-success-700)]/20 bg-[var(--color-success-50)] px-4 py-4 text-sm text-[var(--color-success-700)]">
+          <CheckCircle2 aria-hidden className="h-5 w-5 shrink-0" />
+          <span className="font-medium">{props.emptyLabel}</span>
         </div>
       ) : (
-        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+        <ul className="space-y-2">
           {props.items.map((item) => (
             <li key={item.code}>
               <Link
                 className={cn(
-                  "flex items-center justify-between gap-3 rounded-[var(--radius-md)] border px-3 py-3 text-sm transition-colors",
+                  "group flex items-center justify-between gap-4 rounded-[var(--radius-md)] border px-4 py-3.5 text-sm shadow-[var(--shadow-xs)] transition-[border-color,box-shadow,transform]",
+                  "hover:shadow-[var(--shadow-soft)]",
                   NEEDS_ATTENTION_ROW_CLASS[item.severity] ?? NEEDS_ATTENTION_ROW_CLASS.info,
                 )}
                 href={item.href}
               >
-                <span className="flex min-w-0 items-center gap-2.5">
+                <span className="flex min-w-0 flex-1 items-center gap-3">
                   <NeedsAttentionIcon severity={item.severity} />
-                  <span className="min-w-0 font-medium text-[var(--color-text)]">{item.label}</span>
+                  <span className="min-w-0 font-semibold text-[var(--color-text)] group-hover:text-[var(--color-brand)]">
+                    {item.label}
+                  </span>
                 </span>
-                <span className="inline-flex min-w-[2rem] shrink-0 items-center justify-center rounded-[var(--radius-full)] bg-white/80 px-2 py-0.5 text-sm font-bold tabular-nums text-[var(--color-text)] shadow-sm">
-                  {item.count}
+                <span className="inline-flex shrink-0 items-center gap-2">
+                  <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-[var(--radius-full)] bg-white px-2.5 py-1 text-sm font-bold tabular-nums text-[var(--color-text)] shadow-sm">
+                    {item.count}
+                  </span>
+                  <ArrowRight
+                    aria-hidden
+                    className="h-4 w-4 text-[var(--color-text-soft)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-brand)]"
+                  />
                 </span>
               </Link>
             </li>
@@ -183,13 +456,24 @@ function OverviewAttentionCard(props: {
   );
 }
 
-function ReadinessStatChip(props: { label: string; value: ReactNode }) {
+function ReadinessStatChip(props: {
+  label: string;
+  value: ReactNode;
+  tone?: "default" | "warning" | "success";
+}) {
+  const toneClass =
+    props.tone === "warning"
+      ? "border-[var(--color-warning-700)]/20 bg-[var(--color-warning-50)]"
+      : props.tone === "success"
+        ? "border-[var(--color-success-700)]/20 bg-[var(--color-success-50)]"
+        : "border-[var(--color-border)] bg-[var(--color-header)]";
+
   return (
-    <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5">
+    <div className={cn("rounded-[var(--radius-md)] border px-3 py-2.5", toneClass)}>
       <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
         {props.label}
       </p>
-      <p className="mt-1 text-base font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
+      <p className="mt-1 text-lg font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
     </div>
   );
 }
@@ -222,6 +506,7 @@ function OverviewReadinessPanel(props: {
           <ArrowRight aria-hidden className="h-3.5 w-3.5" />
         </Link>
       }
+      className="shadow-[var(--shadow-card)]"
       description={readiness.scope_note ?? undefined}
       title={t("overview.payroll_readiness", "Payroll readiness")}
     >
@@ -230,35 +515,58 @@ function OverviewReadinessPanel(props: {
           {payrollStatusLabel(t, readiness.payroll_status)}
         </StatusBadge>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <ReadinessStatChip label={t("overview.readiness_items", "Items")} value={readiness.total_items} />
-          <ReadinessStatChip label={t("overview.readiness_pending", "Pending")} value={readiness.pending_count} />
-          <ReadinessStatChip label={t("overview.readiness_approved", "Approved")} value={readiness.approved_count} />
-          <ReadinessStatChip label={t("overview.readiness_paid", "Paid")} value={readiness.paid_count} />
-          <ReadinessStatChip
-            label={t("overview.readiness_rate_missing", "Rate missing")}
-            value={readiness.rate_missing_count}
-          />
-          <ReadinessStatChip
-            label={t("overview.readiness_open_shifts_week", "Open shifts (week)")}
-            value={readiness.open_shifts_started_in_week_count}
-          />
+        <div>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+            {t("overview.readiness_approval_group", "Approval status")}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <ReadinessStatChip label={t("overview.readiness_items", "Items")} value={readiness.total_items} />
+            <ReadinessStatChip
+              label={t("overview.readiness_pending", "Pending")}
+              tone={readiness.pending_count > 0 ? "warning" : "default"}
+              value={readiness.pending_count}
+            />
+            <ReadinessStatChip
+              label={t("overview.readiness_approved", "Approved")}
+              tone="success"
+              value={readiness.approved_count}
+            />
+            <ReadinessStatChip label={t("overview.readiness_paid", "Paid")} tone="success" value={readiness.paid_count} />
+          </div>
+        </div>
+
+        <div>
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+            {t("overview.readiness_blockers_group", "Blockers & shifts")}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <ReadinessStatChip
+              label={t("overview.readiness_rate_missing", "Rate missing")}
+              tone={readiness.rate_missing_count > 0 ? "warning" : "default"}
+              value={readiness.rate_missing_count}
+            />
+            <ReadinessStatChip
+              label={t("overview.readiness_open_shifts_week", "Open shifts (week)")}
+              tone={readiness.open_shifts_started_in_week_count > 0 ? "warning" : "default"}
+              value={readiness.open_shifts_started_in_week_count}
+            />
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Badge tone={readiness.payroll_period_not_calculated ? "warning" : "default"}>
+          <Badge tone={readiness.payroll_period_not_calculated ? "warning" : "success"}>
             {t("overview.readiness_not_calculated", "Not calculated")}: {yesNo(readiness.payroll_period_not_calculated)}
           </Badge>
-          <Badge tone={readiness.payroll_needs_recalculation ? "warning" : "default"}>
+          <Badge tone={readiness.payroll_needs_recalculation ? "warning" : "success"}>
             {t("overview.readiness_needs_recalc", "Needs recalc")}: {yesNo(readiness.payroll_needs_recalculation)}
           </Badge>
         </div>
 
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] px-3 py-3">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-3 py-3">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
             {t("overview.readiness_gross_hours", "Gross / hours")}
           </p>
-          <p className="mt-1 text-lg font-semibold tabular-nums text-[var(--color-text)]">
+          <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-text)]">
             {readiness.total_gross != null ? formatMoneyGBP(String(readiness.total_gross)) : "—"} ·{" "}
             {formatDurationSeconds(readiness.total_hours_seconds)}
           </p>
@@ -273,6 +581,7 @@ function HealthCheckRow(props: {
   value: ReactNode;
   href?: string;
   bordered?: boolean;
+  status?: "ok" | "warn" | "neutral";
 }) {
   const valueNode = props.href ? (
     <Link className="font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]" href={props.href}>
@@ -282,14 +591,26 @@ function HealthCheckRow(props: {
     <span className="font-semibold text-[var(--color-text)]">{props.value}</span>
   );
 
+  const StatusIcon =
+    props.status === "ok" ? CheckCircle2 : props.status === "warn" ? AlertTriangle : Info;
+  const iconClass =
+    props.status === "ok"
+      ? "text-[var(--color-success-700)]"
+      : props.status === "warn"
+        ? "text-[var(--color-warning-700)]"
+        : "text-[var(--color-text-soft)]";
+
   return (
     <li
       className={cn(
-        "flex items-center justify-between gap-3 py-2.5 text-sm",
-        props.bordered ? "border-t border-[var(--color-border)] pt-3" : undefined,
+        "flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-2 py-2.5 text-sm",
+        props.bordered ? "mt-1 border-t border-[var(--color-border)] pt-3" : undefined,
       )}
     >
-      <span className="text-[var(--color-text-muted)]">{props.label}</span>
+      <span className="flex min-w-0 items-center gap-2 text-[var(--color-text-muted)]">
+        {props.status ? <StatusIcon aria-hidden className={cn("h-4 w-4 shrink-0", iconClass)} /> : null}
+        <span>{props.label}</span>
+      </span>
       {valueNode}
     </li>
   );
@@ -312,29 +633,38 @@ function OverviewHealthPanel(props: {
   }
 
   return (
-    <SectionCard description={health.scope_note ?? undefined} title={t("overview.setup_health", "Setup health")}>
-      <ul className="divide-y divide-[var(--color-border)]">
+    <SectionCard
+      className="shadow-[var(--shadow-card)]"
+      description={health.scope_note ?? undefined}
+      title={t("overview.setup_health", "Setup health")}
+    >
+      <ul className="divide-y divide-[var(--color-border)] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)]/50 px-2">
         <HealthCheckRow
           label={t("overview.setup_active_employees")}
+          status="ok"
           value={health.active_employee_count}
         />
         <HealthCheckRow
           label={t("overview.setup_active_locations")}
+          status="ok"
           value={health.active_location_count}
         />
         <HealthCheckRow
           href="/employees"
           label={t("overview.setup_missing_hourly_rate")}
+          status={health.employees_missing_hourly_rate_count > 0 ? "warn" : "ok"}
           value={health.employees_missing_hourly_rate_count}
         />
         <HealthCheckRow
           href="/site-access"
           label={t("overview.setup_no_site_access")}
+          status={health.employees_without_site_access_count > 0 ? "warn" : "ok"}
           value={health.employees_without_site_access_count}
         />
         <HealthCheckRow
           bordered
           label={t("overview.setup_time_policy")}
+          status={health.time_policy_row_present ? "ok" : "neutral"}
           value={
             health.time_policy_row_present ? (
               <Badge tone="success">{t("overview.legend_present", "Present")}</Badge>
@@ -345,6 +675,7 @@ function OverviewHealthPanel(props: {
         />
         <HealthCheckRow
           label={t("overview.setup_time_policy_config")}
+          status={health.time_policy_configured ? "ok" : "neutral"}
           value={
             <Badge tone={health.time_policy_configured ? "success" : "default"}>
               {health.time_policy_configured
@@ -359,44 +690,15 @@ function OverviewHealthPanel(props: {
   );
 }
 
-function OverviewTrendCard(props: {
-  title: string;
-  emptyHint: string;
-  rows: { key: string; label: string; value: number; display: string; max: number }[];
-}) {
-  const max = Math.max(1, ...props.rows.map((r) => r.max));
-
-  return (
-    <SectionCard title={props.title}>
-      {props.rows.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-muted)]">{props.emptyHint}</p>
-      ) : (
-        <div className="space-y-3">
-          {props.rows.map((row) => (
-            <div className="min-w-0" key={row.key}>
-              <div className="flex justify-between gap-3 text-sm">
-                <span className="min-w-0 truncate text-[var(--color-text-muted)]">{row.label}</span>
-                <span className="shrink-0 tabular-nums font-medium text-[var(--color-text)]">{row.display}</span>
-              </div>
-              <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-[var(--color-header)]">
-                <div
-                  className="h-full rounded-full bg-[var(--color-brand)]/55 transition-[width] duration-[var(--motion-duration-fast)]"
-                  style={{ width: `${Math.min(100, (row.value / max) * 100)}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </SectionCard>
-  );
-}
-
 function TodayLivePanel(props: {
   title: string;
   viewAllLabel: string;
   emptyLabel: string;
   rows: TodayLiveRow[];
+  openShifts: number;
+  presentToday: number;
+  totalEmployees: number;
+  attendanceRate: string;
 }) {
   return (
     <SectionCard
@@ -409,29 +711,46 @@ function TodayLivePanel(props: {
           <ArrowRight aria-hidden className="h-3.5 w-3.5" />
         </Link>
       }
+      className="shadow-[var(--shadow-card)]"
       title={props.title}
     >
+      <div className="mb-4 grid grid-cols-2 gap-2">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+            Open now
+          </p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-[var(--color-text)]">{props.openShifts}</p>
+        </div>
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-success-700)]/15 bg-[var(--color-success-50)] px-3 py-2.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+            Present today
+          </p>
+          <p className="mt-1 text-2xl font-semibold tabular-nums text-[var(--color-text)]">
+            {props.presentToday}
+            <span className="text-base font-medium text-[var(--color-text-muted)]"> / {props.totalEmployees}</span>
+          </p>
+          <p className="mt-0.5 text-xs text-[var(--color-success-700)]">{props.attendanceRate}</p>
+        </div>
+      </div>
+
       {props.rows.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">{props.emptyLabel}</p>
       ) : (
-        <ul className="space-y-2">
+        <ul className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
           {props.rows.map((row, idx) => (
             <li key={`${row.display_name}-${row.clock_in_at}-${idx}`}>
               <Link
-                className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-transparent px-3 py-2.5 text-sm transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-header)] sm:flex-row sm:items-center sm:justify-between sm:gap-3"
+                className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-transparent px-3 py-2 text-sm transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-header)]"
                 href={row.href}
               >
                 <div className="min-w-0">
                   <p className="font-medium text-[var(--color-text)]">{row.display_name}</p>
                   <p className="text-xs text-[var(--color-text-muted)]">
                     {row.location_name ?? "—"}
-                    {row.email ? ` · ${row.email}` : null}
                   </p>
                 </div>
-                <p className="shrink-0 text-xs tabular-nums text-[var(--color-text-muted)] sm:text-right">
-                  {formatDurationSeconds(row.running_seconds)}
-                  <span className="hidden sm:inline"> · </span>
-                  <span className="block sm:inline">{new Date(row.clock_in_at).toLocaleString()}</span>
+                <p className="text-xs tabular-nums text-[var(--color-text-muted)]">
+                  {formatDurationSeconds(row.running_seconds)} · {new Date(row.clock_in_at).toLocaleTimeString()}
                 </p>
               </Link>
             </li>
@@ -445,7 +764,7 @@ function TodayLivePanel(props: {
 function OverviewListLink(props: { href: string; label: string }) {
   return (
     <Link
-      className="flex items-center justify-between gap-2 rounded-[var(--radius-md)] px-3 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:bg-[var(--color-header)]"
+      className="flex items-center justify-between gap-2 rounded-[var(--radius-md)] border border-transparent px-3 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-header)]"
       href={props.href}
     >
       <span className="min-w-0">{props.label}</span>
@@ -553,33 +872,43 @@ export function OverviewClient() {
     return () => window.clearInterval(id);
   }, [load]);
 
-  const attendanceRows = useMemo(() => {
+  const attendanceChartPoints = useMemo((): ChartPoint[] => {
     if (!data?.attendance_trend.length) {
       return [];
     }
-    const maxPresent = Math.max(1, ...data.attendance_trend.map((d) => d.present_count));
     return data.attendance_trend.map((d) => ({
       key: d.date,
-      label: d.date,
+      label: formatShortDate(d.date),
       value: d.present_count,
-      display: attendanceTrendDisplayFn(d.present_count, d.total_employees, formatPercent(d.attendance_rate)),
-      max: maxPresent,
+      tooltip: attendanceTrendDisplayFn(
+        d.present_count,
+        d.total_employees,
+        formatPercent(d.attendance_rate),
+      ),
     }));
   }, [data, attendanceTrendDisplayFn]);
 
-  const payrollRows = useMemo(() => {
+  const payrollChartPoints = useMemo((): ChartPoint[] => {
     if (!data?.payroll_trend.length) {
       return [];
     }
-    const maxGross = Math.max(1, ...data.payroll_trend.map((d) => d.total_gross));
     return data.payroll_trend.map((d) => ({
       key: d.week_start,
-      label: payrollTrendLabelFn(d.week_start),
+      label: formatShortDate(d.week_start),
       value: d.total_gross,
-      display: `${formatMoneyGBP(String(d.total_gross))} · ${formatDurationSeconds(d.total_hours_seconds)}`,
-      max: maxGross,
+      tooltip: `${payrollTrendLabelFn(d.week_start)} · ${formatMoneyGBP(String(d.total_gross))} · ${formatDurationSeconds(d.total_hours_seconds)}`,
     }));
   }, [data, payrollTrendLabelFn]);
+
+  const attendanceSparkline = useMemo(
+    () => data?.attendance_trend.map((d) => d.present_count) ?? [],
+    [data],
+  );
+
+  const payrollSparkline = useMemo(
+    () => data?.payroll_trend.map((d) => d.total_gross) ?? [],
+    [data],
+  );
 
   const thresholdNote = data
     ? t(
@@ -615,24 +944,28 @@ export function OverviewClient() {
         title={t("overview.page_title")}
       />
 
-      <SheetBody className="min-w-0 space-y-5 lg:p-6">
+      <SheetBody className="min-w-0 space-y-5 lg:space-y-6 lg:p-6">
         {companyScope.scopeLabel ? (
           <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
         ) : null}
 
         {data?.generated_at && !loading ? (
-          <p className="text-xs text-[var(--color-text-muted)]">
-            {t("overview.last_updated", "Last updated {{time}}", {
-              time: new Date(data.generated_at).toLocaleString(),
-            })}
-            <span className="mx-2 text-[var(--color-border-dark)]" aria-hidden>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)]/60 px-3 py-2 text-xs text-[var(--color-text-muted)]">
+            <span>
+              {t("overview.last_updated", "Last updated {{time}}", {
+                time: new Date(data.generated_at).toLocaleString(),
+              })}
+            </span>
+            <span aria-hidden className="hidden text-[var(--color-border-dark)] sm:inline">
               ·
             </span>
-            {t(
-              "overview.auto_refresh_note",
-              "Auto-refreshes every 45 seconds when this tab is visible.",
-            )}
-          </p>
+            <span>
+              {t(
+                "overview.auto_refresh_note",
+                "Auto-refreshes every 45 seconds when this tab is visible.",
+              )}
+            </span>
+          </div>
         ) : null}
 
         {loading ? (
@@ -676,6 +1009,8 @@ export function OverviewClient() {
                 secondary={t("overview.attendance_now_sub", "{{open}} open shift(s) now · attendance today", {
                   open: data.live_open_shifts,
                 })}
+                sparklineTone="success"
+                sparklineValues={attendanceSparkline}
                 title={t("overview.attendance_today", "Attendance today")}
               />
               <OverviewMetricCard
@@ -693,6 +1028,7 @@ export function OverviewClient() {
                         hours: formatDurationSeconds(data.payroll_total_hours_seconds),
                       })
                 }
+                sparklineValues={payrollSparkline}
                 title={t("overview.payroll_this_week")}
               />
             </div>
@@ -704,102 +1040,127 @@ export function OverviewClient() {
               title={t("overview.needs_attention", "Needs attention")}
             />
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <SectionCard
+                className="shadow-[var(--shadow-card)] xl:col-span-2"
+                description={t(
+                  "overview.trend_attendance_sub",
+                  "Present employees over the last 7 days.",
+                )}
+                title={t("overview.trend_attendance")}
+              >
+                <OverviewLineChart
+                  emptyHint={t("overview.trend_attendance_empty")}
+                  points={attendanceChartPoints}
+                />
+              </SectionCard>
+
+              <TodayLivePanel
+                attendanceRate={formatPercent(data.live_attendance_rate)}
+                emptyLabel={t("overview.no_open_shifts")}
+                openShifts={data.live_open_shifts}
+                presentToday={data.live_present_today}
+                rows={data.today_live}
+                title={t("overview.today_live", "Today live")}
+                totalEmployees={data.live_total_employees}
+                viewAllLabel={t("common.view_all", "View all")}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+              <SectionCard
+                className="shadow-[var(--shadow-card)] xl:col-span-2"
+                description={t(
+                  "overview.trend_payroll_sub",
+                  "Weekly gross payroll totals. Current week highlighted.",
+                )}
+                title={t("overview.trend_payroll")}
+              >
+                <OverviewBarChart
+                  currentKey={data.payroll_week_start}
+                  emptyHint={
+                    data.payroll_status === "not_calculated"
+                      ? t("overview.payroll_not_calc_weeks")
+                      : t("overview.trend_payroll_empty_no_history")
+                  }
+                  points={payrollChartPoints}
+                />
+              </SectionCard>
+
               <OverviewReadinessPanel
                 readiness={data.payroll_readiness}
                 t={t}
                 unavailableLabel={t("overview.payroll_readiness_unavailable")}
               />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <OverviewHealthPanel
                 health={data.setup_health}
                 noScopeLabel={t("overview.no_company_scope")}
                 t={t}
                 thresholdNote={thresholdNote}
               />
-            </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              <TodayLivePanel
-                emptyLabel={t("overview.no_open_shifts")}
-                rows={data.today_live}
-                title={t("overview.today_live", "Today live")}
-                viewAllLabel={t("common.view_all", "View all")}
-              />
-              <OverviewTrendCard
-                emptyHint={t("overview.trend_attendance_empty")}
-                rows={attendanceRows}
-                title={t("overview.trend_attendance")}
-              />
-            </div>
-
-            <OverviewTrendCard
-              emptyHint={
-                data.payroll_status === "not_calculated"
-                  ? t("overview.payroll_not_calc_weeks")
-                  : t("overview.trend_payroll_empty_no_history")
-              }
-              rows={payrollRows}
-              title={t("overview.trend_payroll")}
-            />
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-              <SectionCard
-                action={
-                  user.system_role === "administrator" ? (
-                    <Link
-                      className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
-                      href="/system/audit-log"
-                    >
-                      {t("overview.view_all_activity")}
-                      <ArrowRight aria-hidden className="h-3.5 w-3.5" />
-                    </Link>
-                  ) : (
-                    <span className="text-xs text-[var(--color-text-muted)]">
-                      {t("overview.company_scoped_events")}
-                    </span>
-                  )
-                }
-                className="lg:col-span-2"
-                title={t("overview.recent_activity")}
-              >
-                {data.recent_activity.length === 0 ? (
-                  <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</p>
-                ) : (
-                  <ul className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                    {data.recent_activity.map((row, idx) => (
-                      <li
-                        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5 text-sm"
-                        key={`${row.occurred_at}-${idx}`}
+              <div className="space-y-4">
+                <SectionCard
+                  action={
+                    user.system_role === "administrator" ? (
+                      <Link
+                        className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
+                        href="/system/audit-log"
                       >
-                        <p className="font-medium text-[var(--color-text)]">{row.summary}</p>
-                        {row.detail ? (
-                          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{row.detail}</p>
-                        ) : null}
-                        <p className="mt-1 text-[10px] text-[var(--color-text-soft)]">
-                          {new Date(row.occurred_at).toLocaleString()}
-                        </p>
+                        {t("overview.view_all_activity")}
+                        <ArrowRight aria-hidden className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : (
+                      <span className="text-xs text-[var(--color-text-muted)]">
+                        {t("overview.company_scoped_events")}
+                      </span>
+                    )
+                  }
+                  className="shadow-[var(--shadow-card)]"
+                  title={t("overview.recent_activity")}
+                >
+                  {data.recent_activity.length === 0 ? (
+                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</p>
+                  ) : (
+                    <ul className="max-h-56 space-y-2 overflow-y-auto pr-1">
+                      {data.recent_activity.map((row, idx) => (
+                        <li
+                          className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5 text-sm"
+                          key={`${row.occurred_at}-${idx}`}
+                        >
+                          <p className="font-medium text-[var(--color-text)]">{row.summary}</p>
+                          {row.detail ? (
+                            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{row.detail}</p>
+                          ) : null}
+                          <p className="mt-1 text-[10px] text-[var(--color-text-soft)]">
+                            {new Date(row.occurred_at).toLocaleString()}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </SectionCard>
+
+                <SectionCard className="shadow-[var(--shadow-card)]" title={t("overview.quick_actions")}>
+                  <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                    {[
+                      { key: "emp", label: t("overview.quick_add_employee"), href: "/employees" },
+                      { key: "loc", label: t("overview.quick_add_location"), href: "/locations" },
+                      { key: "live", label: t("overview.link_live_attendance"), href: "/live-attendance" },
+                      { key: "pay", label: t("overview.quick_run_payroll"), href: "/payroll-report" },
+                      { key: "week", label: t("overview.link_week_report"), href: "/week-report" },
+                      { key: "site", label: t("overview.link_site_progress"), href: "/work-progress-review" },
+                    ].map((item) => (
+                      <li key={item.key}>
+                        <OverviewListLink href={item.href} label={item.label} />
                       </li>
                     ))}
                   </ul>
-                )}
-              </SectionCard>
-
-              <SectionCard title={t("overview.quick_actions")}>
-                <ul className="space-y-1">
-                  {[
-                    { key: "emp", label: t("overview.quick_add_employee"), href: "/employees" },
-                    { key: "loc", label: t("overview.quick_add_location"), href: "/locations" },
-                    { key: "live", label: t("overview.link_live_attendance"), href: "/live-attendance" },
-                    { key: "pay", label: t("overview.quick_run_payroll"), href: "/payroll-report" },
-                    { key: "week", label: t("overview.link_week_report"), href: "/week-report" },
-                    { key: "site", label: t("overview.link_site_progress"), href: "/work-progress-review" },
-                  ].map((item) => (
-                    <li key={item.key}>
-                      <OverviewListLink href={item.href} label={item.label} />
-                    </li>
-                  ))}
-                </ul>
-              </SectionCard>
+                </SectionCard>
+              </div>
             </div>
           </>
         ) : null}
