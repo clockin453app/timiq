@@ -12,7 +12,7 @@
   --color-topbar-fg: #ffffff;
   --color-topbar-fg-muted: rgba(255, 255, 255, 0.88);
   --color-topbar-fg-subtle: rgba(255, 255, 255, 0.72);
-  --color-topbar-hover-bg: rgba(255, 255, 255, 0.1);
+  --color-topbar-hover-bg: rgba(255, 255, 255, 0.12);
   --color-topbar-hover-border: rgba(255, 255, 255, 0.18);
   --color-topbar-active-bg: #ffffff;
   --color-topbar-active-fg: #163b73;
@@ -129,6 +129,7 @@
   --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
   --shadow-soft: 0 4px 12px rgba(15, 23, 42, 0.06);
   --shadow-dropdown: 0 10px 30px rgba(15, 23, 42, 0.12);
+  --shadow-topbar-active: 0 1px 3px rgba(15, 23, 42, 0.12);
   --shadow-modal: 0 20px 50px rgba(15, 23, 42, 0.16);
 
   --space-page-x: 1rem;
@@ -142,9 +143,9 @@
 
   --layout-sidebar-width: 15.5rem;
   --layout-sidebar-collapsed: 4.25rem;
-  --layout-topbar-height: 4rem;
-  --layout-topbar-brand-width: 10.5rem;
-  --layout-topbar-divider-height: 2rem;
+  --layout-topbar-height: 4.5rem;
+  --layout-topbar-brand-width: 11rem;
+  --layout-topbar-divider-height: 2.75rem;
   --layout-mobile-bottom-nav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   --layout-mobile-keyboard-pad: 1rem;
 

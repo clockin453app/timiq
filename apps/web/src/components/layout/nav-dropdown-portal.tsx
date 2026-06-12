@@ -22,7 +22,7 @@ type MenuPosition = {
 
 function computeMenuPosition(anchor: HTMLElement): MenuPosition {
   const rect = anchor.getBoundingClientRect();
-  const minWidth = 220;
+  const minWidth = 260;
   const viewportPad = 8;
   const maxHeight = Math.min(window.innerHeight * 0.7, 420);
 
@@ -85,7 +85,7 @@ export function NavDropdownPortal(props: NavDropdownPortalProps) {
         top: position.top,
         left: position.left,
         minWidth: position.minWidth,
-        maxWidth: "min(20rem, calc(100vw - 1rem))",
+        maxWidth: "min(17.5rem, calc(100vw - 1rem))",
         maxHeight: position.maxHeight,
         overflowY: "auto",
         zIndex: 60,

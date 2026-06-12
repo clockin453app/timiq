@@ -49,7 +49,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
       )}
     >
       <div className="flex min-h-[var(--layout-topbar-height)] w-full min-w-0 items-center pr-4">
-        <div className="flex min-h-[var(--layout-topbar-height)] w-[var(--layout-topbar-brand-width)] min-w-[9.5rem] max-w-[11.25rem] shrink-0 flex-col justify-center border-l-[3px] border-white/30 px-4">
+        <div className="flex min-h-[var(--layout-topbar-height)] w-[var(--layout-topbar-brand-width)] min-w-[9.5rem] max-w-[11.5rem] shrink-0 flex-col justify-center border-l-[3px] border-white/30 px-5">
           <Link
             className="min-w-0 no-underline"
             href={getDefaultLandingPath(user.system_role, { limitedAccess: limited })}
@@ -69,13 +69,13 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
         <div className="w-4 shrink-0 xl:w-5 2xl:w-6" aria-hidden role="presentation" />
         <DesktopTopNav activeHref={activeHref} />
 
-        <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <div className="ml-auto flex shrink-0 items-center gap-2">
           {!limited ? <MessagesHeaderButton activeHref={activeHref} /> : null}
           {!limited ? <NotificationBell /> : null}
           <UserAvatar
             email={user.email}
             name={avatarName}
-            sizeClassName="h-9 w-9"
+            sizeClassName="h-10 w-10"
             userId={user.id}
           />
 
@@ -89,7 +89,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
             >
               <span
                 className={cn(
-                  "inline-flex h-9 max-w-[10rem] cursor-pointer items-center gap-2 px-2.5 sm:max-w-[14rem]",
+                  "inline-flex h-10 max-w-[10rem] cursor-pointer items-center gap-2 px-3 sm:max-w-[14rem]",
                   uiClasses.topBarChromeButton,
                   uiClasses.transitionColors,
                 )}
@@ -105,7 +105,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
             </summary>
             <div
               className={cn(
-                "absolute right-0 z-[60] mt-1.5 w-60 max-w-[calc(100vw-1rem)]",
+                "absolute right-0 z-[60] mt-1.5 w-[17.5rem] max-w-[calc(100vw-1rem)]",
                 uiClasses.topBarDropdownPanel,
               )}
             >

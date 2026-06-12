@@ -47,7 +47,7 @@ export const uiClasses = {
 
   shellTopBar: [
     "border-b border-[var(--color-topbar-border)] bg-[var(--color-topbar-bg)]",
-    "text-[var(--color-topbar-fg-muted)] shadow-sm",
+    "text-[var(--color-topbar-fg-muted)] shadow-[0_1px_3px_rgba(15,23,42,0.08)]",
   ].join(" "),
 
   topBarFocusRing: "focus-visible:outline-none focus-visible:shadow-[var(--focus-ring-topbar)]",
@@ -63,6 +63,7 @@ export const uiClasses = {
 
   topBarNavLinkActive: [
     "border-[var(--color-topbar-active-border)] bg-[var(--color-topbar-active-bg)] text-[var(--color-topbar-active-fg)]",
+    "shadow-[var(--shadow-topbar-active)]",
     "hover:bg-[var(--color-topbar-active-bg)] hover:text-[var(--color-topbar-active-fg)]",
   ].join(" "),
 
@@ -73,15 +74,27 @@ export const uiClasses = {
 
   topBarNavTriggerOpen: [
     "border-[var(--color-topbar-active-border)] bg-[var(--color-topbar-active-bg)] text-[var(--color-topbar-active-fg)]",
+    "shadow-[var(--shadow-topbar-active)]",
     "hover:bg-[var(--color-topbar-active-bg)] hover:text-[var(--color-topbar-active-fg)]",
   ].join(" "),
 
   topBarChromeButton: [
-    "inline-flex shrink-0 items-center justify-center rounded-[var(--radius-md)] border",
+    "inline-flex min-h-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border",
     "border-[var(--color-topbar-chrome-btn-border)] bg-[var(--color-topbar-chrome-btn-bg)]",
     "text-[var(--color-topbar-chrome-btn-fg)]",
     "hover:bg-[var(--color-topbar-chrome-btn-hover)] hover:text-[var(--color-topbar-chrome-btn-fg)]",
   ].join(" "),
+
+  topBarNavTransition: [
+    "transition-[color,background-color,border-color,box-shadow]",
+    "duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-standard)]",
+  ].join(" "),
+
+  topBarNavLinkBase:
+    "inline-flex h-[2.625rem] shrink-0 items-center gap-2.5 rounded-[var(--radius-md)] border px-3 text-sm font-semibold whitespace-nowrap",
+
+  topBarNavTriggerBase:
+    "inline-flex h-[2.625rem] shrink-0 items-center gap-2.5 rounded-[var(--radius-md)] border px-3 text-sm font-semibold whitespace-nowrap",
 
   shellMain: "px-[var(--space-page-x)] py-[var(--space-page-y)]",
 
@@ -131,19 +144,21 @@ export const uiClasses = {
   /** Navy-themed desktop top-bar dropdown (matches chrome). */
   topBarDropdownPanel: [
     "rounded-[var(--radius-lg)] border border-[var(--color-topbar-hover-border)]",
-    "bg-[var(--color-topbar-bg)] py-1.5 shadow-[var(--shadow-dropdown)]",
+    "bg-[var(--color-topbar-bg)] py-2 shadow-[var(--shadow-dropdown)]",
   ].join(" "),
 
   topBarDropdownItem: [
-    "mx-1 flex items-center gap-2.5 rounded-[var(--radius-md)] border border-transparent px-2.5 py-2",
+    "mx-1.5 flex items-center gap-3 rounded-[var(--radius-md)] border border-transparent px-3 py-2.5",
     "text-sm font-medium break-words text-[var(--color-topbar-fg-muted)]",
-    "outline-none transition-colors",
+    "outline-none transition-[color,background-color,border-color]",
+    "duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-standard)]",
     "hover:border-[var(--color-topbar-hover-border)] hover:bg-[var(--color-topbar-hover-bg)] hover:text-[var(--color-topbar-fg)]",
     "focus-visible:shadow-[var(--focus-ring-topbar)]",
   ].join(" "),
 
   topBarDropdownItemActive: [
     "border-[var(--color-topbar-active-border)] bg-[var(--color-topbar-active-bg)] font-semibold text-[var(--color-topbar-active-fg)]",
+    "shadow-[var(--shadow-topbar-active)]",
     "hover:border-[var(--color-topbar-active-border)] hover:bg-[var(--color-topbar-active-bg)] hover:text-[var(--color-topbar-active-fg)]",
   ].join(" "),
 
