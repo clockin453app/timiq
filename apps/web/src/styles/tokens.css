@@ -56,6 +56,42 @@
   --color-payroll-section-split-fg: #2f5f48;
   --color-payroll-section-split-border: #d5e8dc;
 
+  --color-overview-section-attention-bg: #fef8eb;
+  --color-overview-section-attention-fg: #92400e;
+  --color-overview-section-attention-border: #f5dfb8;
+
+  --color-overview-section-attendance-bg: #eef4fc;
+  --color-overview-section-attendance-fg: #1e4976;
+  --color-overview-section-attendance-border: #d0e0f5;
+
+  --color-overview-section-live-bg: #f0f7f6;
+  --color-overview-section-live-fg: #1f4f4a;
+  --color-overview-section-live-border: #cce8e2;
+
+  --color-overview-section-payroll-bg: #eef0f8;
+  --color-overview-section-payroll-fg: #3730a6;
+  --color-overview-section-payroll-border: #d4d7f0;
+
+  --color-overview-section-readiness-bg: #f4f8f0;
+  --color-overview-section-readiness-fg: #3d5c2e;
+  --color-overview-section-readiness-border: #dce8d0;
+
+  --color-overview-section-health-bg: #f0f5f7;
+  --color-overview-section-health-fg: #2f4f5f;
+  --color-overview-section-health-border: #d0dee8;
+
+  --color-overview-section-activity-bg: #f3f1f8;
+  --color-overview-section-activity-fg: #4c4686;
+  --color-overview-section-activity-border: #ddd9f0;
+
+  --color-overview-section-actions-bg: #f0f5fa;
+  --color-overview-section-actions-fg: #1e3a5f;
+  --color-overview-section-actions-border: #d8e4ef;
+
+  --color-overview-section-trends-bg: #eef2f8;
+  --color-overview-section-trends-fg: #334155;
+  --color-overview-section-trends-border: #d4dce8;
+
   --color-border: #e2e8f0;
   --color-border-dark: #cbd5e1;
 

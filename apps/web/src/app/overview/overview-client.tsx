@@ -19,7 +19,6 @@ import {
   Badge,
   Button,
   PageHeader,
-  SectionCard,
   Sheet,
   SheetBody,
   StatusBadge,
@@ -72,6 +71,157 @@ const NEEDS_ATTENTION_ROW_CLASS: Record<string, string> = {
     "border-[var(--color-warning-700)]/25 bg-[var(--color-warning-50)] hover:border-[var(--color-warning-700)]/40",
   info: "border-[var(--color-border-dark)] bg-[var(--color-header)] hover:border-[var(--color-border)]",
 };
+
+type OverviewSectionTone =
+  | "attention"
+  | "attendance"
+  | "live"
+  | "payroll"
+  | "readiness"
+  | "health"
+  | "activity"
+  | "actions"
+  | "trends";
+
+const OVERVIEW_SECTION_TONE: Record<
+  OverviewSectionTone,
+  { header: string; title: string; card?: string }
+> = {
+  attention: {
+    header:
+      "border-b border-[var(--color-overview-section-attention-border)] bg-[var(--color-overview-section-attention-bg)]",
+    title: "text-[var(--color-overview-section-attention-fg)]",
+    card: "border-[var(--color-overview-section-attention-border)]",
+  },
+  attendance: {
+    header:
+      "border-b border-[var(--color-overview-section-attendance-border)] bg-[var(--color-overview-section-attendance-bg)]",
+    title: "text-[var(--color-overview-section-attendance-fg)]",
+    card: "border-[var(--color-overview-section-attendance-border)]",
+  },
+  live: {
+    header:
+      "border-b border-[var(--color-overview-section-live-border)] bg-[var(--color-overview-section-live-bg)]",
+    title: "text-[var(--color-overview-section-live-fg)]",
+    card: "border-[var(--color-overview-section-live-border)]",
+  },
+  payroll: {
+    header:
+      "border-b border-[var(--color-overview-section-payroll-border)] bg-[var(--color-overview-section-payroll-bg)]",
+    title: "text-[var(--color-overview-section-payroll-fg)]",
+    card: "border-[var(--color-overview-section-payroll-border)]",
+  },
+  readiness: {
+    header:
+      "border-b border-[var(--color-overview-section-readiness-border)] bg-[var(--color-overview-section-readiness-bg)]",
+    title: "text-[var(--color-overview-section-readiness-fg)]",
+    card: "border-[var(--color-overview-section-readiness-border)]",
+  },
+  health: {
+    header:
+      "border-b border-[var(--color-overview-section-health-border)] bg-[var(--color-overview-section-health-bg)]",
+    title: "text-[var(--color-overview-section-health-fg)]",
+    card: "border-[var(--color-overview-section-health-border)]",
+  },
+  activity: {
+    header:
+      "border-b border-[var(--color-overview-section-activity-border)] bg-[var(--color-overview-section-activity-bg)]",
+    title: "text-[var(--color-overview-section-activity-fg)]",
+    card: "border-[var(--color-overview-section-activity-border)]",
+  },
+  actions: {
+    header:
+      "border-b border-[var(--color-overview-section-actions-border)] bg-[var(--color-overview-section-actions-bg)]",
+    title: "text-[var(--color-overview-section-actions-fg)]",
+    card: "border-[var(--color-overview-section-actions-border)]",
+  },
+  trends: {
+    header:
+      "border-b border-[var(--color-overview-section-trends-border)] bg-[var(--color-overview-section-trends-bg)]",
+    title: "text-[var(--color-overview-section-trends-fg)]",
+    card: "border-[var(--color-overview-section-trends-border)]",
+  },
+};
+
+const OVERVIEW_CHART_VIEW_WIDTH = 480;
+const OVERVIEW_CHART_VIEW_HEIGHT = 130;
+const OVERVIEW_CHART_DISPLAY_CLASS = "h-[120px] w-full max-w-full sm:h-[140px]";
+const OVERVIEW_CHART_PADDING = {
+  line: { top: 8, right: 8, bottom: 20, left: 28 },
+  bar: { top: 8, right: 8, bottom: 24, left: 32 },
+} as const;
+
+function OverviewTintedSection(props: {
+  action?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  compactBody?: boolean;
+  denseHeader?: boolean;
+  description?: string;
+  title: string;
+  tone: OverviewSectionTone;
+}) {
+  const toneStyle = OVERVIEW_SECTION_TONE[props.tone];
+
+  return (
+    <section
+      className={cn(uiClasses.card, "overflow-hidden shadow-[var(--shadow-card)]", toneStyle.card, props.className)}
+    >
+      <div
+        className={cn(
+          "flex flex-col gap-1.5 px-[var(--space-card)] sm:flex-row sm:items-start sm:justify-between",
+          props.denseHeader ? "py-2" : "py-3",
+          toneStyle.header,
+        )}
+      >
+        <div className="min-w-0 flex-1">
+          <h2 className={cn("timiq-title-md", toneStyle.title)}>{props.title}</h2>
+          {props.description ? (
+            <p className="timiq-caption mt-0.5 text-[var(--color-text-muted)]">{props.description}</p>
+          ) : null}
+        </div>
+        {props.action ? <div className="flex shrink-0 flex-wrap gap-2">{props.action}</div> : null}
+      </div>
+      <div
+        className={cn(
+          props.compactBody ? "px-3 py-2.5 sm:px-[var(--space-card)]" : uiClasses.cardBody,
+        )}
+      >
+        {props.children}
+      </div>
+    </section>
+  );
+}
+
+function OverviewChartWidget(props: {
+  caption: string;
+  children: ReactNode;
+  summary?: string;
+  title: string;
+}) {
+  return (
+    <div className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-sheet)] p-2.5 sm:p-3">
+      <div className="mb-1.5 flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">{props.title}</h3>
+        {props.summary ? (
+          <p className="text-xs font-medium tabular-nums text-[var(--color-text-muted)] sm:text-sm">
+            {props.summary}
+          </p>
+        ) : null}
+      </div>
+      {props.children}
+      <p className="mt-1 text-[11px] leading-snug text-[var(--color-text-soft)]">{props.caption}</p>
+    </div>
+  );
+}
+
+function OverviewChartEmpty(props: { message: string }) {
+  return (
+    <div className="flex min-h-[3rem] items-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] bg-[var(--color-header)]/40 px-3 py-2">
+      <p className="text-xs leading-snug text-[var(--color-text-muted)] sm:text-sm">{props.message}</p>
+    </div>
+  );
+}
 
 function NeedsAttentionIcon(props: { severity: string }) {
   if (props.severity === "critical") {
@@ -175,13 +325,13 @@ function OverviewSparkline(props: { values: number[]; tone?: "brand" | "success"
 }
 
 function OverviewLineChart(props: { points: ChartPoint[]; emptyHint: string }) {
-  const width = 480;
-  const height = 200;
-  const padding = { top: 16, right: 16, bottom: 32, left: 40 };
+  const width = OVERVIEW_CHART_VIEW_WIDTH;
+  const height = OVERVIEW_CHART_VIEW_HEIGHT;
+  const padding = OVERVIEW_CHART_PADDING.line;
   const values = props.points.map((point) => point.value);
 
   if (props.points.length === 0) {
-    return <p className="text-sm text-[var(--color-text-muted)]">{props.emptyHint}</p>;
+    return <OverviewChartEmpty message={props.emptyHint} />;
   }
 
   const { coords, linePath, areaPath, max, innerH, padding: pad } = buildLineGeometry(
@@ -190,13 +340,13 @@ function OverviewLineChart(props: { points: ChartPoint[]; emptyHint: string }) {
     height,
     padding,
   );
-  const yTicks = [0, Math.round(max / 2), max];
+  const yTicks = [0, max];
 
   return (
     <div className="w-full min-w-0">
       <svg
         aria-label="Attendance trend chart"
-        className="h-auto w-full max-w-full"
+        className={OVERVIEW_CHART_DISPLAY_CLASS}
         role="img"
         viewBox={`0 0 ${width} ${height}`}
       >
@@ -206,37 +356,39 @@ function OverviewLineChart(props: { points: ChartPoint[]; emptyHint: string }) {
             <g key={`attendance-y-grid-${index}`}>
               <line
                 stroke="var(--color-border)"
-                strokeDasharray="4 4"
-                strokeOpacity="0.6"
+                strokeDasharray="3 3"
+                strokeOpacity="0.55"
                 x1={pad.left}
                 x2={width - pad.right}
                 y1={y}
                 y2={y}
               />
-              <text
-                fill="var(--color-text-soft)"
-                fontSize="10"
-                textAnchor="end"
-                x={pad.left - 6}
-                y={y + 3}
-              >
-                {tick}
-              </text>
+              {index === 1 ? (
+                <text
+                  fill="var(--color-text-soft)"
+                  fontSize="9"
+                  textAnchor="end"
+                  x={pad.left - 4}
+                  y={y + 3}
+                >
+                  {tick}
+                </text>
+              ) : null}
             </g>
           );
         })}
-        <path d={areaPath} fill="var(--color-brand)" fillOpacity="0.12" />
+        <path d={areaPath} fill="var(--color-brand)" fillOpacity="0.1" />
         <path
           d={linePath}
           fill="none"
           stroke="var(--color-brand)"
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="2.5"
+          strokeWidth="2"
         />
         {coords.map((point, index) => (
           <g key={props.points[index]?.key ?? index}>
-            <circle cx={point.x} cy={point.y} fill="var(--color-brand)" r="4" />
+            <circle cx={point.x} cy={point.y} fill="var(--color-brand)" r="3" />
             <title>{props.points[index]?.tooltip}</title>
           </g>
         ))}
@@ -245,11 +397,11 @@ function OverviewLineChart(props: { points: ChartPoint[]; emptyHint: string }) {
           return (
             <text
               fill="var(--color-text-muted)"
-              fontSize="10"
+              fontSize="9"
               key={point.key}
               textAnchor="middle"
               x={x}
-              y={height - 10}
+              y={height - 6}
             >
               {point.label}
             </text>
@@ -265,51 +417,54 @@ function OverviewBarChart(props: {
   currentKey?: string | null;
   emptyHint: string;
 }) {
-  const width = 480;
-  const height = 200;
-  const padding = { top: 16, right: 16, bottom: 36, left: 48 };
+  const width = OVERVIEW_CHART_VIEW_WIDTH;
+  const height = OVERVIEW_CHART_VIEW_HEIGHT;
+  const padding = OVERVIEW_CHART_PADDING.bar;
 
   if (props.points.length === 0) {
-    return <p className="text-sm text-[var(--color-text-muted)]">{props.emptyHint}</p>;
+    return <OverviewChartEmpty message={props.emptyHint} />;
   }
 
   const values = props.points.map((point) => point.value);
   const max = Math.max(1, ...values);
   const innerW = width - padding.left - padding.right;
   const innerH = height - padding.top - padding.bottom;
-  const barGap = 10;
-  const barWidth = Math.max(18, (innerW - barGap * (props.points.length - 1)) / props.points.length);
+  const barGap = 8;
+  const barWidth = Math.max(14, (innerW - barGap * (props.points.length - 1)) / props.points.length);
+  const yTicks = [0, max];
 
   return (
     <div className="w-full min-w-0">
       <svg
         aria-label="Payroll trend chart"
-        className="h-auto w-full max-w-full"
+        className={OVERVIEW_CHART_DISPLAY_CLASS}
         role="img"
         viewBox={`0 0 ${width} ${height}`}
       >
-        {[0, Math.round(max / 2), max].map((tick, index) => {
+        {yTicks.map((tick, index) => {
           const y = padding.top + innerH - (tick / max) * innerH;
           return (
             <g key={`payroll-y-grid-${index}`}>
               <line
                 stroke="var(--color-border)"
-                strokeDasharray="4 4"
-                strokeOpacity="0.6"
+                strokeDasharray="3 3"
+                strokeOpacity="0.55"
                 x1={padding.left}
                 x2={width - padding.right}
                 y1={y}
                 y2={y}
               />
-              <text
-                fill="var(--color-text-soft)"
-                fontSize="10"
-                textAnchor="end"
-                x={padding.left - 6}
-                y={y + 3}
-              >
-                {tick >= 1000 ? `£${Math.round(tick / 1000)}k` : `£${tick}`}
-              </text>
+              {index === 1 ? (
+                <text
+                  fill="var(--color-text-soft)"
+                  fontSize="9"
+                  textAnchor="end"
+                  x={padding.left - 4}
+                  y={y + 3}
+                >
+                  {tick >= 1000 ? `£${Math.round(tick / 1000)}k` : `£${tick}`}
+                </text>
+              ) : null}
             </g>
           );
         })}
@@ -322,22 +477,22 @@ function OverviewBarChart(props: {
             <g key={point.key}>
               <rect
                 fill={isCurrent ? "var(--color-brand)" : "var(--color-brand-muted)"}
-                height={barHeight}
-                rx="4"
+                height={point.value === 0 ? 2 : barHeight}
+                rx="3"
                 stroke={isCurrent ? "var(--color-brand-hover)" : "var(--color-border)"}
                 strokeWidth={isCurrent ? 1.5 : 1}
                 width={barWidth}
                 x={x}
-                y={y}
+                y={point.value === 0 ? padding.top + innerH - 2 : y}
               >
                 <title>{point.tooltip}</title>
               </rect>
               <text
                 fill="var(--color-text-muted)"
-                fontSize="9"
+                fontSize="8"
                 textAnchor="middle"
                 x={x + barWidth / 2}
-                y={height - 12}
+                y={height - 6}
               >
                 {point.label}
               </text>
@@ -410,23 +565,25 @@ function OverviewAttentionCard(props: {
   items: NeedsAttentionItem[];
 }) {
   return (
-    <SectionCard
-      className="border-[var(--color-warning-700)]/25 shadow-[var(--shadow-soft)]"
+    <OverviewTintedSection
+      compactBody
+      denseHeader
       description={props.scopeNote ?? undefined}
       title={props.title}
+      tone="attention"
     >
       {props.items.length === 0 ? (
-        <div className="flex items-center gap-3 rounded-[var(--radius-md)] border border-[var(--color-success-700)]/20 bg-[var(--color-success-50)] px-4 py-4 text-sm text-[var(--color-success-700)]">
-          <CheckCircle2 aria-hidden className="h-5 w-5 shrink-0" />
+        <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-success-700)]/20 bg-[var(--color-success-50)] px-3 py-2.5 text-sm text-[var(--color-success-700)]">
+          <CheckCircle2 aria-hidden className="h-4 w-4 shrink-0" />
           <span className="font-medium">{props.emptyLabel}</span>
         </div>
       ) : (
-        <ul className="space-y-2">
+        <ul className="space-y-1.5">
           {props.items.map((item) => (
             <li key={item.code}>
               <Link
                 className={cn(
-                  "group flex items-center justify-between gap-4 rounded-[var(--radius-md)] border px-4 py-3.5 text-sm shadow-[var(--shadow-xs)] transition-[border-color,box-shadow,transform]",
+                  "group flex items-center justify-between gap-3 rounded-[var(--radius-md)] border px-3 py-2.5 text-sm shadow-[var(--shadow-xs)] transition-[border-color,box-shadow,transform]",
                   "hover:shadow-[var(--shadow-soft)]",
                   NEEDS_ATTENTION_ROW_CLASS[item.severity] ?? NEEDS_ATTENTION_ROW_CLASS.info,
                 )}
@@ -452,7 +609,7 @@ function OverviewAttentionCard(props: {
           ))}
         </ul>
       )}
-    </SectionCard>
+    </OverviewTintedSection>
   );
 }
 
@@ -469,11 +626,11 @@ function ReadinessStatChip(props: {
         : "border-[var(--color-border)] bg-[var(--color-header)]";
 
   return (
-    <div className={cn("rounded-[var(--radius-md)] border px-3 py-2.5", toneClass)}>
+    <div className={cn("rounded-[var(--radius-md)] border px-2.5 py-2", toneClass)}>
       <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
         {props.label}
       </p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
+      <p className="mt-0.5 text-base font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
     </div>
   );
 }
@@ -487,16 +644,21 @@ function OverviewReadinessPanel(props: {
 
   if (!readiness) {
     return (
-      <SectionCard title={t("overview.payroll_readiness", "Payroll readiness")}>
+      <OverviewTintedSection
+        compactBody
+        denseHeader
+        title={t("overview.payroll_readiness", "Payroll readiness")}
+        tone="readiness"
+      >
         <p className="text-sm text-[var(--color-text-muted)]">{props.unavailableLabel}</p>
-      </SectionCard>
+      </OverviewTintedSection>
     );
   }
 
   const yesNo = (value: boolean) => (value ? t("common.yes", "Yes") : t("common.no", "No"));
 
   return (
-    <SectionCard
+    <OverviewTintedSection
       action={
         <Link
           className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
@@ -506,11 +668,13 @@ function OverviewReadinessPanel(props: {
           <ArrowRight aria-hidden className="h-3.5 w-3.5" />
         </Link>
       }
-      className="shadow-[var(--shadow-card)]"
+      compactBody
+      denseHeader
       description={readiness.scope_note ?? undefined}
       title={t("overview.payroll_readiness", "Payroll readiness")}
+      tone="readiness"
     >
-      <div className="space-y-4">
+      <div className="space-y-3">
         <StatusBadge status={readiness.payroll_status}>
           {payrollStatusLabel(t, readiness.payroll_status)}
         </StatusBadge>
@@ -562,17 +726,17 @@ function OverviewReadinessPanel(props: {
           </Badge>
         </div>
 
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-3 py-3">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-2.5 py-2">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
             {t("overview.readiness_gross_hours", "Gross / hours")}
           </p>
-          <p className="mt-1 text-xl font-semibold tabular-nums text-[var(--color-text)]">
+          <p className="mt-0.5 text-lg font-semibold tabular-nums text-[var(--color-text)]">
             {readiness.total_gross != null ? formatMoneyGBP(String(readiness.total_gross)) : "—"} ·{" "}
             {formatDurationSeconds(readiness.total_hours_seconds)}
           </p>
         </div>
       </div>
-    </SectionCard>
+    </OverviewTintedSection>
   );
 }
 
@@ -626,17 +790,24 @@ function OverviewHealthPanel(props: {
 
   if (!health) {
     return (
-      <SectionCard title={t("overview.setup_health", "Setup health")}>
+      <OverviewTintedSection
+        compactBody
+        denseHeader
+        title={t("overview.setup_health", "Setup health")}
+        tone="health"
+      >
         <p className="text-sm text-[var(--color-text-muted)]">{props.noScopeLabel}</p>
-      </SectionCard>
+      </OverviewTintedSection>
     );
   }
 
   return (
-    <SectionCard
-      className="shadow-[var(--shadow-card)]"
+    <OverviewTintedSection
+      compactBody
+      denseHeader
       description={health.scope_note ?? undefined}
       title={t("overview.setup_health", "Setup health")}
+      tone="health"
     >
       <ul className="divide-y divide-[var(--color-border)] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)]/50 px-2">
         <HealthCheckRow
@@ -685,8 +856,8 @@ function OverviewHealthPanel(props: {
           }
         />
       </ul>
-      <p className="mt-3 text-xs leading-snug text-[var(--color-text-soft)]">{props.thresholdNote}</p>
-    </SectionCard>
+      <p className="mt-2 text-xs leading-snug text-[var(--color-text-soft)]">{props.thresholdNote}</p>
+    </OverviewTintedSection>
   );
 }
 
@@ -701,7 +872,7 @@ function TodayLivePanel(props: {
   attendanceRate: string;
 }) {
   return (
-    <SectionCard
+    <OverviewTintedSection
       action={
         <Link
           className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
@@ -711,23 +882,25 @@ function TodayLivePanel(props: {
           <ArrowRight aria-hidden className="h-3.5 w-3.5" />
         </Link>
       }
-      className="shadow-[var(--shadow-card)]"
+      compactBody
+      denseHeader
       title={props.title}
+      tone="live"
     >
-      <div className="mb-4 grid grid-cols-2 gap-2">
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-3 py-2.5">
+      <div className="mb-2.5 grid grid-cols-2 gap-2">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-3 py-2">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
             Open now
           </p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-[var(--color-text)]">{props.openShifts}</p>
+          <p className="mt-0.5 text-xl font-semibold tabular-nums text-[var(--color-text)]">{props.openShifts}</p>
         </div>
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-success-700)]/15 bg-[var(--color-success-50)] px-3 py-2.5">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-success-700)]/15 bg-[var(--color-success-50)] px-3 py-2">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
             Present today
           </p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums text-[var(--color-text)]">
+          <p className="mt-0.5 text-xl font-semibold tabular-nums text-[var(--color-text)]">
             {props.presentToday}
-            <span className="text-base font-medium text-[var(--color-text-muted)]"> / {props.totalEmployees}</span>
+            <span className="text-sm font-medium text-[var(--color-text-muted)]"> / {props.totalEmployees}</span>
           </p>
           <p className="mt-0.5 text-xs text-[var(--color-success-700)]">{props.attendanceRate}</p>
         </div>
@@ -736,7 +909,7 @@ function TodayLivePanel(props: {
       {props.rows.length === 0 ? (
         <p className="text-sm text-[var(--color-text-muted)]">{props.emptyLabel}</p>
       ) : (
-        <ul className="max-h-64 space-y-1.5 overflow-y-auto pr-1">
+        <ul className="max-h-40 space-y-1 overflow-y-auto pr-1">
           {props.rows.map((row, idx) => (
             <li key={`${row.display_name}-${row.clock_in_at}-${idx}`}>
               <Link
@@ -757,7 +930,7 @@ function TodayLivePanel(props: {
           ))}
         </ul>
       )}
-    </SectionCard>
+    </OverviewTintedSection>
   );
 }
 
@@ -910,6 +1083,24 @@ export function OverviewClient() {
     [data],
   );
 
+  const attendanceTrendSummary = useMemo(() => {
+    if (!data?.attendance_trend.length) {
+      return undefined;
+    }
+    const latest = data.attendance_trend[data.attendance_trend.length - 1];
+    return `${latest.present_count}/${latest.total_employees} (${formatPercent(latest.attendance_rate)})`;
+  }, [data]);
+
+  const payrollTrendSummary = useMemo(() => {
+    if (!data) {
+      return undefined;
+    }
+    if (data.payroll_total_gross != null) {
+      return `${formatMoneyGBP(String(data.payroll_total_gross))} · ${payrollStatusLabel(t, data.payroll_status)}`;
+    }
+    return payrollStatusLabel(t, data.payroll_status);
+  }, [data, t]);
+
   const thresholdNote = data
     ? t(
         "overview.long_open_shift_note",
@@ -944,7 +1135,7 @@ export function OverviewClient() {
         title={t("overview.page_title")}
       />
 
-      <SheetBody className="min-w-0 space-y-5 lg:space-y-6 lg:p-6">
+      <SheetBody className="min-w-0 space-y-4 lg:space-y-5 lg:p-6">
         {companyScope.scopeLabel ? (
           <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
         ) : null}
@@ -981,7 +1172,7 @@ export function OverviewClient() {
 
         {data && !loading ? (
           <>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
               <OverviewMetricCard
                 badge={t("overview.badge_active", "Active")}
                 badgeTone="muted"
@@ -1040,21 +1231,53 @@ export function OverviewClient() {
               title={t("overview.needs_attention", "Needs attention")}
             />
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <SectionCard
-                className="shadow-[var(--shadow-card)] xl:col-span-2"
-                description={t(
-                  "overview.trend_attendance_sub",
-                  "Present employees over the last 7 days.",
-                )}
-                title={t("overview.trend_attendance")}
-              >
-                <OverviewLineChart
-                  emptyHint={t("overview.trend_attendance_empty")}
-                  points={attendanceChartPoints}
-                />
-              </SectionCard>
+            <OverviewTintedSection
+              compactBody
+              denseHeader
+              description={t(
+                "overview.operational_trends_sub",
+                "Compact attendance and payroll trends for the current scope.",
+              )}
+              title={t("overview.operational_trends", "Operational trends")}
+              tone="trends"
+            >
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <OverviewChartWidget
+                  caption={t(
+                    "overview.trend_attendance_sub",
+                    "Present employees over the last 7 days.",
+                  )}
+                  summary={attendanceTrendSummary}
+                  title={t("overview.trend_attendance")}
+                >
+                  <OverviewLineChart
+                    emptyHint={t("overview.trend_attendance_empty")}
+                    points={attendanceChartPoints}
+                  />
+                </OverviewChartWidget>
 
+                <OverviewChartWidget
+                  caption={t(
+                    "overview.trend_payroll_sub",
+                    "Weekly gross payroll totals. Current week highlighted.",
+                  )}
+                  summary={payrollTrendSummary}
+                  title={t("overview.trend_payroll")}
+                >
+                  <OverviewBarChart
+                    currentKey={data.payroll_week_start}
+                    emptyHint={
+                      data.payroll_status === "not_calculated"
+                        ? t("overview.payroll_not_calc_weeks")
+                        : t("overview.trend_payroll_empty_no_history")
+                    }
+                    points={payrollChartPoints}
+                  />
+                </OverviewChartWidget>
+              </div>
+            </OverviewTintedSection>
+
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
               <TodayLivePanel
                 attendanceRate={formatPercent(data.live_attendance_rate)}
                 emptyLabel={t("overview.no_open_shifts")}
@@ -1065,102 +1288,86 @@ export function OverviewClient() {
                 totalEmployees={data.live_total_employees}
                 viewAllLabel={t("common.view_all", "View all")}
               />
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
-              <SectionCard
-                className="shadow-[var(--shadow-card)] xl:col-span-2"
-                description={t(
-                  "overview.trend_payroll_sub",
-                  "Weekly gross payroll totals. Current week highlighted.",
-                )}
-                title={t("overview.trend_payroll")}
-              >
-                <OverviewBarChart
-                  currentKey={data.payroll_week_start}
-                  emptyHint={
-                    data.payroll_status === "not_calculated"
-                      ? t("overview.payroll_not_calc_weeks")
-                      : t("overview.trend_payroll_empty_no_history")
-                  }
-                  points={payrollChartPoints}
-                />
-              </SectionCard>
 
               <OverviewReadinessPanel
                 readiness={data.payroll_readiness}
                 t={t}
                 unavailableLabel={t("overview.payroll_readiness_unavailable")}
               />
-            </div>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               <OverviewHealthPanel
                 health={data.setup_health}
                 noScopeLabel={t("overview.no_company_scope")}
                 t={t}
                 thresholdNote={thresholdNote}
               />
+            </div>
 
-              <div className="space-y-4">
-                <SectionCard
-                  action={
-                    user.system_role === "administrator" ? (
-                      <Link
-                        className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
-                        href="/system/audit-log"
-                      >
-                        {t("overview.view_all_activity")}
-                        <ArrowRight aria-hidden className="h-3.5 w-3.5" />
-                      </Link>
-                    ) : (
-                      <span className="text-xs text-[var(--color-text-muted)]">
-                        {t("overview.company_scoped_events")}
-                      </span>
-                    )
-                  }
-                  className="shadow-[var(--shadow-card)]"
-                  title={t("overview.recent_activity")}
-                >
-                  {data.recent_activity.length === 0 ? (
-                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</p>
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+              <OverviewTintedSection
+                action={
+                  user.system_role === "administrator" ? (
+                    <Link
+                      className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
+                      href="/system/audit-log"
+                    >
+                      {t("overview.view_all_activity")}
+                      <ArrowRight aria-hidden className="h-3.5 w-3.5" />
+                    </Link>
                   ) : (
-                    <ul className="max-h-56 space-y-2 overflow-y-auto pr-1">
-                      {data.recent_activity.map((row, idx) => (
-                        <li
-                          className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5 text-sm"
-                          key={`${row.occurred_at}-${idx}`}
-                        >
-                          <p className="font-medium text-[var(--color-text)]">{row.summary}</p>
-                          {row.detail ? (
-                            <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{row.detail}</p>
-                          ) : null}
-                          <p className="mt-1 text-[10px] text-[var(--color-text-soft)]">
-                            {new Date(row.occurred_at).toLocaleString()}
-                          </p>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </SectionCard>
-
-                <SectionCard className="shadow-[var(--shadow-card)]" title={t("overview.quick_actions")}>
-                  <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                    {[
-                      { key: "emp", label: t("overview.quick_add_employee"), href: "/employees" },
-                      { key: "loc", label: t("overview.quick_add_location"), href: "/locations" },
-                      { key: "live", label: t("overview.link_live_attendance"), href: "/live-attendance" },
-                      { key: "pay", label: t("overview.quick_run_payroll"), href: "/payroll-report" },
-                      { key: "week", label: t("overview.link_week_report"), href: "/week-report" },
-                      { key: "site", label: t("overview.link_site_progress"), href: "/work-progress-review" },
-                    ].map((item) => (
-                      <li key={item.key}>
-                        <OverviewListLink href={item.href} label={item.label} />
+                    <span className="text-xs text-[var(--color-text-muted)]">
+                      {t("overview.company_scoped_events")}
+                    </span>
+                  )
+                }
+                compactBody
+                denseHeader
+                title={t("overview.recent_activity")}
+                tone="activity"
+              >
+                {data.recent_activity.length === 0 ? (
+                  <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</p>
+                ) : (
+                  <ul className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
+                    {data.recent_activity.map((row, idx) => (
+                      <li
+                        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm"
+                        key={`${row.occurred_at}-${idx}`}
+                      >
+                        <p className="font-medium text-[var(--color-text)]">{row.summary}</p>
+                        {row.detail ? (
+                          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{row.detail}</p>
+                        ) : null}
+                        <p className="mt-0.5 text-[10px] text-[var(--color-text-soft)]">
+                          {new Date(row.occurred_at).toLocaleString()}
+                        </p>
                       </li>
                     ))}
                   </ul>
-                </SectionCard>
-              </div>
+                )}
+              </OverviewTintedSection>
+
+              <OverviewTintedSection
+                compactBody
+                denseHeader
+                title={t("overview.quick_actions")}
+                tone="actions"
+              >
+                <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
+                  {[
+                    { key: "emp", label: t("overview.quick_add_employee"), href: "/employees" },
+                    { key: "loc", label: t("overview.quick_add_location"), href: "/locations" },
+                    { key: "live", label: t("overview.link_live_attendance"), href: "/live-attendance" },
+                    { key: "pay", label: t("overview.quick_run_payroll"), href: "/payroll-report" },
+                    { key: "week", label: t("overview.link_week_report"), href: "/week-report" },
+                    { key: "site", label: t("overview.link_site_progress"), href: "/work-progress-review" },
+                  ].map((item) => (
+                    <li key={item.key}>
+                      <OverviewListLink href={item.href} label={item.label} />
+                    </li>
+                  ))}
+                </ul>
+              </OverviewTintedSection>
             </div>
           </>
         ) : null}
