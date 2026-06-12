@@ -5,7 +5,6 @@ import { FormEvent, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, 
 import { createPortal } from "react-dom";
 import { FileDown, FileSpreadsheet, FileText, Printer } from "lucide-react";
 
-import { WeekPickerBar } from "../../components/week-picker-bar";
 import { usePageLocationAction } from "../../components/layout/page-location-action-context";
 import {
   AlertBanner,
@@ -73,6 +72,7 @@ import {
 } from "../../features/timesheets/week-utils";
 import { payrollStatusLabel } from "../../lib/i18n/display-labels";
 import { useT } from "../../lib/i18n";
+import { formatPayrollWeekUkLabel } from "../../lib/week-label";
 
 function resolveCompanyId(user: AuthUser, override: string | null): string | null {
   if (isAdministrator(user)) {
@@ -202,9 +202,18 @@ function storedPaymentMode(value: string | null | undefined): "net_payment" | "g
   return null;
 }
 
-const payrollTableCell = "align-top py-2 text-[13px]";
-const payrollTableMoney = "timiq-money tabular-nums";
-const payrollRowActionBtn = cn("min-h-8 px-2 py-1 text-xs", uiClasses.focusRing);
+const payrollCompactFilterLabel =
+  "timiq-label block text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]";
+const payrollCompactFilterInput =
+  "timiq-input h-8 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[var(--color-text)]";
+const payrollCompactFilterSelect =
+  "timiq-select h-8 w-full min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[var(--color-text)]";
+const payrollToolbarField = "flex min-w-0 flex-col gap-0.5";
+const payrollTableCell = "align-top px-3 py-3 text-[0.9375rem] leading-snug";
+const payrollTableHead =
+  "border-r border-[var(--color-payroll-table-header-border)] px-3 py-3 text-sm font-bold normal-case tracking-normal text-[var(--color-payroll-table-header-fg)] last:border-r-0";
+const payrollTableMoney = "timiq-money tabular-nums text-[0.9375rem]";
+const payrollRowActionBtn = cn("min-h-9 px-2.5 py-1.5 text-sm", uiClasses.focusRing);
 const payrollExpandBtn = cn(
   "min-h-8 w-8 shrink-0 px-0 text-xs font-semibold tabular-nums",
   uiClasses.focusRing,
@@ -1338,105 +1347,8 @@ export function PayrollReportClient() {
           "Weekly payroll, approvals, and exports. Week is defined by the company time policy timezone.",
         )}
       />
-      <SheetBody className="min-w-0 space-y-5">
-        <SectionCard
-          description={t(
-            "payroll.report.range_export_help",
-            "Recalculate and approval apply to the selected payroll week. PDF/CSV downloads use the selected date range and employee filter.",
-          )}
-          title={t("payroll.report.filters_title", "Payroll week & filters")}
-        >
-          <div className="space-y-4">
-            {isAdministrator(user) ? (
-              <label className={uiClasses.payeFilterLabel}>
-                {t("payroll.report.company", "Company")}
-                <select
-                  className={uiClasses.payeFilterSelect}
-                  onChange={(event) => companyScope.setCompanyId(event.target.value)}
-                  value={companyScope.companyId ?? ""}
-                >
-                  <option value="">{t("payroll.report.select_company", "Select company…")}</option>
-                  {companies.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            ) : (
-              <p className="timiq-caption">
-                {t("payroll.report.company_scope_admin", "Company scope: your assigned company only.")}
-              </p>
-            )}
-
-            <div className="flex flex-col gap-3 xl:flex-row xl:flex-wrap xl:items-end">
-              <div className="min-w-0 flex-1 xl:min-w-[19rem]">
-                <WeekPickerBar
-                  disabled={loading}
-                  onWeekChange={setWeekStart}
-                  payrollTimeZone={policyTimeZone}
-                  timezoneLabel={period?.timezone_name}
-                  weekStartIso={weekStart}
-                />
-              </div>
-              <label className={cn(uiClasses.payeFilterLabel, "xl:w-36")}>
-                {t("payroll.report.date_from", "Date from")}
-                <input
-                  className={uiClasses.payeFilterInput}
-                  onChange={(event) => setExportDateFrom(event.target.value)}
-                  type="date"
-                  value={exportDateFrom}
-                />
-              </label>
-              <label className={cn(uiClasses.payeFilterLabel, "xl:w-36")}>
-                {t("payroll.report.date_to", "Date to")}
-                <input
-                  className={uiClasses.payeFilterInput}
-                  onChange={(event) => setExportDateTo(event.target.value)}
-                  type="date"
-                  value={exportDateTo}
-                />
-              </label>
-              <label className={cn(uiClasses.payeFilterLabel, "w-full min-w-0 sm:min-w-[12rem] xl:w-56")}>
-                {t("payroll.report.employee_label", "Employee")}
-                <select
-                  className={uiClasses.payeFilterSelect}
-                  disabled={!activeCompanyId}
-                  onChange={(event) => setDraftEmployeeId(event.target.value)}
-                  value={draftEmployeeId}
-                >
-                  <option value="">{t("payroll.report.all_employees", "All employees")}</option>
-                  {employeeOptions.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.email}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className={uiClasses.payeActionToolbar}>
-                <Button
-                  disabled={loading || !activeCompanyId}
-                  onClick={applyEmployeeFilter}
-                  size="sm"
-                  type="button"
-                  variant="secondary"
-                >
-                  {t("payroll.report.apply_filter", "Apply filter")}
-                </Button>
-                <Button
-                  disabled={loading || !activeCompanyId}
-                  onClick={() => loadReport()}
-                  size="sm"
-                  type="button"
-                >
-                  {t("payroll.report.refresh", "Refresh")}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </SectionCard>
-
-        <AlertBanner tone="info">
+      <SheetBody className="min-w-0 space-y-4">
+        <AlertBanner className="py-2 text-sm" tone="info">
           {t(
             "payroll.report.cis_scope_note",
             "This CIS report includes CIS subcontractors only. PAYE employees with time records are handled in Monthly PAYE.",
@@ -1444,7 +1356,7 @@ export function PayrollReportClient() {
         </AlertBanner>
 
         {!hasCompany && isAdministrator(user) ? (
-          <AlertBanner tone="info">
+          <AlertBanner className="py-2 text-sm" tone="info">
             {t("payroll.report.select_company_banner", "Select a company to load payroll.")}
           </AlertBanner>
         ) : null}
@@ -1455,142 +1367,255 @@ export function PayrollReportClient() {
           <AlertBanner tone={payrollSaveMessageTone}>{payrollSaveMessage}</AlertBanner>
         ) : null}
 
-        <div className="space-y-5">
-          <div className="min-w-0 w-full space-y-5">
-            <SectionCard
-              action={
-                <div
-                  aria-label={t("payroll.report.actions", "Actions")}
-                  className={cn(uiClasses.payeActionToolbar, "gap-1.5")}
-                >
-                  <Button
-                    className={
-                      !payrollPeriodNotCalculated && !payrollNeedsRecalculation
-                        ? "border-[var(--color-success-700)] bg-[var(--color-success-50)] text-[var(--color-success-700)] hover:border-[var(--color-success-700)] hover:bg-[var(--color-success-700)] hover:text-white"
-                        : undefined
-                    }
-                    disabled={loading || !activeCompanyId}
-                    onClick={runRecalculate}
-                    size="sm"
-                    type="button"
-                    variant={
-                      payrollPeriodNotCalculated
-                        ? "primary"
-                        : payrollNeedsRecalculation
-                          ? "danger"
-                          : "primary"
-                    }
+        <div className="space-y-4">
+          <div className="min-w-0 w-full space-y-4">
+            <section className={cn(uiClasses.card, "overflow-hidden")}>
+              <div className="border-b border-[var(--color-border)] bg-[var(--color-toolbar-well)] px-3 py-3 sm:px-4">
+                <h2 className="timiq-title-md mb-3">
+                  {t("payroll.report.weekly_review_title", "Weekly payroll review")}
+                </h2>
+
+                <div className="flex flex-col gap-3 2xl:flex-row 2xl:flex-wrap 2xl:items-end 2xl:justify-between">
+                  <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-end">
+                    <div className="min-w-0 sm:min-w-[14rem] sm:flex-1">
+                      <p className="text-sm font-semibold leading-snug text-[var(--color-text)]">
+                        {formatPayrollWeekUkLabel(weekStart, policyTimeZone, false)}
+                      </p>
+                      {period?.timezone_name ? (
+                        <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{period.timezone_name}</p>
+                      ) : null}
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <Button
+                          disabled={loading}
+                          onClick={() => setWeekStart(addDaysIsoYmd(weekStart, -7))}
+                          size="sm"
+                          type="button"
+                          variant="secondary"
+                        >
+                          {t("payroll.report.previous_week", "Previous")}
+                        </Button>
+                        <Button
+                          disabled={loading}
+                          onClick={() => setWeekStart(addDaysIsoYmd(weekStart, 7))}
+                          size="sm"
+                          type="button"
+                          variant="secondary"
+                        >
+                          {t("payroll.report.next_week", "Next")}
+                        </Button>
+                      </div>
+                    </div>
+
+                    {isAdministrator(user) ? (
+                      <label className={cn(payrollToolbarField, "w-full min-w-0 sm:w-44")}>
+                        <span className={payrollCompactFilterLabel}>
+                          {t("payroll.report.company", "Company")}
+                        </span>
+                        <select
+                          className={payrollCompactFilterSelect}
+                          onChange={(event) => companyScope.setCompanyId(event.target.value)}
+                          value={companyScope.companyId ?? ""}
+                        >
+                          <option value="">{t("payroll.report.select_company", "Select company…")}</option>
+                          {companies.map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : (
+                      <p className="pb-1 text-xs text-[var(--color-text-muted)] sm:max-w-[12rem]">
+                        {t("payroll.report.company_scope_admin", "Company scope: your assigned company only.")}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-end gap-2">
+                    <label className={cn(payrollToolbarField, "w-[8.5rem]")}>
+                      <span className={payrollCompactFilterLabel}>
+                        {t("payroll.report.date_from", "Date from")}
+                      </span>
+                      <input
+                        className={payrollCompactFilterInput}
+                        onChange={(event) => setExportDateFrom(event.target.value)}
+                        type="date"
+                        value={exportDateFrom}
+                      />
+                    </label>
+                    <label className={cn(payrollToolbarField, "w-[8.5rem]")}>
+                      <span className={payrollCompactFilterLabel}>
+                        {t("payroll.report.date_to", "Date to")}
+                      </span>
+                      <input
+                        className={payrollCompactFilterInput}
+                        onChange={(event) => setExportDateTo(event.target.value)}
+                        type="date"
+                        value={exportDateTo}
+                      />
+                    </label>
+                    <label className={cn(payrollToolbarField, "w-full min-w-0 sm:w-44")}>
+                      <span className={payrollCompactFilterLabel}>
+                        {t("payroll.report.employee_label", "Employee")}
+                      </span>
+                      <select
+                        className={payrollCompactFilterSelect}
+                        disabled={!activeCompanyId}
+                        onChange={(event) => setDraftEmployeeId(event.target.value)}
+                        value={draftEmployeeId}
+                      >
+                        <option value="">{t("payroll.report.all_employees", "All employees")}</option>
+                        {employeeOptions.map((u) => (
+                          <option key={u.id} value={u.id}>
+                            {u.email}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Button
+                      disabled={loading || !activeCompanyId}
+                      onClick={applyEmployeeFilter}
+                      size="sm"
+                      type="button"
+                      variant="secondary"
+                    >
+                      {t("payroll.report.apply_filter", "Apply filter")}
+                    </Button>
+                    <Button
+                      disabled={loading || !activeCompanyId}
+                      onClick={() => loadReport()}
+                      size="sm"
+                      type="button"
+                    >
+                      {t("payroll.report.refresh", "Refresh")}
+                    </Button>
+                  </div>
+
+                  <div
+                    aria-label={t("payroll.report.actions", "Actions")}
+                    className={cn(uiClasses.payeActionToolbar, "gap-1.5")}
                   >
-                    {payrollPeriodNotCalculated
-                      ? t("payroll.report.calculate", "Calculate payroll")
-                      : t("payroll.report.recalculate", "Recalculate")}
-                  </Button>
-                  <Button
-                    disabled={loading || !activeCompanyId || payrollNeedsRecalculation}
-                    onClick={runApproveAll}
-                    size="sm"
-                    type="button"
-                  >
-                    {t("payroll.report.approve_all_pending", "Approve all pending")}
-                  </Button>
-                  <Button
-                    aria-label={t("payroll.report.export_csv_short", "Export CSV")}
-                    className="w-8 px-0"
-                    disabled={loading || !activeCompanyId}
-                    onClick={handleCsv}
-                    size="sm"
-                    title={t("payroll.report.export_csv_short", "Export CSV")}
-                    type="button"
-                    variant="secondary"
-                  >
-                    <FileDown aria-hidden="true" className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    aria-label={t("payroll.report.export_xlsx", "Export Excel")}
-                    className="w-8 px-0"
-                    disabled={loading || !activeCompanyId}
-                    onClick={handleExcelDownload}
-                    size="sm"
-                    title={t("payroll.report.export_xlsx", "Export Excel")}
-                    type="button"
-                    variant="secondary"
-                  >
-                    <FileSpreadsheet aria-hidden="true" className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    aria-label={t("payroll.report.print_report", "Print report")}
-                    className="w-8 px-0"
-                    disabled={loading || !activeCompanyId}
-                    onClick={handlePrint}
-                    size="sm"
-                    title={t("payroll.report.print_report", "Print report")}
-                    type="button"
-                    variant="secondary"
-                  >
-                    <Printer aria-hidden="true" className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    aria-label={t("payroll.report.export_pdf", "Download PDF report")}
-                    className="w-8 px-0"
-                    disabled={loading || !activeCompanyId}
-                    onClick={handlePdfDownload}
-                    size="sm"
-                    title={t("payroll.report.export_pdf", "Download PDF report")}
-                    type="button"
-                    variant="secondary"
-                  >
-                    <FileText aria-hidden="true" className="h-4 w-4" />
-                  </Button>
+                    <Button
+                      className={
+                        !payrollPeriodNotCalculated && !payrollNeedsRecalculation
+                          ? "border-[var(--color-success-700)] bg-[var(--color-success-50)] text-[var(--color-success-700)] hover:border-[var(--color-success-700)] hover:bg-[var(--color-success-700)] hover:text-white"
+                          : undefined
+                      }
+                      disabled={loading || !activeCompanyId}
+                      onClick={runRecalculate}
+                      size="sm"
+                      type="button"
+                      variant={
+                        payrollPeriodNotCalculated
+                          ? "primary"
+                          : payrollNeedsRecalculation
+                            ? "danger"
+                            : "primary"
+                      }
+                    >
+                      {payrollPeriodNotCalculated
+                        ? t("payroll.report.calculate", "Calculate payroll")
+                        : t("payroll.report.recalculate", "Recalculate")}
+                    </Button>
+                    <Button
+                      disabled={loading || !activeCompanyId || payrollNeedsRecalculation}
+                      onClick={runApproveAll}
+                      size="sm"
+                      type="button"
+                    >
+                      {t("payroll.report.approve_all_pending", "Approve all pending")}
+                    </Button>
+                    <Button
+                      aria-label={t("payroll.report.export_csv_short", "Export CSV")}
+                      className="w-8 px-0"
+                      disabled={loading || !activeCompanyId}
+                      onClick={handleCsv}
+                      size="sm"
+                      title={t("payroll.report.export_csv_short", "Export CSV")}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <FileDown aria-hidden="true" className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      aria-label={t("payroll.report.export_xlsx", "Export Excel")}
+                      className="w-8 px-0"
+                      disabled={loading || !activeCompanyId}
+                      onClick={handleExcelDownload}
+                      size="sm"
+                      title={t("payroll.report.export_xlsx", "Export Excel")}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <FileSpreadsheet aria-hidden="true" className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      aria-label={t("payroll.report.print_report", "Print report")}
+                      className="w-8 px-0"
+                      disabled={loading || !activeCompanyId}
+                      onClick={handlePrint}
+                      size="sm"
+                      title={t("payroll.report.print_report", "Print report")}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <Printer aria-hidden="true" className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      aria-label={t("payroll.report.export_pdf", "Download PDF report")}
+                      className="w-8 px-0"
+                      disabled={loading || !activeCompanyId}
+                      onClick={handlePdfDownload}
+                      size="sm"
+                      title={t("payroll.report.export_pdf", "Download PDF report")}
+                      type="button"
+                      variant="secondary"
+                    >
+                      <FileText aria-hidden="true" className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
-              }
-              description={t(
-                "payroll.report.weekly_review_help",
-                "Summary by employee for this payroll week. Use + to view shift lines for this employee.",
-              )}
-              title={t("payroll.report.weekly_review_title", "Weekly payroll review")}
-            >
+              </div>
+
+              <div className={cn(uiClasses.cardBody, "space-y-3 pt-3")}>
               {paidRowCount > 0 ? (
-                <AlertBanner className="mb-3" tone="warning">
+                <AlertBanner className="py-2 text-sm" tone="warning">
                   Payroll locked — paid rows cannot be rebuilt.
                 </AlertBanner>
               ) : null}
               {payrollReviewRecalcStatus ? (
-                <div className="mb-3 space-y-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={payrollReviewRecalcStatus.badgeTone}>
-                      {payrollReviewRecalcStatus.badgeLabel}
-                    </Badge>
-                    <span className="text-sm text-[var(--color-text)]">
-                      {payrollReviewRecalcStatus.message}
-                    </span>
-                  </div>
+                <div className="flex flex-wrap items-center gap-2 text-sm">
+                  <Badge tone={payrollReviewRecalcStatus.badgeTone}>
+                    {payrollReviewRecalcStatus.badgeLabel}
+                  </Badge>
+                  <span className="text-[var(--color-text)]">{payrollReviewRecalcStatus.message}</span>
                   {payrollRecalcBlocked ? (
-                    <p className="timiq-caption text-[var(--color-text-muted)]">
+                    <span className="text-xs text-[var(--color-text-muted)]">
                       {t(
                         "payroll.report.recalc_unlock_before_recalc",
                         "Unlock approved or undo paid before recalculating.",
                       )}
-                    </p>
+                    </span>
                   ) : null}
                 </div>
               ) : null}
-              <div className={cn(uiClasses.tableWrap, "timiq-scroll-x w-full min-w-0")}>
-                <Table className="min-w-full">
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10 py-2 text-xs font-semibold normal-case tracking-normal" />
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_employee", "Employee")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("employees.col_role", "Role")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_hours", "Hours")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_ot_hours", "OT hours")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_gross", "Gross")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_cis", "CIS tax")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_net", "Net pay")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_payment_type", "Payment type")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_other_ded", "Other ded.")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_notes", "Notes")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_status", "Status")}</TableHead>
-                    <TableHead className="py-2 text-xs font-semibold normal-case tracking-normal">{t("payroll.report.col_actions", "Actions")}</TableHead>
+              <div className={cn(uiClasses.tableWrap, "timiq-scroll-x w-full min-w-0 shadow-[var(--shadow-soft)]")}>
+                <Table className="min-w-full text-[0.9375rem]">
+                <TableHeader className="bg-[var(--color-payroll-table-header-bg)]">
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead className={cn(payrollTableHead, "w-10")} />
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_employee", "Employee")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("employees.col_role", "Role")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_hours", "Hours")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_ot_hours", "OT hours")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_gross", "Gross")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_cis", "CIS tax")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_net", "Net pay")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_payment_type", "Payment type")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_other_ded", "Other ded.")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_notes", "Notes")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_status", "Status")}</TableHead>
+                    <TableHead className={payrollTableHead}>{t("payroll.report.col_actions", "Actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -1632,7 +1657,7 @@ export function PayrollReportClient() {
                         const paymentModeLabel = row.payment_mode_label || "Not provided";
                         return (
                         <Fragment key={row.id}>
-                          <TableRow className="transition-colors hover:bg-[var(--color-header)]/40">
+                          <TableRow className="transition-colors hover:bg-[var(--color-brand-muted)]/35">
                             <TableCell className={payrollTableCell}>
                               <Button
                                 aria-expanded={expandedUserId === row.user_id}
@@ -1651,7 +1676,7 @@ export function PayrollReportClient() {
                                 employee_email={row.employee_email}
                                 employee_name={row.employee_name}
                                 linked
-                                nameClassName="truncate text-[13px] font-semibold leading-snug text-[var(--color-text)]"
+                                nameClassName="truncate text-[0.9375rem] font-semibold leading-snug text-[var(--color-text)]"
                                 emailClassName="mt-0.5 truncate text-xs leading-snug text-[var(--color-text-muted)]"
                                 user_id={row.user_id}
                                 withAvatar
@@ -1920,7 +1945,8 @@ export function PayrollReportClient() {
                 </TableBody>
               </Table>
               </div>
-            </SectionCard>
+              </div>
+            </section>
 
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               <PayrollStatCard

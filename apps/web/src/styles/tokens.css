@@ -28,6 +28,10 @@
   --color-public-on-dark-soft: rgba(255, 255, 255, 0.78);
   --color-public-on-dark-link: #ffffff;
 
+  --color-payroll-table-header-bg: #3a6b58;
+  --color-payroll-table-header-fg: #f4faf7;
+  --color-payroll-table-header-border: rgba(255, 255, 255, 0.14);
+
   --color-border: #e2e8f0;
   --color-border-dark: #cbd5e1;
 
