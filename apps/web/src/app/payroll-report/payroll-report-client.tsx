@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ChangeEvent, FormEvent, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { FileDown, FileSpreadsheet, FileText, Printer } from "lucide-react";
+import { Calendar, FileDown, FileSpreadsheet, FileText, Printer } from "lucide-react";
 
 import { usePageLocationAction } from "../../components/layout/page-location-action-context";
 import {
@@ -314,6 +314,101 @@ const payrollMenuItemDanger = cn(
   "block w-full px-3 py-2.5 text-left text-sm font-medium text-[var(--color-danger-700)] hover:bg-[var(--color-danger-50)]",
   uiClasses.focusRing,
 );
+
+function formatIsoDateForPayrollDisplay(value: string): string {
+  if (!value) {
+    return "";
+  }
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) {
+    return value;
+  }
+  return `${day}/${month}/${year}`;
+}
+
+type PayrollToolbarDateInputProps = {
+  value: string;
+  onChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  pickerAriaLabel: string;
+  disabled?: boolean;
+};
+
+function PayrollToolbarDateInput({
+  value,
+  onChange,
+  pickerAriaLabel,
+  disabled = false,
+}: PayrollToolbarDateInputProps) {
+  const hiddenDateRef = useRef<HTMLInputElement | null>(null);
+
+  function openPicker() {
+    const input = hiddenDateRef.current;
+    if (!input || input.disabled) {
+      return;
+    }
+    if (typeof input.showPicker === "function") {
+      try {
+        input.showPicker();
+        return;
+      } catch {
+        // showPicker may throw when not allowed; fall through to focus/click.
+      }
+    }
+    input.focus();
+    input.click();
+  }
+
+  return (
+    <div className="relative w-full min-w-0">
+      <input
+        aria-hidden
+        className="timiq-date-input-native"
+        disabled={disabled}
+        onChange={onChange}
+        ref={hiddenDateRef}
+        tabIndex={-1}
+        type="date"
+        value={value}
+      />
+      <input
+        className={cn(payrollCompactFilterInput, "timiq-date-input pr-12")}
+        disabled={disabled}
+        readOnly
+        tabIndex={0}
+        type="text"
+        value={formatIsoDateForPayrollDisplay(value)}
+      />
+      <button
+        aria-label={pickerAriaLabel}
+        className={cn(
+          "absolute right-1 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center",
+          "rounded-[var(--radius-md)] border border-[var(--color-brand)] bg-[var(--color-brand)]",
+          "text-[var(--color-brand-foreground)] hover:border-[var(--color-brand-hover)] hover:bg-[var(--color-brand-hover)]",
+          "disabled:cursor-not-allowed disabled:opacity-50",
+          uiClasses.focusRing,
+        )}
+        disabled={disabled}
+        onClick={openPicker}
+        type="button"
+      >
+        <Calendar aria-hidden className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function PayrollWeekChipLabel({ chipLabel }: { chipLabel: string }) {
+  const dotIndex = chipLabel.indexOf(" · ");
+  if (dotIndex < 0) {
+    return <span className="font-bold text-[var(--color-success-700)]">{chipLabel}</span>;
+  }
+  return (
+    <>
+      <span className="font-bold text-[var(--color-success-700)]">{chipLabel.slice(0, dotIndex)}</span>
+      <span>{chipLabel.slice(dotIndex)}</span>
+    </>
+  );
+}
 
 function formatShiftDateTime(iso: string, timeZone: string): string {
   const d = new Date(iso);
@@ -1466,7 +1561,7 @@ export function PayrollReportClient() {
                       className={cn(payrollWeekChip, "min-[1280px]:hidden")}
                       title={weekWorkbenchContext.chipLabel}
                     >
-                      {weekWorkbenchContext.chipLabel}
+                      <PayrollWeekChipLabel chipLabel={weekWorkbenchContext.chipLabel} />
                     </span>
                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                       <Button
@@ -1482,7 +1577,7 @@ export function PayrollReportClient() {
                         className={cn(payrollWeekChip, "hidden min-[1280px]:inline-flex")}
                         title={weekWorkbenchContext.chipLabel}
                       >
-                        {weekWorkbenchContext.chipLabel}
+                        <PayrollWeekChipLabel chipLabel={weekWorkbenchContext.chipLabel} />
                       </span>
                       <Button
                         disabled={loading}
@@ -1521,25 +1616,23 @@ export function PayrollReportClient() {
 
                   <div className="min-w-0 w-full min-[1280px]:col-span-2 min-[1280px]:col-start-1 min-[1280px]:row-start-2 2xl:col-span-1 2xl:col-start-2 2xl:row-start-1">
                     <div className="flex w-full min-w-0 flex-wrap items-end justify-center gap-2">
-                      <label className={cn(payrollToolbarField, "w-[8.5rem]")}>
+                      <label className={cn(payrollToolbarField, "w-[10rem] min-w-[9.75rem]")}>
                         <span className={payrollCompactFilterLabel}>
                           {t("payroll.report.date_from", "Date from")}
                         </span>
-                        <input
-                          className={payrollCompactFilterInput}
+                        <PayrollToolbarDateInput
                           onChange={(event) => setExportDateFrom(event.target.value)}
-                          type="date"
+                          pickerAriaLabel="Open Date From picker"
                           value={exportDateFrom}
                         />
                       </label>
-                      <label className={cn(payrollToolbarField, "w-[8.5rem]")}>
+                      <label className={cn(payrollToolbarField, "w-[10rem] min-w-[9.75rem]")}>
                         <span className={payrollCompactFilterLabel}>
                           {t("payroll.report.date_to", "Date to")}
                         </span>
-                        <input
-                          className={payrollCompactFilterInput}
+                        <PayrollToolbarDateInput
                           onChange={(event) => setExportDateTo(event.target.value)}
-                          type="date"
+                          pickerAriaLabel="Open Date To picker"
                           value={exportDateTo}
                         />
                       </label>
