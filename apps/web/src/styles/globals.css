@@ -207,6 +207,38 @@ a {
   }
 }
 
+/* Compact native date inputs — custom calendar button in payroll toolbar */
+input.timiq-input.timiq-date-input {
+  min-width: 9.75rem;
+  padding-right: 3rem;
+  accent-color: var(--color-brand);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input.timiq-input.timiq-date-input::-webkit-calendar-picker-indicator {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+input.timiq-input.timiq-date-input::-webkit-inner-spin-button,
+input.timiq-input.timiq-date-input::-webkit-clear-button {
+  display: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input.timiq-input.timiq-date-input::-moz-calendar-picker-indicator {
+  display: none;
+  opacity: 0;
+  pointer-events: none;
+}
+
 /* Clearer native selects without extra dependencies */
 select.timiq-select {
   appearance: none;
