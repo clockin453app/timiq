@@ -98,7 +98,7 @@ def test_create_adjustment_rejects_zero_rounded_hours(
     item.paid_at = datetime.now(timezone.utc)
     mock_get.return_value = item
     mock_list.return_value = []
-    mock_late_entries.return_value = [(shift_id, 0)]
+    mock_late_entries.return_value = [(shift_id, 0, date.today())]
     mock_policy.return_value = SimpleNamespace(
         overtime_multiplier=1.5,
         overtime_after_hours=40,

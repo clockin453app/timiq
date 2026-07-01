@@ -51,7 +51,8 @@ def test_compute_money_bundle_gross_payment_zero_cis() -> None:
     assert out["net_amount"] == Decimal("9.00")
 
 
-def test_split_regular_overtime() -> None:
+def test_split_regular_overtime_single_day() -> None:
+    """Single work-day bucket: excess above daily threshold is overtime."""
     reg, ot = split_regular_overtime(10 * 3600, overtime_after_hours=8.5)
     assert reg == int(8.5 * 3600)
     assert ot == 10 * 3600 - reg

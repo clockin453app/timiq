@@ -1,5 +1,6 @@
 """Payroll math from Batch 31 rounded seconds + policy rates."""
 
+from collections.abc import Iterable
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, datetime, time, timedelta, timezone
 import uuid
@@ -24,14 +25,47 @@ def week_bounds_utc(policy: CompanyTimePolicy, week_start: date) -> tuple[dateti
     return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
 
 
-def sum_rounded_seconds_payroll_week(
+def policy_timezone(policy: CompanyTimePolicy) -> ZoneInfo:
+    try:
+        return ZoneInfo(policy.timezone_name)
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def work_date_in_policy(clock_in_at_utc: datetime, policy: CompanyTimePolicy) -> date:
+    """Work date for payroll grouping: clock-in calendar date in company policy timezone."""
+    return clock_in_at_utc.astimezone(policy_timezone(policy)).date()
+
+
+def _shift_rounded_seconds(
+    db_session: Session,
+    shift,
+    location,
+    profile: EmployeeProfile | None,
+) -> int:
+    pol = effective_time_policy_for_shift(db_session, shift, location)
+    profile_early = bool(profile.early_access_enabled) if profile is not None else False
+    early_access = effective_early_access_for_shift(
+        db_session, location, profile_early_access=profile_early
+    )
+    metrics = compute_shift_metrics(
+        clock_in_at_utc=shift.clock_in_at,
+        clock_out_at_utc=shift.clock_out_at,
+        break_seconds_tracked=int(shift.break_seconds or 0),
+        early_access_enabled=early_access,
+        policy=pol,
+    )
+    return int(metrics.rounded_seconds or 0)
+
+
+def rounded_seconds_by_work_date_payroll_week(
     db_session: Session,
     *,
     company_id: uuid.UUID,
     user_id: uuid.UUID,
     week_start: date,
     policy: CompanyTimePolicy,
-) -> int:
+) -> dict[date, int]:
     week_start_utc, week_end_utc = week_bounds_utc(policy, week_start)
     rows = list_time_shifts_for_payroll_week(
         db_session,
@@ -40,33 +74,79 @@ def sum_rounded_seconds_payroll_week(
         week_start_utc=week_start_utc,
         week_end_utc=week_end_utc,
     )
-    total = 0
+    by_day: dict[date, int] = {}
     for shift, location, _owner, profile in rows:
-        pol = effective_time_policy_for_shift(db_session, shift, location)
-        profile_early = bool(profile.early_access_enabled) if profile is not None else False
-        early_access = effective_early_access_for_shift(
-            db_session, location, profile_early_access=profile_early
-        )
-        metrics = compute_shift_metrics(
-            clock_in_at_utc=shift.clock_in_at,
-            clock_out_at_utc=shift.clock_out_at,
-            break_seconds_tracked=int(shift.break_seconds or 0),
-            early_access_enabled=early_access,
-            policy=pol,
-        )
-        if metrics.rounded_seconds is not None:
-            total += int(metrics.rounded_seconds)
-    return total
+        rs = _shift_rounded_seconds(db_session, shift, location, profile)
+        work_date = work_date_in_policy(shift.clock_in_at, policy)
+        by_day[work_date] = by_day.get(work_date, 0) + rs
+    return by_day
+
+
+def sum_rounded_seconds_payroll_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    week_start: date,
+    policy: CompanyTimePolicy,
+) -> int:
+    return sum(rounded_seconds_by_work_date_payroll_week(
+        db_session,
+        company_id=company_id,
+        user_id=user_id,
+        week_start=week_start,
+        policy=policy,
+    ).values())
+
+
+def split_regular_overtime_daily(
+    daily_rounded_seconds: Iterable[int],
+    overtime_after_hours: float,
+) -> tuple[int, int]:
+    """Apply overtime threshold per work day, then sum regular and overtime seconds."""
+    threshold_sec = int(Decimal(str(overtime_after_hours)) * Decimal(3600))
+    total_regular = 0
+    total_overtime = 0
+    for day_seconds in daily_rounded_seconds:
+        day_seconds = max(0, int(day_seconds))
+        total_regular += min(day_seconds, threshold_sec)
+        total_overtime += max(0, day_seconds - threshold_sec)
+    return total_regular, total_overtime
+
+
+def split_regular_overtime_daily_by_work_date(
+    daily_seconds_by_date: dict[date, int],
+    overtime_after_hours: float,
+) -> tuple[int, int]:
+    return split_regular_overtime_daily(daily_seconds_by_date.values(), overtime_after_hours)
+
+
+def regular_overtime_seconds_payroll_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    week_start: date,
+    policy: CompanyTimePolicy,
+) -> tuple[int, int, int]:
+    by_day = rounded_seconds_by_work_date_payroll_week(
+        db_session,
+        company_id=company_id,
+        user_id=user_id,
+        week_start=week_start,
+        policy=policy,
+    )
+    total = sum(by_day.values())
+    regular, overtime = split_regular_overtime_daily_by_work_date(by_day, policy.overtime_after_hours)
+    return regular, overtime, total
 
 
 def split_regular_overtime(
     total_rounded_seconds: int,
     overtime_after_hours: float,
 ) -> tuple[int, int]:
-    threshold_sec = int(Decimal(str(overtime_after_hours)) * Decimal(3600))
-    regular = min(total_rounded_seconds, threshold_sec)
-    overtime = max(0, total_rounded_seconds - threshold_sec)
-    return regular, overtime
+    """Single-bucket daily split (one work day). Prefer regular_overtime_seconds_payroll_week for CIS weeks."""
+    return split_regular_overtime_daily([total_rounded_seconds], overtime_after_hours)
 
 
 def normalize_payroll_payment_mode(mode: str | None) -> str:

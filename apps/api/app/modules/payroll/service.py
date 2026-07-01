@@ -31,10 +31,12 @@ from app.modules.payroll.calculation import (
     compute_money_bundle,
     normalize_payroll_payment_mode,
     policy_snapshot_dict,
+    regular_overtime_seconds_payroll_week,
     resolve_effective_tax_rate_percent,
-    split_regular_overtime,
+    split_regular_overtime_daily_by_work_date,
     sum_rounded_seconds_payroll_week,
     week_bounds_utc,
+    work_date_in_policy,
 )
 from app.modules.payroll.late_shifts import (
     append_late_shift_ids_marker,
@@ -1245,7 +1247,11 @@ def _compute_late_unpaid_employees(
         pay_mode = (
             normalize_payroll_payment_mode(ref_item.payment_mode) if ref_item is not None else "net_payment"
         )
-        reg_s, ot_s = split_regular_overtime(sum_sec, policy.overtime_after_hours)
+        by_day: dict[date, int] = {}
+        for row in late_rows:
+            wd = work_date_in_policy(row.clock_in_at, policy)
+            by_day[wd] = by_day.get(wd, 0) + row.rounded_seconds
+        reg_s, ot_s = split_regular_overtime_daily_by_work_date(by_day, policy.overtime_after_hours)
         bundle = compute_money_bundle(
             regular_seconds=reg_s,
             overtime_seconds=ot_s,
@@ -1284,7 +1290,7 @@ def _late_shift_rounded_entries_after_paid_cutoff(
     user_id: uuid.UUID,
     paid_cutoff: datetime,
     reserved_ids: set[uuid.UUID],
-) -> list[tuple[uuid.UUID, int]]:
+) -> list[tuple[uuid.UUID, int, date]]:
     """Completed shifts in the payroll week after paid_cutoff, excluding IDs reserved on pending rows."""
     week_start_utc, week_end_utc = week_bounds_utc(policy, week_start)
     rows = list_time_shifts_for_payroll_week(
@@ -1294,7 +1300,7 @@ def _late_shift_rounded_entries_after_paid_cutoff(
         week_start_utc=week_start_utc,
         week_end_utc=week_end_utc,
     )
-    out: list[tuple[uuid.UUID, int]] = []
+    out: list[tuple[uuid.UUID, int, date]] = []
     for shift, location, _owner, profile in rows:
         if not shift_completed_after_paid_cutoff(shift, paid_cutoff):
             continue
@@ -1313,7 +1319,7 @@ def _late_shift_rounded_entries_after_paid_cutoff(
             policy=pol,
         )
         rs = int(metrics.rounded_seconds or 0)
-        out.append((shift.id, rs))
+        out.append((shift.id, rs, work_date_in_policy(shift.clock_in_at, policy)))
     return out
 
 
@@ -1654,14 +1660,13 @@ def recalculate_payroll(
 
     for emp in employees:
         profile = get_employee_profile_by_user_id(db_session, emp.id)
-        total_r = sum_rounded_seconds_payroll_week(
+        reg_s, ot_s, total_r = regular_overtime_seconds_payroll_week(
             db_session,
             company_id=company_id,
             user_id=emp.id,
             week_start=week_start,
             policy=policy,
         )
-        reg_s, ot_s = split_regular_overtime(total_r, policy.overtime_after_hours)
         hourly = None
         if profile is not None and profile.hourly_rate is not None:
             hourly = Decimal(str(profile.hourly_rate))
@@ -2015,17 +2020,19 @@ def create_late_shift_adjustment_from_paid_item(
         paid_cutoff=paid_ref.paid_at,
         reserved_ids=reserved,
     )
-    cand_map: dict[uuid.UUID, int] = {sid: sec for sid, sec in candidates}
+    cand_map: dict[uuid.UUID, tuple[int, date]] = {
+        sid: (sec, wd) for sid, sec, wd in candidates
+    }
     if request.shift_ids:
         wanted = set(request.shift_ids)
         if not wanted.issubset(cand_map.keys()):
             raise PayrollError("One or more shift_ids are not uncovered late shifts for this paid row.")
-        selected = [(sid, cand_map[sid]) for sid in wanted]
+        selected = [(sid, cand_map[sid][0], cand_map[sid][1]) for sid in wanted]
     else:
         selected = list(candidates)
     if not selected:
         raise PayrollError("No late unpaid shifts remain for an adjustment.")
-    if all(sec <= 0 for _sid, sec in selected):
+    if all(sec <= 0 for _sid, sec, _wd in selected):
         if len(selected) == 1:
             raise PayrollError(
                 "No payable late hours were found. The detected shift has zero payroll-rounded time.",
@@ -2033,9 +2040,12 @@ def create_late_shift_adjustment_from_paid_item(
         raise PayrollError(
             "No payable late hours were found. The detected shifts have zero payroll-rounded time.",
         )
-    total_r = sum(sec for _sid, sec in selected)
-    shift_ids_ordered = [sid for sid, _sec in selected]
-    reg_s, ot_s = split_regular_overtime(total_r, policy.overtime_after_hours)
+    total_r = sum(sec for _sid, sec, _wd in selected)
+    shift_ids_ordered = [sid for sid, _sec, _wd in selected]
+    by_day: dict[date, int] = {}
+    for _sid, sec, work_date in selected:
+        by_day[work_date] = by_day.get(work_date, 0) + sec
+    reg_s, ot_s = split_regular_overtime_daily_by_work_date(by_day, policy.overtime_after_hours)
     pay_mode = normalize_payroll_payment_mode(paid_ref.payment_mode)
     hourly = _decimal_or_none(paid_ref.hourly_rate_snapshot)
     tax_pct = _decimal_or_none(paid_ref.tax_rate_snapshot)
