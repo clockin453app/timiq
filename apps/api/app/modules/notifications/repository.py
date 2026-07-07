@@ -1,15 +1,31 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import User
 from app.modules.notifications.models import NotificationRecord, NotificationSeen, PushSubscription
 from app.modules.settings.models import CompanyAppSettings, UserPreference
+
+
+@dataclass
+class NotificationRecordCreateResult:
+    created: bool
+    record_id: uuid.UUID | None = None
+    push_sent: int = 0
+    push_attempted: int = 0
+    push_failures: list[tuple[int | None, str]] | None = None
+
+
+@dataclass
+class PushSubscriptionCounts:
+    active: int
+    deliverable: int
 
 
 def has_seen(db: Session, *, user_id: uuid.UUID, kind: str, target_key: str) -> bool:
@@ -59,6 +75,43 @@ def create_notification_record_once(
     work_date: date | None = None,
     created_at: datetime | None = None,
 ) -> bool:
+    return create_notification_record_once_detailed(
+        db,
+        recipient_user_id=recipient_user_id,
+        company_id=company_id,
+        kind=kind,
+        dedupe_key=dedupe_key,
+        title=title,
+        description=description,
+        href=href,
+        priority=priority,
+        category=category,
+        source_rule_type=source_rule_type,
+        subject_user_id=subject_user_id,
+        shift_id=shift_id,
+        work_date=work_date,
+        created_at=created_at,
+    ).created
+
+
+def create_notification_record_once_detailed(
+    db: Session,
+    *,
+    recipient_user_id: uuid.UUID,
+    company_id: uuid.UUID | None,
+    kind: str,
+    dedupe_key: str,
+    title: str,
+    description: str,
+    href: str,
+    priority: str = "normal",
+    category: str = "admin",
+    source_rule_type: str | None = None,
+    subject_user_id: uuid.UUID | None = None,
+    shift_id: uuid.UUID | None = None,
+    work_date: date | None = None,
+    created_at: datetime | None = None,
+) -> NotificationRecordCreateResult:
     when = created_at or datetime.now(timezone.utc)
     stmt = (
         insert(NotificationRecord)
@@ -84,11 +137,14 @@ def create_notification_record_once(
     )
     record_id = db.scalar(stmt)
     if record_id is None:
-        return False
+        return NotificationRecordCreateResult(created=False)
+    push_sent = 0
+    push_attempted = 0
+    push_failures: list[tuple[int | None, str]] = []
     try:
         from app.modules.notifications.push_service import send_push_for_notification_record
 
-        send_push_for_notification_record(
+        delivery = send_push_for_notification_record(
             db,
             notification_id=record_id,
             recipient_user_id=recipient_user_id,
@@ -97,10 +153,23 @@ def create_notification_record_once(
             href=href,
             kind=kind,
         )
+        push_sent = delivery.sent
+        push_attempted = delivery.attempted
+        push_failures = [
+            (failure.status_code, failure.error or "Web push delivery failed.")
+            for failure in delivery.failures
+            if not failure.success
+        ]
     except Exception:
         # Push must never break notification creation or attendance jobs.
-        pass
-    return True
+        push_failures.append((None, "Unexpected push delivery error."))
+    return NotificationRecordCreateResult(
+        created=True,
+        record_id=record_id,
+        push_sent=push_sent,
+        push_attempted=push_attempted,
+        push_failures=push_failures or None,
+    )
 
 
 def list_unseen_records_for_user(
@@ -246,6 +315,22 @@ def list_active_push_subscriptions_for_user(
         .order_by(PushSubscription.updated_at.desc())
     )
     return list(db.scalars(stmt).all())
+
+
+def push_subscription_counts_for_user(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+) -> PushSubscriptionCounts:
+    active_stmt = (
+        select(func.count())
+        .select_from(PushSubscription)
+        .where(PushSubscription.user_id == user_id)
+        .where(PushSubscription.is_active.is_(True))
+    )
+    active = int(db.scalar(active_stmt) or 0)
+    deliverable = len(list_active_push_subscriptions_for_user(db, user_id=user_id))
+    return PushSubscriptionCounts(active=active, deliverable=deliverable)
 
 
 def push_delivery_enabled_for_user(

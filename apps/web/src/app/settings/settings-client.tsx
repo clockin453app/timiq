@@ -17,6 +17,7 @@ import {
 import { listCompanies, type Company } from "../../features/companies/api";
 import {
   fetchPushPublicKey,
+  fetchPushStatus,
   postPushSubscribe,
   postPushTest,
   postPushUnsubscribe,
@@ -86,6 +87,9 @@ export function SettingsClient() {
   const [pushSupported, setPushSupported] = useState(false);
   const [pushPermission, setPushPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const [pushSubscribed, setPushSubscribed] = useState(false);
+  const [pushDeliveryEnabled, setPushDeliveryEnabled] = useState(true);
+  const [pushActiveSubscriptions, setPushActiveSubscriptions] = useState(0);
+  const [pushDeliverableSubscriptions, setPushDeliverableSubscriptions] = useState(0);
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [adminCompanyId, setAdminCompanyId] = useState<string | null>(null);
@@ -148,9 +152,12 @@ export function SettingsClient() {
     setPushSupported(supported);
     setPushPermission(notificationPermission());
     try {
-      const config = await fetchPushPublicKey();
+      const [config, status] = await Promise.all([fetchPushPublicKey(), fetchPushStatus()]);
       setPushServerEnabled(config.enabled);
       setPushPublicKey(config.public_key);
+      setPushDeliveryEnabled(status.push_delivery_enabled);
+      setPushActiveSubscriptions(status.active_subscriptions);
+      setPushDeliverableSubscriptions(status.deliverable_subscriptions);
       if (supported) {
         setPushSubscribed(Boolean(await getActivePushSubscription()));
         setPushPermission(notificationPermission());
@@ -394,6 +401,7 @@ export function SettingsClient() {
       await postPushSubscribe(subscription);
       setPushSubscribed(true);
       setPushPermission(notificationPermission());
+      await refreshPushStatus();
       setPushMessage("Push notifications are enabled for this browser/device.");
     } catch (err) {
       setPushMessage(err instanceof Error ? err.message : "Could not enable push notifications.");
@@ -413,6 +421,7 @@ export function SettingsClient() {
       }
       setPushSubscribed(false);
       setPushPermission(notificationPermission());
+      await refreshPushStatus();
       setPushMessage("Push notifications are disabled for this browser/device.");
     } catch (err) {
       setPushMessage(err instanceof Error ? err.message : "Could not disable push notifications.");
@@ -421,18 +430,30 @@ export function SettingsClient() {
     }
   }
 
+  function formatPushTestResult(result: Awaited<ReturnType<typeof postPushTest>>): string {
+    const lines = [
+      `Push configured: ${result.configured ? "yes" : "no"}`,
+      `Browser subscribed: ${pushSubscribed ? "yes" : "no"}`,
+      `Server deliverable subscription: ${result.deliverable_subscriptions > 0 ? "yes" : "no"}`,
+      `Test push sent: ${result.test_push_sent ? "yes" : "no"}`,
+    ];
+    if (result.failure_summary) {
+      lines.push(`Error: ${result.failure_summary}`);
+    } else if (result.test_push_sent) {
+      lines.push("If no OS notification appeared, check device focus modes and notification permissions.");
+    }
+    return lines.join("\n");
+  }
+
   async function onSendTestPush() {
     setPushBusy(true);
     setPushMessage("");
     try {
       const result = await postPushTest();
-      if (!result.enabled) {
-        setPushMessage("Push notifications are not enabled on the server yet.");
-      } else if (result.sent > 0) {
-        setPushMessage("Test push sent. Delivery can still be blocked by browser or device settings.");
-      } else {
-        setPushMessage("No active push subscription was found for this account/device.");
-      }
+      setPushDeliveryEnabled(result.push_delivery_enabled);
+      setPushActiveSubscriptions(result.active_subscriptions);
+      setPushDeliverableSubscriptions(result.deliverable_subscriptions);
+      setPushMessage(formatPushTestResult(result));
     } catch (err) {
       setPushMessage(err instanceof Error ? err.message : "Could not send a test push notification.");
     } finally {
@@ -679,6 +700,11 @@ export function SettingsClient() {
               ? `Status: ${pushSubscribed ? "enabled on this device" : "not enabled on this device"}; permission ${pushPermission}.`
               : "Status: push notifications are not supported in this browser context."}
           </p>
+          <p className="text-xs text-[var(--color-text-muted)]">
+            Server: push configured {pushServerEnabled ? "yes" : "no"}; delivery enabled{" "}
+            {pushDeliveryEnabled ? "yes" : "no"}; active subscriptions {pushActiveSubscriptions}; deliverable for
+            current session {pushDeliverableSubscriptions}.
+          </p>
           {!pushServerEnabled ? (
             <p className="text-xs text-amber-700">
               Push delivery is currently disabled on the server. A Render environment update is required before sends work.
@@ -698,7 +724,9 @@ export function SettingsClient() {
               Send test push
             </Button>
           </div>
-          {pushMessage ? <p className="text-sm text-[var(--color-text-muted)]">{pushMessage}</p> : null}
+          {pushMessage ? (
+            <p className="whitespace-pre-line text-sm text-[var(--color-text-muted)]">{pushMessage}</p>
+          ) : null}
         </section>
 
         <form
