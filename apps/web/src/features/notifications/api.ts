@@ -144,7 +144,42 @@ export async function postPushUnsubscribe(endpoint: string): Promise<{ ok: boole
   return response.json() as Promise<{ ok: boolean; enabled: boolean }>;
 }
 
-export async function postPushTest(): Promise<{ ok: boolean; sent: number; enabled: boolean }> {
+export type PushStatusResponse = {
+  configured: boolean;
+  push_delivery_enabled: boolean;
+  active_subscriptions: number;
+  deliverable_subscriptions: number;
+};
+
+export type PushFailureDetail = {
+  status_code: number | null;
+  error: string;
+};
+
+export type PushTestResponse = {
+  ok: boolean;
+  sent: number;
+  enabled: boolean;
+  configured: boolean;
+  push_delivery_enabled: boolean;
+  notification_record_created: boolean;
+  active_subscriptions: number;
+  deliverable_subscriptions: number;
+  attempted: number;
+  test_push_sent: boolean;
+  failure_summary: string | null;
+  failures: PushFailureDetail[];
+};
+
+export async function fetchPushStatus(): Promise<PushStatusResponse> {
+  const response = await fetch(`${API_URL}/api/push/status`, { credentials: "include" });
+  if (!response.ok) {
+    await parseError(response, "Could not load push notification status.");
+  }
+  return response.json() as Promise<PushStatusResponse>;
+}
+
+export async function postPushTest(): Promise<PushTestResponse> {
   const response = await fetch(`${API_URL}/api/push/test`, {
     method: "POST",
     credentials: "include",
@@ -152,5 +187,5 @@ export async function postPushTest(): Promise<{ ok: boolean; sent: number; enabl
   if (!response.ok) {
     await parseError(response, "Could not send a test push notification.");
   }
-  return response.json() as Promise<{ ok: boolean; sent: number; enabled: boolean }>;
+  return response.json() as Promise<PushTestResponse>;
 }

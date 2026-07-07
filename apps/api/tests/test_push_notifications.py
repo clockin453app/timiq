@@ -66,7 +66,7 @@ def test_disabled_push_does_not_list_or_send(monkeypatch) -> None:
         kind="late_arrival",
     )
 
-    assert sent == 0
+    assert sent.sent == 0
     list_subscriptions.assert_not_called()
 
 
@@ -123,7 +123,7 @@ def test_push_delivery_checks_user_and_company_preferences(monkeypatch) -> None:
         kind="attendance_late_arrival",
     )
 
-    assert sent == 0
+    assert sent.sent == 0
     list_subscriptions.assert_not_called()
 
 
@@ -135,7 +135,7 @@ def test_push_delivery_sends_when_preferences_and_active_subscription_allow(monk
     monkeypatch.setattr(push_service, "webpush", Mock())
     monkeypatch.setattr(push_service.notification_repo, "push_delivery_enabled_for_user", Mock(return_value=True))
     monkeypatch.setattr(push_service.notification_repo, "list_active_push_subscriptions_for_user", Mock(return_value=[sub]))
-    monkeypatch.setattr(push_service, "send_payload_to_subscription", Mock(return_value=True))
+    monkeypatch.setattr(push_service, "send_payload_to_subscription", Mock(return_value=push_service.PushAttemptResult(success=True)))
 
     sent = push_service.send_push_for_notification_record(
         Mock(),
@@ -147,7 +147,7 @@ def test_push_delivery_sends_when_preferences_and_active_subscription_allow(monk
         kind="attendance_late_arrival",
     )
 
-    assert sent == 1
+    assert sent.sent == 1
     push_service.send_payload_to_subscription.assert_called_once()
 
 

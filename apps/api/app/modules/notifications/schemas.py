@@ -133,7 +133,28 @@ class PushUnsubscribeBody(BaseModel):
     endpoint: str = Field(min_length=1, max_length=2048)
 
 
+class PushFailureDetail(BaseModel):
+    status_code: int | None = None
+    error: str = ""
+
+
+class PushStatusResponse(BaseModel):
+    configured: bool
+    push_delivery_enabled: bool
+    active_subscriptions: int = 0
+    deliverable_subscriptions: int = 0
+
+
 class PushTestResponse(BaseModel):
     ok: bool = True
     sent: int = 0
     enabled: bool = True
+    configured: bool = True
+    push_delivery_enabled: bool = True
+    notification_record_created: bool = False
+    active_subscriptions: int = 0
+    deliverable_subscriptions: int = 0
+    attempted: int = 0
+    test_push_sent: bool = False
+    failure_summary: str | None = None
+    failures: list[PushFailureDetail] = Field(default_factory=list)

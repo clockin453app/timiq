@@ -147,7 +147,7 @@ class Settings(BaseSettings):
     )
     face_check_match_threshold: float = Field(
         default=0.70,
-        ge=0.50,
+        ge=0.30,
         le=0.95,
         validation_alias=AliasChoices(
             "FACE_CHECK_MATCH_THRESHOLD",

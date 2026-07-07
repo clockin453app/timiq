@@ -25,7 +25,7 @@ export function FaceCheckBadge({
   const t = useT();
   const normalized = typeof status === "string" ? asFaceCheckStatus(status) : status;
   if (!normalized) {
-    return <span className="text-[var(--color-text-muted)]">—</span>;
+    return <span className="text-[var(--color-text-muted)]">{faceCheckStatusLabel(undefined, t)}</span>;
   }
   return <Badge tone={toneForStatus(normalized)}>{faceCheckStatusLabel(normalized, t)}</Badge>;
 }

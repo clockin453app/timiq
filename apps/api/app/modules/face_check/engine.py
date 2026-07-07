@@ -28,7 +28,7 @@ class FaceMatchResult:
 
 
 def face_check_match_threshold() -> float:
-    return max(0.50, min(0.95, float(settings.face_check_match_threshold)))
+    return max(0.30, min(0.95, float(settings.face_check_match_threshold)))
 
 
 def compare_reference_to_selfie(reference_bytes: bytes, selfie_bytes: bytes) -> FaceMatchResult:

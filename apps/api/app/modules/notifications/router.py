@@ -17,7 +17,9 @@ from app.modules.notifications.schemas import (
     NotificationMarkSeenRequest,
     NotificationMarkSeenResponse,
     NotificationSummaryResponse,
+    PushFailureDetail,
     PushPublicKeyResponse,
+    PushStatusResponse,
     PushSubscriptionBody,
     PushSubscriptionResponse,
     PushTestResponse,
@@ -116,17 +118,79 @@ def unsubscribe_push(
     return PushSubscriptionResponse(ok=True, enabled=False)
 
 
+@push_router.get("/status", response_model=PushStatusResponse)
+def read_push_status(
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_authenticated_employee),
+) -> PushStatusResponse:
+    configured = web_push_configured()
+    counts = notification_repo.push_subscription_counts_for_user(db_session, user_id=current_user.id)
+    return PushStatusResponse(
+        configured=configured,
+        push_delivery_enabled=notification_repo.push_delivery_enabled_for_user(db_session, user_id=current_user.id),
+        active_subscriptions=counts.active,
+        deliverable_subscriptions=counts.deliverable,
+    )
+
+
+def _push_failure_details(push_failures: list[tuple[int | None, str]] | None) -> list[PushFailureDetail]:
+    if not push_failures:
+        return []
+    return [
+        PushFailureDetail(status_code=status_code, error=error)
+        for status_code, error in push_failures
+    ]
+
+
+def _push_failure_summary(
+    *,
+    configured: bool,
+    push_delivery_enabled: bool,
+    active_subscriptions: int,
+    deliverable_subscriptions: int,
+    notification_record_created: bool,
+    sent: int,
+    failures: list[PushFailureDetail],
+) -> str | None:
+    if not configured:
+        return "Web push is not configured on the server."
+    if not push_delivery_enabled:
+        return "Push delivery is disabled by user or company notification settings."
+    if active_subscriptions == 0:
+        return "No active push subscription is stored for this account."
+    if deliverable_subscriptions == 0:
+        return "Push subscription exists but is not bound to the current login session. Open TimIQ again or re-enable push."
+    if not notification_record_created:
+        return "Test notification record was not created."
+    if sent > 0:
+        return None
+    if failures:
+        return failures[0].error or "Web push delivery failed."
+    return "Web push delivery failed."
+
+
 @push_router.post("/test", response_model=PushTestResponse)
 def test_push(
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_authenticated_employee),
 ) -> PushTestResponse:
-    if not web_push_configured():
-        return PushTestResponse(ok=True, sent=0, enabled=False)
-    subscriptions = notification_repo.list_active_push_subscriptions_for_user(db_session, user_id=current_user.id)
-    if not subscriptions:
-        return PushTestResponse(ok=True, sent=0, enabled=True)
-    created = notification_repo.create_notification_record_once(
+    configured = web_push_configured()
+    push_delivery_enabled = notification_repo.push_delivery_enabled_for_user(db_session, user_id=current_user.id)
+    counts = notification_repo.push_subscription_counts_for_user(db_session, user_id=current_user.id)
+    if not configured:
+        return PushTestResponse(
+            ok=True,
+            sent=0,
+            enabled=False,
+            configured=False,
+            push_delivery_enabled=push_delivery_enabled,
+            active_subscriptions=counts.active,
+            deliverable_subscriptions=counts.deliverable,
+            test_push_sent=False,
+            failure_summary="Web push is not configured on the server.",
+        )
+
+    created = notification_repo.create_notification_record_once_detailed(
         db_session,
         recipient_user_id=current_user.id,
         company_id=current_user.company_id,
@@ -139,4 +203,27 @@ def test_push(
         category="account",
     )
     db_session.commit()
-    return PushTestResponse(ok=True, sent=len(subscriptions) if created else 0, enabled=True)
+    failures = _push_failure_details(created.push_failures)
+    sent = created.push_sent
+    return PushTestResponse(
+        ok=True,
+        sent=sent,
+        enabled=True,
+        configured=True,
+        push_delivery_enabled=push_delivery_enabled,
+        notification_record_created=created.created,
+        active_subscriptions=counts.active,
+        deliverable_subscriptions=counts.deliverable,
+        attempted=created.push_attempted,
+        test_push_sent=sent > 0,
+        failures=failures,
+        failure_summary=_push_failure_summary(
+            configured=True,
+            push_delivery_enabled=push_delivery_enabled,
+            active_subscriptions=counts.active,
+            deliverable_subscriptions=counts.deliverable,
+            notification_record_created=created.created,
+            sent=sent,
+            failures=failures,
+        ),
+    )
