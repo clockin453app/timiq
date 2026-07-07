@@ -1,26 +1,26 @@
 :root {
   /* App surfaces */
-  --color-page: #f1f5f9;
-  --color-sidebar-bg: #e8edf3;
+  --color-page: #eef3f8;
+  --color-sidebar-bg: #e4ebf3;
   --color-sheet: #ffffff;
-  --color-cell: #ffffff;
-  --color-header: #f8fafc;
-  --color-table-header: #f1f5f9;
-  --color-toolbar-well: #eef2f7;
-  --color-topbar-bg: #163b73;
-  --color-topbar-border: #0f2d56;
+  --color-cell: #fbfdff;
+  --color-header: #f4f8fc;
+  --color-table-header: #eaf1f8;
+  --color-toolbar-well: #e9f0f7;
+  --color-topbar-bg: #143766;
+  --color-topbar-border: #0f2f57;
   --color-topbar-fg: #ffffff;
   --color-topbar-fg-muted: rgba(255, 255, 255, 0.88);
   --color-topbar-fg-subtle: rgba(255, 255, 255, 0.72);
-  --color-topbar-hover-bg: rgba(255, 255, 255, 0.12);
-  --color-topbar-hover-border: rgba(255, 255, 255, 0.18);
+  --color-topbar-hover-bg: rgba(255, 255, 255, 0.14);
+  --color-topbar-hover-border: rgba(255, 255, 255, 0.22);
   --color-topbar-active-bg: #ffffff;
-  --color-topbar-active-fg: #163b73;
+  --color-topbar-active-fg: #143766;
   --color-topbar-active-border: rgba(255, 255, 255, 0.35);
   --color-topbar-chrome-btn-bg: #ffffff;
   --color-topbar-chrome-btn-border: rgba(255, 255, 255, 0.35);
   --color-topbar-chrome-btn-hover: #f8fafc;
-  --color-topbar-chrome-btn-fg: #163b73;
+  --color-topbar-chrome-btn-fg: #143766;
 
   /* Public marketing pages on navy gradient */
   --color-public-on-dark-fg: #ffffff;
@@ -92,25 +92,25 @@
   --color-overview-section-trends-fg: #334155;
   --color-overview-section-trends-border: #d4dce8;
 
-  --color-border: #e2e8f0;
-  --color-border-dark: #cbd5e1;
+  --color-border: #d8e3ee;
+  --color-border-dark: #bdccdc;
 
-  --color-text: #0f172a;
-  --color-text-muted: #475569;
-  --color-text-soft: #64748b;
+  --color-text: #0f1f34;
+  --color-text-muted: #42566f;
+  --color-text-soft: #60758f;
 
   /* Brand / link blue */
-  --color-brand: #2563eb;
-  --color-brand-hover: #1d4ed8;
+  --color-brand: #1f5fd0;
+  --color-brand-hover: #184cad;
   --color-brand-foreground: #ffffff;
-  --color-brand-muted: #eff6ff;
+  --color-brand-muted: #e9f1ff;
 
   /* Default neutral button */
   --color-btn-default-bg: #ffffff;
-  --color-btn-default-border: #cbd5e1;
-  --color-btn-default-hover: #f8fafc;
+  --color-btn-default-border: #c3d0de;
+  --color-btn-default-hover: #f3f7fc;
   --color-btn-active-bg: #ffffff;
-  --color-btn-active-border: #94a3b8;
+  --color-btn-active-border: #7f93ab;
 
   /* Solid primary button (Button variant="primary") */
   --color-btn-primary-bg: var(--color-brand);
@@ -128,14 +128,14 @@
    * Prefer --color-brand for new code; migrate pages to Button in later UI batches.
    */
   --color-primary: #ffffff;
-  --color-primary-hover: var(--color-brand-muted);
+  --color-primary-hover: #f1f6ff;
   --color-primary-border: var(--color-brand);
   --color-primary-surface: #ffffff;
 
   --color-input: #ffffff;
 
-  --color-table-total-bg: #f1f5f9;
-  --color-empty-panel-bg: #f1f5f9;
+  --color-table-total-bg: #edf3fa;
+  --color-empty-panel-bg: #edf3fa;
 
   --color-danger-50: #fef2f2;
   --color-danger-700: #991b1b;
@@ -184,17 +184,17 @@
     Arial, sans-serif;
 
   --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
+  --radius-md: 0.625rem;
+  --radius-lg: 0.875rem;
   --radius-xl: 1rem;
   --radius-full: 9999px;
 
-  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.05);
-  --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
-  --shadow-soft: 0 4px 12px rgba(15, 23, 42, 0.06);
-  --shadow-dropdown: 0 10px 30px rgba(15, 23, 42, 0.12);
+  --shadow-xs: 0 1px 2px rgba(11, 28, 49, 0.05);
+  --shadow-card: 0 2px 6px rgba(11, 28, 49, 0.08), 0 1px 2px rgba(11, 28, 49, 0.04);
+  --shadow-soft: 0 8px 22px rgba(11, 28, 49, 0.08);
+  --shadow-dropdown: 0 14px 34px rgba(11, 28, 49, 0.14);
   --shadow-topbar-active: 0 1px 3px rgba(15, 23, 42, 0.12);
-  --shadow-modal: 0 20px 50px rgba(15, 23, 42, 0.16);
+  --shadow-modal: 0 24px 56px rgba(11, 28, 49, 0.2);
 
   --space-page-x: 1rem;
   --space-page-y: 1rem;

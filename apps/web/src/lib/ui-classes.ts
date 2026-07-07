@@ -13,24 +13,24 @@ export const uiClasses = {
 
   cardHeader: [
     "border-b border-[var(--color-border)]",
-    "bg-[var(--color-header)] px-[var(--space-card)] py-3",
+    "bg-[var(--color-header)] px-[var(--space-card)] py-3.5",
   ].join(" "),
 
-  cardBody: "px-[var(--space-card)] py-[var(--space-card)]",
+  cardBody: "px-[var(--space-card)] py-[calc(var(--space-card)-0.0625rem)]",
 
-  sectionGap: "space-y-[var(--space-section)]",
+  sectionGap: "space-y-[calc(var(--space-section)-0.125rem)]",
 
   pageHeader: [
     "flex w-full min-w-0 flex-col items-stretch gap-3",
     "border-b border-[var(--color-border)] bg-[var(--color-sheet)]",
-    "px-[var(--space-card)] py-3 sm:flex-row sm:items-start sm:justify-between",
-    "sm:px-5 sm:py-4",
+    "px-[var(--space-card)] py-3.5 sm:flex-row sm:items-start sm:justify-between",
+    "sm:px-5 sm:py-4.5",
   ].join(" "),
 
   tableWrap: [
     "max-w-full min-w-0 w-full overflow-x-auto",
     "rounded-[var(--radius-md)] border border-[var(--color-border-dark)]",
-    "[-webkit-overflow-scrolling:touch]",
+    "bg-[var(--color-sheet)] shadow-[var(--shadow-xs)] [-webkit-overflow-scrolling:touch]",
   ].join(" "),
 
   toolbar: [
@@ -41,7 +41,8 @@ export const uiClasses = {
 
   focusRing: "focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]",
 
-  transitionColors: "transition-colors duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-standard)]",
+  transitionColors:
+    "transition-[color,background-color,border-color,box-shadow,transform] duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-standard)]",
 
   touchTarget: "min-h-[44px] min-w-[44px] touch-manipulation",
 
@@ -107,7 +108,7 @@ export const uiClasses = {
   ].join(" "),
 
   navLinkActive: [
-    "border-[var(--color-brand)]/30 bg-[var(--color-brand-muted)] text-[var(--color-brand-hover)]",
+    "border-[var(--color-brand)]/35 bg-[var(--color-brand-muted)] text-[var(--color-brand-hover)] shadow-[var(--shadow-xs)]",
   ].join(" "),
 
   navTriggerBase:
@@ -119,7 +120,7 @@ export const uiClasses = {
   ].join(" "),
 
   navTriggerOpen: [
-    "border-[var(--color-brand)]/25 bg-[var(--color-brand-muted)] text-[var(--color-text)]",
+    "border-[var(--color-brand)]/30 bg-[var(--color-brand-muted)] text-[var(--color-text)] shadow-[var(--shadow-xs)]",
   ].join(" "),
 
   /** White dropdown panels (mobile drawer, legacy). */

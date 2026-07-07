@@ -14,13 +14,13 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] text-[var(--color-btn-primary-fg)] hover:bg-[var(--color-btn-primary-hover-bg)] hover:border-[var(--color-btn-primary-hover-bg)]",
+    "border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] text-[var(--color-btn-primary-fg)] shadow-[var(--shadow-xs)] hover:bg-[var(--color-btn-primary-hover-bg)] hover:border-[var(--color-btn-primary-hover-bg)]",
   secondary:
-    "border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]",
+    "border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text)] shadow-[var(--shadow-xs)] hover:bg-[var(--color-btn-default-hover)]",
   ghost:
     "border border-transparent bg-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]",
   danger:
-    "border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] text-[var(--color-danger-700)] hover:bg-[var(--color-danger-700)] hover:text-white",
+    "border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] text-[var(--color-danger-700)] shadow-[var(--shadow-xs)] hover:bg-[var(--color-danger-700)] hover:text-white",
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
@@ -37,7 +37,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center rounded-[var(--radius-md)] font-semibold disabled:pointer-events-none disabled:opacity-60",
+        "inline-flex items-center justify-center rounded-[var(--radius-md)] font-semibold active:translate-y-[0.5px] disabled:pointer-events-none disabled:opacity-60",
         uiClasses.transitionColors,
         uiClasses.focusRing,
         variantClasses[variant],
