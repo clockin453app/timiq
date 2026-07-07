@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { LocationGeofenceMap } from "../../components/maps";
 import {
+  Badge,
   Button,
   PageHeader,
   Sheet,
@@ -32,6 +33,13 @@ import {
 } from "../../features/locations/api";
 import { searchNominatim, type NominatimSearchHit } from "../../features/locations/nominatim";
 import { useT } from "../../lib/i18n";
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
+
+const FIELD_LABEL_CLASS =
+  "block text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]";
+const FIELD_INPUT_CLASS =
+  "mt-1 h-10 w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm";
 
 const DEFAULT_LAT = 51.507351;
 const DEFAULT_LNG = -0.127758;
@@ -319,17 +327,17 @@ export function LocationsClient() {
         }
       />
 
-      <SheetBody className="min-w-0">
+      <SheetBody className="min-w-0 space-y-5 lg:space-y-6">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={
-            <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2 text-sm">
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2 text-sm">
               You do not have permission to manage locations.
             </div>
           }
         >
           {showCompanySelector && companyScope.companies.length > 0 ? (
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2.5">
               <CompanySelector
                 companies={companyScope.companies}
                 onChange={companyScope.setCompanyId}
@@ -340,271 +348,375 @@ export function LocationsClient() {
               ) : null}
             </div>
           ) : (
-            <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5 text-sm text-[var(--color-text-muted)]">
               You can create geofenced locations for your company only.
             </div>
           )}
 
           {showCompanySelector && companyScope.needsCompanySelection ? (
-            <div className="mb-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
               Select a company to view its sites.
             </div>
           ) : null}
 
-          <form
-            className="mb-4 w-full max-w-[min(48rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
-            onSubmit={handleSubmit}
-          >
-            <div
-              className={
-                showCompanySelector
-                  ? "grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.2fr)]"
-                  : "grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]"
-              }
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] xl:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
+            <form
+              className={cn(uiClasses.card, "overflow-hidden")}
+              onSubmit={handleSubmit}
             >
-              {showCompanySelector ? (
-                <label className="block text-xs font-bold text-[var(--color-text)]">
-                  Company
-                  <select
-                    className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    onChange={(event) => setCompanyId(event.target.value)}
-                    required
-                    value={companyId}
-                  >
-                    {companies
-                      .filter((company) => company.is_active)
-                      .map((company) => (
-                        <option key={company.id} value={company.id}>
-                          {company.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-              ) : null}
-
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                Location name
-                <input
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="name"
-                  onChange={(event) => setName(event.target.value)}
-                  required
-                  type="text"
-                  value={name}
-                />
-              </label>
-
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                Address
-                <input
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="address"
-                  onChange={(event) => setAddress(event.target.value)}
-                  type="text"
-                  value={address}
-                />
-              </label>
-            </div>
-
-            <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                Latitude
-                <input
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="latitude"
-                  onChange={(event) => setLatitude(event.target.value)}
-                  placeholder="51.507351"
-                  required
-                  step="0.000001"
-                  type="number"
-                  value={latitude}
-                />
-              </label>
-
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                Longitude
-                <input
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="longitude"
-                  onChange={(event) => setLongitude(event.target.value)}
-                  placeholder="-0.127758"
-                  required
-                  step="0.000001"
-                  type="number"
-                  value={longitude}
-                />
-              </label>
-
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                Radius meters
-                <input
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  max={5000}
-                  min={10}
-                  name="radius"
-                  onChange={(event) => setGeofenceRadiusMeters(event.target.value)}
-                  required
-                  type="number"
-                  value={geofenceRadiusMeters}
-                />
-              </label>
-            </div>
-
-            <div className="mt-3 border border-[var(--color-border)] bg-[var(--color-header)] p-3">
-              <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                Address search (OpenStreetMap Nominatim)
-              </p>
-              <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-                Search by street or place name, pick a result to move the map and coordinates.
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <input
-                  className="h-10 w-full min-w-0 flex-1 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm sm:min-w-[12rem]"
-                  onChange={(event) => setAddressSearchQuery(event.target.value)}
-                  placeholder="Address search"
-                  type="text"
-                  value={addressSearchQuery}
-                />
-                <Button disabled={addressSearchLoading} onClick={handleAddressSearch} type="button">
-                  {addressSearchLoading ? "Searching..." : "Search address"}
-                </Button>
+              <div className={cn(uiClasses.cardHeader, "py-3")}>
+                <h2 className="text-sm font-semibold tracking-tight text-[var(--color-text)]">
+                  {editingLocation ? "Edit site" : "Add site"}
+                </h2>
+                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                  {editingLocation
+                    ? "Update site details, coordinates, and geofence radius."
+                    : "Define a clock-in site with GPS coordinates and geofence radius."}
+                </p>
               </div>
-              {addressSearchError ? (
-                <p className="mt-2 text-xs text-[var(--color-danger-700)]">{addressSearchError}</p>
-              ) : null}
-              {addressSearchResults.length > 0 ? (
-                <ul className="mt-2 max-h-40 space-y-1 overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] text-xs">
-                  {addressSearchResults.map((hit, index) => (
-                    <li key={`${hit.lat}-${hit.lon}-${index}`}>
-                      <button
-                        className="w-full px-2 py-1.5 text-left hover:bg-[var(--color-header)]"
-                        onClick={() => applyNominatimHit(hit)}
+
+              <div className="space-y-4 px-[var(--space-card)] py-4">
+                {errorMessage ? (
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)]/30 bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
+                    {errorMessage}
+                  </div>
+                ) : null}
+
+                {successMessage ? (
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-success-700)]/25 bg-[var(--color-success-50)] px-3 py-2 text-sm text-[var(--color-success-700)]">
+                    {successMessage}
+                  </div>
+                ) : null}
+
+                <section className="space-y-3">
+                  <h3 className="text-xs font-semibold tracking-tight text-[var(--color-text)]">Site details</h3>
+                  <div className="space-y-3">
+                    {showCompanySelector ? (
+                      <label className={FIELD_LABEL_CLASS}>
+                        Company
+                        <select
+                          className={FIELD_INPUT_CLASS}
+                          onChange={(event) => setCompanyId(event.target.value)}
+                          required
+                          value={companyId}
+                        >
+                          {companies
+                            .filter((company) => company.is_active)
+                            .map((company) => (
+                              <option key={company.id} value={company.id}>
+                                {company.name}
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                    ) : null}
+
+                    <label className={FIELD_LABEL_CLASS}>
+                      Location name
+                      <input
+                        className={FIELD_INPUT_CLASS}
+                        name="name"
+                        onChange={(event) => setName(event.target.value)}
+                        required
+                        type="text"
+                        value={name}
+                      />
+                    </label>
+
+                    <label className={FIELD_LABEL_CLASS}>
+                      Address
+                      <input
+                        className={FIELD_INPUT_CLASS}
+                        name="address"
+                        onChange={(event) => setAddress(event.target.value)}
+                        type="text"
+                        value={address}
+                      />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="space-y-3 border-t border-[var(--color-border)] pt-4">
+                  <h3 className="text-xs font-semibold tracking-tight text-[var(--color-text)]">
+                    Coordinates &amp; geofence
+                  </h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className={FIELD_LABEL_CLASS}>
+                      Latitude
+                      <input
+                        className={FIELD_INPUT_CLASS}
+                        name="latitude"
+                        onChange={(event) => setLatitude(event.target.value)}
+                        placeholder="51.507351"
+                        required
+                        step="0.000001"
+                        type="number"
+                        value={latitude}
+                      />
+                    </label>
+
+                    <label className={FIELD_LABEL_CLASS}>
+                      Longitude
+                      <input
+                        className={FIELD_INPUT_CLASS}
+                        name="longitude"
+                        onChange={(event) => setLongitude(event.target.value)}
+                        placeholder="-0.127758"
+                        required
+                        step="0.000001"
+                        type="number"
+                        value={longitude}
+                      />
+                    </label>
+
+                    <label className={cn(FIELD_LABEL_CLASS, "sm:col-span-2")}>
+                      Radius meters
+                      <input
+                        className={FIELD_INPUT_CLASS}
+                        max={5000}
+                        min={10}
+                        name="radius"
+                        onChange={(event) => setGeofenceRadiusMeters(event.target.value)}
+                        required
+                        type="number"
+                        value={geofenceRadiusMeters}
+                      />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="space-y-3 border-t border-[var(--color-border)] pt-4">
+                  <div>
+                    <h3 className="text-xs font-semibold tracking-tight text-[var(--color-text)]">
+                      Address search
+                    </h3>
+                    <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                      OpenStreetMap Nominatim — search by street or place name, then pick a result to
+                      move the map and coordinates.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      className={cn(FIELD_INPUT_CLASS, "mt-0 min-w-0 flex-1")}
+                      onChange={(event) => setAddressSearchQuery(event.target.value)}
+                      placeholder="Address search"
+                      type="text"
+                      value={addressSearchQuery}
+                    />
+                    <Button
+                      className="shrink-0"
+                      disabled={addressSearchLoading}
+                      onClick={handleAddressSearch}
+                      type="button"
+                      variant="secondary"
+                    >
+                      {addressSearchLoading ? "Searching..." : "Search address"}
+                    </Button>
+                  </div>
+                  {addressSearchError ? (
+                    <p className="text-xs text-[var(--color-danger-700)]">{addressSearchError}</p>
+                  ) : null}
+                  {addressSearchResults.length > 0 ? (
+                    <ul className="max-h-40 space-y-1 overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)]/50 text-xs">
+                      {addressSearchResults.map((hit, index) => (
+                        <li key={`${hit.lat}-${hit.lon}-${index}`}>
+                          <button
+                            className="w-full rounded-[var(--radius-md)] px-2.5 py-2 text-left transition-colors hover:bg-[var(--color-header)]"
+                            onClick={() => applyNominatimHit(hit)}
+                            type="button"
+                          >
+                            <span className="font-medium text-[var(--color-text)]">{hit.display_name}</span>
+                            <span className="mt-0.5 block tabular-nums text-[var(--color-text-muted)]">
+                              {hit.lat}, {hit.lon}
+                            </span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+
+                <section className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border)] pt-4">
+                  <Button disabled={isGettingPosition} onClick={handleUseCurrentPosition} type="button" variant="secondary">
+                    {isGettingPosition ? "Getting..." : "Use current GPS"}
+                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    {editingLocation ? (
+                      <Button
+                        onClick={() => {
+                          resetCreateFormFields();
+                          setSuccessMessage("");
+                        }}
                         type="button"
+                        variant="ghost"
                       >
-                        <span className="font-medium text-[var(--color-text)]">{hit.display_name}</span>
-                        <span className="mt-0.5 block text-[var(--color-text-muted)]">
-                          {hit.lat}, {hit.lon}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                        Cancel edit
+                      </Button>
+                    ) : null}
+                    <Button disabled={isSaving} type="submit">
+                      {isSaving ? "Saving..." : editingLocation ? "Save changes" : "Create location"}
+                    </Button>
+                  </div>
+                </section>
+              </div>
+            </form>
+
+            <section
+              className={cn(
+                uiClasses.card,
+                "flex min-h-[min(520px,calc(100dvh-14rem))] flex-col overflow-hidden",
+              )}
+            >
+              <div className={cn(uiClasses.cardHeader, "py-3")}>
+                <h2 className="text-sm font-semibold tracking-tight text-[var(--color-text)]">
+                  Map preview
+                </h2>
+                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                  Click the map or drag the marker to set coordinates. Radius updates the geofence ring.
+                </p>
+              </div>
+
+              <div className="flex min-h-0 flex-1 flex-col gap-3 px-[var(--space-card)] py-4">
+                <div className="flex min-h-[280px] flex-1 flex-col lg:min-h-[420px] [&_.timiq-leaflet-shell]:!h-full [&_.timiq-leaflet-shell]:!min-h-[280px] lg:[&_.timiq-leaflet-shell]:!min-h-[420px]">
+                  <LocationGeofenceMap
+                    key={editingLocation?.id ?? "create"}
+                    latitude={mapLatitude}
+                    longitude={mapLongitude}
+                    onLatLngChange={handleMapLatLng}
+                    radiusMeters={mapRadius}
+                  />
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-2.5 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                      Latitude
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold tabular-nums text-[var(--color-text)]">
+                      {latitude || "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-2.5 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                      Longitude
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold tabular-nums text-[var(--color-text)]">
+                      {longitude || "—"}
+                    </p>
+                  </div>
+                  <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-2.5 py-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                      Radius
+                    </p>
+                    <p className="mt-0.5 text-xs font-semibold tabular-nums text-[var(--color-text)]">
+                      {geofenceRadiusMeters}m
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <section className={cn(uiClasses.card, "overflow-hidden")}>
+            <div className={cn(uiClasses.cardHeader, "flex flex-wrap items-center justify-between gap-2 py-3")}>
+              <div>
+                <h2 className="text-sm font-semibold tracking-tight text-[var(--color-text)]">
+                  Existing locations
+                </h2>
+                <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                  Sites available for clock-in, geofence validation, and site access.
+                </p>
+              </div>
+              {!isLoading ? (
+                <Badge tone="default">{locations.length}</Badge>
               ) : null}
             </div>
 
-            <div className="mt-3">
-              <p className="mb-1 text-xs font-bold text-[var(--color-text-soft)]">
-                Map preview
-              </p>
-              <p className="mb-2 text-xs text-[var(--color-text-muted)]">
-                Click the map or drag the marker to set coordinates. Radius updates the geofence ring.
-              </p>
-              <LocationGeofenceMap
-                key={editingLocation?.id ?? "create"}
-                latitude={mapLatitude}
-                longitude={mapLongitude}
-                onLatLngChange={handleMapLatLng}
-                radiusMeters={mapRadius}
-              />
+            <div className={uiClasses.tableWrap}>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Address</TableHead>
+                    <TableHead>Company</TableHead>
+                    <TableHead>Latitude</TableHead>
+                    <TableHead>Longitude</TableHead>
+                    <TableHead>Radius</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+
+                <TableBody>
+                  {isLoading ? (
+                    <TableRow>
+                      <TableCell className="py-8 text-center text-[var(--color-text-muted)]" colSpan={8}>
+                        Loading locations...
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+
+                  {!isLoading && locations.length === 0 ? (
+                    <TableRow>
+                      <TableCell className="py-8" colSpan={8}>
+                        <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)]/45 px-4 py-6 text-center">
+                          <p className="text-sm font-medium text-[var(--color-text)]">No locations found.</p>
+                          <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                            Create your first site using the form above.
+                          </p>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+
+                  {!isLoading
+                    ? locations.map((location) => {
+                        const company = companies.find((item) => item.id === location.company_id);
+
+                        return (
+                          <TableRow key={location.id}>
+                            <TableCell className="font-medium">{location.name}</TableCell>
+                            <TableCell>{location.address ?? "-"}</TableCell>
+                            <TableCell>{company?.name ?? "Assigned company"}</TableCell>
+                            <TableCell className="tabular-nums text-xs text-[var(--color-text-muted)]">
+                              {location.latitude.toFixed(6)}
+                            </TableCell>
+                            <TableCell className="tabular-nums text-xs text-[var(--color-text-muted)]">
+                              {location.longitude.toFixed(6)}
+                            </TableCell>
+                            <TableCell className="tabular-nums">{location.geofence_radius_meters}m</TableCell>
+                            <TableCell>
+                              <Badge tone={location.is_active ? "success" : "default"}>
+                                {location.is_active ? "Active" : "Inactive"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-wrap gap-2">
+                                <Button onClick={() => startEditing(location)} type="button" variant="secondary">
+                                  Edit
+                                </Button>
+                                <Button
+                                  disabled={updatingLocationId === location.id}
+                                  onClick={() => handleToggleLocationStatus(location)}
+                                  type="button"
+                                  variant="ghost"
+                                >
+                                  {updatingLocationId === location.id
+                                    ? "Updating..."
+                                    : location.is_active
+                                      ? "Deactivate"
+                                      : "Activate"}
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    : null}
+                </TableBody>
+              </Table>
             </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Button disabled={isGettingPosition} onClick={handleUseCurrentPosition} type="button">
-                {isGettingPosition ? "Getting..." : "Use current GPS"}
-              </Button>
-              <Button disabled={isSaving} type="submit">
-                {isSaving ? "Saving..." : editingLocation ? "Save changes" : "Create location"}
-              </Button>
-              {editingLocation ? (
-                <Button
-                  onClick={() => {
-                    resetCreateFormFields();
-                    setSuccessMessage("");
-                  }}
-                  type="button"
-                >
-                  Cancel edit
-                </Button>
-              ) : null}
-            </div>
-          </form>
-
-          {errorMessage ? (
-            <div className="mb-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
-              {errorMessage}
-            </div>
-          ) : null}
-
-          {successMessage ? (
-            <div className="mb-3 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
-              {successMessage}
-            </div>
-          ) : null}
-
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>Address</TableHead>
-                <TableHead>Company</TableHead>
-                <TableHead>Latitude</TableHead>
-                <TableHead>Longitude</TableHead>
-                <TableHead>Radius</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={8}>Loading locations...</TableCell>
-                </TableRow>
-              ) : null}
-
-              {!isLoading && locations.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8}>No locations found.</TableCell>
-                </TableRow>
-              ) : null}
-
-              {!isLoading
-                ? locations.map((location) => {
-                    const company = companies.find((item) => item.id === location.company_id);
-
-                    return (
-                      <TableRow key={location.id}>
-                        <TableCell>{location.name}</TableCell>
-                        <TableCell>{location.address ?? "-"}</TableCell>
-                        <TableCell>{company?.name ?? "Assigned company"}</TableCell>
-                        <TableCell>{location.latitude.toFixed(6)}</TableCell>
-                        <TableCell>{location.longitude.toFixed(6)}</TableCell>
-                        <TableCell>{location.geofence_radius_meters}m</TableCell>
-                        <TableCell>{location.is_active ? "Active" : "Inactive"}</TableCell>
-                        <TableCell>
-                          <div className="flex flex-wrap gap-2">
-                            <Button onClick={() => startEditing(location)} type="button">
-                              Edit
-                            </Button>
-                            <Button
-                              disabled={updatingLocationId === location.id}
-                              onClick={() => handleToggleLocationStatus(location)}
-                              type="button"
-                            >
-                              {updatingLocationId === location.id
-                                ? "Updating..."
-                                : location.is_active
-                                  ? "Deactivate"
-                                  : "Activate"}
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                : null}
-            </TableBody>
-          </Table>
+          </section>
         </RoleGuard>
       </SheetBody>
     </Sheet>

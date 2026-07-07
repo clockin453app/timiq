@@ -14,11 +14,11 @@ const STATUS_KEYS: Record<FaceCheckStatusValue, string> = {
 };
 
 const STATUS_FALLBACKS: Record<FaceCheckStatusValue, string> = {
-  not_enrolled: "Not enrolled",
+  not_enrolled: "No reference photo",
   not_checked: "Not checked",
-  unavailable: "Unavailable",
+  unavailable: "No selfie",
   passed: "Passed",
-  needs_review: "Needs review",
+  needs_review: "Low confidence",
 };
 
 const AFTER_KEYS: Record<FaceCheckStatusValue, string> = {
@@ -39,7 +39,7 @@ const AFTER_FALLBACKS: Record<FaceCheckStatusValue, string> = {
 
 export function faceCheckStatusLabel(status: FaceCheckStatus, t?: TranslateFn): string {
   if (!status) {
-    return "—";
+    return t ? t("face_check.status.missing", "No reference photo") : "No reference photo";
   }
   const key = STATUS_KEYS[status];
   const fallback = STATUS_FALLBACKS[status];

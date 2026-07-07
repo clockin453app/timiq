@@ -6,6 +6,12 @@ function formatConfidence(confidence: number): string {
   return `${Math.round(confidence * 100)}%`;
 }
 
+function formatMatchConfidence(confidence: number, t: ReturnType<typeof useT>): string {
+  return t("face_check.match_confidence", "{{percent}} match", {
+    percent: formatConfidence(confidence),
+  });
+}
+
 export function FaceCheckCell({
   status,
   confidence,
@@ -16,7 +22,7 @@ export function FaceCheckCell({
   const t = useT();
   const normalized = typeof status === "string" ? asFaceCheckStatus(status) : status;
   if (!normalized) {
-    return <span className="text-[var(--color-text-muted)]">—</span>;
+    return <span className="text-[var(--color-text-muted)]">{faceCheckStatusLabel(undefined, t)}</span>;
   }
 
   const pct =
@@ -29,7 +35,7 @@ export function FaceCheckCell({
       <div className="flex flex-col gap-0.5">
         <FaceCheckBadge status={normalized} />
         <span className="text-[10px] font-medium text-[var(--color-danger-700)]">
-          {pct} · {faceCheckStatusLabel(normalized, t)}
+          {formatMatchConfidence(confidence!, t)}
         </span>
       </div>
     );

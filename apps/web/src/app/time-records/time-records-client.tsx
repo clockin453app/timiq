@@ -709,8 +709,8 @@ export function TimeRecordsClient() {
                             variant="secondary"
                           >
                             {row.face_check_status
-                              ? t("face_check.review", "Review")
-                              : t("face_check.details", "Details")}
+                              ? t("face_check.view_photos", "View photos")
+                              : t("face_check.view", "View")}
                           </Button>
                         ) : null}
                       </div>

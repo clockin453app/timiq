@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
-  CircleAlert,
   Info,
   MapPin,
   Users,
@@ -26,7 +25,6 @@ import {
 import { isAdministrator, useCurrentUser } from "../../features/auth";
 import {
   fetchManagementOverview,
-  type NeedsAttentionItem,
   type OverviewData,
   type PayrollReadinessPanel,
   type SetupHealthPanel,
@@ -64,16 +62,7 @@ function badgeToneFromPayroll(tone: "success" | "warning" | "muted"): "success" 
   return "default";
 }
 
-const NEEDS_ATTENTION_ROW_CLASS: Record<string, string> = {
-  critical:
-    "border-[var(--color-danger-700)]/20 bg-[var(--color-danger-50)] hover:border-[var(--color-danger-700)]/35",
-  warning:
-    "border-[var(--color-warning-700)]/25 bg-[var(--color-warning-50)] hover:border-[var(--color-warning-700)]/40",
-  info: "border-[var(--color-border-dark)] bg-[var(--color-header)] hover:border-[var(--color-border)]",
-};
-
 type OverviewSectionTone =
-  | "attention"
   | "attendance"
   | "live"
   | "payroll"
@@ -87,12 +76,6 @@ const OVERVIEW_SECTION_TONE: Record<
   OverviewSectionTone,
   { header: string; title: string; card?: string }
 > = {
-  attention: {
-    header:
-      "border-b border-[var(--color-overview-section-attention-border)] bg-[var(--color-overview-section-attention-bg)]",
-    title: "text-[var(--color-overview-section-attention-fg)]",
-    card: "border-[var(--color-overview-section-attention-border)]",
-  },
   attendance: {
     header:
       "border-b border-[var(--color-overview-section-attendance-border)] bg-[var(--color-overview-section-attendance-bg)]",
@@ -228,16 +211,6 @@ function OverviewChartEmpty(props: { message: string }) {
       <p className="text-xs leading-snug text-[var(--color-text-muted)] sm:text-sm">{props.message}</p>
     </div>
   );
-}
-
-function NeedsAttentionIcon(props: { severity: string }) {
-  if (props.severity === "critical") {
-    return <CircleAlert aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-danger-700)]" />;
-  }
-  if (props.severity === "warning") {
-    return <AlertTriangle aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-warning-700)]" />;
-  }
-  return <Info aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-text-soft)]" />;
 }
 
 function formatPercent(rate: number | null | undefined): string {
@@ -561,71 +534,6 @@ function OverviewMetricCard(props: {
         ) : null}
       </div>
     </Link>
-  );
-}
-
-function OverviewAttentionCard(props: {
-  title: string;
-  scopeNote: string | null;
-  emptyLabel: string;
-  items: NeedsAttentionItem[];
-}) {
-  return (
-    <OverviewTintedSection
-      compactBody
-      denseHeader
-      description={props.scopeNote ?? undefined}
-      action={
-        props.items.length > 0 ? (
-          <span className="inline-flex items-center gap-2 rounded-[var(--radius-full)] border border-[var(--color-warning-700)]/25 bg-[var(--color-warning-50)] px-2.5 py-1 text-xs font-semibold text-[var(--color-warning-700)]">
-            Queue
-            <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-[var(--radius-full)] bg-white px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-[var(--color-text)]">
-              {props.items.length}
-            </span>
-          </span>
-        ) : null
-      }
-      title={props.title}
-      tone="attention"
-    >
-      {props.items.length === 0 ? (
-        <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-success-700)]/20 bg-[var(--color-success-50)] px-3 py-3 text-sm text-[var(--color-success-700)]">
-          <CheckCircle2 aria-hidden className="h-4 w-4 shrink-0" />
-          <span className="font-medium">{props.emptyLabel}</span>
-        </div>
-      ) : (
-        <ul className="space-y-2">
-          {props.items.map((item) => (
-            <li key={item.code}>
-              <Link
-                className={cn(
-                  "group flex items-center justify-between gap-3 rounded-[var(--radius-md)] border px-3 py-2.5 text-sm shadow-[var(--shadow-xs)] transition-[border-color,box-shadow,transform]",
-                  "hover:-translate-y-[0.5px] hover:shadow-[var(--shadow-soft)]",
-                  NEEDS_ATTENTION_ROW_CLASS[item.severity] ?? NEEDS_ATTENTION_ROW_CLASS.info,
-                )}
-                href={item.href}
-              >
-                <span className="flex min-w-0 flex-1 items-center gap-3">
-                  <NeedsAttentionIcon severity={item.severity} />
-                  <span className="min-w-0 font-semibold text-[var(--color-text)] group-hover:text-[var(--color-brand)]">
-                    {item.label}
-                  </span>
-                </span>
-                <span className="inline-flex shrink-0 items-center gap-2">
-                  <span className="inline-flex min-w-[2.25rem] items-center justify-center rounded-[var(--radius-full)] bg-white px-2.5 py-1 text-sm font-bold tabular-nums text-[var(--color-text)] shadow-sm">
-                    {item.count}
-                  </span>
-                  <ArrowRight
-                    aria-hidden
-                    className="h-4 w-4 text-[var(--color-text-soft)] transition-transform group-hover:translate-x-0.5 group-hover:text-[var(--color-brand)]"
-                  />
-                </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      )}
-    </OverviewTintedSection>
   );
 }
 
@@ -1126,12 +1034,6 @@ export function OverviewClient() {
         { hours: data.long_open_shift_threshold_hours },
       )
     : "";
-  const attentionCriticalCount = data
-    ? data.needs_attention.filter((item) => item.severity === "critical").length
-    : 0;
-  const attentionWarningCount = data
-    ? data.needs_attention.filter((item) => item.severity === "warning").length
-    : 0;
 
   return (
     <Sheet>
@@ -1160,9 +1062,6 @@ export function OverviewClient() {
                   <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-soft)]">
                     Operations Command Center
                   </p>
-                  <h2 className="mt-1 text-xl font-semibold tracking-tight text-[var(--color-text)] sm:text-2xl">
-                    {t("overview.page_title")}
-                  </h2>
                   <p className="mt-1 text-sm leading-relaxed text-[var(--color-text-muted)]">
                     {t("overview.page_description")}
                   </p>
@@ -1254,95 +1153,53 @@ export function OverviewClient() {
               </div>
             </section>
 
-            <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3 shadow-[var(--shadow-xs)] sm:p-3.5">
-              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-                <h3 className="text-sm font-semibold tracking-tight text-[var(--color-text)]">
-                  {t("overview.needs_attention", "Needs attention")}
-                </h3>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <Badge tone="warning">
-                    {t("overview.status_pending", "Pending")}: {data.needs_attention.length}
-                  </Badge>
-                  <Badge tone={attentionCriticalCount > 0 ? "danger" : "default"}>
-                    Critical: {attentionCriticalCount}
-                  </Badge>
-                  <Badge tone={attentionWarningCount > 0 ? "warning" : "default"}>
-                    Warning: {attentionWarningCount}
-                  </Badge>
-                </div>
+            <OverviewTintedSection
+              compactBody
+              denseHeader
+              description={t(
+                "overview.operational_trends_sub",
+                "Compact attendance and payroll trends for the current scope.",
+              )}
+              title={t("overview.operational_trends", "Operational trends")}
+              tone="trends"
+            >
+              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+                <OverviewChartWidget
+                  caption={t(
+                    "overview.trend_attendance_sub",
+                    "Present employees over the last 7 days.",
+                  )}
+                  summary={attendanceTrendSummary}
+                  title={t("overview.trend_attendance")}
+                >
+                  <OverviewLineChart
+                    emptyHint={t("overview.trend_attendance_empty")}
+                    points={attendanceChartPoints}
+                  />
+                </OverviewChartWidget>
+
+                <OverviewChartWidget
+                  caption={t(
+                    "overview.trend_payroll_sub",
+                    "Weekly gross payroll totals. Current week highlighted.",
+                  )}
+                  summary={payrollTrendSummary}
+                  title={t("overview.trend_payroll")}
+                >
+                  <OverviewBarChart
+                    currentKey={data.payroll_week_start}
+                    emptyHint={
+                      data.payroll_status === "not_calculated"
+                        ? t("overview.payroll_not_calc_weeks")
+                        : t("overview.trend_payroll_empty_no_history")
+                    }
+                    points={payrollChartPoints}
+                  />
+                </OverviewChartWidget>
               </div>
-              <OverviewAttentionCard
-                emptyLabel={t("overview.empty_attention")}
-                items={data.needs_attention}
-                scopeNote={data.needs_attention_scope_note}
-                title={t("overview.needs_attention", "Needs attention")}
-              />
-            </section>
+            </OverviewTintedSection>
 
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
-              <OverviewTintedSection
-                compactBody
-                denseHeader
-                description={t(
-                  "overview.operational_trends_sub",
-                  "Compact attendance and payroll trends for the current scope.",
-                )}
-                title={t("overview.operational_trends", "Operational trends")}
-                tone="trends"
-              >
-                <div className="grid grid-cols-1 gap-3">
-                  <OverviewChartWidget
-                    caption={t(
-                      "overview.trend_attendance_sub",
-                      "Present employees over the last 7 days.",
-                    )}
-                    summary={attendanceTrendSummary}
-                    title={t("overview.trend_attendance")}
-                  >
-                    <OverviewLineChart
-                      emptyHint={t("overview.trend_attendance_empty")}
-                      points={attendanceChartPoints}
-                    />
-                  </OverviewChartWidget>
-
-                  <OverviewChartWidget
-                    caption={t(
-                      "overview.trend_payroll_sub",
-                      "Weekly gross payroll totals. Current week highlighted.",
-                    )}
-                    summary={payrollTrendSummary}
-                    title={t("overview.trend_payroll")}
-                  >
-                    <OverviewBarChart
-                      currentKey={data.payroll_week_start}
-                      emptyHint={
-                        data.payroll_status === "not_calculated"
-                          ? t("overview.payroll_not_calc_weeks")
-                          : t("overview.trend_payroll_empty_no_history")
-                      }
-                      points={payrollChartPoints}
-                    />
-                  </OverviewChartWidget>
-                </div>
-              </OverviewTintedSection>
-
-              <div className="grid grid-cols-1 gap-4">
-                <OverviewReadinessPanel
-                  readiness={data.payroll_readiness}
-                  t={t}
-                  unavailableLabel={t("overview.payroll_readiness_unavailable")}
-                />
-
-                <OverviewHealthPanel
-                  health={data.setup_health}
-                  noScopeLabel={t("overview.no_company_scope")}
-                  t={t}
-                  thresholdNote={thresholdNote}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.95fr)]">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               <TodayLivePanel
                 attendanceRate={formatPercent(data.live_attendance_rate)}
                 emptyLabel={t("overview.no_open_shifts")}
@@ -1354,6 +1211,21 @@ export function OverviewClient() {
                 viewAllLabel={t("common.view_all", "View all")}
               />
 
+              <OverviewReadinessPanel
+                readiness={data.payroll_readiness}
+                t={t}
+                unavailableLabel={t("overview.payroll_readiness_unavailable")}
+              />
+
+              <OverviewHealthPanel
+                health={data.setup_health}
+                noScopeLabel={t("overview.no_company_scope")}
+                t={t}
+                thresholdNote={thresholdNote}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               <OverviewTintedSection
                 action={
                   user.system_role === "administrator" ? (
@@ -1374,7 +1246,6 @@ export function OverviewClient() {
                 denseHeader
                 title={t("overview.recent_activity")}
                 tone="activity"
-                className="2xl:col-span-1"
               >
                 {data.recent_activity.length === 0 ? (
                   <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)]/45 px-3 py-3">
@@ -1405,7 +1276,6 @@ export function OverviewClient() {
                 denseHeader
                 title={t("overview.quick_actions")}
                 tone="actions"
-                className="2xl:col-span-1"
               >
                 <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                   {[
