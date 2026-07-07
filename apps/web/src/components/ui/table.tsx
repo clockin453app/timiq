@@ -12,7 +12,7 @@ export function Table({
   ...props
 }: TableHTMLAttributes<HTMLTableElement>) {
   return (
-    <div className="max-w-full min-w-0 w-full overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] [-webkit-overflow-scrolling:touch]">
+    <div className="max-w-full min-w-0 w-full overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-xs)] [-webkit-overflow-scrolling:touch]">
       <table
         className={cn("w-full border-collapse text-sm", className)}
         {...props}
@@ -46,7 +46,7 @@ export function TableRow({
 }: HTMLAttributes<HTMLTableRowElement>) {
   return (
     <tr
-      className={cn("border-b border-[var(--color-border)]", className)}
+      className={cn("border-b border-[var(--color-border)] transition-colors hover:bg-[var(--color-header)]/45", className)}
       {...props}
     />
   );
@@ -59,7 +59,7 @@ export function TableHead({
   return (
     <th
       className={cn(
-        "border-r border-[var(--color-border)] px-3 py-2.5 text-left text-xs font-bold uppercase tracking-wide text-[var(--color-text)] last:border-r-0",
+        "border-r border-[var(--color-border)] px-3 py-3 text-left text-xs font-bold uppercase tracking-wide text-[var(--color-text)] last:border-r-0",
         className,
       )}
       {...props}
@@ -74,7 +74,7 @@ export function TableCell({
   return (
     <td
       className={cn(
-        "border-r border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2.5 text-sm text-[var(--color-text)] last:border-r-0",
+        "border-r border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3 text-sm text-[var(--color-text)] last:border-r-0",
         className,
       )}
       {...props}

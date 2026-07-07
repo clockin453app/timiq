@@ -165,7 +165,12 @@ function OverviewTintedSection(props: {
 
   return (
     <section
-      className={cn(uiClasses.card, "overflow-hidden shadow-[var(--shadow-card)]", toneStyle.card, props.className)}
+      className={cn(
+        uiClasses.card,
+        "overflow-hidden shadow-[var(--shadow-soft)] ring-1 ring-black/5",
+        toneStyle.card,
+        props.className,
+      )}
     >
       <div
         className={cn(
@@ -184,7 +189,9 @@ function OverviewTintedSection(props: {
       </div>
       <div
         className={cn(
-          props.compactBody ? "px-3 py-2.5 sm:px-[var(--space-card)]" : uiClasses.cardBody,
+          props.compactBody
+            ? "bg-[var(--color-sheet)] px-3 py-3 sm:px-[var(--space-card)]"
+            : cn(uiClasses.cardBody, "bg-[var(--color-sheet)]"),
         )}
       >
         {props.children}
@@ -200,11 +207,11 @@ function OverviewChartWidget(props: {
   title: string;
 }) {
   return (
-    <div className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-sheet)] p-2.5 sm:p-3">
+    <div className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-[var(--shadow-xs)] sm:p-3.5">
       <div className="mb-1.5 flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-        <h3 className="text-sm font-semibold text-[var(--color-text)]">{props.title}</h3>
+        <h3 className="text-sm font-semibold tracking-tight text-[var(--color-text)]">{props.title}</h3>
         {props.summary ? (
-          <p className="text-xs font-medium tabular-nums text-[var(--color-text-muted)] sm:text-sm">
+          <p className="text-xs font-semibold tabular-nums text-[var(--color-text-muted)] sm:text-sm">
             {props.summary}
           </p>
         ) : null}
@@ -217,7 +224,7 @@ function OverviewChartWidget(props: {
 
 function OverviewChartEmpty(props: { message: string }) {
   return (
-    <div className="flex min-h-[3rem] items-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border)] bg-[var(--color-header)]/40 px-3 py-2">
+    <div className="flex min-h-[3.25rem] items-center rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)]/55 px-3 py-2.5">
       <p className="text-xs leading-snug text-[var(--color-text-muted)] sm:text-sm">{props.message}</p>
     </div>
   );
@@ -521,23 +528,22 @@ function OverviewMetricCard(props: {
   return (
     <Link
       className={cn(
-        uiClasses.card,
-        "group block min-w-0 shadow-[var(--shadow-card)] transition-[border-color,box-shadow,transform]",
+        "group block min-w-0 rounded-none border-0 bg-transparent px-4 py-4 transition-[background-color,color,box-shadow,transform]",
         "duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-standard)]",
-        "hover:border-[var(--color-brand)]/25 hover:shadow-[var(--shadow-soft)]",
+        "hover:bg-[var(--color-header)]/70",
       )}
       href={props.href}
     >
-      <div className="flex items-start justify-between gap-3 p-4 sm:p-5">
+      <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-brand-muted)] text-[var(--color-brand)] shadow-[var(--shadow-xs)]">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-brand)]/20 bg-[var(--color-brand-muted)] text-[var(--color-brand)] shadow-[var(--shadow-xs)]">
             <Icon aria-hidden className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
               {props.title}
             </p>
-            <p className="mt-1 text-3xl font-semibold tabular-nums tracking-tight text-[var(--color-text)] lg:text-4xl">
+            <p className="mt-1 text-[2rem] font-semibold tabular-nums leading-none tracking-tight text-[var(--color-text)] lg:text-[2.45rem]">
               {props.primary}
             </p>
             {props.secondary ? (
@@ -569,22 +575,32 @@ function OverviewAttentionCard(props: {
       compactBody
       denseHeader
       description={props.scopeNote ?? undefined}
+      action={
+        props.items.length > 0 ? (
+          <span className="inline-flex items-center gap-2 rounded-[var(--radius-full)] border border-[var(--color-warning-700)]/25 bg-[var(--color-warning-50)] px-2.5 py-1 text-xs font-semibold text-[var(--color-warning-700)]">
+            Queue
+            <span className="inline-flex min-w-[1.5rem] items-center justify-center rounded-[var(--radius-full)] bg-white px-1.5 py-0.5 text-[11px] font-bold tabular-nums text-[var(--color-text)]">
+              {props.items.length}
+            </span>
+          </span>
+        ) : null
+      }
       title={props.title}
       tone="attention"
     >
       {props.items.length === 0 ? (
-        <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-success-700)]/20 bg-[var(--color-success-50)] px-3 py-2.5 text-sm text-[var(--color-success-700)]">
+        <div className="flex items-center gap-2.5 rounded-[var(--radius-md)] border border-[var(--color-success-700)]/20 bg-[var(--color-success-50)] px-3 py-3 text-sm text-[var(--color-success-700)]">
           <CheckCircle2 aria-hidden className="h-4 w-4 shrink-0" />
           <span className="font-medium">{props.emptyLabel}</span>
         </div>
       ) : (
-        <ul className="space-y-1.5">
+        <ul className="space-y-2">
           {props.items.map((item) => (
             <li key={item.code}>
               <Link
                 className={cn(
                   "group flex items-center justify-between gap-3 rounded-[var(--radius-md)] border px-3 py-2.5 text-sm shadow-[var(--shadow-xs)] transition-[border-color,box-shadow,transform]",
-                  "hover:shadow-[var(--shadow-soft)]",
+                  "hover:-translate-y-[0.5px] hover:shadow-[var(--shadow-soft)]",
                   NEEDS_ATTENTION_ROW_CLASS[item.severity] ?? NEEDS_ATTENTION_ROW_CLASS.info,
                 )}
                 href={item.href}
@@ -887,14 +903,14 @@ function TodayLivePanel(props: {
       title={props.title}
       tone="live"
     >
-      <div className="mb-2.5 grid grid-cols-2 gap-2">
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-3 py-2">
+      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
             Open now
           </p>
           <p className="mt-0.5 text-xl font-semibold tabular-nums text-[var(--color-text)]">{props.openShifts}</p>
         </div>
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-success-700)]/15 bg-[var(--color-success-50)] px-3 py-2">
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-success-700)]/15 bg-[var(--color-success-50)] px-3 py-2.5">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
             Present today
           </p>
@@ -907,13 +923,15 @@ function TodayLivePanel(props: {
       </div>
 
       {props.rows.length === 0 ? (
-        <p className="text-sm text-[var(--color-text-muted)]">{props.emptyLabel}</p>
+        <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)]/45 px-3 py-3">
+          <p className="text-sm text-[var(--color-text-muted)]">{props.emptyLabel}</p>
+        </div>
       ) : (
-        <ul className="max-h-40 space-y-1 overflow-y-auto pr-1">
+        <ul className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
           {props.rows.map((row, idx) => (
             <li key={`${row.display_name}-${row.clock_in_at}-${idx}`}>
               <Link
-                className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-transparent px-3 py-2 text-sm transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-header)]"
+                className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-transparent bg-[var(--color-header)]/35 px-3 py-2.5 text-sm transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-header)]"
                 href={row.href}
               >
                 <div className="min-w-0">
@@ -1108,57 +1126,21 @@ export function OverviewClient() {
         { hours: data.long_open_shift_threshold_hours },
       )
     : "";
+  const attentionCriticalCount = data
+    ? data.needs_attention.filter((item) => item.severity === "critical").length
+    : 0;
+  const attentionWarningCount = data
+    ? data.needs_attention.filter((item) => item.severity === "warning").length
+    : 0;
 
   return (
     <Sheet>
       <PageHeader
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            {adminAll && companyScope.companies.length > 0 ? (
-              <CompanySelector
-                companies={companyScope.companies}
-                onChange={companyScope.setCompanyId}
-                value={companyScope.companyId}
-              />
-            ) : null}
-            <Button
-              disabled={refreshing || loading}
-              onClick={() => void load(true)}
-              type="button"
-              variant="secondary"
-            >
-              {refreshing ? t("common.refreshing", "Refreshing…") : t("common.refresh", "Refresh")}
-            </Button>
-          </div>
-        }
         description={t("overview.page_description")}
         title={t("overview.page_title")}
       />
 
-      <SheetBody className="min-w-0 space-y-4 lg:space-y-5 lg:p-6">
-        {companyScope.scopeLabel ? (
-          <p className="text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
-        ) : null}
-
-        {data?.generated_at && !loading ? (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)]/60 px-3 py-2 text-xs text-[var(--color-text-muted)]">
-            <span>
-              {t("overview.last_updated", "Last updated {{time}}", {
-                time: new Date(data.generated_at).toLocaleString(),
-              })}
-            </span>
-            <span aria-hidden className="hidden text-[var(--color-border-dark)] sm:inline">
-              ·
-            </span>
-            <span>
-              {t(
-                "overview.auto_refresh_note",
-                "Auto-refreshes every 45 seconds when this tab is visible.",
-              )}
-            </span>
-          </div>
-        ) : null}
-
+      <SheetBody className="min-w-0 space-y-5 lg:space-y-6 lg:p-6">
         {loading ? (
           <p className="text-sm text-[var(--color-text-muted)]">{t("overview.loading", "Loading overview…")}</p>
         ) : null}
@@ -1172,112 +1154,195 @@ export function OverviewClient() {
 
         {data && !loading ? (
           <>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-              <OverviewMetricCard
-                badge={t("overview.badge_active", "Active")}
-                badgeTone="muted"
-                href="/employees"
-                icon={Users}
-                primary={String(data.active_employee_count)}
-                secondary={t("overview.employees_subline")}
-                title={t("overview.employees", "Employees")}
+            <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-header)] shadow-[var(--shadow-soft)]">
+              <div className="grid grid-cols-1 gap-4 border-b border-[var(--color-border)] px-4 py-4 lg:grid-cols-[minmax(0,1.4fr)_auto] lg:items-start">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-soft)]">
+                    Operations Command Center
+                  </p>
+                  <h2 className="mt-1 text-xl font-semibold tracking-tight text-[var(--color-text)] sm:text-2xl">
+                    {t("overview.page_title")}
+                  </h2>
+                  <p className="mt-1 text-sm leading-relaxed text-[var(--color-text-muted)]">
+                    {t("overview.page_description")}
+                  </p>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-[var(--radius-full)] border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs text-[var(--color-text-muted)]">
+                      {t("overview.last_updated", "Last updated {{time}}", {
+                        time: new Date(data.generated_at).toLocaleString(),
+                      })}
+                    </span>
+                    <span className="inline-flex items-center gap-1 rounded-[var(--radius-full)] border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs text-[var(--color-text-muted)]">
+                      {t(
+                        "overview.auto_refresh_note",
+                        "Auto-refreshes every 45 seconds when this tab is visible.",
+                      )}
+                    </span>
+                  </div>
+                  {companyScope.scopeLabel ? (
+                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white/80 px-2.5 py-2">
+                  {adminAll && companyScope.companies.length > 0 ? (
+                    <CompanySelector
+                      companies={companyScope.companies}
+                      onChange={companyScope.setCompanyId}
+                      value={companyScope.companyId}
+                    />
+                  ) : null}
+                  <Button
+                    disabled={refreshing || loading}
+                    onClick={() => void load(true)}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {refreshing ? t("common.refreshing", "Refreshing…") : t("common.refresh", "Refresh")}
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 divide-y divide-[var(--color-border)] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
+                <OverviewMetricCard
+                  badge={t("overview.badge_active", "Active")}
+                  badgeTone="muted"
+                  href="/employees"
+                  icon={Users}
+                  primary={String(data.active_employee_count)}
+                  secondary={t("overview.employees_subline")}
+                  title={t("overview.employees", "Employees")}
+                />
+                <OverviewMetricCard
+                  badge={t("overview.badge_sites", "Sites")}
+                  badgeTone="muted"
+                  href="/locations"
+                  icon={MapPin}
+                  primary={String(data.active_location_count)}
+                  secondary={t("overview.locations_sites_sub", "Operational sites for clocking and access")}
+                  title={t("overview.active_locations", "Active locations")}
+                />
+                <OverviewMetricCard
+                  badge={formatPercent(data.live_attendance_rate)}
+                  badgeTone="success"
+                  href="/live-attendance"
+                  icon={Activity}
+                  primary={`${data.live_present_today} / ${data.live_total_employees}`}
+                  secondary={t("overview.attendance_now_sub", "{{open}} open shift(s) now · attendance today", {
+                    open: data.live_open_shifts,
+                  })}
+                  sparklineTone="success"
+                  sparklineValues={attendanceSparkline}
+                  title={t("overview.attendance_today", "Attendance today")}
+                />
+                <OverviewMetricCard
+                  badge={payrollStatusLabel(t, data.payroll_status)}
+                  badgeTone={toneForPayrollStatus(data.payroll_status)}
+                  href="/payroll-report"
+                  icon={Wallet}
+                  primary={
+                    data.payroll_total_gross != null ? formatMoneyGBP(String(data.payroll_total_gross)) : "—"
+                  }
+                  secondary={
+                    data.payroll_status === "not_calculated"
+                      ? data.payroll_message ?? t("overview.payroll_not_calc")
+                      : t("overview.payroll_recorded_week", "{{hours}} recorded this week", {
+                          hours: formatDurationSeconds(data.payroll_total_hours_seconds),
+                        })
+                  }
+                  sparklineValues={payrollSparkline}
+                  title={t("overview.payroll_this_week")}
+                />
+              </div>
+            </section>
+
+            <section className="rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3 shadow-[var(--shadow-xs)] sm:p-3.5">
+              <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold tracking-tight text-[var(--color-text)]">
+                  {t("overview.needs_attention", "Needs attention")}
+                </h3>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge tone="warning">
+                    {t("overview.status_pending", "Pending")}: {data.needs_attention.length}
+                  </Badge>
+                  <Badge tone={attentionCriticalCount > 0 ? "danger" : "default"}>
+                    Critical: {attentionCriticalCount}
+                  </Badge>
+                  <Badge tone={attentionWarningCount > 0 ? "warning" : "default"}>
+                    Warning: {attentionWarningCount}
+                  </Badge>
+                </div>
+              </div>
+              <OverviewAttentionCard
+                emptyLabel={t("overview.empty_attention")}
+                items={data.needs_attention}
+                scopeNote={data.needs_attention_scope_note}
+                title={t("overview.needs_attention", "Needs attention")}
               />
-              <OverviewMetricCard
-                badge={t("overview.badge_sites", "Sites")}
-                badgeTone="muted"
-                href="/locations"
-                icon={MapPin}
-                primary={String(data.active_location_count)}
-                secondary={t("overview.locations_sites_sub", "Operational sites for clocking and access")}
-                title={t("overview.active_locations", "Active locations")}
-              />
-              <OverviewMetricCard
-                badge={formatPercent(data.live_attendance_rate)}
-                badgeTone="success"
-                href="/live-attendance"
-                icon={Activity}
-                primary={`${data.live_present_today} / ${data.live_total_employees}`}
-                secondary={t("overview.attendance_now_sub", "{{open}} open shift(s) now · attendance today", {
-                  open: data.live_open_shifts,
-                })}
-                sparklineTone="success"
-                sparklineValues={attendanceSparkline}
-                title={t("overview.attendance_today", "Attendance today")}
-              />
-              <OverviewMetricCard
-                badge={payrollStatusLabel(t, data.payroll_status)}
-                badgeTone={toneForPayrollStatus(data.payroll_status)}
-                href="/payroll-report"
-                icon={Wallet}
-                primary={
-                  data.payroll_total_gross != null ? formatMoneyGBP(String(data.payroll_total_gross)) : "—"
-                }
-                secondary={
-                  data.payroll_status === "not_calculated"
-                    ? data.payroll_message ?? t("overview.payroll_not_calc")
-                    : t("overview.payroll_recorded_week", "{{hours}} recorded this week", {
-                        hours: formatDurationSeconds(data.payroll_total_hours_seconds),
-                      })
-                }
-                sparklineValues={payrollSparkline}
-                title={t("overview.payroll_this_week")}
-              />
+            </section>
+
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.55fr)_minmax(0,1fr)]">
+              <OverviewTintedSection
+                compactBody
+                denseHeader
+                description={t(
+                  "overview.operational_trends_sub",
+                  "Compact attendance and payroll trends for the current scope.",
+                )}
+                title={t("overview.operational_trends", "Operational trends")}
+                tone="trends"
+              >
+                <div className="grid grid-cols-1 gap-3">
+                  <OverviewChartWidget
+                    caption={t(
+                      "overview.trend_attendance_sub",
+                      "Present employees over the last 7 days.",
+                    )}
+                    summary={attendanceTrendSummary}
+                    title={t("overview.trend_attendance")}
+                  >
+                    <OverviewLineChart
+                      emptyHint={t("overview.trend_attendance_empty")}
+                      points={attendanceChartPoints}
+                    />
+                  </OverviewChartWidget>
+
+                  <OverviewChartWidget
+                    caption={t(
+                      "overview.trend_payroll_sub",
+                      "Weekly gross payroll totals. Current week highlighted.",
+                    )}
+                    summary={payrollTrendSummary}
+                    title={t("overview.trend_payroll")}
+                  >
+                    <OverviewBarChart
+                      currentKey={data.payroll_week_start}
+                      emptyHint={
+                        data.payroll_status === "not_calculated"
+                          ? t("overview.payroll_not_calc_weeks")
+                          : t("overview.trend_payroll_empty_no_history")
+                      }
+                      points={payrollChartPoints}
+                    />
+                  </OverviewChartWidget>
+                </div>
+              </OverviewTintedSection>
+
+              <div className="grid grid-cols-1 gap-4">
+                <OverviewReadinessPanel
+                  readiness={data.payroll_readiness}
+                  t={t}
+                  unavailableLabel={t("overview.payroll_readiness_unavailable")}
+                />
+
+                <OverviewHealthPanel
+                  health={data.setup_health}
+                  noScopeLabel={t("overview.no_company_scope")}
+                  t={t}
+                  thresholdNote={thresholdNote}
+                />
+              </div>
             </div>
 
-            <OverviewAttentionCard
-              emptyLabel={t("overview.empty_attention")}
-              items={data.needs_attention}
-              scopeNote={data.needs_attention_scope_note}
-              title={t("overview.needs_attention", "Needs attention")}
-            />
-
-            <OverviewTintedSection
-              compactBody
-              denseHeader
-              description={t(
-                "overview.operational_trends_sub",
-                "Compact attendance and payroll trends for the current scope.",
-              )}
-              title={t("overview.operational_trends", "Operational trends")}
-              tone="trends"
-            >
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <OverviewChartWidget
-                  caption={t(
-                    "overview.trend_attendance_sub",
-                    "Present employees over the last 7 days.",
-                  )}
-                  summary={attendanceTrendSummary}
-                  title={t("overview.trend_attendance")}
-                >
-                  <OverviewLineChart
-                    emptyHint={t("overview.trend_attendance_empty")}
-                    points={attendanceChartPoints}
-                  />
-                </OverviewChartWidget>
-
-                <OverviewChartWidget
-                  caption={t(
-                    "overview.trend_payroll_sub",
-                    "Weekly gross payroll totals. Current week highlighted.",
-                  )}
-                  summary={payrollTrendSummary}
-                  title={t("overview.trend_payroll")}
-                >
-                  <OverviewBarChart
-                    currentKey={data.payroll_week_start}
-                    emptyHint={
-                      data.payroll_status === "not_calculated"
-                        ? t("overview.payroll_not_calc_weeks")
-                        : t("overview.trend_payroll_empty_no_history")
-                    }
-                    points={payrollChartPoints}
-                  />
-                </OverviewChartWidget>
-              </div>
-            </OverviewTintedSection>
-
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] 2xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,0.95fr)]">
               <TodayLivePanel
                 attendanceRate={formatPercent(data.live_attendance_rate)}
                 emptyLabel={t("overview.no_open_shifts")}
@@ -1289,21 +1354,6 @@ export function OverviewClient() {
                 viewAllLabel={t("common.view_all", "View all")}
               />
 
-              <OverviewReadinessPanel
-                readiness={data.payroll_readiness}
-                t={t}
-                unavailableLabel={t("overview.payroll_readiness_unavailable")}
-              />
-
-              <OverviewHealthPanel
-                health={data.setup_health}
-                noScopeLabel={t("overview.no_company_scope")}
-                t={t}
-                thresholdNote={thresholdNote}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               <OverviewTintedSection
                 action={
                   user.system_role === "administrator" ? (
@@ -1324,14 +1374,17 @@ export function OverviewClient() {
                 denseHeader
                 title={t("overview.recent_activity")}
                 tone="activity"
+                className="2xl:col-span-1"
               >
                 {data.recent_activity.length === 0 ? (
-                  <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</p>
+                  <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)]/45 px-3 py-3">
+                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</p>
+                  </div>
                 ) : (
                   <ul className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
                     {data.recent_activity.map((row, idx) => (
                       <li
-                        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm"
+                        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5 text-sm shadow-[var(--shadow-xs)]"
                         key={`${row.occurred_at}-${idx}`}
                       >
                         <p className="font-medium text-[var(--color-text)]">{row.summary}</p>
@@ -1352,6 +1405,7 @@ export function OverviewClient() {
                 denseHeader
                 title={t("overview.quick_actions")}
                 tone="actions"
+                className="2xl:col-span-1"
               >
                 <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
                   {[

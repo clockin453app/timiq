@@ -1,18 +1,18 @@
 .timiq-title-xl {
   margin: 0;
   color: var(--color-text);
-  font-size: 1.625rem;
-  font-weight: 700;
-  line-height: 2rem;
-  letter-spacing: -0.02em;
+  font-size: 1.75rem;
+  font-weight: 750;
+  line-height: 2.1rem;
+  letter-spacing: -0.022em;
 }
 
 .timiq-title-lg {
   margin: 0;
   color: var(--color-text);
-  font-size: 1.5rem;
-  font-weight: 700;
-  line-height: 1.875rem;
+  font-size: 1.625rem;
+  font-weight: 720;
+  line-height: 2rem;
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -21,44 +21,46 @@
 .timiq-title-md {
   margin: 0;
   color: var(--color-text);
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.375rem;
+  font-size: 1.025rem;
+  font-weight: 680;
+  line-height: 1.45rem;
+  letter-spacing: -0.01em;
 }
 
 .timiq-body {
   margin: 0;
   color: var(--color-text-muted);
-  font-size: 0.875rem;
-  line-height: 1.375rem;
+  font-size: 0.9rem;
+  line-height: 1.45rem;
 }
 
 .timiq-caption {
   margin: 0;
   color: var(--color-text-soft);
-  font-size: 0.75rem;
-  line-height: 1.125rem;
+  font-size: 0.765rem;
+  line-height: 1.2rem;
 }
 
 .timiq-label {
   display: inline-block;
   color: var(--color-text);
-  font-size: 0.8125rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  line-height: 1.125rem;
+  line-height: 1.1rem;
+  letter-spacing: 0.01em;
 }
 
 .timiq-money {
-  font-size: 0.875rem;
-  font-weight: 600;
+  font-size: 0.9rem;
+  font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
   color: var(--color-text);
 }
 
 .timiq-money-lg {
-  font-size: 1.125rem;
-  font-weight: 700;
+  font-size: 1.18rem;
+  font-weight: 730;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   color: var(--color-text);
@@ -66,8 +68,8 @@
 
 .timiq-status-label {
   font-size: 0.6875rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }

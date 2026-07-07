@@ -12,7 +12,13 @@ type CardProps = HTMLAttributes<HTMLDivElement> & {
 export function Card({ children, className, padded = false, ...props }: CardProps) {
   return (
     <div
-      className={cn(uiClasses.card, padded && uiClasses.cardPadding, uiClasses.transitionColors, className)}
+      className={cn(
+        uiClasses.card,
+        padded && uiClasses.cardPadding,
+        uiClasses.transitionColors,
+        "relative",
+        className,
+      )}
       {...props}
     >
       {children}
