@@ -1038,6 +1038,25 @@ export function OverviewClient() {
   return (
     <Sheet>
       <PageHeader
+        action={
+          <div className="flex flex-wrap items-center gap-2">
+            {adminAll && companyScope.companies.length > 0 ? (
+              <CompanySelector
+                companies={companyScope.companies}
+                onChange={companyScope.setCompanyId}
+                value={companyScope.companyId}
+              />
+            ) : null}
+            <Button
+              disabled={refreshing || loading}
+              onClick={() => void load(true)}
+              type="button"
+              variant="secondary"
+            >
+              {refreshing ? t("common.refreshing", "Refreshing…") : t("common.refresh", "Refresh")}
+            </Button>
+          </div>
+        }
         description={t("overview.page_description")}
         title={t("overview.page_title")}
       />
@@ -1057,7 +1076,7 @@ export function OverviewClient() {
         {data && !loading ? (
           <>
             <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-header)] shadow-[var(--shadow-soft)]">
-              <div className="grid grid-cols-1 gap-4 border-b border-[var(--color-border)] px-4 py-4 lg:grid-cols-[minmax(0,1.4fr)_auto] lg:items-start">
+              <div className="border-b border-[var(--color-border)] px-4 py-4">
                 <div className="min-w-0">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-soft)]">
                     Operations Command Center
@@ -1081,23 +1100,6 @@ export function OverviewClient() {
                   {companyScope.scopeLabel ? (
                     <p className="mt-2 text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
                   ) : null}
-                </div>
-                <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white/80 px-2.5 py-2">
-                  {adminAll && companyScope.companies.length > 0 ? (
-                    <CompanySelector
-                      companies={companyScope.companies}
-                      onChange={companyScope.setCompanyId}
-                      value={companyScope.companyId}
-                    />
-                  ) : null}
-                  <Button
-                    disabled={refreshing || loading}
-                    onClick={() => void load(true)}
-                    type="button"
-                    variant="secondary"
-                  >
-                    {refreshing ? t("common.refreshing", "Refreshing…") : t("common.refresh", "Refresh")}
-                  </Button>
                 </div>
               </div>
               <div className="grid grid-cols-1 divide-y divide-[var(--color-border)] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
