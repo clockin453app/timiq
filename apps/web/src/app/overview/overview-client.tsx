@@ -7,8 +7,11 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  ClipboardList,
+  Clock,
   Info,
   MapPin,
+  Shield,
   Users,
   Wallet,
 } from "lucide-react";
@@ -17,14 +20,11 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import {
   Badge,
   Button,
-  PageHeader,
-  Sheet,
-  SheetBody,
-  StatusBadge,
 } from "../../components/ui";
 import { isAdministrator, useCurrentUser } from "../../features/auth";
 import {
   fetchManagementOverview,
+  type NeedsAttentionItem,
   type OverviewData,
   type PayrollReadinessPanel,
   type SetupHealthPanel,
@@ -37,32 +37,9 @@ import { formatMoneyGBP } from "../../features/payroll/format";
 import { formatDurationSeconds } from "../../features/time-records/format-duration";
 import { cn } from "../../lib/cn";
 import { payrollStatusLabel, useT } from "../../lib/i18n";
-import { uiClasses } from "../../lib/ui-classes";
-
-function toneForPayrollStatus(status: string): "success" | "warning" | "muted" {
-  if (status === "paid") {
-    return "success";
-  }
-  if (status === "approved") {
-    return "success";
-  }
-  if (status === "not_calculated") {
-    return "muted";
-  }
-  return "warning";
-}
-
-function badgeToneFromPayroll(tone: "success" | "warning" | "muted"): "success" | "warning" | "default" {
-  if (tone === "success") {
-    return "success";
-  }
-  if (tone === "warning") {
-    return "warning";
-  }
-  return "default";
-}
 
 type OverviewSectionTone =
+  | "attention"
   | "attendance"
   | "live"
   | "payroll"
@@ -72,70 +49,45 @@ type OverviewSectionTone =
   | "actions"
   | "trends";
 
-const OVERVIEW_SECTION_TONE: Record<
-  OverviewSectionTone,
-  { header: string; title: string; card?: string }
-> = {
-  attendance: {
-    header:
-      "border-b border-[var(--color-overview-section-attendance-border)] bg-[var(--color-overview-section-attendance-bg)]",
-    title: "text-[var(--color-overview-section-attendance-fg)]",
-    card: "border-[var(--color-overview-section-attendance-border)]",
-  },
-  live: {
-    header:
-      "border-b border-[var(--color-overview-section-live-border)] bg-[var(--color-overview-section-live-bg)]",
-    title: "text-[var(--color-overview-section-live-fg)]",
-    card: "border-[var(--color-overview-section-live-border)]",
-  },
-  payroll: {
-    header:
-      "border-b border-[var(--color-overview-section-payroll-border)] bg-[var(--color-overview-section-payroll-bg)]",
-    title: "text-[var(--color-overview-section-payroll-fg)]",
-    card: "border-[var(--color-overview-section-payroll-border)]",
-  },
-  readiness: {
-    header:
-      "border-b border-[var(--color-overview-section-readiness-border)] bg-[var(--color-overview-section-readiness-bg)]",
-    title: "text-[var(--color-overview-section-readiness-fg)]",
-    card: "border-[var(--color-overview-section-readiness-border)]",
-  },
-  health: {
-    header:
-      "border-b border-[var(--color-overview-section-health-border)] bg-[var(--color-overview-section-health-bg)]",
-    title: "text-[var(--color-overview-section-health-fg)]",
-    card: "border-[var(--color-overview-section-health-border)]",
-  },
-  activity: {
-    header:
-      "border-b border-[var(--color-overview-section-activity-border)] bg-[var(--color-overview-section-activity-bg)]",
-    title: "text-[var(--color-overview-section-activity-fg)]",
-    card: "border-[var(--color-overview-section-activity-border)]",
-  },
-  actions: {
-    header:
-      "border-b border-[var(--color-overview-section-actions-border)] bg-[var(--color-overview-section-actions-bg)]",
-    title: "text-[var(--color-overview-section-actions-fg)]",
-    card: "border-[var(--color-overview-section-actions-border)]",
-  },
-  trends: {
-    header:
-      "border-b border-[var(--color-overview-section-trends-border)] bg-[var(--color-overview-section-trends-bg)]",
-    title: "text-[var(--color-overview-section-trends-fg)]",
-    card: "border-[var(--color-overview-section-trends-border)]",
-  },
-};
-
 const OVERVIEW_CHART_VIEW_WIDTH = 480;
-const OVERVIEW_CHART_VIEW_HEIGHT = 130;
-const OVERVIEW_CHART_DISPLAY_CLASS = "h-[120px] w-full max-w-full sm:h-[140px]";
+const OVERVIEW_CHART_VIEW_HEIGHT = 168;
+const OVERVIEW_CHART_DISPLAY_CLASS = "h-[148px] w-full max-w-full min-h-[120px]";
 const OVERVIEW_CHART_PADDING = {
-  line: { top: 8, right: 8, bottom: 20, left: 28 },
-  bar: { top: 8, right: 8, bottom: 24, left: 32 },
+  line: { top: 6, right: 6, bottom: 18, left: 26 },
+  bar: { top: 6, right: 6, bottom: 20, left: 30 },
 } as const;
+
+const OVERVIEW_DASH_CARD =
+  "rounded-2xl border border-slate-200/70 bg-white shadow-[0_2px_12px_rgba(20,55,102,0.06)]";
+const CHART_STROKE = "#2563eb";
+const CHART_STROKE_MUTED = "#bfdbfe";
+const CHART_BAR_FILL = "#3b82f6";
+const CHART_BAR_FILL_MUTED = "#dbeafe";
+
+function OverviewDashboardSection(props: {
+  action?: ReactNode;
+  badge?: ReactNode;
+  children: ReactNode;
+  className?: string;
+  title: string;
+}) {
+  return (
+    <section className={cn("flex h-full min-h-0 flex-col overflow-hidden", OVERVIEW_DASH_CARD, props.className)}>
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{props.title}</h2>
+          {props.badge}
+        </div>
+        {props.action ? <div className="flex shrink-0 flex-wrap items-center gap-1.5">{props.action}</div> : null}
+      </div>
+      <div className="min-h-0 flex-1 px-4 py-3">{props.children}</div>
+    </section>
+  );
+}
 
 function OverviewTintedSection(props: {
   action?: ReactNode;
+  badge?: ReactNode;
   children: ReactNode;
   className?: string;
   compactBody?: boolean;
@@ -144,42 +96,18 @@ function OverviewTintedSection(props: {
   title: string;
   tone: OverviewSectionTone;
 }) {
-  const toneStyle = OVERVIEW_SECTION_TONE[props.tone];
-
   return (
-    <section
-      className={cn(
-        uiClasses.card,
-        "overflow-hidden shadow-[var(--shadow-soft)] ring-1 ring-black/5",
-        toneStyle.card,
-        props.className,
-      )}
+    <OverviewDashboardSection
+      action={props.action}
+      badge={props.badge}
+      className={props.className}
+      title={props.title}
     >
-      <div
-        className={cn(
-          "flex flex-col gap-1.5 px-[var(--space-card)] sm:flex-row sm:items-start sm:justify-between",
-          props.denseHeader ? "py-2" : "py-3",
-          toneStyle.header,
-        )}
-      >
-        <div className="min-w-0 flex-1">
-          <h2 className={cn("timiq-title-md", toneStyle.title)}>{props.title}</h2>
-          {props.description ? (
-            <p className="timiq-caption mt-0.5 text-[var(--color-text-muted)]">{props.description}</p>
-          ) : null}
-        </div>
-        {props.action ? <div className="flex shrink-0 flex-wrap gap-2">{props.action}</div> : null}
-      </div>
-      <div
-        className={cn(
-          props.compactBody
-            ? "bg-[var(--color-sheet)] px-3 py-3 sm:px-[var(--space-card)]"
-            : cn(uiClasses.cardBody, "bg-[var(--color-sheet)]"),
-        )}
-      >
-        {props.children}
-      </div>
-    </section>
+      {props.description ? (
+        <p className="mb-2 text-[11px] leading-snug text-[var(--color-text-muted)]">{props.description}</p>
+      ) : null}
+      {props.children}
+    </OverviewDashboardSection>
   );
 }
 
@@ -190,17 +118,17 @@ function OverviewChartWidget(props: {
   title: string;
 }) {
   return (
-    <div className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-[var(--shadow-xs)] sm:p-3.5">
-      <div className="mb-1.5 flex min-w-0 flex-wrap items-baseline justify-between gap-x-2 gap-y-0.5">
-        <h3 className="text-sm font-semibold tracking-tight text-[var(--color-text)]">{props.title}</h3>
+    <div className="flex h-full min-h-[200px] min-w-0 flex-col rounded-2xl border border-slate-200/70 bg-white p-4 shadow-[0_2px_12px_rgba(20,55,102,0.06)]">
+      <div className="mb-2 flex min-w-0 shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">{props.title}</h3>
         {props.summary ? (
-          <p className="text-xs font-semibold tabular-nums text-[var(--color-text-muted)] sm:text-sm">
+          <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-0.5 text-[10px] font-semibold tabular-nums text-slate-600">
             {props.summary}
-          </p>
+          </span>
         ) : null}
       </div>
-      {props.children}
-      <p className="mt-1 text-[11px] leading-snug text-[var(--color-text-soft)]">{props.caption}</p>
+      <div className="min-h-0 flex-1">{props.children}</div>
+      <p className="mt-0.5 shrink-0 text-[10px] leading-snug text-[var(--color-text-soft)]">{props.caption}</p>
     </div>
   );
 }
@@ -267,43 +195,6 @@ function buildLineGeometry(
   return { coords, linePath, areaPath, max, innerH, padding };
 }
 
-function OverviewSparkline(props: { values: number[]; tone?: "brand" | "success" }) {
-  const { values, tone = "brand" } = props;
-  if (values.length < 2) {
-    return null;
-  }
-
-  const width = 72;
-  const height = 28;
-  const { linePath } = buildLineGeometry(values, width, height, {
-    top: 2,
-    right: 2,
-    bottom: 2,
-    left: 2,
-  });
-  const stroke =
-    tone === "success" ? "var(--color-success-700)" : "var(--color-brand)";
-
-  return (
-    <svg
-      aria-hidden
-      className="mt-2 opacity-80"
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      width={width}
-    >
-      <path
-        d={linePath}
-        fill="none"
-        stroke={stroke}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
 function OverviewLineChart(props: { points: ChartPoint[]; emptyHint: string }) {
   const width = OVERVIEW_CHART_VIEW_WIDTH;
   const height = OVERVIEW_CHART_VIEW_HEIGHT;
@@ -357,18 +248,18 @@ function OverviewLineChart(props: { points: ChartPoint[]; emptyHint: string }) {
             </g>
           );
         })}
-        <path d={areaPath} fill="var(--color-brand)" fillOpacity="0.1" />
+        <path d={areaPath} fill={CHART_STROKE} fillOpacity="0.12" />
         <path
           d={linePath}
           fill="none"
-          stroke="var(--color-brand)"
+          stroke={CHART_STROKE}
           strokeLinecap="round"
           strokeLinejoin="round"
-          strokeWidth="2"
+          strokeWidth="2.5"
         />
         {coords.map((point, index) => (
           <g key={props.points[index]?.key ?? index}>
-            <circle cx={point.x} cy={point.y} fill="var(--color-brand)" r="3" />
+            <circle cx={point.x} cy={point.y} fill={CHART_STROKE} r="3.5" />
             <title>{props.points[index]?.tooltip}</title>
           </g>
         ))}
@@ -456,11 +347,11 @@ function OverviewBarChart(props: {
           return (
             <g key={point.key}>
               <rect
-                fill={isCurrent ? "var(--color-brand)" : "var(--color-brand-muted)"}
+                fill={isCurrent ? CHART_BAR_FILL : CHART_BAR_FILL_MUTED}
                 height={point.value === 0 ? 2 : barHeight}
-                rx="3"
-                stroke={isCurrent ? "var(--color-brand-hover)" : "var(--color-border)"}
-                strokeWidth={isCurrent ? 1.5 : 1}
+                rx="4"
+                stroke={isCurrent ? CHART_STROKE : "transparent"}
+                strokeWidth={isCurrent ? 1 : 0}
                 width={barWidth}
                 x={x}
                 y={point.value === 0 ? padding.top + innerH - 2 : y}
@@ -484,78 +375,280 @@ function OverviewBarChart(props: {
   );
 }
 
-function OverviewMetricCard(props: {
+type KpiIconTone = "employees" | "locations" | "attendance" | "payroll" | "pending" | "openShifts";
+
+const KPI_ICON_WELL: Record<KpiIconTone, string> = {
+  employees: "border-[#bfdbfe] bg-[#eff6ff] text-[#2563eb]",
+  locations: "border-[#ddd6fe] bg-[#f5f3ff] text-[#7c3aed]",
+  attendance: "border-[#bbf7d0] bg-[#ecfdf5] text-[#16a34a]",
+  payroll: "border-[#fde68a] bg-[#fffbeb] text-[#d97706]",
+  pending: "border-[#fed7aa] bg-[#fff7ed] text-[#ea580c]",
+  openShifts: "border-[#bae6fd] bg-[#f0f9ff] text-[#0284c7]",
+};
+
+function OverviewKpiCard(props: {
   href: string;
   title: string;
   primary: string;
   secondary?: string;
-  badge?: string;
-  badgeTone?: "success" | "warning" | "muted";
   icon: LucideIcon;
-  sparklineValues?: number[];
-  sparklineTone?: "brand" | "success";
+  iconTone: KpiIconTone;
 }) {
   const Icon = props.icon;
-  const badgeTone = props.badgeTone ?? "muted";
 
   return (
     <Link
       className={cn(
-        "group block min-w-0 rounded-none border-0 bg-transparent px-4 py-4 transition-[background-color,color,box-shadow,transform]",
-        "duration-[var(--motion-duration-fast)] ease-[var(--motion-ease-standard)]",
-        "hover:bg-[var(--color-header)]/70",
+        "group block min-w-0 rounded-2xl border border-slate-200/70 bg-white p-4 shadow-[0_2px_12px_rgba(20,55,102,0.06)] transition-shadow hover:shadow-[0_4px_16px_rgba(20,55,102,0.1)]",
       )}
       href={props.href}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-1 items-start gap-3">
-          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-brand)]/20 bg-[var(--color-brand-muted)] text-[var(--color-brand)] shadow-[var(--shadow-xs)]">
-            <Icon aria-hidden className="h-5 w-5" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-              {props.title}
-            </p>
-            <p className="mt-1 text-[2rem] font-semibold tabular-nums leading-none tracking-tight text-[var(--color-text)] lg:text-[2.45rem]">
-              {props.primary}
-            </p>
-            {props.secondary ? (
-              <p className="mt-1.5 text-sm leading-snug text-[var(--color-text-muted)]">{props.secondary}</p>
-            ) : null}
-            {props.sparklineValues && props.sparklineValues.length >= 2 ? (
-              <OverviewSparkline tone={props.sparklineTone} values={props.sparklineValues} />
-            ) : null}
-          </div>
-        </div>
-        {props.badge ? (
-          <Badge className="shrink-0" tone={badgeToneFromPayroll(badgeTone)}>
-            {props.badge}
-          </Badge>
-        ) : null}
+      <div className="flex items-start justify-between gap-2">
+        <span
+          className={cn(
+            "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border",
+            KPI_ICON_WELL[props.iconTone],
+          )}
+        >
+          <Icon aria-hidden className="h-5 w-5" strokeWidth={2} />
+        </span>
+        <Info aria-hidden className="h-3.5 w-3.5 shrink-0 text-slate-300" />
       </div>
+      <p className="mt-3 text-2xl font-bold tabular-nums leading-none tracking-tight text-slate-900 sm:text-[1.75rem]">
+        {props.primary}
+      </p>
+      <p className="mt-1.5 text-sm font-medium text-slate-700">{props.title}</p>
+      {props.secondary ? (
+        <p className="mt-1 line-clamp-2 text-xs leading-snug text-slate-500">{props.secondary}</p>
+      ) : null}
     </Link>
   );
 }
 
-function ReadinessStatChip(props: {
-  label: string;
-  value: ReactNode;
-  tone?: "default" | "warning" | "success";
+function OverviewCommandCenterStrip(props: {
+  adminControls?: ReactNode;
+  generatedAt?: string;
+  hasAttentionItems: boolean;
+  scopeLabel?: string | null;
+  statusLine: string;
+  t: ReturnType<typeof useT>;
 }) {
-  const toneClass =
-    props.tone === "warning"
-      ? "border-[var(--color-warning-700)]/20 bg-[var(--color-warning-50)]"
-      : props.tone === "success"
-        ? "border-[var(--color-success-700)]/20 bg-[var(--color-success-50)]"
-        : "border-[var(--color-border)] bg-[var(--color-header)]";
+  const statusDotClass = props.hasAttentionItems ? "bg-[#f59e0b]" : "bg-[#22c55e]";
 
   return (
-    <div className={cn("rounded-[var(--radius-md)] border px-2.5 py-2", toneClass)}>
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-        {props.label}
-      </p>
-      <p className="mt-0.5 text-base font-semibold tabular-nums text-[var(--color-text)]">{props.value}</p>
+    <div className="rounded-2xl border border-[#bfdbfe]/80 bg-gradient-to-r from-[#eff6ff] via-[#f8fbff] to-[#f0f9ff] px-4 py-4 shadow-[0_2px_12px_rgba(37,99,235,0.08)] sm:px-5">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3.5 sm:items-center">
+          <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-[#93c5fd]/60 bg-white text-[#2563eb] shadow-sm">
+            <Shield aria-hidden className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-bold uppercase tracking-[0.1em] text-[#2563eb]">
+              {props.t("overview.command_center", "Operations command center")}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span aria-hidden className={cn("inline-block h-2 w-2 shrink-0 rounded-full", statusDotClass)} />
+              <p className="text-sm font-medium text-slate-700">{props.statusLine}</p>
+            </div>
+            {props.scopeLabel ? (
+              <p className="mt-1 text-xs text-slate-500">
+                {props.t("overview.showing_data_for", "Showing data for")}{" "}
+                <span className="font-medium text-slate-700">{props.scopeLabel}</span>
+              </p>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-stretch gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-end">
+          {props.adminControls ? (
+            <div className="flex flex-wrap items-center gap-2">{props.adminControls}</div>
+          ) : null}
+          {props.generatedAt ? (
+            <>
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
+                {props.t("overview.last_updated", "Last updated {{time}}", {
+                  time: new Date(props.generatedAt).toLocaleString(),
+                })}
+              </span>
+              <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm">
+                {props.t("overview.auto_refresh_short", "Auto-refresh 45s")}
+              </span>
+            </>
+          ) : null}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function attentionSeverityIcon(severity: NeedsAttentionItem["severity"]) {
+  if (severity === "critical") {
+    return AlertTriangle;
+  }
+  if (severity === "warning") {
+    return AlertTriangle;
+  }
+  return Info;
+}
+
+function NeedsAttentionPanel(props: {
+  items: NeedsAttentionItem[];
+  scopeNote: string | null;
+  t: ReturnType<typeof useT>;
+}) {
+  const itemCount = props.items.length;
+
+  return (
+    <OverviewDashboardSection
+      badge={
+        itemCount > 0 ? (
+          <span className="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+            {itemCount}
+          </span>
+        ) : null
+      }
+      className="h-full"
+      title={props.t("overview.needs_attention", "Needs attention")}
+    >
+      {props.items.length === 0 ? (
+        <div className="flex items-center gap-2.5 py-1">
+          <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+            <CheckCircle2 aria-hidden className="h-4 w-4" />
+          </span>
+          <p className="text-sm text-slate-600">
+            {props.t("overview.empty_attention", "No urgent action required.")}
+          </p>
+        </div>
+      ) : (
+        <ul className="space-y-1">
+          {props.items.map((item) => {
+            const ItemIcon = attentionSeverityIcon(item.severity);
+            const iconWellClass =
+              item.severity === "critical"
+                ? "border-red-200 bg-red-50 text-red-600"
+                : item.severity === "warning"
+                  ? "border-amber-200 bg-amber-50 text-amber-600"
+                  : "border-blue-200 bg-blue-50 text-blue-600";
+
+            return (
+              <li key={item.code}>
+                <Link
+                  className="flex items-center gap-3 rounded-xl px-1 py-2 transition-colors hover:bg-slate-50"
+                  href={item.href}
+                >
+                  <span
+                    className={cn(
+                      "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border",
+                      iconWellClass,
+                    )}
+                  >
+                    <ItemIcon aria-hidden className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-800">{item.label}</p>
+                  </span>
+                  <span
+                    className={cn(
+                      "inline-flex h-6 min-w-[1.5rem] shrink-0 items-center justify-center rounded-full px-2 text-xs font-semibold",
+                      item.severity === "critical"
+                        ? "bg-red-100 text-red-700"
+                        : "bg-amber-100 text-amber-700",
+                    )}
+                  >
+                    {item.count}
+                  </span>
+                  <ArrowRight aria-hidden className="h-4 w-4 shrink-0 text-slate-400" />
+                </Link>
+              </li>
+            );
+          })}
+          {props.items.length === 1 ? (
+            <li className="px-1 pt-1">
+              <p className="text-xs text-slate-400">
+                {props.t("overview.no_other_urgent", "No other urgent action items.")}
+              </p>
+            </li>
+          ) : null}
+        </ul>
+      )}
+      {props.scopeNote ? (
+        <p className="mt-2 text-[11px] text-slate-400">{props.scopeNote}</p>
+      ) : null}
+    </OverviewDashboardSection>
+  );
+}
+
+function readinessPercent(readiness: PayrollReadinessPanel): number | null {
+  if (readiness.total_items <= 0) {
+    return null;
+  }
+  const complete = readiness.approved_count + readiness.paid_count;
+  return Math.min(100, Math.max(0, Math.round((complete / readiness.total_items) * 100)));
+}
+
+function ReadinessDonut(props: {
+  percent: number | null;
+  payrollStatus?: string;
+  payrollStatusText?: string;
+}) {
+  const donutSize = "h-[7.5rem] w-[7.5rem]";
+
+  if (props.percent === null) {
+    return (
+      <div
+        className={cn(
+          "flex flex-col items-center justify-center rounded-full border-[5px] border-slate-200 bg-slate-50 text-sm font-semibold text-slate-400",
+          donutSize,
+        )}
+      >
+        —
+      </div>
+    );
+  }
+
+  const radius = 14.5;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (props.percent / 100) * circumference;
+  const progressStroke = props.percent >= 80 ? "#16a34a" : props.percent >= 50 ? "#d97706" : "#dc2626";
+  const statusLabel = props.payrollStatusText ?? "Ready";
+
+  return (
+    <div className={cn("relative shrink-0", donutSize)}>
+      <svg aria-hidden className={cn("-rotate-90", donutSize)} viewBox="0 0 36 36">
+        <circle cx="18" cy="18" fill="none" r={radius} stroke="#e2e8f0" strokeWidth="4.5" />
+        <circle
+          cx="18"
+          cy="18"
+          fill="none"
+          r={radius}
+          stroke={progressStroke}
+          strokeDasharray={`${circumference} ${circumference}`}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          strokeWidth="4.5"
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-bold tabular-nums leading-none text-slate-900">{props.percent}%</span>
+        <span className="mt-1 text-[11px] font-medium text-slate-500">{statusLabel}</span>
+      </div>
+    </div>
+  );
+}
+
+function ReadinessChecklistRow(props: { label: string; ok: boolean }) {
+  return (
+    <li className="flex items-center gap-2.5 py-1 text-sm">
+      {props.ok ? (
+        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+          <CheckCircle2 aria-hidden className="h-3.5 w-3.5" />
+        </span>
+      ) : (
+        <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+          <AlertTriangle aria-hidden className="h-3.5 w-3.5" />
+        </span>
+      )}
+      <span className={props.ok ? "text-slate-500" : "font-medium text-slate-800"}>{props.label}</span>
+    </li>
   );
 }
 
@@ -569,6 +662,7 @@ function OverviewReadinessPanel(props: {
   if (!readiness) {
     return (
       <OverviewTintedSection
+        className="h-full"
         compactBody
         denseHeader
         title={t("overview.payroll_readiness", "Payroll readiness")}
@@ -579,87 +673,68 @@ function OverviewReadinessPanel(props: {
     );
   }
 
-  const yesNo = (value: boolean) => (value ? t("common.yes", "Yes") : t("common.no", "No"));
+  const percent = readinessPercent(readiness);
+  const checklist = [
+    {
+      label: t("overview.readiness_rate_missing", "Rate missing"),
+      ok: readiness.rate_missing_count === 0,
+    },
+    {
+      label: t("overview.readiness_not_calculated", "Not calculated"),
+      ok: !readiness.payroll_period_not_calculated,
+    },
+    {
+      label: t("overview.readiness_pending", "Pending"),
+      ok: readiness.pending_count === 0,
+    },
+    {
+      label: t("overview.readiness_open_shifts_week", "Open shifts (week)"),
+      ok: readiness.open_shifts_started_in_week_count === 0,
+    },
+    {
+      label: t("overview.readiness_needs_recalc", "Needs recalc"),
+      ok: !readiness.payroll_needs_recalculation,
+    },
+  ];
 
   return (
     <OverviewTintedSection
       action={
         <Link
-          className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
+          className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
           href={readiness.href}
         >
           {t("overview.open_payroll_report")}
-          <ArrowRight aria-hidden className="h-3.5 w-3.5" />
+          <ArrowRight aria-hidden className="h-3 w-3" />
         </Link>
       }
+      className="h-full"
       compactBody
       denseHeader
-      description={readiness.scope_note ?? undefined}
       title={t("overview.payroll_readiness", "Payroll readiness")}
       tone="readiness"
     >
-      <div className="space-y-3">
-        <StatusBadge status={readiness.payroll_status}>
-          {payrollStatusLabel(t, readiness.payroll_status)}
-        </StatusBadge>
-
-        <div>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-            {t("overview.readiness_approval_group", "Approval status")}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <ReadinessStatChip label={t("overview.readiness_items", "Items")} value={readiness.total_items} />
-            <ReadinessStatChip
-              label={t("overview.readiness_pending", "Pending")}
-              tone={readiness.pending_count > 0 ? "warning" : "default"}
-              value={readiness.pending_count}
-            />
-            <ReadinessStatChip
-              label={t("overview.readiness_approved", "Approved")}
-              tone="success"
-              value={readiness.approved_count}
-            />
-            <ReadinessStatChip label={t("overview.readiness_paid", "Paid")} tone="success" value={readiness.paid_count} />
-          </div>
-        </div>
-
-        <div>
-          <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-            {t("overview.readiness_blockers_group", "Blockers & shifts")}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <ReadinessStatChip
-              label={t("overview.readiness_rate_missing", "Rate missing")}
-              tone={readiness.rate_missing_count > 0 ? "warning" : "default"}
-              value={readiness.rate_missing_count}
-            />
-            <ReadinessStatChip
-              label={t("overview.readiness_open_shifts_week", "Open shifts (week)")}
-              tone={readiness.open_shifts_started_in_week_count > 0 ? "warning" : "default"}
-              value={readiness.open_shifts_started_in_week_count}
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Badge tone={readiness.payroll_period_not_calculated ? "warning" : "success"}>
-            {t("overview.readiness_not_calculated", "Not calculated")}: {yesNo(readiness.payroll_period_not_calculated)}
-          </Badge>
-          <Badge tone={readiness.payroll_needs_recalculation ? "warning" : "success"}>
-            {t("overview.readiness_needs_recalc", "Needs recalc")}: {yesNo(readiness.payroll_needs_recalculation)}
-          </Badge>
-        </div>
-
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-2.5 py-2">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-            {t("overview.readiness_gross_hours", "Gross / hours")}
-          </p>
-          <p className="mt-0.5 text-lg font-semibold tabular-nums text-[var(--color-text)]">
-            {readiness.total_gross != null ? formatMoneyGBP(String(readiness.total_gross)) : "—"} ·{" "}
-            {formatDurationSeconds(readiness.total_hours_seconds)}
-          </p>
-        </div>
+      <div className="flex items-center gap-4">
+        <ReadinessDonut
+          payrollStatus={readiness.payroll_status}
+          payrollStatusText={payrollStatusLabel(t, readiness.payroll_status)}
+          percent={percent}
+        />
+        <ul className="min-w-0 flex-1 space-y-0">
+          {checklist.map((row) => (
+            <ReadinessChecklistRow key={row.label} label={row.label} ok={row.ok} />
+          ))}
+        </ul>
       </div>
+
+      <p className="mt-3 text-xs text-slate-500">
+        {readiness.total_items} {t("overview.readiness_items", "items").toLowerCase()} · {readiness.pending_count}{" "}
+        {t("overview.readiness_pending", "pending").toLowerCase()} · {readiness.approved_count}{" "}
+        {t("overview.readiness_approved", "approved").toLowerCase()} · {readiness.paid_count}{" "}
+        {t("overview.readiness_paid", "paid").toLowerCase()} ·{" "}
+        {readiness.total_gross != null ? formatMoneyGBP(String(readiness.total_gross)) : "—"} ·{" "}
+        {formatDurationSeconds(readiness.total_hours_seconds)}
+      </p>
     </OverviewTintedSection>
   );
 }
@@ -681,25 +756,32 @@ function HealthCheckRow(props: {
 
   const StatusIcon =
     props.status === "ok" ? CheckCircle2 : props.status === "warn" ? AlertTriangle : Info;
-  const iconClass =
-    props.status === "ok"
-      ? "text-[var(--color-success-700)]"
-      : props.status === "warn"
-        ? "text-[var(--color-warning-700)]"
-        : "text-[var(--color-text-soft)]";
 
   return (
     <li
       className={cn(
-        "flex items-center justify-between gap-3 rounded-[var(--radius-md)] px-2 py-2.5 text-sm",
-        props.bordered ? "mt-1 border-t border-[var(--color-border)] pt-3" : undefined,
+        "flex items-center justify-between gap-3 py-2.5",
+        props.bordered ? "border-t border-slate-100" : undefined,
       )}
     >
-      <span className="flex min-w-0 items-center gap-2 text-[var(--color-text-muted)]">
-        {props.status ? <StatusIcon aria-hidden className={cn("h-4 w-4 shrink-0", iconClass)} /> : null}
+      <span className="flex min-w-0 items-center gap-2.5 text-sm text-slate-600">
+        {props.status ? (
+          <span
+            className={cn(
+              "inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full",
+              props.status === "ok"
+                ? "bg-emerald-50 text-emerald-600"
+                : props.status === "warn"
+                  ? "bg-amber-50 text-amber-600"
+                  : "bg-slate-100 text-slate-400",
+            )}
+          >
+            <StatusIcon aria-hidden className="h-3.5 w-3.5" />
+          </span>
+        ) : null}
         <span>{props.label}</span>
       </span>
-      {valueNode}
+      <span className="shrink-0 text-sm">{valueNode}</span>
     </li>
   );
 }
@@ -727,13 +809,13 @@ function OverviewHealthPanel(props: {
 
   return (
     <OverviewTintedSection
+      className="h-full"
       compactBody
       denseHeader
-      description={health.scope_note ?? undefined}
       title={t("overview.setup_health", "Setup health")}
       tone="health"
     >
-      <ul className="divide-y divide-[var(--color-border)] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)]/50 px-2">
+      <ul className="divide-y divide-slate-100">
         <HealthCheckRow
           label={t("overview.setup_active_employees")}
           status="ok"
@@ -780,8 +862,36 @@ function OverviewHealthPanel(props: {
           }
         />
       </ul>
-      <p className="mt-2 text-xs leading-snug text-[var(--color-text-soft)]">{props.thresholdNote}</p>
     </OverviewTintedSection>
+  );
+}
+
+function TodayLiveMetricRow(props: {
+  icon: LucideIcon;
+  iconClass?: string;
+  label: string;
+  primary: string;
+  secondary?: string;
+}) {
+  const Icon = props.icon;
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <span
+        className={cn(
+          "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full",
+          props.iconClass ?? "bg-blue-50 text-blue-600",
+        )}
+      >
+        <Icon aria-hidden className="h-4 w-4" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-xs text-slate-500">{props.label}</p>
+        <p className="text-lg font-bold tabular-nums text-slate-900">{props.primary}</p>
+      </div>
+      {props.secondary ? (
+        <p className="shrink-0 text-xs font-medium tabular-nums text-slate-500">{props.secondary}</p>
+      ) : null}
+    </div>
   );
 }
 
@@ -795,62 +905,68 @@ function TodayLivePanel(props: {
   totalEmployees: number;
   attendanceRate: string;
 }) {
+  const visibleRows = props.rows.slice(0, 3);
+
   return (
     <OverviewTintedSection
       action={
-        <Link
-          className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
-          href="/live-attendance"
-        >
-          {props.viewAllLabel}
-          <ArrowRight aria-hidden className="h-3.5 w-3.5" />
-        </Link>
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+            <span aria-hidden className="inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+            Live
+          </span>
+          <Link
+            className="inline-flex items-center gap-0.5 text-xs font-semibold text-[#2563eb] hover:text-[#1d4ed8]"
+            href="/live-attendance"
+          >
+            {props.viewAllLabel}
+            <ArrowRight aria-hidden className="h-3 w-3" />
+          </Link>
+        </div>
       }
+      className="h-full"
       compactBody
       denseHeader
       title={props.title}
       tone="live"
     >
-      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-brand)]/15 bg-[var(--color-brand-muted)] px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-            Open now
-          </p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-[var(--color-text)]">{props.openShifts}</p>
-        </div>
-        <div className="rounded-[var(--radius-md)] border border-[var(--color-success-700)]/15 bg-[var(--color-success-50)] px-3 py-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-            Present today
-          </p>
-          <p className="mt-0.5 text-xl font-semibold tabular-nums text-[var(--color-text)]">
-            {props.presentToday}
-            <span className="text-sm font-medium text-[var(--color-text-muted)]"> / {props.totalEmployees}</span>
-          </p>
-          <p className="mt-0.5 text-xs text-[var(--color-success-700)]">{props.attendanceRate}</p>
-        </div>
+      <div className="divide-y divide-slate-100">
+        <TodayLiveMetricRow
+          icon={Users}
+          iconClass="bg-emerald-50 text-emerald-600"
+          label="Present today"
+          primary={`${props.presentToday} / ${props.totalEmployees}`}
+          secondary={props.attendanceRate}
+        />
+        <TodayLiveMetricRow
+          icon={Clock}
+          iconClass="bg-sky-50 text-sky-600"
+          label="Open shifts"
+          primary={String(props.openShifts)}
+        />
+        <TodayLiveMetricRow
+          icon={Activity}
+          iconClass="bg-violet-50 text-violet-600"
+          label="On site now"
+          primary={String(visibleRows.length)}
+          secondary={visibleRows.length > 0 ? "recent" : undefined}
+        />
       </div>
 
-      {props.rows.length === 0 ? (
-        <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)]/45 px-3 py-3">
-          <p className="text-sm text-[var(--color-text-muted)]">{props.emptyLabel}</p>
-        </div>
+      {visibleRows.length === 0 ? (
+        <p className="mt-2 text-xs text-slate-500">{props.emptyLabel}</p>
       ) : (
-        <ul className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
-          {props.rows.map((row, idx) => (
+        <ul className="mt-2 divide-y divide-slate-100">
+          {visibleRows.map((row, idx) => (
             <li key={`${row.display_name}-${row.clock_in_at}-${idx}`}>
               <Link
-                className="flex flex-col gap-1 rounded-[var(--radius-md)] border border-transparent bg-[var(--color-header)]/35 px-3 py-2.5 text-sm transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-header)]"
+                className="flex items-center justify-between gap-2 py-2 text-sm transition-colors hover:text-[#2563eb]"
                 href={row.href}
               >
-                <div className="min-w-0">
-                  <p className="font-medium text-[var(--color-text)]">{row.display_name}</p>
-                  <p className="text-xs text-[var(--color-text-muted)]">
-                    {row.location_name ?? "—"}
-                  </p>
-                </div>
-                <p className="text-xs tabular-nums text-[var(--color-text-muted)]">
-                  {formatDurationSeconds(row.running_seconds)} · {new Date(row.clock_in_at).toLocaleTimeString()}
-                </p>
+                <span className="min-w-0 truncate font-medium text-slate-800">{row.display_name}</span>
+                <span className="shrink-0 tabular-nums text-slate-500">
+                  {formatDurationSeconds(row.running_seconds)}
+                </span>
               </Link>
             </li>
           ))}
@@ -860,14 +976,17 @@ function TodayLivePanel(props: {
   );
 }
 
-function OverviewListLink(props: { href: string; label: string }) {
+function OverviewQuickAction(props: { href: string; icon: LucideIcon; label: string }) {
+  const Icon = props.icon;
   return (
     <Link
-      className="flex items-center justify-between gap-2 rounded-[var(--radius-md)] border border-transparent px-3 py-2.5 text-sm font-medium text-[var(--color-text)] transition-colors hover:border-[var(--color-border)] hover:bg-[var(--color-header)]"
+      className="flex flex-col items-center justify-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/50 px-2 py-3 text-center text-xs font-medium text-slate-700 transition-colors hover:border-blue-200 hover:bg-blue-50/50 hover:text-slate-900"
       href={props.href}
     >
-      <span className="min-w-0">{props.label}</span>
-      <ArrowRight aria-hidden className="h-4 w-4 shrink-0 text-[var(--color-text-soft)]" />
+      <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-[#2563eb]">
+        <Icon aria-hidden className="h-4 w-4" />
+      </span>
+      <span className="min-w-0 leading-snug">{props.label}</span>
     </Link>
   );
 }
@@ -999,16 +1118,6 @@ export function OverviewClient() {
     }));
   }, [data, payrollTrendLabelFn]);
 
-  const attendanceSparkline = useMemo(
-    () => data?.attendance_trend.map((d) => d.present_count) ?? [],
-    [data],
-  );
-
-  const payrollSparkline = useMemo(
-    () => data?.payroll_trend.map((d) => d.total_gross) ?? [],
-    [data],
-  );
-
   const attendanceTrendSummary = useMemo(() => {
     if (!data?.attendance_trend.length) {
       return undefined;
@@ -1035,173 +1144,278 @@ export function OverviewClient() {
       )
     : "";
 
+  const commandCenterStatus = useMemo(() => {
+    if (!data) {
+      return t(
+        "overview.command_center_snapshot",
+        "Operational snapshot for the selected company.",
+      );
+    }
+    if (data.needs_attention.length === 0) {
+      return t("overview.empty_attention", "No urgent action required.");
+    }
+    return t("overview.command_center_attention", "{{count}} item(s) need attention.", {
+      count: data.needs_attention.length,
+    });
+  }, [data, t]);
+
+  const pendingApprovalsDisplay =
+    data?.payroll_readiness != null ? String(data.payroll_readiness.pending_count) : "—";
+
+  const adminControls = (
+    <>
+      {adminAll && companyScope.companies.length > 0 ? (
+        <CompanySelector
+          companies={companyScope.companies}
+          onChange={companyScope.setCompanyId}
+          value={companyScope.companyId}
+        />
+      ) : null}
+      <Button
+        disabled={refreshing || loading}
+        onClick={() => void load(true)}
+        type="button"
+        variant="secondary"
+      >
+        {refreshing ? t("common.refreshing", "Refreshing…") : t("common.refresh", "Refresh")}
+      </Button>
+    </>
+  );
+
+  const stripStatusLine = useMemo(() => {
+    if (data) {
+      return commandCenterStatus;
+    }
+    if (adminAll && companyScope.needsCompanySelection) {
+      return t("overview.select_company_dashboard", "Select a company to view its dashboard.");
+    }
+    return t("overview.command_center_snapshot", "Operational snapshot for the selected company.");
+  }, [adminAll, commandCenterStatus, companyScope.needsCompanySelection, data, t]);
+
   return (
-    <Sheet>
-      <PageHeader
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            {adminAll && companyScope.companies.length > 0 ? (
-              <CompanySelector
-                companies={companyScope.companies}
-                onChange={companyScope.setCompanyId}
-                value={companyScope.companyId}
-              />
-            ) : null}
-            <Button
-              disabled={refreshing || loading}
-              onClick={() => void load(true)}
-              type="button"
-              variant="secondary"
-            >
-              {refreshing ? t("common.refreshing", "Refreshing…") : t("common.refresh", "Refresh")}
-            </Button>
-          </div>
-        }
-        description={t("overview.page_description")}
-        title={t("overview.page_title")}
+    <div className="min-w-0 -mt-2 space-y-3 px-3 pb-5 sm:px-5 lg:space-y-4">
+      <h1 className="mb-0.5 text-sm font-semibold text-slate-900 sm:text-base xl:hidden">
+        {t("overview.page_title")}
+      </h1>
+
+      <OverviewCommandCenterStrip
+        adminControls={adminControls}
+        generatedAt={data?.generated_at}
+        hasAttentionItems={(data?.needs_attention.length ?? 0) > 0}
+        scopeLabel={companyScope.scopeLabel}
+        statusLine={stripStatusLine}
+        t={t}
       />
 
-      <SheetBody className="min-w-0 space-y-5 lg:space-y-6 lg:p-6">
-        {loading ? (
-          <p className="text-sm text-[var(--color-text-muted)]">{t("overview.loading", "Loading overview…")}</p>
+      {loading ? (
+          <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div
+                className="h-[7.5rem] animate-pulse rounded-2xl border border-slate-200/70 bg-white shadow-sm"
+                key={`overview-loading-${index}`}
+              />
+            ))}
+          </div>
         ) : null}
-        {error ? <p className="text-sm text-[var(--color-danger-700)]">{error}</p> : null}
+        {error ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {error}
+          </div>
+        ) : null}
 
         {adminAll && companyScope.needsCompanySelection && !loading ? (
-          <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-8 text-center text-sm text-[var(--color-text-muted)]">
-            {t("overview.select_company_dashboard", "Select a company to view its dashboard.")}
+          <div className="rounded-2xl border border-slate-200/70 bg-white px-4 py-8 text-center shadow-[0_2px_12px_rgba(20,55,102,0.06)]">
+            <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-xl border border-blue-200 bg-blue-50 text-[#2563eb]">
+              <Shield aria-hidden className="h-6 w-6" />
+            </span>
+            <p className="mt-4 text-sm text-slate-600">
+              {t("overview.select_company_dashboard", "Select a company to view its dashboard.")}
+            </p>
+            <p className="mt-2 text-xs text-slate-400">
+              {t(
+                "overview.select_company_empty",
+                "Select a company from the command center to load the management overview.",
+              )}
+            </p>
           </div>
         ) : null}
 
         {data && !loading ? (
           <>
-            <section className="overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border-dark)] bg-[var(--color-header)] shadow-[var(--shadow-soft)]">
-              <div className="border-b border-[var(--color-border)] px-4 py-4">
-                <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--color-text-soft)]">
-                    Operations Command Center
-                  </p>
-                  <p className="mt-1 text-sm leading-relaxed text-[var(--color-text-muted)]">
-                    {t("overview.page_description")}
-                  </p>
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <span className="inline-flex items-center gap-1 rounded-[var(--radius-full)] border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs text-[var(--color-text-muted)]">
-                      {t("overview.last_updated", "Last updated {{time}}", {
-                        time: new Date(data.generated_at).toLocaleString(),
-                      })}
-                    </span>
-                    <span className="inline-flex items-center gap-1 rounded-[var(--radius-full)] border border-[var(--color-border)] bg-white px-2.5 py-1 text-xs text-[var(--color-text-muted)]">
-                      {t(
-                        "overview.auto_refresh_note",
-                        "Auto-refreshes every 45 seconds when this tab is visible.",
-                      )}
-                    </span>
-                  </div>
-                  {companyScope.scopeLabel ? (
-                    <p className="mt-2 text-xs text-[var(--color-text-muted)]">{companyScope.scopeLabel}</p>
-                  ) : null}
-                </div>
-              </div>
-              <div className="grid grid-cols-1 divide-y divide-[var(--color-border)] sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
-                <OverviewMetricCard
-                  badge={t("overview.badge_active", "Active")}
-                  badgeTone="muted"
-                  href="/employees"
-                  icon={Users}
-                  primary={String(data.active_employee_count)}
-                  secondary={t("overview.employees_subline")}
-                  title={t("overview.employees", "Employees")}
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-6">
+              <OverviewKpiCard
+                href="/employees"
+                icon={Users}
+                iconTone="employees"
+                primary={String(data.active_employee_count)}
+                secondary={t("overview.employees_subline")}
+                title={t("overview.employees", "Employees")}
+              />
+              <OverviewKpiCard
+                href="/locations"
+                icon={MapPin}
+                iconTone="locations"
+                primary={String(data.active_location_count)}
+                secondary={t("overview.locations_sites_sub_short", "Clocking & access sites")}
+                title={t("overview.active_locations", "Active locations")}
+              />
+              <OverviewKpiCard
+                href="/live-attendance"
+                icon={Activity}
+                iconTone="attendance"
+                primary={formatPercent(data.live_attendance_rate)}
+                secondary={`${data.live_present_today} / ${data.live_total_employees} ${t("overview.present", "Present").toLowerCase()}`}
+                title={t("overview.attendance_today", "Attendance today")}
+              />
+              <OverviewKpiCard
+                href="/payroll-report"
+                icon={Wallet}
+                iconTone="payroll"
+                primary={
+                  data.payroll_total_gross != null ? formatMoneyGBP(String(data.payroll_total_gross)) : "—"
+                }
+                secondary={
+                  data.payroll_status === "not_calculated"
+                    ? data.payroll_message ?? t("overview.payroll_not_calc")
+                    : t("overview.payroll_recorded_week", "{{hours}} recorded this week", {
+                        hours: formatDurationSeconds(data.payroll_total_hours_seconds),
+                      })
+                }
+                title={t("overview.payroll_this_week")}
+              />
+              <OverviewKpiCard
+                href="/payroll-report"
+                icon={ClipboardList}
+                iconTone="pending"
+                primary={pendingApprovalsDisplay}
+                secondary={t("overview.readiness_pending", "Pending")}
+                title={t("overview.pending_approvals", "Pending approvals")}
+              />
+              <OverviewKpiCard
+                href="/live-attendance"
+                icon={Clock}
+                iconTone="openShifts"
+                primary={String(data.live_open_shifts)}
+                secondary={t("overview.open_shifts_sub", "Shifts currently open")}
+                title={t("overview.open_shifts", "Open shifts")}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 items-stretch gap-3 xl:grid-cols-4">
+              <NeedsAttentionPanel
+                items={data.needs_attention}
+                scopeNote={data.needs_attention_scope_note}
+                t={t}
+              />
+
+              <OverviewChartWidget
+                caption={t(
+                  "overview.trend_attendance_sub",
+                  "Present employees over the last 7 days.",
+                )}
+                summary={attendanceTrendSummary}
+                title={t("overview.trend_attendance")}
+              >
+                <OverviewLineChart
+                  emptyHint={t("overview.trend_attendance_empty")}
+                  points={attendanceChartPoints}
                 />
-                <OverviewMetricCard
-                  badge={t("overview.badge_sites", "Sites")}
-                  badgeTone="muted"
-                  href="/locations"
-                  icon={MapPin}
-                  primary={String(data.active_location_count)}
-                  secondary={t("overview.locations_sites_sub", "Operational sites for clocking and access")}
-                  title={t("overview.active_locations", "Active locations")}
-                />
-                <OverviewMetricCard
-                  badge={formatPercent(data.live_attendance_rate)}
-                  badgeTone="success"
-                  href="/live-attendance"
-                  icon={Activity}
-                  primary={`${data.live_present_today} / ${data.live_total_employees}`}
-                  secondary={t("overview.attendance_now_sub", "{{open}} open shift(s) now · attendance today", {
-                    open: data.live_open_shifts,
-                  })}
-                  sparklineTone="success"
-                  sparklineValues={attendanceSparkline}
-                  title={t("overview.attendance_today", "Attendance today")}
-                />
-                <OverviewMetricCard
-                  badge={payrollStatusLabel(t, data.payroll_status)}
-                  badgeTone={toneForPayrollStatus(data.payroll_status)}
-                  href="/payroll-report"
-                  icon={Wallet}
-                  primary={
-                    data.payroll_total_gross != null ? formatMoneyGBP(String(data.payroll_total_gross)) : "—"
-                  }
-                  secondary={
+              </OverviewChartWidget>
+
+              <OverviewChartWidget
+                caption={t(
+                  "overview.trend_payroll_sub",
+                  "Weekly gross payroll totals. Current week highlighted.",
+                )}
+                summary={payrollTrendSummary}
+                title={t("overview.trend_payroll")}
+              >
+                <OverviewBarChart
+                  currentKey={data.payroll_week_start}
+                  emptyHint={
                     data.payroll_status === "not_calculated"
-                      ? data.payroll_message ?? t("overview.payroll_not_calc")
-                      : t("overview.payroll_recorded_week", "{{hours}} recorded this week", {
-                          hours: formatDurationSeconds(data.payroll_total_hours_seconds),
-                        })
+                      ? t("overview.payroll_not_calc_weeks")
+                      : t("overview.trend_payroll_empty_no_history")
                   }
-                  sparklineValues={payrollSparkline}
-                  title={t("overview.payroll_this_week")}
+                  points={payrollChartPoints}
                 />
-              </div>
-            </section>
+              </OverviewChartWidget>
 
-            <OverviewTintedSection
-              compactBody
-              denseHeader
-              description={t(
-                "overview.operational_trends_sub",
-                "Compact attendance and payroll trends for the current scope.",
-              )}
-              title={t("overview.operational_trends", "Operational trends")}
-              tone="trends"
-            >
-              <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-                <OverviewChartWidget
-                  caption={t(
-                    "overview.trend_attendance_sub",
-                    "Present employees over the last 7 days.",
-                  )}
-                  summary={attendanceTrendSummary}
-                  title={t("overview.trend_attendance")}
-                >
-                  <OverviewLineChart
-                    emptyHint={t("overview.trend_attendance_empty")}
-                    points={attendanceChartPoints}
+              <OverviewReadinessPanel
+                readiness={data.payroll_readiness}
+                t={t}
+                unavailableLabel={t("overview.payroll_readiness_unavailable")}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <OverviewHealthPanel
+                health={data.setup_health}
+                noScopeLabel={t("overview.no_company_scope")}
+                t={t}
+                thresholdNote={thresholdNote}
+              />
+
+              <OverviewTintedSection
+                action={
+                  user.system_role === "administrator" ? (
+                    <Link
+                      className="inline-flex items-center gap-0.5 text-xs font-semibold text-[#2563eb] hover:text-[#1d4ed8]"
+                      href="/system/audit-log"
+                    >
+                      {t("overview.view_all_activity")}
+                      <ArrowRight aria-hidden className="h-3 w-3" />
+                    </Link>
+                  ) : (
+                    <span className="text-[10px] text-slate-500">
+                      {t("overview.company_scoped_events")}
+                    </span>
+                  )
+                }
+                className="h-full"
+                title={t("overview.recent_activity")}
+                tone="activity"
+              >
+                {data.recent_activity.length === 0 ? (
+                  <p className="text-sm text-slate-500">{t("overview.no_recent_events")}</p>
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {data.recent_activity.slice(0, 4).map((row, idx) => (
+                      <li className="flex items-center gap-3 py-2.5" key={`${row.occurred_at}-${idx}`}>
+                        <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-50 text-[#2563eb]">
+                          <Activity aria-hidden className="h-3.5 w-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium text-slate-800">{row.summary}</p>
+                        </span>
+                        <span className="shrink-0 text-xs tabular-nums text-slate-400">
+                          {new Date(row.occurred_at).toLocaleString()}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </OverviewTintedSection>
+
+              <OverviewTintedSection className="h-full" title={t("overview.quick_actions")} tone="actions">
+                <div className="grid grid-cols-2 gap-2">
+                  <OverviewQuickAction href="/employees" icon={Users} label={t("overview.quick_add_employee")} />
+                  <OverviewQuickAction href="/locations" icon={MapPin} label={t("overview.quick_add_location")} />
+                  <OverviewQuickAction
+                    href="/live-attendance"
+                    icon={Activity}
+                    label={t("overview.link_live_attendance")}
                   />
-                </OverviewChartWidget>
-
-                <OverviewChartWidget
-                  caption={t(
-                    "overview.trend_payroll_sub",
-                    "Weekly gross payroll totals. Current week highlighted.",
-                  )}
-                  summary={payrollTrendSummary}
-                  title={t("overview.trend_payroll")}
-                >
-                  <OverviewBarChart
-                    currentKey={data.payroll_week_start}
-                    emptyHint={
-                      data.payroll_status === "not_calculated"
-                        ? t("overview.payroll_not_calc_weeks")
-                        : t("overview.trend_payroll_empty_no_history")
-                    }
-                    points={payrollChartPoints}
+                  <OverviewQuickAction href="/payroll-report" icon={Wallet} label={t("overview.quick_run_payroll")} />
+                  <OverviewQuickAction href="/week-report" icon={ClipboardList} label={t("overview.link_week_report")} />
+                  <OverviewQuickAction
+                    href="/work-progress-review"
+                    icon={MapPin}
+                    label={t("overview.link_site_progress")}
                   />
-                </OverviewChartWidget>
-              </div>
-            </OverviewTintedSection>
+                </div>
+              </OverviewTintedSection>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
               <TodayLivePanel
                 attendanceRate={formatPercent(data.live_attendance_rate)}
                 emptyLabel={t("overview.no_open_shifts")}
@@ -1212,92 +1426,9 @@ export function OverviewClient() {
                 totalEmployees={data.live_total_employees}
                 viewAllLabel={t("common.view_all", "View all")}
               />
-
-              <OverviewReadinessPanel
-                readiness={data.payroll_readiness}
-                t={t}
-                unavailableLabel={t("overview.payroll_readiness_unavailable")}
-              />
-
-              <OverviewHealthPanel
-                health={data.setup_health}
-                noScopeLabel={t("overview.no_company_scope")}
-                t={t}
-                thresholdNote={thresholdNote}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              <OverviewTintedSection
-                action={
-                  user.system_role === "administrator" ? (
-                    <Link
-                      className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--color-brand)] hover:text-[var(--color-brand-hover)]"
-                      href="/system/audit-log"
-                    >
-                      {t("overview.view_all_activity")}
-                      <ArrowRight aria-hidden className="h-3.5 w-3.5" />
-                    </Link>
-                  ) : (
-                    <span className="text-xs text-[var(--color-text-muted)]">
-                      {t("overview.company_scoped_events")}
-                    </span>
-                  )
-                }
-                compactBody
-                denseHeader
-                title={t("overview.recent_activity")}
-                tone="activity"
-              >
-                {data.recent_activity.length === 0 ? (
-                  <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--color-border-dark)] bg-[var(--color-header)]/45 px-3 py-3">
-                    <p className="text-sm text-[var(--color-text-muted)]">{t("overview.no_recent_events")}</p>
-                  </div>
-                ) : (
-                  <ul className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
-                    {data.recent_activity.map((row, idx) => (
-                      <li
-                        className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2.5 text-sm shadow-[var(--shadow-xs)]"
-                        key={`${row.occurred_at}-${idx}`}
-                      >
-                        <p className="font-medium text-[var(--color-text)]">{row.summary}</p>
-                        {row.detail ? (
-                          <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">{row.detail}</p>
-                        ) : null}
-                        <p className="mt-0.5 text-[10px] text-[var(--color-text-soft)]">
-                          {new Date(row.occurred_at).toLocaleString()}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </OverviewTintedSection>
-
-              <OverviewTintedSection
-                compactBody
-                denseHeader
-                title={t("overview.quick_actions")}
-                tone="actions"
-              >
-                <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2">
-                  {[
-                    { key: "emp", label: t("overview.quick_add_employee"), href: "/employees" },
-                    { key: "loc", label: t("overview.quick_add_location"), href: "/locations" },
-                    { key: "live", label: t("overview.link_live_attendance"), href: "/live-attendance" },
-                    { key: "pay", label: t("overview.quick_run_payroll"), href: "/payroll-report" },
-                    { key: "week", label: t("overview.link_week_report"), href: "/week-report" },
-                    { key: "site", label: t("overview.link_site_progress"), href: "/work-progress-review" },
-                  ].map((item) => (
-                    <li key={item.key}>
-                      <OverviewListLink href={item.href} label={item.label} />
-                    </li>
-                  ))}
-                </ul>
-              </OverviewTintedSection>
             </div>
           </>
         ) : null}
-      </SheetBody>
-    </Sheet>
+    </div>
   );
 }
