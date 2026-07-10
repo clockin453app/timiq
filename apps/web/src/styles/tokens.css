@@ -10,13 +10,13 @@
   --color-topbar-bg: #143766;
   --color-topbar-border: #0f2f57;
   --color-topbar-fg: #ffffff;
-  --color-topbar-fg-muted: rgba(255, 255, 255, 0.88);
-  --color-topbar-fg-subtle: rgba(255, 255, 255, 0.72);
-  --color-topbar-hover-bg: rgba(255, 255, 255, 0.14);
-  --color-topbar-hover-border: rgba(255, 255, 255, 0.22);
+  --color-topbar-fg-muted: #ffffff;
+  --color-topbar-fg-subtle: rgba(255, 255, 255, 0.86);
+  --color-topbar-hover-bg: rgba(255, 255, 255, 0.18);
+  --color-topbar-hover-border: rgba(255, 255, 255, 0.32);
   --color-topbar-active-bg: #ffffff;
   --color-topbar-active-fg: #143766;
-  --color-topbar-active-border: rgba(255, 255, 255, 0.35);
+  --color-topbar-active-border: rgba(255, 255, 255, 0.45);
   --color-topbar-chrome-btn-bg: #ffffff;
   --color-topbar-chrome-btn-border: rgba(255, 255, 255, 0.35);
   --color-topbar-chrome-btn-hover: #f8fafc;
@@ -193,7 +193,7 @@
   --shadow-card: 0 2px 6px rgba(11, 28, 49, 0.08), 0 1px 2px rgba(11, 28, 49, 0.04);
   --shadow-soft: 0 8px 22px rgba(11, 28, 49, 0.08);
   --shadow-dropdown: 0 14px 34px rgba(11, 28, 49, 0.14);
-  --shadow-topbar-active: 0 1px 3px rgba(15, 23, 42, 0.12);
+  --shadow-topbar-active: 0 1px 2px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.14);
   --shadow-modal: 0 24px 56px rgba(11, 28, 49, 0.2);
 
   --space-page-x: 1rem;
@@ -214,7 +214,7 @@
   --layout-mobile-keyboard-pad: 1rem;
 
   --focus-ring: 0 0 0 3px rgba(37, 99, 235, 0.25);
-  --focus-ring-topbar: 0 0 0 3px rgba(255, 255, 255, 0.35);
+  --focus-ring-topbar: 0 0 0 3px rgba(255, 255, 255, 0.45);
 
   --motion-duration-fast: 150ms;
   --motion-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);

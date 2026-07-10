@@ -61,7 +61,7 @@ function NavGroupTrigger(props: {
       <ChevronDown
         aria-hidden
         className={cn(
-          "h-[18px] w-[18px] shrink-0 opacity-70 transition-transform duration-[var(--motion-duration-fast)]",
+          "h-[18px] w-[18px] shrink-0 text-current transition-transform duration-[var(--motion-duration-fast)]",
           props.isOpen && "rotate-180",
         )}
       />
@@ -153,7 +153,7 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
       <nav
         ref={navRef}
         aria-label={t("shell.top_nav", "Main navigation")}
-        className="flex min-w-0 flex-1 flex-wrap items-center gap-1 xl:flex-nowrap xl:overflow-x-auto xl:overscroll-x-contain xl:[-webkit-overflow-scrolling:touch]"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 xl:flex-nowrap xl:overflow-x-auto xl:overscroll-x-contain xl:[-webkit-overflow-scrolling:touch]"
       >
         {groups.map((group) => {
           const visible = group.items;

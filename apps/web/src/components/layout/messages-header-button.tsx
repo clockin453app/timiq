@@ -10,6 +10,8 @@ import {
   type NotificationSummary,
 } from "../../features/notifications/api";
 import { navBadgesFromSummary } from "../../features/notifications/nav-badges";
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 import { useT } from "../../lib/i18n";
 
 type MessagesHeaderButtonProps = {
@@ -48,16 +50,15 @@ export function MessagesHeaderButton({ activeHref = "/dashboard", companyId = nu
   return (
     <Link
       aria-label={label}
-      className={[
-        "relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border transition-colors",
-        active
-          ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)]"
-          : "border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text-muted)] hover:bg-[var(--color-btn-default-hover)]",
-      ].join(" ")}
+      className={cn(
+        "relative",
+        uiClasses.topBarIconButton,
+        active && uiClasses.topBarIconButtonActive,
+      )}
       href="/messages?tab=messages"
       title={label}
     >
-      <MessageSquare aria-hidden className="h-5 w-5" />
+      <MessageSquare aria-hidden className="h-5 w-5 text-current" />
       {badge ? (
         <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
           {badge}

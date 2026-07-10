@@ -13,6 +13,8 @@ import {
 } from "../../features/notifications/api";
 import { isAdministrator, useCurrentUser } from "../../features/auth";
 import { useT } from "../../lib/i18n";
+import { cn } from "../../lib/cn";
+import { uiClasses } from "../../lib/ui-classes";
 
 type NotificationBellProps = {
   /** Administrator: scope company-specific review counts (optional). */
@@ -198,11 +200,11 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
         aria-expanded={open}
         aria-haspopup="true"
         aria-label={t("notifications.bell_aria", "Notifications")}
-        className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text-muted)] hover:bg-[var(--color-btn-default-hover)]"
+        className={cn("relative", uiClasses.topBarIconButton)}
         type="button"
         onClick={() => setOpen((v) => !v)}
       >
-        <Bell aria-hidden className="h-5 w-5" />
+        <Bell aria-hidden className="h-5 w-5 text-current" />
         {badge ? (
           <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
             {badge}
