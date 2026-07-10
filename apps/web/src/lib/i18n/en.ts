@@ -933,6 +933,7 @@ export const EN_STRINGS: Record<string, string> = {
   "shell.role.employee": "Employee",
   "shell.role.unknown": "User",
   "shell.page_location": "Current page",
+  "shell.back": "← Back",
   "shell.sidebar_section": "Navigation",
   "shell.top_nav": "Main navigation",
   "signature.captured": "Signature captured.",
