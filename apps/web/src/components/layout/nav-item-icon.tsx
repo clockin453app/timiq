@@ -114,21 +114,21 @@ type NavGroupIconProps = {
 /** Small Lucide icon mapped from navigation `labelKey`; defaults to layout grid. */
 export function NavItemIcon({
   labelKey,
-  className = "h-[18px] w-[18px] shrink-0 opacity-90",
+  className = "h-[18px] w-[18px] shrink-0 text-current",
   "aria-hidden": ariaHidden = true,
 }: NavItemIconProps) {
   const Icon = NAV_ICON_BY_LABEL_KEY[labelKey] ?? LayoutDashboard;
-  return <Icon aria-hidden={ariaHidden} className={className} />;
+  return <Icon aria-hidden={ariaHidden} className={className} strokeWidth={2.25} />;
 }
 
 /** Lucide icon for desktop top-bar dropdown group triggers. */
 export function NavGroupIcon({
   groupId,
-  className = "h-[18px] w-[18px] shrink-0 opacity-90",
+  className = "h-[18px] w-[18px] shrink-0 text-current",
   "aria-hidden": ariaHidden = true,
 }: NavGroupIconProps) {
   const Icon = NAV_GROUP_ICON_BY_ID[groupId] ?? LayoutDashboard;
-  return <Icon aria-hidden={ariaHidden} className={className} />;
+  return <Icon aria-hidden={ariaHidden} className={className} strokeWidth={2.25} />;
 }
 
 export type { NavGroupIconProps, NavItemIconProps };

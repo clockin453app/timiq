@@ -64,6 +64,7 @@ function NavGroupTrigger(props: {
           "h-[18px] w-[18px] shrink-0 text-current transition-transform duration-[var(--motion-duration-fast)]",
           props.isOpen && "rotate-180",
         )}
+        strokeWidth={2.25}
       />
     </button>
   );

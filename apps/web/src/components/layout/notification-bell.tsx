@@ -204,7 +204,7 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
         type="button"
         onClick={() => setOpen((v) => !v)}
       >
-        <Bell aria-hidden className="h-5 w-5 text-current" />
+        <Bell aria-hidden className="h-5 w-5 text-current" strokeWidth={2.25} />
         {badge ? (
           <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
             {badge}
