@@ -282,6 +282,8 @@ def list_paid_items_for_company_payment_history(
     *,
     company_id: uuid.UUID,
     payroll_week_start: date | None = None,
+    payroll_week_start_from: date | None = None,
+    payroll_week_start_to: date | None = None,
     paid_at_from: datetime | None = None,
     paid_at_before: datetime | None = None,
     employee_user_id: uuid.UUID | None = None,
@@ -295,13 +297,17 @@ def list_paid_items_for_company_payment_history(
     )
     if payroll_week_start is not None:
         statement = statement.where(PayrollPeriod.week_start == payroll_week_start)
+    if payroll_week_start_from is not None:
+        statement = statement.where(PayrollPeriod.week_start >= payroll_week_start_from)
+    if payroll_week_start_to is not None:
+        statement = statement.where(PayrollPeriod.week_start <= payroll_week_start_to)
     if paid_at_from is not None:
         statement = statement.where(PayrollItem.paid_at >= paid_at_from)
     if paid_at_before is not None:
         statement = statement.where(PayrollItem.paid_at < paid_at_before)
     if employee_user_id is not None:
         statement = statement.where(PayrollItem.user_id == employee_user_id)
-    statement = statement.order_by(PayrollItem.paid_at.desc(), PayrollPeriod.week_start.desc())
+    statement = statement.order_by(PayrollPeriod.week_start.desc(), PayrollItem.paid_at.desc())
     return [(item, period) for item, period in db_session.execute(statement).all()]
 
 

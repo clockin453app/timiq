@@ -52,7 +52,13 @@ def test_payment_history_returns_paid_rows_only() -> None:
         ),
         patch("app.modules.payroll.service._employee_display", return_value=("employee@example.com", "Employee", None)),
     ):
-        rows = list_payroll_payment_history(MagicMock(), _actor(), company_id=company_id)
+        rows = list_payroll_payment_history(
+            MagicMock(),
+            _actor(),
+            company_id=company_id,
+            date_from=date(2026, 5, 1),
+            date_to=date(2026, 5, 31),
+        )
 
     assert len(rows) == 1
     assert rows[0].item_id == paid.id
@@ -82,8 +88,10 @@ def test_payment_history_passes_date_and_employee_filters_to_repository() -> Non
     assert kwargs["company_id"] == company_id
     assert kwargs["employee_user_id"] == employee_id
     assert kwargs.get("payroll_week_start") is None
-    assert kwargs["paid_at_from"] == datetime(2026, 5, 1, tzinfo=timezone.utc)
-    assert kwargs["paid_at_before"] == datetime(2026, 6, 1, tzinfo=timezone.utc)
+    assert kwargs["payroll_week_start_from"] == date(2026, 5, 1)
+    assert kwargs["payroll_week_start_to"] == date(2026, 5, 31)
+    assert kwargs.get("paid_at_from") is None
+    assert kwargs.get("paid_at_before") is None
 
 
 def test_payment_history_passes_week_start_to_repository() -> None:
@@ -156,6 +164,15 @@ def test_payment_history_includes_selected_payroll_week() -> None:
     assert len(rows) == 1
     assert rows[0].week_start == date(2026, 5, 18)
     assert rows[0].week_end == date(2026, 5, 24)
+
+
+def test_payment_history_rejects_missing_date_range_without_week_start() -> None:
+    with pytest.raises(PayrollError, match="date_from and date_to are required"):
+        list_payroll_payment_history(
+            MagicMock(),
+            _actor(),
+            company_id=uuid.uuid4(),
+        )
 
 
 def test_payment_history_rejects_invalid_date_range() -> None:

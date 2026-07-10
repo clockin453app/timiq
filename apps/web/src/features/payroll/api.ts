@@ -322,8 +322,8 @@ export async function fetchPayrollPaymentHistory(params: {
     `${API_URL}/api/payroll/payment-history?${qs({
       company_id: params.companyId,
       week_start: params.weekStart,
-      date_from: params.weekStart ? undefined : params.dateFrom,
-      date_to: params.weekStart ? undefined : params.dateTo,
+      date_from: params.dateFrom,
+      date_to: params.dateTo,
       employee_user_id: params.employeeUserId ?? undefined,
     })}`,
     { credentials: "include" },

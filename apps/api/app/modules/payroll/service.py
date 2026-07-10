@@ -526,7 +526,7 @@ body {{
   width: min(100%, 980px);
   margin: 0 auto;
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) 72px;
+  grid-template-columns: minmax(9rem, auto) minmax(0, 1fr) 72px;
   align-items: center;
   gap: 10px;
 }}
@@ -681,10 +681,37 @@ body {{
   .payslip-card {{ width: 100%; border: none; box-shadow: none; padding: 0; }}
   @page {{ size: A4; margin: 12mm; }}
 }}
-</style></head><body>
+</style>
+<script>
+function closeOrReturnToPayroll() {{
+  function fallbackNavigate() {{
+    if (!window.closed) {{
+      if (window.history.length > 1) {{
+        window.history.back();
+      }} else {{
+        window.location.href = "/payroll-report";
+      }}
+    }}
+  }}
+
+  if (window.opener && !window.opener.closed) {{
+    window.close();
+    setTimeout(fallbackNavigate, 150);
+    return;
+  }}
+
+  if (window.history.length > 1) {{
+    window.history.back();
+    return;
+  }}
+
+  window.close();
+  setTimeout(fallbackNavigate, 150);
+}}
+</script></head><body>
 <div class="payslip-wrap">
   <div class="action-row">
-    <button class="back-btn" onclick="window.history.back()" type="button">\u2190 Back</button>
+    <button class="back-btn" onclick="closeOrReturnToPayroll()" type="button">\u2190 Close payslip</button>
     <button class="print-btn" onclick="window.print()" type="button">Save / Print Payslip</button>
     <span aria-hidden="true"></span>
   </div>
@@ -2485,7 +2512,12 @@ def list_payroll_payment_history(
     date_to: date | None = None,
     employee_user_id: uuid.UUID | None = None,
 ) -> list[PayrollPaymentHistoryRow]:
-    """Paid payroll history. When ``week_start`` is set, filter by payroll period week (ignores paid date range)."""
+    """Paid payroll history.
+
+    When ``week_start`` is set, filter by that payroll period week only.
+    When ``date_from`` / ``date_to`` are set without ``week_start``, filter paid items whose
+    payroll period ``week_start`` falls in that inclusive range (not ``paid_at``).
+    """
     assert_payroll_admin_or_administrator(actor)
     assert_payroll_company_scope(actor, company_id)
     _assert_valid_range_filter(
@@ -2501,19 +2533,15 @@ def list_payroll_payment_history(
             employee_user_id=employee_user_id,
         )
     else:
-        if date_from is not None and date_to is not None and date_from > date_to:
+        if date_from is None or date_to is None:
+            raise PayrollError("date_from and date_to are required when week_start is not provided.")
+        if date_from > date_to:
             raise PayrollError("date_from must be before or equal to date_to.")
-        paid_at_from = datetime.combine(date_from, time.min, tzinfo=timezone.utc) if date_from else None
-        paid_at_before = (
-            datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc)
-            if date_to
-            else None
-        )
         rows = list_paid_items_for_company_payment_history(
             db_session,
             company_id=company_id,
-            paid_at_from=paid_at_from,
-            paid_at_before=paid_at_before,
+            payroll_week_start_from=date_from,
+            payroll_week_start_to=date_to,
             employee_user_id=employee_user_id,
         )
     out: list[PayrollPaymentHistoryRow] = []

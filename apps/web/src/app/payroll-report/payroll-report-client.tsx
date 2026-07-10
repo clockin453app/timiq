@@ -643,6 +643,8 @@ export function PayrollReportClient() {
   const [appliedEmployeeId, setAppliedEmployeeId] = useState("");
   const [exportDateFrom, setExportDateFrom] = useState(weekStart);
   const [exportDateTo, setExportDateTo] = useState(() => addDaysIsoYmd(weekStart, 6));
+  const [appliedHistoryDateFrom, setAppliedHistoryDateFrom] = useState(weekStart);
+  const [appliedHistoryDateTo, setAppliedHistoryDateTo] = useState(() => addDaysIsoYmd(weekStart, 6));
   const [report, setReport] = useState<PayrollReportResponse | null>(null);
   const [monthSummary, setMonthSummary] = useState<PayrollMonthSummary | null>(null);
   const [paymentHistory, setPaymentHistory] = useState<PayrollPaymentHistoryRow[]>([]);
@@ -698,6 +700,8 @@ export function PayrollReportClient() {
     setPayrollSaveMessageTone("success");
     setExportDateFrom(weekStart);
     setExportDateTo(addDaysIsoYmd(weekStart, 6));
+    setAppliedHistoryDateFrom(weekStart);
+    setAppliedHistoryDateTo(addDaysIsoYmd(weekStart, 6));
   }, [weekStart]);
 
   const policyTimeZone = report?.period.timezone_name ?? browserDefaultTimeZone();
@@ -947,8 +951,14 @@ export function PayrollReportClient() {
     }
   }
 
-  async function loadPaymentHistory() {
+  async function loadPaymentHistory(options?: { dateFrom?: string; dateTo?: string }) {
     if (!activeCompanyId) {
+      setPaymentHistory([]);
+      return;
+    }
+    const dateFrom = options?.dateFrom ?? appliedHistoryDateFrom ?? weekStart;
+    const dateTo = options?.dateTo ?? appliedHistoryDateTo ?? addDaysIsoYmd(weekStart, 6);
+    if (!dateFrom || !dateTo || dateFrom > dateTo) {
       setPaymentHistory([]);
       return;
     }
@@ -956,7 +966,8 @@ export function PayrollReportClient() {
     try {
       const rows = await fetchPayrollPaymentHistory({
         companyId: activeCompanyId,
-        weekStart,
+        dateFrom,
+        dateTo,
         employeeUserId: appliedEmployeeId || null,
       });
       setPaymentHistory(rows);
@@ -985,7 +996,7 @@ export function PayrollReportClient() {
   useEffect(() => {
     loadPaymentHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCompanyId, weekStart, appliedEmployeeId]);
+  }, [activeCompanyId, appliedEmployeeId, appliedHistoryDateFrom, appliedHistoryDateTo]);
 
   useEffect(() => {
     if (!payrollSaveMessage) {
@@ -1344,7 +1355,11 @@ export function PayrollReportClient() {
   }
 
   function applyEmployeeFilter() {
+    const nextDateFrom = exportDateFrom || weekStart;
+    const nextDateTo = exportDateTo || addDaysIsoYmd(weekStart, 6);
     setAppliedEmployeeId(draftEmployeeId);
+    setAppliedHistoryDateFrom(nextDateFrom);
+    setAppliedHistoryDateTo(nextDateTo);
   }
 
   async function reloadShiftRows(userId: string) {
@@ -1665,7 +1680,10 @@ export function PayrollReportClient() {
                       </Button>
                       <Button
                         disabled={loading || !activeCompanyId}
-                        onClick={() => loadReport()}
+                        onClick={() => {
+                          void loadReport();
+                          void loadPaymentHistory();
+                        }}
                         size="sm"
                         type="button"
                       >
@@ -2169,7 +2187,13 @@ export function PayrollReportClient() {
               action={
                 <Button
                   disabled={!activeCompanyId || paymentHistoryLoading}
-                  onClick={() => void loadPaymentHistory()}
+                  onClick={() => {
+                    const nextDateFrom = exportDateFrom || weekStart;
+                    const nextDateTo = exportDateTo || addDaysIsoYmd(weekStart, 6);
+                    setAppliedHistoryDateFrom(nextDateFrom);
+                    setAppliedHistoryDateTo(nextDateTo);
+                    void loadPaymentHistory({ dateFrom: nextDateFrom, dateTo: nextDateTo });
+                  }}
                   size="sm"
                   type="button"
                   variant="secondary"
