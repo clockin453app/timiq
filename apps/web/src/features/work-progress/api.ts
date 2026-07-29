@@ -102,17 +102,13 @@ export type WorkProgressReviewListItem = {
   title: string;
   progress_status: string;
   status: string;
+  attachment_count: number;
   created_at: string;
 };
 
 export type WorkProgressReviewList = {
   items: WorkProgressReviewListItem[];
   total: number;
-};
-
-export type WorkProgressReviewDetail = WorkProgressEntryDetail & {
-  user_email: string;
-  employee_name: string | null;
 };
 
 type ErrorBody = {
@@ -218,11 +214,17 @@ export async function fetchWorkProgressFileBlob(fileId: string): Promise<Blob> {
   return response.blob();
 }
 
+export function workProgressThumbnailUrl(fileId: string): string {
+  return `${API_URL}/api/work-progress/files/${encodeURIComponent(fileId)}/thumbnail`;
+}
+
 export type WorkProgressReviewQuery = {
   company_id?: string;
   user_id?: string;
   location_id?: string;
   status?: string;
+  include_archived?: boolean;
+  entry_id?: string;
   date_from?: string;
   date_to?: string;
   title_search?: string;
@@ -247,6 +249,43 @@ export type WorkProgressReviewGalleryResponse = {
   total: number;
 };
 
+export type WorkProgressEmployeeFilterOption = {
+  user_id: string;
+  display_name: string | null;
+  email: string;
+  is_active: boolean;
+};
+
+export type WorkProgressBulkDeleteResult = {
+  deleted_count: number;
+  storage_cleanup_ok: number;
+  storage_cleanup_failed: number;
+  warning: string | null;
+};
+
+export const WORK_PROGRESS_ZIP_MAX_FILES = 48;
+export const WORK_PROGRESS_SELECTION_MAX = 200;
+export const WORK_PROGRESS_GALLERY_PAGE_SIZE = 48;
+
+export async function listWorkProgressEmployeeFilterOptions(
+  companyId?: string | null,
+): Promise<WorkProgressEmployeeFilterOption[]> {
+  const search = new URLSearchParams();
+  if (companyId?.trim()) {
+    search.set("company_id", companyId.trim());
+  }
+  const q = search.toString();
+  const response = await fetch(
+    `${API_URL}/api/work-progress/review/employee-filter-options${q ? `?${q}` : ""}`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not load employees."));
+  }
+  const data = (await response.json()) as { items: WorkProgressEmployeeFilterOption[] };
+  return data.items;
+}
+
 export async function listWorkProgressReview(params?: WorkProgressReviewQuery): Promise<WorkProgressReviewList> {
   const search = new URLSearchParams();
   if (params?.company_id) {
@@ -260,6 +299,9 @@ export async function listWorkProgressReview(params?: WorkProgressReviewQuery): 
   }
   if (params?.status) {
     search.set("status", params.status);
+  }
+  if (params?.include_archived) {
+    search.set("include_archived", "true");
   }
   if (params?.date_from) {
     search.set("date_from", params.date_from);
@@ -340,6 +382,12 @@ function appendReviewQuery(search: URLSearchParams, params?: WorkProgressReviewQ
   if (params?.status) {
     search.set("status", params.status);
   }
+  if (params?.include_archived) {
+    search.set("include_archived", "true");
+  }
+  if (params?.entry_id) {
+    search.set("entry_id", params.entry_id);
+  }
   if (params?.date_from) {
     search.set("date_from", params.date_from);
   }
@@ -349,53 +397,13 @@ function appendReviewQuery(search: URLSearchParams, params?: WorkProgressReviewQ
   if (params?.title_search?.trim()) {
     search.set("title_search", params.title_search.trim());
   }
-}
-
-export async function downloadWorkProgressReviewPdf(params?: WorkProgressReviewQuery): Promise<void> {
-  const search = new URLSearchParams();
-  appendReviewQuery(search, params);
-  const q = search.toString();
-  const response = await fetch(
-    `${API_URL}/api/work-progress/review/report.pdf${q ? `?${q}` : ""}`,
-    { method: "GET", credentials: "include" },
-  );
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "PDF report download failed."));
-  }
-  const blob = await response.blob();
-  const href = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = href;
-  anchor.download = "timiq-work-progress-report.pdf";
-  anchor.click();
-  URL.revokeObjectURL(href);
 }
 
 export async function listWorkProgressReviewGallery(
   params?: WorkProgressReviewQuery,
 ): Promise<WorkProgressReviewGalleryResponse> {
   const search = new URLSearchParams();
-  if (params?.company_id) {
-    search.set("company_id", params.company_id);
-  }
-  if (params?.user_id) {
-    search.set("user_id", params.user_id);
-  }
-  if (params?.location_id) {
-    search.set("location_id", params.location_id);
-  }
-  if (params?.status) {
-    search.set("status", params.status);
-  }
-  if (params?.date_from) {
-    search.set("date_from", params.date_from);
-  }
-  if (params?.date_to) {
-    search.set("date_to", params.date_to);
-  }
-  if (params?.title_search?.trim()) {
-    search.set("title_search", params.title_search.trim());
-  }
+  appendReviewQuery(search, params);
   if (params?.limit != null) {
     search.set("limit", String(params.limit));
   }
@@ -426,7 +434,9 @@ export async function bulkDownloadWorkProgressAttachments(fileIds: string[]): Pr
   return response.blob();
 }
 
-export async function bulkDeleteWorkProgressAttachments(fileIds: string[]): Promise<void> {
+export async function bulkDeleteWorkProgressAttachments(
+  fileIds: string[],
+): Promise<WorkProgressBulkDeleteResult> {
   const response = await fetch(`${API_URL}/api/work-progress/review/attachments/bulk-delete`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -436,6 +446,24 @@ export async function bulkDeleteWorkProgressAttachments(fileIds: string[]): Prom
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, "Could not delete selected files."));
   }
+  if (response.status === 204) {
+    return {
+      deleted_count: fileIds.length,
+      storage_cleanup_ok: fileIds.length,
+      storage_cleanup_failed: 0,
+      warning: null,
+    };
+  }
+  try {
+    return (await response.json()) as WorkProgressBulkDeleteResult;
+  } catch {
+    return {
+      deleted_count: fileIds.length,
+      storage_cleanup_ok: fileIds.length,
+      storage_cleanup_failed: 0,
+      warning: null,
+    };
+  }
 }
 
 export async function archiveWorkProgressReviewEntry(progressId: string): Promise<void> {
@@ -444,52 +472,30 @@ export async function archiveWorkProgressReviewEntry(progressId: string): Promis
     credentials: "include",
   });
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Submission delete failed."));
+    throw new Error(await parseErrorMessage(response, "Could not archive submission."));
   }
 }
 
-export async function getWorkProgressReviewDetail(progressId: string): Promise<WorkProgressReviewDetail> {
-  const response = await fetch(`${API_URL}/api/work-progress/review/${encodeURIComponent(progressId)}`, {
-    method: "GET",
-    credentials: "include",
-  });
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not load review detail."));
-  }
-  return response.json() as Promise<WorkProgressReviewDetail>;
-}
+export type WorkProgressPermanentDeleteResult = {
+  deleted_submission_id: string;
+  deleted_attachment_count: number;
+  storage_cleanup_ok: number;
+  storage_cleanup_failed: number;
+  warning: string | null;
+};
 
-export async function acknowledgeWorkProgress(
+export async function permanentDeleteWorkProgressSubmission(
   progressId: string,
-  note?: string | null,
-): Promise<WorkProgressReviewDetail> {
+): Promise<WorkProgressPermanentDeleteResult> {
   const response = await fetch(
-    `${API_URL}/api/work-progress/review/${encodeURIComponent(progressId)}/acknowledge`,
+    `${API_URL}/api/work-progress/review/${encodeURIComponent(progressId)}/permanent-delete`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify({ note: note ?? null }),
     },
   );
   if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not acknowledge."));
+    throw new Error(await parseErrorMessage(response, "Could not permanently delete submission."));
   }
-  return response.json() as Promise<WorkProgressReviewDetail>;
-}
-
-export async function commentWorkProgress(progressId: string, comment: string): Promise<WorkProgressReviewDetail> {
-  const response = await fetch(
-    `${API_URL}/api/work-progress/review/${encodeURIComponent(progressId)}/comment`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ comment }),
-    },
-  );
-  if (!response.ok) {
-    throw new Error(await parseErrorMessage(response, "Could not add comment."));
-  }
-  return response.json() as Promise<WorkProgressReviewDetail>;
+  return (await response.json()) as WorkProgressPermanentDeleteResult;
 }

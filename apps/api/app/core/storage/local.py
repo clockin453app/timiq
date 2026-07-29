@@ -1,3 +1,5 @@
+import os
+import tempfile
 from pathlib import Path
 
 from app.core.storage.paths import sanitize_relative_storage_key
@@ -37,9 +39,34 @@ class LocalStorageBackend:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
 
+    def write_bytes_replace(self, relative_path: str, data: bytes) -> None:
+        final_path = self.build_path(relative_path)
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_name = tempfile.mkstemp(
+            prefix=f".{final_path.name}.",
+            suffix=".tmp",
+            dir=str(final_path.parent),
+        )
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, final_path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink(missing_ok=True)
+
     def read_bytes(self, relative_path: str) -> bytes:
         path = self.build_path(relative_path)
         return path.read_bytes()
+
+    def object_byte_size(self, relative_path: str) -> int:
+        path = self.build_path(relative_path)
+        if not path.is_file():
+            raise FileNotFoundError(relative_path)
+        return int(path.stat().st_size)
 
     def delete_file(self, relative_path: str) -> None:
         if not relative_path.strip():

@@ -76,6 +76,10 @@ class S3StorageBackend:
         key = self._object_key(relative_path)
         self._client.put_object(Bucket=self._bucket, Key=key, Body=data)
 
+    def write_bytes_replace(self, relative_path: str, data: bytes) -> None:
+        # Complete PutObject to the final key; S3 does not expose partial object bodies.
+        self.write_bytes(relative_path, data)
+
     def read_bytes(self, relative_path: str) -> bytes:
         from botocore.exceptions import ClientError
 
@@ -91,6 +95,22 @@ class S3StorageBackend:
         if not isinstance(body, bytes):
             return bytes(body)
         return body
+
+    def object_byte_size(self, relative_path: str) -> int:
+        from botocore.exceptions import ClientError
+
+        key = self._object_key(relative_path)
+        try:
+            meta = self._client.head_object(Bucket=self._bucket, Key=key)
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if code in ("404", "NoSuchKey", "NotFound", "403", "400"):
+                raise FileNotFoundError(key) from exc
+            raise
+        length = meta.get("ContentLength")
+        if length is None:
+            raise FileNotFoundError(key)
+        return int(length)
 
     def delete_file(self, relative_path: str) -> None:
         if not relative_path.strip():

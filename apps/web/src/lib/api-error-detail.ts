@@ -9,6 +9,21 @@ export function fastApiDetailToMessage(detail: unknown, fallback: string): strin
     if (trimmed.length > 0) {
       return trimmed;
     }
+  } else if (
+    detail &&
+    typeof detail === "object" &&
+    !Array.isArray(detail) &&
+    "code" in detail &&
+    "message" in detail
+  ) {
+    const code = (detail as { code: unknown }).code;
+    const message = (detail as { message: unknown }).message;
+    if (typeof code === "string" && code.trim() && typeof message === "string") {
+      const trimmed = message.trim();
+      if (trimmed.length > 0 && trimmed.length <= 1000) {
+        return trimmed;
+      }
+    }
   } else if (Array.isArray(detail)) {
     const parts: string[] = [];
     for (const item of detail) {

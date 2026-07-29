@@ -130,7 +130,7 @@ export function SystemHealthScreen() {
                     <TableCell className="tabular-nums">{health.counts.pending_onboarding_submissions}</TableCell>
                   </TableRow>
                   <TableRow>
-                    <TableCell>Pending work progress (submitted)</TableCell>
+                    <TableCell>Work progress submissions (submitted status)</TableCell>
                     <TableCell className="tabular-nums">{health.counts.pending_work_progress_entries}</TableCell>
                   </TableRow>
                 </TableBody>

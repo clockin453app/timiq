@@ -71,7 +71,11 @@ def _apply_review_entry_filters(
     date_from: date | None,
     date_to: date | None,
     title_search: str | None,
+    entry_id_filter: uuid.UUID | None = None,
+    include_archived: bool = False,
 ):
+    if entry_id_filter is not None:
+        stmt = stmt.where(WorkProgressEntry.id == entry_id_filter)
     if company_id_filter is not None:
         stmt = stmt.where(WorkProgressEntry.company_id == company_id_filter)
     if user_id_filter is not None:
@@ -80,7 +84,7 @@ def _apply_review_entry_filters(
         stmt = stmt.where(WorkProgressEntry.location_id == location_id_filter)
     if status_filter is not None:
         stmt = stmt.where(WorkProgressEntry.status == status_filter)
-    else:
+    elif not include_archived:
         stmt = stmt.where(WorkProgressEntry.status != "archived")
     if date_from is not None:
         stmt = stmt.where(WorkProgressEntry.work_date >= date_from)
@@ -104,6 +108,7 @@ def list_review_entries(
     title_search: str | None,
     limit: int,
     offset: int,
+    include_archived: bool = False,
 ) -> tuple[list[WorkProgressEntry], int]:
     count_stmt = _apply_review_entry_filters(
         select(func.count()).select_from(WorkProgressEntry),
@@ -111,6 +116,7 @@ def list_review_entries(
         user_id_filter=user_id_filter,
         location_id_filter=location_id_filter,
         status_filter=status_filter,
+        include_archived=include_archived,
         date_from=date_from,
         date_to=date_to,
         title_search=title_search,
@@ -123,6 +129,7 @@ def list_review_entries(
         user_id_filter=user_id_filter,
         location_id_filter=location_id_filter,
         status_filter=status_filter,
+        include_archived=include_archived,
         date_from=date_from,
         date_to=date_to,
         title_search=title_search,
@@ -209,6 +216,8 @@ def count_review_attachments(
     date_from: date | None,
     date_to: date | None,
     title_search: str | None,
+    include_archived: bool = False,
+    entry_id_filter: uuid.UUID | None = None,
 ) -> int:
     stmt = (
         select(func.count())
@@ -217,10 +226,12 @@ def count_review_attachments(
     )
     stmt = _apply_review_entry_filters(
         stmt,
+        entry_id_filter=entry_id_filter,
         company_id_filter=company_id_filter,
         user_id_filter=user_id_filter,
         location_id_filter=location_id_filter,
         status_filter=status_filter,
+        include_archived=include_archived,
         date_from=date_from,
         date_to=date_to,
         title_search=title_search,
@@ -240,6 +251,8 @@ def list_review_attachments_page(
     title_search: str | None,
     limit: int,
     offset: int,
+    include_archived: bool = False,
+    entry_id_filter: uuid.UUID | None = None,
 ) -> list[tuple[WorkProgressAttachment, WorkProgressEntry]]:
     stmt = (
         select(WorkProgressAttachment, WorkProgressEntry)
@@ -247,10 +260,12 @@ def list_review_attachments_page(
     )
     stmt = _apply_review_entry_filters(
         stmt,
+        entry_id_filter=entry_id_filter,
         company_id_filter=company_id_filter,
         user_id_filter=user_id_filter,
         location_id_filter=location_id_filter,
         status_filter=status_filter,
+        include_archived=include_archived,
         date_from=date_from,
         date_to=date_to,
         title_search=title_search,

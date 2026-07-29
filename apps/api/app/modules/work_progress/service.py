@@ -1,5 +1,6 @@
 import io
 import csv
+import threading
 import uuid
 import zipfile
 from datetime import date, datetime, timezone
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.export_csv import safe_export_filename, truncate_plain_text
 from app.core.storage.factory import get_storage_backend
+from app.modules.audit.models import AuditEvent
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.service import can_manage_user
@@ -19,7 +21,6 @@ from app.modules.work_progress.image_processing import (
     detect_magic_file_kind,
     process_site_progress_photo,
 )
-from app.modules.work_progress.pdf_export import build_work_progress_report_pdf
 from app.modules.work_progress.repository import (
     count_attachments_for_entry,
     count_attachments_for_entry_ids,
@@ -63,6 +64,10 @@ MAX_ORIGINAL_PHOTO_BYTES = 25 * 1024 * 1024
 # Safety ceiling for processed JPEG output (long edge 1600, q≈82 — normally far smaller).
 MAX_STORED_JPEG_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENTS_PER_ENTRY = 20
+MAX_ZIP_ATTACHMENT_IDS = 48
+MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024
+MAX_BULK_ATTACHMENT_IDS = 200
+_ZIP_GENERATION_SEMAPHORE = threading.BoundedSemaphore(1)
 
 ALLOWED_PROGRESS_STATUSES = frozenset(
     {
@@ -99,6 +104,17 @@ class WorkProgressValidationError(WorkProgressError):
 
 class WorkProgressStateError(WorkProgressError):
     pass
+
+
+class WorkProgressZipLimitError(WorkProgressError):
+    """ZIP request rejected for count or total size limits."""
+
+    def __init__(self, *, code: str, message: str, http_status: int, extra: dict | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.http_status = http_status
+        self.extra = extra or {}
 
 
 def _utc_now() -> datetime:
@@ -427,6 +443,9 @@ def upload_my_entry_file(
         details={"entry_id": str(row.id), "filename": att.original_filename},
     )
 
+    # Best-effort thumbnail is scheduled by the async route via run_in_threadpool after this returns.
+    # Callers may also invoke generate_work_progress_thumbnail_best_effort directly in tests.
+
     atts = list_attachments_for_entry(db_session, row.id)
     return _build_detail(db_session, row, atts)
 
@@ -436,6 +455,24 @@ def resolve_file_download(
     actor: User,
     file_id: uuid.UUID,
 ) -> tuple[bytes, WorkProgressAttachment, WorkProgressEntry, User]:
+    att, entry, owner = resolve_attachment_access(db_session, actor, file_id)
+
+    backend = get_storage_backend()
+    if not backend.exists(att.storage_path):
+        raise WorkProgressNotFoundError()
+    try:
+        data = backend.read_bytes(att.storage_path)
+    except FileNotFoundError:
+        raise WorkProgressNotFoundError() from None
+    return data, att, entry, owner
+
+
+def resolve_attachment_access(
+    db_session: Session,
+    actor: User,
+    file_id: uuid.UUID,
+) -> tuple[WorkProgressAttachment, WorkProgressEntry, User]:
+    """Authorize attachment access without reading storage body."""
     att = get_attachment_by_id(db_session, file_id)
     if att is None:
         raise WorkProgressNotFoundError()
@@ -448,15 +485,7 @@ def resolve_file_download(
 
     if actor.id != owner.id and not can_manage_user(actor, owner):
         raise WorkProgressPermissionError()
-
-    backend = get_storage_backend()
-    if not backend.exists(att.storage_path):
-        raise WorkProgressNotFoundError()
-    try:
-        data = backend.read_bytes(att.storage_path)
-    except FileNotFoundError:
-        raise WorkProgressNotFoundError() from None
-    return data, att, entry, owner
+    return att, entry, owner
 
 
 def download_work_progress_file(
@@ -484,6 +513,35 @@ def download_work_progress_file(
         },
     )
     return data, att
+
+
+def download_work_progress_thumbnail(
+    db_session: Session,
+    actor: User,
+    file_id: uuid.UUID,
+) -> bytes:
+    """Protected thumbnail bytes. No file-download audit event."""
+    from app.modules.work_progress.thumbnail import ThumbnailProcessingError, ensure_thumbnail_bytes
+
+    try:
+        att, entry, _owner = resolve_attachment_access(db_session, actor, file_id)
+    except WorkProgressPermissionError:
+        raise WorkProgressNotFoundError() from None
+
+    media = work_progress_attachment_response_media_type(att)
+    if not media.lower().startswith("image/"):
+        raise WorkProgressNotFoundError()
+
+    try:
+        return ensure_thumbnail_bytes(
+            attachment=att,
+            max_source_bytes=MAX_STORED_JPEG_BYTES,
+            company_id=entry.company_id,
+        )
+    except FileNotFoundError as exc:
+        raise WorkProgressNotFoundError() from exc
+    except ThumbnailProcessingError as exc:
+        raise WorkProgressNotFoundError() from exc
 
 
 def _assert_review_access(db_session: Session, actor: User, entry_id: uuid.UUID) -> tuple[WorkProgressEntry, User]:
@@ -548,6 +606,7 @@ def list_review(
     user_id: uuid.UUID | None,
     location_id: uuid.UUID | None,
     status_filter: str | None,
+    include_archived: bool,
     date_from: date | None,
     date_to: date | None,
     title_search: str | None,
@@ -571,6 +630,7 @@ def list_review(
         user_id_filter=user_id,
         location_id_filter=location_id,
         status_filter=status_f,
+        include_archived=include_archived,
         date_from=d_from,
         date_to=d_to,
         title_search=title_search,
@@ -578,6 +638,7 @@ def list_review(
         offset=offset,
     )
 
+    attachment_counts = count_attachments_for_entry_ids(db_session, [row.id for row in rows])
     items: list[WorkProgressReviewListItem] = []
     for row in rows:
         owner = get_user_by_id(db_session, row.user_id)
@@ -597,6 +658,7 @@ def list_review(
                 title=row.title,
                 progress_status=row.progress_status,
                 status=row.status,
+                attachment_count=attachment_counts.get(row.id, 0),
                 created_at=row.created_at,
             )
         )
@@ -611,6 +673,8 @@ def list_review_attachment_gallery(
     user_id: uuid.UUID | None,
     location_id: uuid.UUID | None,
     status_filter: str | None,
+    include_archived: bool,
+    entry_id: uuid.UUID | None,
     date_from: date | None,
     date_to: date | None,
     title_search: str | None,
@@ -628,12 +692,22 @@ def list_review_attachment_gallery(
         date_to=date_to,
     )
 
+    if entry_id is not None:
+        try:
+            entry, _owner = _assert_review_access(db_session, actor, entry_id)
+        except WorkProgressPermissionError:
+            raise WorkProgressNotFoundError() from None
+        if company_filter is not None and entry.company_id != company_filter:
+            raise WorkProgressNotFoundError()
+
     total = count_review_attachments(
         db_session,
         company_id_filter=company_filter,
         user_id_filter=uid,
         location_id_filter=loc_id,
         status_filter=status_f,
+        include_archived=include_archived,
+        entry_id_filter=entry_id,
         date_from=d_from,
         date_to=d_to,
         title_search=title_search,
@@ -644,6 +718,8 @@ def list_review_attachment_gallery(
         user_id_filter=uid,
         location_id_filter=loc_id,
         status_filter=status_f,
+        include_archived=include_archived,
+        entry_id_filter=entry_id,
         date_from=d_from,
         date_to=d_to,
         title_search=title_search,
@@ -709,22 +785,61 @@ def bulk_download_review_attachments_zip(
     if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
         raise WorkProgressPermissionError()
 
-    ordered = _ordered_bulk_attachment_rows(db_session, file_ids)
+    unique_ids = list(dict.fromkeys(file_ids))
+    if len(unique_ids) > MAX_ZIP_ATTACHMENT_IDS:
+        raise WorkProgressZipLimitError(
+            code="work_progress_zip_too_many_files",
+            message="ZIP download is limited to 48 pictures. Reduce the selection or delete in bulk instead.",
+            http_status=400,
+            extra={"max_files": MAX_ZIP_ATTACHMENT_IDS},
+        )
+
+    ordered = _ordered_bulk_attachment_rows(db_session, unique_ids)
     triples = _assert_bulk_attachment_scope(db_session, actor, ordered)
 
     backend = get_storage_backend()
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for att, entry, _ in triples:
-            if not backend.exists(att.storage_path):
-                raise WorkProgressNotFoundError()
-            try:
-                raw = backend.read_bytes(att.storage_path)
-            except FileNotFoundError:
-                raise WorkProgressNotFoundError() from None
-            safe = Path(att.original_filename or "file").name.replace("/", "_").replace("\\", "_")
-            arcname = f"{entry.work_date}_{att.id.hex[:8]}_{safe}"
-            zf.writestr(arcname, raw)
+    sizes: list[int] = []
+    for att, _entry, _owner in triples:
+        try:
+            sizes.append(backend.object_byte_size(att.storage_path))
+        except FileNotFoundError as exc:
+            raise WorkProgressNotFoundError() from exc
+    total_size = sum(sizes)
+    if total_size > MAX_ZIP_TOTAL_BYTES:
+        raise WorkProgressZipLimitError(
+            code="work_progress_zip_too_large",
+            message="Selected pictures exceed the 64 MB ZIP limit. Select fewer pictures and try again.",
+            http_status=413,
+            extra={"max_total_bytes": MAX_ZIP_TOTAL_BYTES},
+        )
+
+    _ZIP_GENERATION_SEMAPHORE.acquire()
+    try:
+        actual_total = 0
+        with io.BytesIO() as buf:
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for att, entry, _ in triples:
+                    if not backend.exists(att.storage_path):
+                        raise WorkProgressNotFoundError()
+                    try:
+                        raw = backend.read_bytes(att.storage_path)
+                    except FileNotFoundError:
+                        raise WorkProgressNotFoundError() from None
+                    actual_total += len(raw)
+                    if actual_total > MAX_ZIP_TOTAL_BYTES:
+                        raise WorkProgressZipLimitError(
+                            code="work_progress_zip_too_large",
+                            message="Selected pictures exceed the 64 MB ZIP limit. Select fewer pictures and try again.",
+                            http_status=413,
+                            extra={"max_total_bytes": MAX_ZIP_TOTAL_BYTES},
+                        )
+                    safe = Path(att.original_filename or "file").name.replace("/", "_").replace("\\", "_")
+                    arcname = f"{entry.work_date}_{att.id.hex[:8]}_{safe}"
+                    zf.writestr(arcname, raw)
+                    del raw
+            zip_bytes = buf.getvalue()
+    finally:
+        _ZIP_GENERATION_SEMAPHORE.release()
 
     company_id_for_audit = triples[0][1].company_id if triples else None
     create_internal_audit_event(
@@ -739,25 +854,49 @@ def bulk_download_review_attachments_zip(
             "attachment_ids": [str(att.id) for att, _, _ in triples],
         },
     )
-    return buf.getvalue()
+    return zip_bytes
+
+
+def _delete_storage_key_counted(backend, relative_path: str) -> str:
+    """Return 'ok', 'missing', or 'failed'."""
+    try:
+        if not backend.exists(relative_path):
+            return "missing"
+        backend.delete_file(relative_path)
+        return "ok"
+    except Exception:
+        return "failed"
 
 
 def bulk_delete_review_attachments(
     db_session: Session,
     actor: User,
     file_ids: list[uuid.UUID],
-) -> None:
+) -> dict[str, object]:
+    import logging
+
+    from app.modules.work_progress.thumbnail import safe_storage_key_hash, thumb_storage_key
+
+    logger = logging.getLogger(__name__)
+
     if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
         raise WorkProgressPermissionError()
 
-    ordered = _ordered_bulk_attachment_rows(db_session, file_ids)
+    unique_ids = list(dict.fromkeys(file_ids))
+    if len(unique_ids) > MAX_BULK_ATTACHMENT_IDS:
+        raise WorkProgressValidationError(
+            f"Bulk deletion is limited to {MAX_BULK_ATTACHMENT_IDS} pictures."
+        )
+
+    ordered = _ordered_bulk_attachment_rows(db_session, unique_ids)
     triples = _assert_bulk_attachment_scope(db_session, actor, ordered)
 
     attachments = [att for att, _, _ in triples]
-    for att in attachments:
-        _remove_storage_file(att)
+    paths = [(att.id, att.storage_path, entry.company_id) for att, entry, _ in triples]
 
-    delete_attachments_many(db_session, attachments)
+    # Stage deletes + audit, then one commit before any storage mutation.
+    for att in attachments:
+        db_session.delete(att)
 
     company_id_for_audit = triples[0][1].company_id if triples else None
     create_internal_audit_event(
@@ -769,6 +908,50 @@ def bulk_delete_review_attachments(
         company_id=company_id_for_audit,
         details={"file_count": len(attachments), "attachment_ids": [str(a.id) for a in attachments]},
     )
+
+    backend = get_storage_backend()
+    cleanup_ok = 0
+    cleanup_failed = 0
+    for att_id, storage_path, company_id in paths:
+        original_result = _delete_storage_key_counted(backend, storage_path)
+        thumb_result = _delete_storage_key_counted(backend, thumb_storage_key(storage_path))
+
+        attachment_failed = original_result == "failed" or thumb_result == "failed"
+        if original_result == "failed":
+            logger.error(
+                "work_progress.storage_cleanup_failed kind=original attachment_id=%s company_id=%s backend=%s key_hash=%s",
+                att_id,
+                company_id,
+                backend.get_backend_name(),
+                safe_storage_key_hash(storage_path),
+            )
+
+        if thumb_result == "failed":
+            logger.error(
+                "work_progress.storage_cleanup_failed kind=thumbnail attachment_id=%s company_id=%s backend=%s key_hash=%s",
+                att_id,
+                company_id,
+                backend.get_backend_name(),
+                safe_storage_key_hash(storage_path),
+            )
+        if attachment_failed:
+            cleanup_failed += 1
+        else:
+            cleanup_ok += 1
+
+    warning = None
+    if cleanup_failed > 0:
+        warning = (
+            "Some files could not be removed from storage. Database records were deleted. "
+            "Support has been notified via logs."
+        )
+
+    return {
+        "deleted_count": len(attachments),
+        "storage_cleanup_ok": cleanup_ok,
+        "storage_cleanup_failed": cleanup_failed,
+        "warning": warning,
+    }
 
 
 def archive_review_entry(
@@ -801,6 +984,111 @@ def archive_review_entry(
             "previous_status": previous_status,
         },
     )
+
+
+_PERMANENT_DELETE_STORAGE_WARNING = (
+    "The submission was deleted, but some stored files could not be removed. "
+    "Support has been notified via logs."
+)
+
+
+def permanently_delete_review_entry(
+    db_session: Session,
+    actor: User,
+    entry_id: uuid.UUID,
+) -> dict[str, object]:
+    """Permanently delete a submission + attachments; clean storage only after one commit."""
+    import logging
+
+    from app.modules.work_progress.thumbnail import safe_storage_key_hash, thumb_storage_key
+
+    logger = logging.getLogger(__name__)
+
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise WorkProgressPermissionError()
+    try:
+        entry, owner = _assert_review_access(db_session, actor, entry_id)
+    except WorkProgressPermissionError:
+        raise WorkProgressNotFoundError() from None
+
+    attachments = list_attachments_for_entry(db_session, entry.id)
+    for att in attachments:
+        if att.entry_id != entry.id:
+            raise WorkProgressValidationError("Attachment relationship validation failed.")
+
+    cleanup_snapshot = [(att.id, att.storage_path, entry.company_id) for att in attachments]
+    deleted_submission_id = entry.id
+    deleted_attachment_count = len(attachments)
+    previous_status = entry.status
+    work_date_iso = entry.work_date.isoformat()
+    title_short = truncate_plain_text(entry.title, 80)
+    owner_user_id = owner.id
+    company_id = entry.company_id
+    audit_company_id = (
+        company_id if actor.system_role == SystemRole.ADMINISTRATOR else actor.company_id
+    )
+
+    try:
+        for att in attachments:
+            db_session.delete(att)
+        db_session.delete(entry)
+        db_session.add(
+            AuditEvent(
+                actor_user_id=actor.id,
+                company_id=audit_company_id,
+                action="work_progress.submission_permanently_deleted",
+                entity_type="work_progress_entry",
+                entity_id=str(deleted_submission_id),
+                details={
+                    "owner_user_id": str(owner_user_id),
+                    "work_date": work_date_iso,
+                    "previous_status": previous_status,
+                    "attachment_count": deleted_attachment_count,
+                    "title": title_short,
+                },
+            )
+        )
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
+
+    backend = get_storage_backend()
+    cleanup_ok = 0
+    cleanup_failed = 0
+    for att_id, storage_path, att_company_id in cleanup_snapshot:
+        original_result = _delete_storage_key_counted(backend, storage_path)
+        thumb_result = _delete_storage_key_counted(backend, thumb_storage_key(storage_path))
+        attachment_failed = original_result == "failed" or thumb_result == "failed"
+        if original_result == "failed":
+            logger.error(
+                "work_progress.storage_cleanup_failed kind=original attachment_id=%s company_id=%s backend=%s key_hash=%s",
+                att_id,
+                att_company_id,
+                backend.get_backend_name(),
+                safe_storage_key_hash(storage_path),
+            )
+        if thumb_result == "failed":
+            logger.error(
+                "work_progress.storage_cleanup_failed kind=thumbnail attachment_id=%s company_id=%s backend=%s key_hash=%s",
+                att_id,
+                att_company_id,
+                backend.get_backend_name(),
+                safe_storage_key_hash(storage_path),
+            )
+        if attachment_failed:
+            cleanup_failed += 1
+        else:
+            cleanup_ok += 1
+
+    warning = _PERMANENT_DELETE_STORAGE_WARNING if cleanup_failed > 0 else None
+    return {
+        "deleted_submission_id": deleted_submission_id,
+        "deleted_attachment_count": deleted_attachment_count,
+        "storage_cleanup_ok": cleanup_ok,
+        "storage_cleanup_failed": cleanup_failed,
+        "warning": warning,
+    }
 
 
 def get_review_detail(db_session: Session, actor: User, entry_id: uuid.UUID) -> WorkProgressReviewDetailResponse:
@@ -998,132 +1286,54 @@ def export_review_entries_csv(
     return buf.getvalue(), fname
 
 
-def export_review_entries_pdf(
+def list_employee_filter_options(
     db_session: Session,
     actor: User,
     *,
     company_id: uuid.UUID | None,
-    user_id: uuid.UUID | None,
-    location_id: uuid.UUID | None,
-    status_filter: str | None,
-    date_from: date | None,
-    date_to: date | None,
-    title_search: str | None,
-) -> tuple[bytes, str]:
-    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
-        raise WorkProgressPermissionError("You do not have permission to export work progress reviews.")
+) -> list[dict[str, object]]:
+    """Company-scoped employees (incl. inactive) for the review employee filter."""
+    from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
+    from app.modules.auth.repository import list_users_visible_to_user_with_profile_names
 
-    company_filter, uid, loc_id, status_f, d_from, d_to = _resolve_review_list_filters(
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise WorkProgressPermissionError()
+
+    try:
+        scoped = resolve_operational_company_id(db_session, actor, company_id)
+    except CompanyScopeError as exc:
+        raise WorkProgressPermissionError(str(exc)) from exc
+
+    filter_company_id = scoped if actor.system_role == SystemRole.ADMINISTRATOR else None
+    rows = list_users_visible_to_user_with_profile_names(
         db_session,
         actor,
-        company_id=company_id,
-        user_id=user_id,
-        location_id=location_id,
-        status_filter=status_filter,
-        date_from=date_from,
-        date_to=date_to,
+        company_id=filter_company_id,
     )
-    entries = list_review_entries_for_export(
-        db_session,
-        company_id_filter=company_filter,
-        user_id_filter=uid,
-        location_id_filter=loc_id,
-        status_filter=status_f,
-        date_from=d_from,
-        date_to=d_to,
-        title_search=title_search,
-    )
-    grouped_atts = list_attachments_for_entry_ids(db_session, [e.id for e in entries])
-    backend = get_storage_backend()
+    items: list[dict[str, object]] = []
+    for user, first_name, last_name, _job in rows:
+        if user.system_role != SystemRole.EMPLOYEE:
+            continue
+        if actor.system_role == SystemRole.ADMINISTRATOR and user.company_id != scoped:
+            continue
+        if actor.system_role == SystemRole.ADMIN and user.company_id != actor.company_id:
+            continue
+        # Reuse table display-name logic via a tiny profile-like namespace.
+        from types import SimpleNamespace
 
-    report_entries: list[dict] = []
-    submitted_count = reviewed_count = 0
-    total_attachments = 0
-    for entry in entries:
-        if entry.status == STATUS_SUBMITTED:
-            submitted_count += 1
-        if entry.status == STATUS_REVIEWED:
-            reviewed_count += 1
-        owner = get_user_by_id(db_session, entry.user_id)
-        profile = get_employee_profile_by_user_id(db_session, entry.user_id)
-        attachments = []
-        for att in grouped_atts.get(entry.id, []):
-            total_attachments += 1
-            image_bytes: bytes | None = None
-            unavailable = False
-            media_type = work_progress_attachment_response_media_type(att)
-            if media_type.lower().startswith("image/"):
-                try:
-                    image_bytes = backend.read_bytes(att.storage_path)
-                except Exception:
-                    unavailable = True
-            attachments.append(
-                {
-                    "filename": att.original_filename,
-                    "content_type": media_type,
-                    "image_bytes": image_bytes,
-                    "unavailable": unavailable,
-                }
-            )
-        report_entries.append(
+        profile = SimpleNamespace(first_name=first_name, last_name=last_name)
+        items.append(
             {
-                "employee": _display_name(profile) or (owner.email if owner else "Unknown"),
-                "employee_email": owner.email if owner else "",
-                "site": _location_name(db_session, entry.location_id),
-                "work_date": entry.work_date,
-                "title": entry.title,
-                "progress_status": entry.progress_status,
-                "status": entry.status,
-                "percent_complete": entry.percent_complete,
-                "notes": entry.notes,
-                "review_note": entry.review_note,
-                "attachments": attachments,
+                "user_id": user.id,
+                "display_name": _display_name(profile),
+                "email": user.email,
+                "is_active": bool(user.is_active),
             }
         )
-
-    company_name = "All companies"
-    if company_filter is not None:
-        company = get_company_by_id(db_session, company_filter)
-        company_name = company.name if company else "Selected company"
-    elif actor.company_id is not None:
-        company = get_company_by_id(db_session, actor.company_id)
-        company_name = company.name if company else "Company"
-
-    body = build_work_progress_report_pdf(
-        company_name=company_name,
-        date_from=d_from,
-        date_to=d_to,
-        filters={
-            "status": status_f or "Any active status",
-            "employee": "Selected" if uid else "Any",
-            "site": "Selected" if loc_id else "Any",
-            "title": title_search.strip() if title_search and title_search.strip() else "Any",
-        },
-        summary={
-            "total_submissions": len(entries),
-            "total_attachments": total_attachments,
-            "submitted_count": submitted_count,
-            "reviewed_count": reviewed_count,
-        },
-        entries=report_entries,
+    items.sort(
+        key=lambda row: (
+            (str(row["display_name"] or "") or str(row["email"])).lower(),
+            str(row["email"]).lower(),
+        )
     )
-
-    audit_company = company_filter or (entries[0].company_id if entries else actor.company_id)
-    create_internal_audit_event(
-        db_session=db_session,
-        actor=actor,
-        action="work_progress.report_exported",
-        entity_type="work_progress_review_export",
-        entity_id=None,
-        company_id=audit_company,
-        details={
-            "export_type": "review_pdf",
-            "row_count": len(entries),
-            "attachment_count": total_attachments,
-        },
-    )
-
-    from_s = d_from.isoformat() if d_from else "all"
-    to_s = d_to.isoformat() if d_to else "all"
-    fname = f"timiq-work-progress-report-{from_s}-to-{to_s}.pdf"
-    return body, fname
+    return items

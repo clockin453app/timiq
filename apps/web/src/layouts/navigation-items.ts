@@ -21,7 +21,7 @@ export const managementNavigation: NavigationItem[] = [
   { label: "Site payroll rules", href: "/site-payroll-rules", roles: ["administrator", "admin"] },
   { label: "Live Attendance", href: "/live-attendance", roles: ["administrator", "admin"] },
   { label: "Onboarding Review", href: "/onboarding-review", roles: ["administrator", "admin"] },
-  { label: "Work Progress Review", href: "/work-progress-review", roles: ["administrator", "admin"] },
+  { label: "Work Progress Pictures", href: "/work-progress-review", roles: ["administrator", "admin"] },
   { label: "Audit Log", href: "/system/audit-log", roles: ["administrator", "admin"] },
   { label: "System Health", href: "/system/health", roles: ["administrator"] },
 ];

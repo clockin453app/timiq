@@ -19,7 +19,13 @@ class StorageBackend(Protocol):
 
     def write_bytes(self, relative_path: str, data: bytes) -> None: ...
 
+    def write_bytes_replace(self, relative_path: str, data: bytes) -> None:
+        """Publish ``data`` at ``relative_path`` without exposing a partial final object."""
+
     def read_bytes(self, relative_path: str) -> bytes: ...
+
+    def object_byte_size(self, relative_path: str) -> int:
+        """Return object size in bytes without reading the body. Raises FileNotFoundError if missing."""
 
     def delete_file(self, relative_path: str) -> None: ...
 

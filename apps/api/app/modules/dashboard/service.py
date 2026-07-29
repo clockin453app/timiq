@@ -19,8 +19,6 @@ from app.modules.live_attendance.service import get_live_attendance_snapshot
 from app.modules.onboarding.repository import count_reviewable_submissions
 from app.modules.payroll.schemas import PayrollPeriodSummary, PayrollReportResponse
 from app.modules.payroll.service import PayrollError, get_payroll_report
-from app.modules.work_progress.repository import count_review_entries
-
 from . import repository as dash_repo
 from .permissions import (
     DashboardPermissionError,
@@ -324,9 +322,6 @@ def _build_audit_activity(
     return out
 
 
-_WORK_PROGRESS_PENDING_REVIEW_STATUS = "submitted"
-
-
 def _live_snapshot_company_scope(
     actor: User,
     scoped_company_id: uuid.UUID,
@@ -461,7 +456,6 @@ def _build_needs_attention_items(
     payroll_reports: list[PayrollReportResponse],
     payroll_readiness: PayrollReadinessPanel | None,
     onboarding_pending: int,
-    work_progress_pending: int,
     employees_without_site_access: int,
 ) -> list[NeedsAttentionItem]:
     items: list[NeedsAttentionItem] = []
@@ -553,13 +547,6 @@ def _build_needs_attention_items(
         "/onboarding-review",
     )
     push(
-        "work_progress_pending_review",
-        "Site progress entries awaiting review",
-        work_progress_pending,
-        "info",
-        "/work-progress-review",
-    )
-    push(
         "employees_no_site_access",
         "Employees with no site / location access",
         employees_without_site_access,
@@ -632,19 +619,12 @@ def build_overview(
         status_filter="submitted",
         company_id=scoped_company_id,
     )
-    work_progress_pending = count_review_entries(
-        db_session,
-        company_id_filter=scoped_company_id,
-        status_filter=_WORK_PROGRESS_PENDING_REVIEW_STATUS,
-    )
-
     needs_attention = _build_needs_attention_items(
         long_open_shifts=long_open,
         missing_hourly_rate=missing_rate,
         payroll_reports=payroll_reports,
         payroll_readiness=payroll_readiness,
         onboarding_pending=onboarding_pending,
-        work_progress_pending=work_progress_pending,
         employees_without_site_access=no_site,
     )
 

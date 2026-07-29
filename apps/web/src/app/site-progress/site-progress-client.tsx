@@ -770,7 +770,6 @@ export function SiteProgressClient() {
                     <TableHead>Title</TableHead>
                     <TableHead>Photos</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead>Review</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -809,7 +808,6 @@ export function SiteProgressClient() {
                           </p>
                         </TableCell>
                         <TableCell>{row.progress_status}</TableCell>
-                        <TableCell>{row.status}</TableCell>
                       </TableRow>
                     );
                   })}

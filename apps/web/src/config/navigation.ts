@@ -299,7 +299,7 @@ const ACCOUNTING_LINK: NavigationItem = {
 };
 
 const WORK_PROGRESS_REVIEW: NavigationItem = {
-  label: "Work Progress Review",
+  label: "Work Progress Pictures",
   labelKey: "nav.work_progress_review",
   href: "/work-progress-review",
   allowedRoles: ["administrator", "admin"],

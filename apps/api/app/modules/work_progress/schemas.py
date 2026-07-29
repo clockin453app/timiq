@@ -95,6 +95,7 @@ class WorkProgressReviewListItem(BaseModel):
     title: str
     progress_status: str
     status: str
+    attachment_count: int
     created_at: datetime
 
 
@@ -118,6 +119,40 @@ class WorkProgressReviewDetailResponse(WorkProgressEntryDetailResponse):
 
 class WorkProgressBulkFileIdsBody(BaseModel):
     file_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=200)
+
+
+class WorkProgressBulkDeleteResponse(BaseModel):
+    deleted_count: int = Field(description="Attachment database records deleted.")
+    storage_cleanup_ok: int = Field(
+        description="Attachments whose existing storage objects were removed or already absent."
+    )
+    storage_cleanup_failed: int = Field(
+        description="Attachments with at least one existing storage object that could not be removed."
+    )
+    warning: str | None = None
+
+
+class WorkProgressPermanentDeleteResponse(BaseModel):
+    deleted_submission_id: uuid.UUID
+    deleted_attachment_count: int = Field(description="Attachment database records deleted.")
+    storage_cleanup_ok: int = Field(
+        description="Attachments whose existing storage objects were removed or already absent."
+    )
+    storage_cleanup_failed: int = Field(
+        description="Attachments with at least one existing storage object that could not be removed."
+    )
+    warning: str | None = None
+
+
+class WorkProgressEmployeeFilterOption(BaseModel):
+    user_id: uuid.UUID
+    display_name: str | None = None
+    email: str
+    is_active: bool
+
+
+class WorkProgressEmployeeFilterOptionsResponse(BaseModel):
+    items: list[WorkProgressEmployeeFilterOption]
 
 
 class WorkProgressReviewAttachmentGalleryItem(BaseModel):

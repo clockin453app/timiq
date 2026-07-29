@@ -3,8 +3,13 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status as http_status
 from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 
-from app.core.storage.file_response import content_disposition_attachment, protected_file_response
+from app.core.storage.file_response import (
+    content_disposition_attachment,
+    protected_file_response,
+    protected_inline_image_response,
+)
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -12,21 +17,27 @@ from app.modules.auth.dependencies import get_current_user, require_admin_or_adm
 from app.modules.auth.models import User
 from app.modules.work_progress.schemas import (
     WorkProgressAcknowledgeBody,
+    WorkProgressBulkDeleteResponse,
     WorkProgressBulkFileIdsBody,
     WorkProgressCommentBody,
     WorkProgressCreateRequest,
+    WorkProgressEmployeeFilterOptionsResponse,
+    WorkProgressEmployeeFilterOption,
     WorkProgressEntryDetailResponse,
     WorkProgressMeListResponse,
     WorkProgressMeOptionsResponse,
+    WorkProgressPermanentDeleteResponse,
     WorkProgressReviewAttachmentGalleryResponse,
     WorkProgressReviewDetailResponse,
     WorkProgressReviewListResponse,
 )
 from app.modules.work_progress.service import (
+    MAX_STORED_JPEG_BYTES,
     WorkProgressNotFoundError,
     WorkProgressPermissionError,
     WorkProgressStateError,
     WorkProgressValidationError,
+    WorkProgressZipLimitError,
     acknowledge_review,
     add_review_comment,
     archive_review_entry,
@@ -34,22 +45,32 @@ from app.modules.work_progress.service import (
     bulk_download_review_attachments_zip,
     create_my_entry,
     download_work_progress_file,
-    export_review_entries_pdf,
+    download_work_progress_thumbnail,
     export_review_entries_csv,
     get_me_options,
     get_my_entry_detail,
     get_review_detail,
+    list_employee_filter_options,
     list_my_entries,
     list_review,
     list_review_attachment_gallery,
+    permanently_delete_review_entry,
     upload_my_entry_file,
     work_progress_attachment_response_filename,
     work_progress_attachment_response_media_type,
 )
+from app.modules.work_progress.thumbnail import generate_work_progress_thumbnail_best_effort
 
 router = APIRouter(prefix="/api/work-progress", tags=["work_progress"])
 
 NOT_FOUND = "Not found."
+PDF_RETIRED_DETAIL = {
+    "code": "work_progress_pdf_retired",
+    "message": (
+        "Work Progress PDF reports have been retired. "
+        "Use the CSV export or the attachment gallery instead."
+    ),
+}
 
 
 def _read_upload_file(upload: UploadFile) -> tuple[str, str, bytes]:
@@ -110,7 +131,7 @@ async def post_work_progress_me_file(
 ) -> WorkProgressEntryDetailResponse:
     filename, content_type, raw = _read_upload_file(file)
     try:
-        return upload_my_entry_file(
+        detail = upload_my_entry_file(
             db_session,
             current_user,
             progress_id,
@@ -123,6 +144,28 @@ async def post_work_progress_me_file(
     except WorkProgressValidationError as exc:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
+    if detail.attachments:
+        newest = max(detail.attachments, key=lambda a: a.created_at)
+        storage_path = _attachment_storage_path(db_session, newest.id)
+        if storage_path:
+            await run_in_threadpool(
+                generate_work_progress_thumbnail_best_effort,
+                attachment_id=newest.id,
+                storage_path=storage_path,
+                max_source_bytes=MAX_STORED_JPEG_BYTES,
+                company_id=detail.company_id,
+            )
+    return detail
+
+
+def _attachment_storage_path(db_session: Session, attachment_id: uuid.UUID) -> str:
+    from app.modules.work_progress.repository import get_attachment_by_id
+
+    att = get_attachment_by_id(db_session, attachment_id)
+    if att is None:
+        return ""
+    return att.storage_path
+
 
 @router.get("/review", response_model=WorkProgressReviewListResponse)
 def get_work_progress_review_list(
@@ -130,6 +173,7 @@ def get_work_progress_review_list(
     user_id: uuid.UUID | None = Query(default=None),
     location_id: uuid.UUID | None = Query(default=None),
     status: str | None = Query(default=None),
+    include_archived: bool = Query(default=False),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     title_search: str | None = Query(default=None, max_length=300),
@@ -146,6 +190,7 @@ def get_work_progress_review_list(
             user_id=user_id,
             location_id=location_id,
             status_filter=status,
+            include_archived=include_archived,
             date_from=date_from,
             date_to=date_to,
             title_search=title_search,
@@ -156,6 +201,21 @@ def get_work_progress_review_list(
         raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressValidationError as exc:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+
+@router.get("/review/employee-filter-options", response_model=WorkProgressEmployeeFilterOptionsResponse)
+def get_work_progress_employee_filter_options(
+    company_id: uuid.UUID | None = Query(default=None),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> WorkProgressEmployeeFilterOptionsResponse:
+    try:
+        rows = list_employee_filter_options(db_session, current_user, company_id=company_id)
+    except WorkProgressPermissionError as exc:
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    return WorkProgressEmployeeFilterOptionsResponse(
+        items=[WorkProgressEmployeeFilterOption.model_validate(row) for row in rows]
+    )
 
 
 @router.get("/review/export.csv")
@@ -202,30 +262,10 @@ def get_work_progress_review_report_pdf(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     title_search: str | None = Query(default=None, max_length=300),
-    db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
 ):
-    try:
-        body, fname = export_review_entries_pdf(
-            db_session,
-            current_user,
-            company_id=company_id,
-            user_id=user_id,
-            location_id=location_id,
-            status_filter=status,
-            date_from=date_from,
-            date_to=date_to,
-            title_search=title_search,
-        )
-    except WorkProgressPermissionError as exc:
-        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
-    except WorkProgressValidationError as exc:
-        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return Response(
-        content=body,
-        media_type="application/pdf",
-        headers={"Content-Disposition": content_disposition_attachment(fname)},
-    )
+    del company_id, user_id, location_id, status, date_from, date_to, title_search, current_user
+    raise HTTPException(status_code=http_status.HTTP_410_GONE, detail=PDF_RETIRED_DETAIL)
 
 
 @router.get("/review/attachments/gallery", response_model=WorkProgressReviewAttachmentGalleryResponse)
@@ -234,6 +274,8 @@ def get_work_progress_review_attachment_gallery(
     user_id: uuid.UUID | None = Query(default=None),
     location_id: uuid.UUID | None = Query(default=None),
     status: str | None = Query(default=None),
+    include_archived: bool = Query(default=False),
+    entry_id: uuid.UUID | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     title_search: str | None = Query(default=None, max_length=300),
@@ -250,6 +292,8 @@ def get_work_progress_review_attachment_gallery(
             user_id=user_id,
             location_id=location_id,
             status_filter=status,
+            include_archived=include_archived,
+            entry_id=entry_id,
             date_from=date_from,
             date_to=date_to,
             title_search=title_search,
@@ -258,6 +302,8 @@ def get_work_progress_review_attachment_gallery(
         )
     except WorkProgressPermissionError as exc:
         raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except WorkProgressNotFoundError:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
     except WorkProgressValidationError as exc:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
@@ -270,6 +316,9 @@ def post_work_progress_review_attachments_bulk_download(
 ) -> Response:
     try:
         data = bulk_download_review_attachments_zip(db_session, current_user, body.file_ids)
+    except WorkProgressZipLimitError as exc:
+        detail = {"code": exc.code, "message": exc.message, **exc.extra}
+        raise HTTPException(status_code=exc.http_status, detail=detail) from exc
     except WorkProgressPermissionError as exc:
         raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressNotFoundError:
@@ -278,21 +327,21 @@ def post_work_progress_review_attachments_bulk_download(
     return Response(content=data, media_type="application/zip", headers=headers)
 
 
-@router.post("/review/attachments/bulk-delete", status_code=http_status.HTTP_204_NO_CONTENT)
+@router.post("/review/attachments/bulk-delete", response_model=WorkProgressBulkDeleteResponse)
 def post_work_progress_review_attachments_bulk_delete(
     body: WorkProgressBulkFileIdsBody,
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
-) -> Response:
+) -> WorkProgressBulkDeleteResponse:
     try:
-        bulk_delete_review_attachments(db_session, current_user, body.file_ids)
+        result = bulk_delete_review_attachments(db_session, current_user, body.file_ids)
     except WorkProgressPermissionError as exc:
         raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressNotFoundError:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
     except WorkProgressValidationError as exc:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return Response(status_code=http_status.HTTP_204_NO_CONTENT)
+    return WorkProgressBulkDeleteResponse.model_validate(result)
 
 
 @router.get("/review/{progress_id}", response_model=WorkProgressReviewDetailResponse)
@@ -305,6 +354,26 @@ def get_work_progress_review_detail(
         return get_review_detail(db_session, current_user, progress_id)
     except WorkProgressNotFoundError:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+
+
+@router.post(
+    "/review/{progress_id}/permanent-delete",
+    response_model=WorkProgressPermanentDeleteResponse,
+)
+def post_work_progress_review_permanent_delete(
+    progress_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> WorkProgressPermanentDeleteResponse:
+    try:
+        result = permanently_delete_review_entry(db_session, current_user, progress_id)
+    except WorkProgressPermissionError:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+    except WorkProgressNotFoundError:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+    except WorkProgressValidationError as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return WorkProgressPermanentDeleteResponse.model_validate(result)
 
 
 @router.delete("/review/{progress_id}", status_code=http_status.HTTP_204_NO_CONTENT)
@@ -350,6 +419,24 @@ def post_work_progress_review_comment(
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
     except WorkProgressStateError as exc:
         raise HTTPException(status_code=http_status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+
+
+@router.get("/files/{file_id}/thumbnail")
+def get_work_progress_file_thumbnail(
+    file_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        data = download_work_progress_thumbnail(db_session, current_user, file_id)
+    except WorkProgressNotFoundError:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+
+    return protected_inline_image_response(
+        body=data,
+        download_filename="thumbnail.jpg",
+        media_type="image/jpeg",
+    )
 
 
 @router.get("/files/{file_id}/file")

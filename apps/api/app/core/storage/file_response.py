@@ -22,6 +22,13 @@ def content_disposition_attachment(download_filename: str) -> str:
     return f"attachment; filename=\"{safe}\"; filename*=UTF-8''{encoded}"
 
 
+def content_disposition_inline(download_filename: str) -> str:
+    """RFC 6266 inline disposition for protected media viewers / thumbnails."""
+    safe = _ascii_fallback_filename(download_filename)
+    encoded = quote(download_filename, safe="")
+    return f"inline; filename=\"{safe}\"; filename*=UTF-8''{encoded}"
+
+
 def protected_file_response(
     *,
     body: bytes,
@@ -31,3 +38,18 @@ def protected_file_response(
     """Return bytes as a download. Large bodies are held in memory (see storage docs)."""
     headers = {"Content-Disposition": content_disposition_attachment(download_filename)}
     return Response(content=body, media_type=media_type or "application/octet-stream", headers=headers)
+
+
+def protected_inline_image_response(
+    *,
+    body: bytes,
+    download_filename: str,
+    media_type: str = "image/jpeg",
+) -> Response:
+    """Inline private image (thumbnails). Does not change default attachment downloads."""
+    headers = {
+        "Content-Disposition": content_disposition_inline(download_filename),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    return Response(content=body, media_type=media_type or "image/jpeg", headers=headers)
