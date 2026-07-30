@@ -2,6 +2,7 @@ import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import create_internal_audit_event
@@ -29,6 +30,7 @@ from .permissions import (
 from .repository import (
     employee_has_location_access,
     get_company_name,
+    get_completed_shift_covering_instant,
     get_open_shift_for_user as repo_get_open_shift,
     list_completed_shifts_clocked_out_in_range,
     list_manageable_employees,
@@ -36,11 +38,25 @@ from .repository import (
 
 
 class LiveAttendanceError(ValueError):
-    pass
+    def __init__(self, message: str, *, http_status: int = 400) -> None:
+        super().__init__(message)
+        self.http_status = http_status
 
 
 def _utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _normalize_effective_at(value: datetime | None) -> tuple[datetime, str]:
+    """Resolve the attendance instant, normalising to UTC exactly once.
+
+    Naive values are treated as UTC, matching the admin time-record endpoints.
+    """
+    if value is None:
+        return _utc_now(), "server_now"
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc), "admin_supplied"
+    return value.astimezone(timezone.utc), "admin_supplied"
 
 
 def _local_day_bounds_utc(company_id: uuid.UUID, db_session: Session, day: datetime) -> tuple[datetime, datetime]:
@@ -271,10 +287,13 @@ def manual_clock_in(
     user_id: uuid.UUID,
     location_id: uuid.UUID,
     reason: str,
+    effective_at: datetime | None = None,
 ) -> TimeShift:
     reason_clean = reason.strip()
     if not reason_clean:
         raise LiveAttendanceError("Reason is required.")
+
+    clock_in_at, time_source = _normalize_effective_at(effective_at)
 
     target = get_user_by_id(db_session, user_id)
     if target is None:
@@ -303,15 +322,26 @@ def manual_clock_in(
         raise LiveAttendanceError("Employee is not assigned to this location.")
 
     if repo_get_open_shift(db_session, target.id) is not None:
-        raise LiveAttendanceError("Employee already has an open shift.")
+        raise LiveAttendanceError("Employee already has an open shift.", http_status=409)
 
-    now = _utc_now()
+    overlapping = get_completed_shift_covering_instant(
+        db_session,
+        user_id=target.id,
+        instant=clock_in_at,
+    )
+    if overlapping is not None:
+        raise LiveAttendanceError(
+            "The selected clock-in time falls inside an existing shift for this employee.",
+            http_status=409,
+        )
+
+    recorded_at = _utc_now()
     shift = TimeShift(
         user_id=target.id,
         company_id=target.company_id,
         location_id=location.id,
         status="open",
-        clock_in_at=now,
+        clock_in_at=clock_in_at,
         clock_in_latitude=float(location.latitude),
         clock_in_longitude=float(location.longitude),
         clock_in_accuracy_meters=0.0,
@@ -320,7 +350,14 @@ def manual_clock_in(
         manual_reason=reason_clean[:500],
         admin_actor_user_id=actor.id,
     )
-    save_shift(db_session, shift, commit=True)
+    try:
+        save_shift(db_session, shift, commit=True)
+    except IntegrityError as exc:
+        db_session.rollback()
+        raise LiveAttendanceError(
+            "This employee's attendance changed while you were editing. Reload and try again.",
+            http_status=409,
+        ) from exc
     db_session.refresh(shift)
 
     create_internal_audit_event(
@@ -331,10 +368,17 @@ def manual_clock_in(
         entity_id=str(shift.id),
         company_id=target.company_id,
         details={
+            "actor_user_id": str(actor.id),
             "subject_user_id": str(target.id),
             "location_id": str(location.id),
+            "company_id": str(target.company_id),
             "reason": reason_clean[:2000],
             "shift_id": str(shift.id),
+            "effective_at": shift.clock_in_at.isoformat(),
+            "effective_time_source": time_source,
+            "action_recorded_at": recorded_at.isoformat(),
+            "before_clock_in_at": None,
+            "after_clock_in_at": shift.clock_in_at.isoformat(),
         },
     )
     return shift
@@ -347,10 +391,13 @@ def manual_clock_out(
     user_id: uuid.UUID | None,
     shift_id: uuid.UUID | None,
     reason: str,
+    effective_at: datetime | None = None,
 ) -> TimeShift:
     reason_clean = reason.strip()
     if not reason_clean:
         raise LiveAttendanceError("Reason is required.")
+
+    clock_out_at, time_source = _normalize_effective_at(effective_at)
 
     if (user_id is None) == (shift_id is None):
         raise LiveAttendanceError("Provide exactly one of user_id or shift_id.")
@@ -382,11 +429,17 @@ def manual_clock_out(
     if get_open_break_for_shift(db_session, open_shift.id) is not None:
         raise LiveAttendanceError("Cannot clock out while a break is open.")
 
-    now = _utc_now()
+    if clock_out_at <= open_shift.clock_in_at:
+        raise LiveAttendanceError(
+            "Clock-out time must be after the clock-in time.",
+            http_status=422,
+        )
+
+    recorded_at = _utc_now()
     before_status = open_shift.status
     before_clock_out = open_shift.clock_out_at
 
-    open_shift.clock_out_at = now
+    open_shift.clock_out_at = clock_out_at
     open_shift.clock_out_latitude = float(open_shift.clock_in_latitude)
     open_shift.clock_out_longitude = float(open_shift.clock_in_longitude)
     open_shift.clock_out_accuracy_meters = 0.0
@@ -399,7 +452,7 @@ def manual_clock_out(
         if item.ended_at is not None:
             break_seconds += int((item.ended_at - item.started_at).total_seconds())
 
-    worked_seconds = int((now - open_shift.clock_in_at).total_seconds()) - break_seconds
+    worked_seconds = int((clock_out_at - open_shift.clock_in_at).total_seconds()) - break_seconds
     open_shift.break_seconds = max(break_seconds, 0)
     open_shift.worked_seconds = max(worked_seconds, 0)
 
@@ -422,13 +475,20 @@ def manual_clock_out(
         entity_id=str(open_shift.id),
         company_id=open_shift.company_id,
         details={
+            "actor_user_id": str(actor.id),
             "subject_user_id": str(target.id),
             "shift_id": str(open_shift.id),
+            "location_id": str(open_shift.location_id) if open_shift.location_id else None,
+            "company_id": str(open_shift.company_id) if open_shift.company_id else None,
             "reason": reason_clean[:2000],
             "before_status": before_status,
             "after_status": open_shift.status,
             "before_clock_out_at": before_clock_out.isoformat() if before_clock_out else None,
             "after_clock_out_at": open_shift.clock_out_at.isoformat() if open_shift.clock_out_at else None,
+            "clock_in_at": open_shift.clock_in_at.isoformat(),
+            "effective_at": open_shift.clock_out_at.isoformat() if open_shift.clock_out_at else None,
+            "effective_time_source": time_source,
+            "action_recorded_at": recorded_at.isoformat(),
         },
     )
     return open_shift

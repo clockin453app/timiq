@@ -1058,7 +1058,7 @@ export function FormsManageClient() {
             {t("common.refresh")}
           </Button>
         </div>
-        <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+        <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
           <Table>
             <TableHeader>
               <TableRow>

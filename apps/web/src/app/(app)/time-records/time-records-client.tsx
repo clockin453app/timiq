@@ -30,6 +30,7 @@ import { BreakDeductionCell } from "@/features/time-records/break-deduction-cell
 import { formatDurationSeconds } from "@/features/time-records/format-duration";
 import { useLiveShiftDurationParts } from "@/features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "@/features/timesheets/week-utils";
+import { fromDatetimeLocalToIso, toDatetimeLocalValue } from "@/lib/datetime-local";
 import { shiftStatusLabel, useT } from "@/lib/i18n";
 import { formatPayrollWeekUkLabel } from "@/lib/week-label";
 import { FaceCheckCell } from "@/features/face-check/face-check-cell";
@@ -84,23 +85,6 @@ function ShiftDurationCell({
     );
   }
   return <span>—</span>;
-}
-
-function toDatetimeLocalValue(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    return "";
-  }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromDatetimeLocalToIso(localValue: string): string {
-  const d = new Date(localValue);
-  if (Number.isNaN(d.getTime())) {
-    return "";
-  }
-  return d.toISOString();
 }
 
 function payrollRecalcMessage(
@@ -751,10 +735,10 @@ export function TimeRecordsClient() {
         {addOpen ? (
           <div
             aria-modal="true"
-            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-y-auto bg-black/45 p-3"
+            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-2 sm:p-3"
             role="dialog"
           >
-            <div className="timiq-sheet my-4 w-full max-w-lg border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
+            <div className="timiq-sheet my-3 max-h-[calc(100dvh-1.5rem)] w-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden overscroll-contain border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md sm:my-4 sm:max-w-lg sm:p-4">
               <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-2">
                 <p className="text-sm font-bold text-[var(--color-text)]">
                   {t("time_records.modal_add_title", "Add completed shift")}
@@ -808,7 +792,7 @@ export function TimeRecordsClient() {
                 <label className="block text-xs font-bold">
                   {t("time_records.clock_in_local", "Clock in (local)")}
                   <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    className="timiq-input mt-1 h-9 w-full min-w-0"
                     onChange={(event) => setFormClockInLocal(event.target.value)}
                     required
                     type="datetime-local"
@@ -818,7 +802,7 @@ export function TimeRecordsClient() {
                 <label className="block text-xs font-bold">
                   {t("time_records.clock_out_local", "Clock out (local)")}
                   <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    className="timiq-input mt-1 h-9 w-full min-w-0"
                     onChange={(event) => setFormClockOutLocal(event.target.value)}
                     required
                     type="datetime-local"
@@ -828,7 +812,7 @@ export function TimeRecordsClient() {
                 <label className="block text-xs font-bold">
                   {t("time_records.break_minutes", "Break (minutes)")}
                   <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    className="timiq-input mt-1 h-9 w-full min-w-0"
                     inputMode="numeric"
                     min={0}
                     onChange={(event) => setFormBreakMinutes(event.target.value)}
@@ -856,10 +840,10 @@ export function TimeRecordsClient() {
         {editRow ? (
           <div
             aria-modal="true"
-            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-y-auto bg-black/45 p-3"
+            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-2 sm:p-3"
             role="dialog"
           >
-            <div className="timiq-sheet my-4 w-full max-w-lg border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
+            <div className="timiq-sheet my-3 max-h-[calc(100dvh-1.5rem)] w-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden overscroll-contain border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md sm:my-4 sm:max-w-lg sm:p-4">
               <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-2">
                 <p className="text-sm font-bold text-[var(--color-text)]">
                   {t("time_records.edit_title", "Edit completed shift")}
@@ -896,7 +880,7 @@ export function TimeRecordsClient() {
                 <label className="block text-xs font-bold">
                   {t("time_records.clock_in_local", "Clock in (local)")}
                   <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    className="timiq-input mt-1 h-9 w-full min-w-0"
                     onChange={(event) => setFormClockInLocal(event.target.value)}
                     required
                     type="datetime-local"
@@ -906,7 +890,7 @@ export function TimeRecordsClient() {
                 <label className="block text-xs font-bold">
                   {t("time_records.clock_out_local", "Clock out (local)")}
                   <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    className="timiq-input mt-1 h-9 w-full min-w-0"
                     onChange={(event) => setFormClockOutLocal(event.target.value)}
                     required
                     type="datetime-local"
@@ -916,7 +900,7 @@ export function TimeRecordsClient() {
                 <label className="block text-xs font-bold">
                   {t("time_records.break_minutes", "Break (minutes)")}
                   <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    className="timiq-input mt-1 h-9 w-full min-w-0"
                     inputMode="numeric"
                     min={0}
                     onChange={(event) => setFormBreakMinutes(event.target.value)}
@@ -944,10 +928,10 @@ export function TimeRecordsClient() {
         {forceRow ? (
           <div
             aria-modal="true"
-            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-y-auto bg-black/45 p-3"
+            className="fixed inset-0 z-[2100] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-2 sm:p-3"
             role="dialog"
           >
-            <div className="timiq-sheet my-4 w-full max-w-lg border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-4 shadow-md">
+            <div className="timiq-sheet my-3 max-h-[calc(100dvh-1.5rem)] w-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden overscroll-contain border border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 shadow-md sm:my-4 sm:max-w-lg sm:p-4">
               <div className="flex items-start justify-between gap-2 border-b border-[var(--color-border-dark)] pb-2">
                 <p className="text-sm font-bold text-[var(--color-text)]">
                   {t("time_records.force_title", "Force clock-out")}
@@ -971,7 +955,7 @@ export function TimeRecordsClient() {
                 <label className="block text-xs font-bold">
                   {t("time_records.clock_out_local", "Clock out (local)")}
                   <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    className="timiq-input mt-1 h-9 w-full min-w-0"
                     onChange={(event) => setFormClockOutLocal(event.target.value)}
                     required
                     type="datetime-local"
@@ -981,7 +965,7 @@ export function TimeRecordsClient() {
                 <label className="block text-xs font-bold">
                   {t("time_records.break_override", "Break total override (minutes, optional)")}
                   <input
-                    className="mt-1 h-9 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                    className="timiq-input mt-1 h-9 w-full min-w-0"
                     inputMode="numeric"
                     min={0}
                     onChange={(event) => setFormBreakMinutes(event.target.value)}

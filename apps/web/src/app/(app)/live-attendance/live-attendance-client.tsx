@@ -5,7 +5,10 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
+  FormActions,
+  FormField,
   Input,
+  Modal,
   PageHeader,
   Sheet,
   SheetBody,
@@ -32,6 +35,8 @@ import { listLocations, type Location } from "@/features/locations/api";
 import { listSiteAccessRecords, type SiteAccessRecord } from "@/features/site-access/api";
 import { FaceCheckBadge } from "@/features/face-check/face-check-badge";
 import { formatDurationSeconds } from "@/features/time-records/format-duration";
+import { browserDefaultTimeZone } from "@/features/timesheets/week-utils";
+import { fromDatetimeLocalToIso, nowDatetimeLocalValue } from "@/lib/datetime-local";
 import { useT } from "@/lib/i18n";
 
 function isFormLikeFocused(): boolean {
@@ -122,9 +127,12 @@ export function LiveAttendanceClient() {
   const [modalOutUser, setModalOutUser] = useState<LiveAttendanceEmployeeRow | null>(null);
   const [reasonIn, setReasonIn] = useState("");
   const [reasonOut, setReasonOut] = useState("");
+  const [clockInAtLocal, setClockInAtLocal] = useState("");
+  const [clockOutAtLocal, setClockOutAtLocal] = useState("");
   const [locationPick, setLocationPick] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+  const localTimeZoneLabel = useMemo(() => browserDefaultTimeZone(), []);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -265,12 +273,14 @@ export function LiveAttendanceClient() {
     setActionError("");
     setReasonIn("");
     setLocationPick("");
+    setClockInAtLocal(nowDatetimeLocalValue());
     setModalInUser(row);
   }
 
   function openClockOut(row: LiveAttendanceEmployeeRow) {
     setActionError("");
     setReasonOut("");
+    setClockOutAtLocal(nowDatetimeLocalValue());
     setModalOutUser(row);
   }
 
@@ -285,6 +295,11 @@ export function LiveAttendanceClient() {
       setActionError("Reason is required.");
       return;
     }
+    const effectiveAt = fromDatetimeLocalToIso(clockInAtLocal);
+    if (!effectiveAt) {
+      setActionError("Enter a valid clock-in date and time.");
+      return;
+    }
     setActionBusy(true);
     setActionError("");
     try {
@@ -292,6 +307,7 @@ export function LiveAttendanceClient() {
         user_id: modalInUser.user_id,
         location_id: locationPick,
         reason,
+        effective_at: effectiveAt,
       });
       setModalInUser(null);
       await loadSnapshot({ silent: true });
@@ -312,12 +328,22 @@ export function LiveAttendanceClient() {
       setActionError("Reason is required.");
       return;
     }
+    const effectiveAt = fromDatetimeLocalToIso(clockOutAtLocal);
+    if (!effectiveAt) {
+      setActionError("Enter a valid clock-out date and time.");
+      return;
+    }
+    if (modalOutUser.clock_in_at && new Date(effectiveAt) <= new Date(modalOutUser.clock_in_at)) {
+      setActionError("Clock-out time must be after the clock-in time.");
+      return;
+    }
     setActionBusy(true);
     setActionError("");
     try {
       await postManualClockOut({
         user_id: modalOutUser.user_id,
         reason,
+        effective_at: effectiveAt,
       });
       setModalOutUser(null);
       await loadSnapshot({ silent: true });
@@ -377,19 +403,19 @@ export function LiveAttendanceClient() {
           <div className="mb-4 hidden gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-4">
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
               <div className="text-xs font-bold text-[var(--color-text-muted)]">Present today</div>
-              <div className="text-2xl font-semibold tabular-nums">{summary?.present_today ?? "—"}</div>
+              <div className="text-xl font-semibold tabular-nums sm:text-2xl">{summary?.present_today ?? "—"}</div>
             </div>
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
               <div className="text-xs font-bold text-[var(--color-text-muted)]">Open shifts</div>
-              <div className="text-2xl font-semibold tabular-nums">{summary?.open_shifts ?? "—"}</div>
+              <div className="text-xl font-semibold tabular-nums sm:text-2xl">{summary?.open_shifts ?? "—"}</div>
             </div>
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
               <div className="text-xs font-bold text-[var(--color-text-muted)]">Absent</div>
-              <div className="text-2xl font-semibold tabular-nums">{summary?.absent_count ?? "—"}</div>
+              <div className="text-xl font-semibold tabular-nums sm:text-2xl">{summary?.absent_count ?? "—"}</div>
             </div>
             <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
               <div className="text-xs font-bold text-[var(--color-text-muted)]">Attendance rate</div>
-              <div className="text-2xl font-semibold tabular-nums">
+              <div className="text-xl font-semibold tabular-nums sm:text-2xl">
                 {summary && summary.attendance_rate !== null && summary.attendance_rate !== undefined
                   ? `${Math.round(summary.attendance_rate * 100)}%`
                   : "—"}
@@ -565,114 +591,170 @@ export function LiveAttendanceClient() {
           </div>
 
           {modalInUser ? (
-            <div className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6">
-              <div
-                role="dialog"
-                aria-modal="true"
-                className="mx-auto mt-8 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg sm:max-w-[min(40rem,calc(100vw-3rem))]"
+            <Modal
+              title="Force clock in"
+              subtitle={
+                modalInUser.email
+                  ? `${modalInUser.display_name} · ${modalInUser.email}`
+                  : modalInUser.display_name
+              }
+              onClose={() => {
+                if (!actionBusy) setModalInUser(null);
+              }}
+              footer={
+                <FormActions>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={actionBusy}
+                    onClick={() => setModalInUser(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    form="force-clock-in-form"
+                    disabled={actionBusy || assignableLocationsForUser.length === 0}
+                  >
+                    {actionBusy ? "Saving…" : "Confirm clock in"}
+                  </Button>
+                </FormActions>
+              }
+            >
+              <form
+                className="space-y-[var(--space-form-gap)]"
+                id="force-clock-in-form"
+                onSubmit={handleManualClockIn}
               >
-                <h2 className="mb-1 text-lg font-semibold">Manual clock in</h2>
-                <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-                  {modalInUser.display_name}
-                  {modalInUser.email ? ` · ${modalInUser.email}` : null}
-                </p>
-                <form className="space-y-3" onSubmit={handleManualClockIn}>
-                  <label className="block text-xs font-bold text-[var(--color-text)]">
-                    Location
-                    <select
-                      className="mt-0.5 h-9 w-full border border-[var(--color-border-dark)] text-sm sm:mt-1 sm:h-10 bg-[var(--color-input)] px-2 text-sm"
-                      required
-                      value={locationPick}
-                      onChange={(event) => setLocationPick(event.target.value)}
-                    >
-                      <option value="">Select location…</option>
-                      {assignableLocationsForUser.map((loc) => (
-                        <option key={loc.id} value={loc.id}>
-                          {loc.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {assignableLocationsForUser.length === 0 ? (
-                    <p className="text-xs text-[var(--color-danger-700)]">
-                      No site access locations for this employee. Assign locations under Site Access first.
-                    </p>
-                  ) : null}
-                  <label className="block text-xs font-bold text-[var(--color-text)]">
-                    Reason (required)
-                    <textarea
-                      className="mt-1 min-h-[96px] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-2 text-sm"
-                      required
-                      value={reasonIn}
-                      onChange={(event) => setReasonIn(event.target.value)}
-                    />
-                  </label>
-                  {actionError ? (
-                    <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-2 py-2 text-xs text-[var(--color-danger-700)]">
-                      {actionError}
-                    </div>
-                  ) : null}
-                  <div className="flex flex-wrap justify-end gap-2 pt-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={actionBusy}
-                      onClick={() => setModalInUser(null)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={actionBusy || assignableLocationsForUser.length === 0}>
-                      {actionBusy ? "Saving…" : "Confirm clock in"}
-                    </Button>
+                <FormField label="Location" htmlFor="force-clock-in-location" required>
+                  <select
+                    className="timiq-input timiq-select"
+                    id="force-clock-in-location"
+                    required
+                    value={locationPick}
+                    onChange={(event) => setLocationPick(event.target.value)}
+                  >
+                    <option value="">Select location…</option>
+                    {assignableLocationsForUser.map((loc) => (
+                      <option key={loc.id} value={loc.id}>
+                        {loc.name}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+                {assignableLocationsForUser.length === 0 ? (
+                  <p className="break-words text-[length:var(--text-secondary)] text-[var(--color-danger-700)]">
+                    No site access locations for this employee. Assign locations under Site Access
+                    first.
+                  </p>
+                ) : null}
+                <FormField
+                  label="Clock-in date and time"
+                  htmlFor="force-clock-in-at"
+                  hint={`Entered in your local time (${localTimeZoneLabel}) and stored in UTC.`}
+                  required
+                >
+                  <input
+                    className="timiq-input"
+                    id="force-clock-in-at"
+                    required
+                    type="datetime-local"
+                    value={clockInAtLocal}
+                    onChange={(event) => setClockInAtLocal(event.target.value)}
+                  />
+                </FormField>
+                <FormField label="Reason" htmlFor="force-clock-in-reason" required>
+                  <textarea
+                    className="timiq-input min-h-[72px] py-2"
+                    id="force-clock-in-reason"
+                    required
+                    value={reasonIn}
+                    onChange={(event) => setReasonIn(event.target.value)}
+                  />
+                </FormField>
+                {actionError ? (
+                  <div
+                    className="break-words rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-2 py-2 text-[length:var(--text-secondary)] text-[var(--color-danger-700)]"
+                    role="alert"
+                  >
+                    {actionError}
                   </div>
-                </form>
-              </div>
-            </div>
+                ) : null}
+              </form>
+            </Modal>
           ) : null}
 
           {modalOutUser ? (
-            <div className="fixed inset-0 z-40 flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-3 md:p-6">
-              <div
-                role="dialog"
-                aria-modal="true"
-                className="mx-auto mt-8 w-full min-w-0 max-h-[calc(100dvh-2rem)] max-w-[calc(100vw-1.5rem)] overflow-y-auto border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg sm:max-w-[min(40rem,calc(100vw-3rem))]"
+            <Modal
+              title="Force clock out"
+              subtitle={
+                modalOutUser.email
+                  ? `${modalOutUser.display_name} · ${modalOutUser.email}`
+                  : modalOutUser.display_name
+              }
+              onClose={() => {
+                if (!actionBusy) setModalOutUser(null);
+              }}
+              footer={
+                <FormActions>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={actionBusy}
+                    onClick={() => setModalOutUser(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" form="force-clock-out-form" disabled={actionBusy}>
+                    {actionBusy ? "Saving…" : "Confirm clock out"}
+                  </Button>
+                </FormActions>
+              }
+            >
+              <form
+                className="space-y-[var(--space-form-gap)]"
+                id="force-clock-out-form"
+                onSubmit={handleManualClockOut}
               >
-                <h2 className="mb-1 text-lg font-semibold">Manual clock out</h2>
-                <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-                  {modalOutUser.display_name}
-                  {modalOutUser.email ? ` · ${modalOutUser.email}` : null}
-                </p>
-                <form className="space-y-3" onSubmit={handleManualClockOut}>
-                  <label className="block text-xs font-bold text-[var(--color-text)]">
-                    Reason (required)
-                    <textarea
-                      className="mt-1 min-h-[96px] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 py-2 text-sm"
-                      required
-                      value={reasonOut}
-                      onChange={(event) => setReasonOut(event.target.value)}
-                    />
-                  </label>
-                  {actionError ? (
-                    <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-2 py-2 text-xs text-[var(--color-danger-700)]">
-                      {actionError}
-                    </div>
-                  ) : null}
-                  <div className="flex flex-wrap justify-end gap-2 pt-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={actionBusy}
-                      onClick={() => setModalOutUser(null)}
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit" disabled={actionBusy}>
-                      {actionBusy ? "Saving…" : "Confirm clock out"}
-                    </Button>
+                {modalOutUser.clock_in_at ? (
+                  <p className="timiq-caption break-words">
+                    Open since {new Date(modalOutUser.clock_in_at).toLocaleString()}
+                  </p>
+                ) : null}
+                <FormField
+                  label="Clock-out date and time"
+                  htmlFor="force-clock-out-at"
+                  hint={`Entered in your local time (${localTimeZoneLabel}) and stored in UTC. Must be after the clock-in time.`}
+                  required
+                >
+                  <input
+                    className="timiq-input"
+                    id="force-clock-out-at"
+                    required
+                    type="datetime-local"
+                    value={clockOutAtLocal}
+                    onChange={(event) => setClockOutAtLocal(event.target.value)}
+                  />
+                </FormField>
+                <FormField label="Reason" htmlFor="force-clock-out-reason" required>
+                  <textarea
+                    className="timiq-input min-h-[72px] py-2"
+                    id="force-clock-out-reason"
+                    required
+                    value={reasonOut}
+                    onChange={(event) => setReasonOut(event.target.value)}
+                  />
+                </FormField>
+                {actionError ? (
+                  <div
+                    className="break-words rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-2 py-2 text-[length:var(--text-secondary)] text-[var(--color-danger-700)]"
+                    role="alert"
+                  >
+                    {actionError}
                   </div>
-                </form>
-              </div>
-            </div>
+                ) : null}
+              </form>
+            </Modal>
           ) : null}
         </RoleGuard>
       </SheetBody>

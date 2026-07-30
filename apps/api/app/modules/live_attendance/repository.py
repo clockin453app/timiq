@@ -97,6 +97,25 @@ def employee_has_location_access(
     return db_session.scalar(statement.limit(1)) is not None
 
 
+def get_completed_shift_covering_instant(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    instant: datetime,
+) -> TimeShift | None:
+    """Find a completed shift whose span already contains `instant`."""
+    statement = (
+        select(TimeShift)
+        .where(TimeShift.user_id == user_id)
+        .where(TimeShift.status == "completed")
+        .where(TimeShift.clock_out_at.is_not(None))
+        .where(TimeShift.clock_in_at <= instant)
+        .where(TimeShift.clock_out_at > instant)
+        .order_by(TimeShift.clock_in_at.desc())
+    )
+    return db_session.scalars(statement).first()
+
+
 def list_completed_shifts_clocked_out_in_range(
     db_session: Session,
     *,

@@ -13,7 +13,7 @@ export const uiClasses = {
 
   cardHeader: [
     "border-b border-[var(--color-border)]",
-    "bg-[var(--color-header)] px-[var(--space-card)] py-3.5",
+    "bg-[var(--color-header)] px-[var(--space-card)] py-2.5 sm:py-3.5",
   ].join(" "),
 
   cardBody: "px-[var(--space-card)] py-[calc(var(--space-card)-0.0625rem)]",
@@ -21,10 +21,10 @@ export const uiClasses = {
   sectionGap: "space-y-[calc(var(--space-section)-0.125rem)]",
 
   pageHeader: [
-    "flex w-full min-w-0 flex-col items-stretch gap-3",
+    "flex w-full min-w-0 flex-col items-stretch gap-2",
     "border-b border-[var(--color-border)] bg-[var(--color-sheet)]",
-    "px-[var(--space-card)] py-3.5 sm:flex-row sm:items-start sm:justify-between",
-    "sm:px-5 sm:py-4.5",
+    "px-[var(--space-card)] py-2.5 sm:flex-row sm:items-start sm:justify-between",
+    "sm:gap-3 sm:px-5 sm:py-4.5",
   ].join(" "),
 
   tableWrap: [
@@ -34,10 +34,16 @@ export const uiClasses = {
   ].join(" "),
 
   toolbar: [
-    "flex flex-wrap items-center gap-2",
+    "flex flex-wrap items-center gap-[var(--space-toolbar-gap)]",
     "rounded-[var(--radius-md)] border border-[var(--color-border-dark)]",
-    "bg-[var(--color-toolbar-well)] p-3",
+    "bg-[var(--color-toolbar-well)] p-2 sm:p-3",
   ].join(" "),
+
+  /** Responsive gap for card/stat grids. */
+  gridGap: "gap-[var(--space-grid-gap)]",
+
+  /** Vertical rhythm inside forms. */
+  formStack: "space-y-[var(--space-form-gap)]",
 
   focusRing: "focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]",
 
@@ -182,7 +188,7 @@ export const uiClasses = {
   ].join(" "),
 
   navDrawerLinkBase:
-    "flex min-h-[44px] min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-3 py-2.5 text-sm font-medium",
+    "flex min-h-[44px] min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-[length:var(--text-nav-row)] font-medium",
 
   navDrawerLinkIdle: [
     "border-transparent text-[var(--color-text-muted)]",
@@ -195,7 +201,7 @@ export const uiClasses = {
 
   navAccordionHeader: [
     "flex w-full min-w-0 items-center justify-between gap-2 rounded-[var(--radius-md)] border px-2 py-1.5",
-    "text-left text-sm font-medium transition-colors",
+    "text-left text-[length:var(--text-nav-row)] font-medium transition-colors",
   ].join(" "),
 
   navAccordionHeaderIdle: [
@@ -233,10 +239,10 @@ export const uiClasses = {
   payeFilterLabel: "timiq-label block text-[10px] uppercase tracking-wide text-[var(--color-text-soft)]",
 
   payeFilterSelect:
-    "timiq-select mt-1 h-10 w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]",
+    "timiq-select mt-1 h-9 w-full min-w-0 max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-[var(--color-text)] sm:h-10",
 
   payeFilterInput:
-    "timiq-input mt-1 h-10 w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm text-[var(--color-text)]",
+    "timiq-input mt-1 h-9 w-full min-w-0 max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-[var(--color-text)] sm:h-10",
 
   payeStatLabel: "timiq-caption font-semibold uppercase tracking-wide text-[var(--color-text-soft)]",
 

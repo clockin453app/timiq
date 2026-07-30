@@ -114,7 +114,7 @@ export function RamsManageClient() {
             <p className="text-sm font-medium text-[var(--color-text)]">No RAMS records match the current filters.</p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+          <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
             <Table>
               <TableHeader>
                 <TableRow>

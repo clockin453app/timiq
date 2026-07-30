@@ -44,12 +44,16 @@ class ManualClockInRequest(BaseModel):
     user_id: uuid.UUID
     location_id: uuid.UUID
     reason: str = Field(..., min_length=1, max_length=2000)
+    """Attendance time to record. Omit to stamp the current server time."""
+    effective_at: datetime | None = None
 
 
 class ManualClockOutRequest(BaseModel):
     user_id: uuid.UUID | None = None
     shift_id: uuid.UUID | None = None
     reason: str = Field(..., min_length=1, max_length=2000)
+    """Attendance time to record. Omit to stamp the current server time."""
+    effective_at: datetime | None = None
 
     @model_validator(mode="after")
     def exactly_one_target(self) -> "ManualClockOutRequest":

@@ -92,6 +92,8 @@ export type ManualClockInBody = {
   user_id: string;
   location_id: string;
   reason: string;
+  /** UTC ISO 8601 attendance time. Omit to let the server stamp the current time. */
+  effective_at?: string;
 };
 
 export async function postManualClockIn(body: ManualClockInBody): Promise<ManualClockActionResponse> {
@@ -113,6 +115,8 @@ export type ManualClockOutBody = {
   user_id?: string;
   shift_id?: string;
   reason: string;
+  /** UTC ISO 8601 attendance time. Omit to let the server stamp the current time. */
+  effective_at?: string;
 };
 
 export async function postManualClockOut(body: ManualClockOutBody): Promise<ManualClockActionResponse> {

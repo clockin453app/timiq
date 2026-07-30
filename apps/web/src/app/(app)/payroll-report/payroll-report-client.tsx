@@ -69,6 +69,7 @@ import {
   browserDefaultTimeZone,
   mondayWeekStartIso,
 } from "@/features/timesheets/week-utils";
+import { fromDatetimeLocalToIso, toDatetimeLocalValue } from "@/lib/datetime-local";
 import { payrollStatusLabel } from "@/lib/i18n/display-labels";
 import { useT } from "@/lib/i18n";
 import { formatPayrollWeekUkLabel } from "@/lib/week-label";
@@ -423,23 +424,6 @@ function formatShiftDateTime(iso: string, timeZone: string): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d);
-}
-
-function toDatetimeLocalValue(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    return "";
-  }
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function fromDatetimeLocalToIso(localValue: string): string {
-  const d = new Date(localValue);
-  if (Number.isNaN(d.getTime())) {
-    return "";
-  }
-  return d.toISOString();
 }
 
 const UUID_LIKE =
