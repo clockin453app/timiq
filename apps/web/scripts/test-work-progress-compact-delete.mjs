@@ -1,18 +1,20 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 
-const clientPath = new URL("../src/app/work-progress-review/work-progress-review-client.tsx", import.meta.url);
+const clientPath = new URL("../src/app/(app)/work-progress-review/work-progress-review-client.tsx", import.meta.url);
 const tablePath = new URL("../src/components/ui/table.tsx", import.meta.url);
 const buttonPath = new URL("../src/components/ui/button.tsx", import.meta.url);
 
-const client = fs.readFileSync(clientPath, "utf8");
-const table = fs.readFileSync(tablePath, "utf8");
-const button = fs.readFileSync(buttonPath, "utf8");
+const readNormalized = (path) => fs.readFileSync(path, "utf8").replace(/\r\n/g, "\n");
+
+const client = readNormalized(clientPath);
+const table = readNormalized(tablePath);
+const button = readNormalized(buttonPath);
 
 assert.match(client, /const DENSE_HEAD = "px-2 py-1 text-\[11px]/);
 assert.match(client, /const DENSE_CELL = "px-2 py-1 text-xs"/);
 assert.match(client, /const COMPACT_ACTION_BTN =[\s\S]*h-7/);
-assert.match(client, /flex flex-nowrap items-center gap-1/);
+assert.match(client, /hidden flex-wrap items-center gap-1 md:flex/);
 assert.match(client, /function TruncateText/);
 assert.match(client, /tabIndex=\{0\}/);
 assert.match(client, /title=\{value\}/);

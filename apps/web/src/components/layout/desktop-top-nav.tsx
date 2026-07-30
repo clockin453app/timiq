@@ -154,7 +154,7 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
       <nav
         ref={navRef}
         aria-label={t("shell.top_nav", "Main navigation")}
-        className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 xl:flex-nowrap xl:overflow-x-auto xl:overscroll-x-contain xl:[-webkit-overflow-scrolling:touch]"
+        className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 lg:flex-nowrap lg:overflow-x-auto lg:overscroll-x-contain lg:[-webkit-overflow-scrolling:touch]"
       >
         {groups.map((group) => {
           const visible = group.items;

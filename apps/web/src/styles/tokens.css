@@ -1,7 +1,21 @@
 :root {
   /* App surfaces */
   --color-page: #eef3f8;
-  --color-sidebar-bg: #e4ebf3;
+  --color-app-page: #f3f4f6;
+  --color-sidebar-bg: #192f60;
+  --color-sidebar-active: #27477f;
+  --color-sidebar-child-bg: #e6edf6;
+  --color-sidebar-border: #365181;
+  --color-sidebar-fg: #ffffff;
+  --color-sidebar-fg-muted: rgba(255, 255, 255, 0.78);
+  --color-sidebar-child-fg: #192f60;
+  --color-sidebar-child-hover: #d8e3f1;
+  --color-utilitybar-bg: #ffffff;
+  --color-utilitybar-border: #c5d1df;
+  --color-utilitybar-border-strong: #9fb0c5;
+  --color-utilitybar-fg: #192f60;
+  --color-utilitybar-fg-muted: #52657d;
+  --color-utilitybar-hover: #eef3f8;
   --color-sheet: #ffffff;
   --color-cell: #fbfdff;
   --color-header: #f4f8fc;
@@ -205,11 +219,18 @@
   --space-form-gap: 1rem;
   --space-modal: 1.25rem;
 
-  --layout-sidebar-width: 15.5rem;
-  --layout-sidebar-collapsed: 4.25rem;
-  --layout-topbar-height: 4.5rem;
-  --layout-topbar-brand-width: 11rem;
+  --layout-sidebar-width: 18.25rem;
+  --layout-sidebar-collapsed: 4.5rem;
+  --layout-sidebar-responsive-default: var(--layout-sidebar-width);
+  --layout-topbar-height: 4.125rem;
+  --layout-topbar-brand-width: 18.25rem;
   --layout-topbar-divider-height: 2.75rem;
+  --layout-desktop-content-height: calc(100dvh - var(--layout-topbar-height));
+  --layout-sidebar-row-height: 2.125rem;
+  --layout-sidebar-folder-row-height: 1.875rem;
+  --layout-sidebar-page-row-height: 1.75rem;
+  --layout-sidebar-child-row-height: 1.875rem;
+  --layout-sidebar-icon-size: 0.875rem;
   --layout-mobile-bottom-nav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   --layout-mobile-keyboard-pad: 1rem;
 
@@ -228,9 +249,15 @@
   }
 }
 
+@media (min-width: 1024px) and (max-width: 1439px) {
+  :root {
+    --layout-sidebar-responsive-default: var(--layout-sidebar-collapsed);
+  }
+}
+
 @media (min-width: 1280px) {
   :root {
-    --space-page-x: 2rem;
-    --space-page-y: 1.5rem;
+    --space-page-x: 1.5rem;
+    --space-page-y: 1.25rem;
   }
 }

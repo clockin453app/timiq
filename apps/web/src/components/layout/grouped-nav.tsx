@@ -2,13 +2,13 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 
 import type { NavigationGroupDefinition, SystemRole } from "../../config/navigation";
 import { cn } from "../../lib/cn";
 import { uiClasses } from "../../lib/ui-classes";
 import { useT } from "../../lib/i18n";
-import { NavItemIcon } from "./nav-item-icon";
+import { NavGroupIcon, NavItemIcon } from "./nav-item-icon";
 
 /**
  * v3: open state is route-driven on each navigation — we do not merge legacy localStorage blobs
@@ -94,12 +94,14 @@ function linkClass(active: boolean, variant: GroupedNavVariant, withIcon: boolea
     );
   }
   const sidebarBase = withIcon
-    ? "flex min-w-0 max-w-full items-center gap-2 break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium"
-    : "block min-w-0 max-w-full break-words rounded-[var(--radius-md)] border px-2 py-1.5 text-sm font-medium";
+    ? "flex min-h-[var(--layout-sidebar-child-row-height)] min-w-0 max-w-full items-center gap-1.5 border-l-[3px] border-transparent px-3 pl-7 text-[12px] font-medium leading-tight"
+    : "flex min-h-[var(--layout-sidebar-child-row-height)] min-w-0 max-w-full items-center border-l-[3px] border-transparent px-3 pl-7 text-[12px] font-medium leading-tight";
   return cn(
     sidebarBase,
     uiClasses.transitionColors,
-    active ? uiClasses.navDrawerLinkActive : uiClasses.navDrawerLinkIdle,
+    active
+      ? "border-l-[var(--color-sidebar-active)] bg-[#d5e1ee] font-semibold text-[var(--color-sidebar-child-fg)]"
+      : "text-[var(--color-sidebar-child-fg)] hover:bg-[var(--color-sidebar-child-hover)]",
   );
 }
 
@@ -179,7 +181,7 @@ export function GroupedNavBlock({
     return null;
   }
 
-  const outerSpacing = variant === "sidebar" ? "space-y-1" : "space-y-1.5";
+  const outerSpacing = variant === "sidebar" ? "space-y-0" : "space-y-1.5";
 
   return (
     <div className={outerSpacing}>
@@ -194,10 +196,35 @@ export function GroupedNavBlock({
           const active = navItemMatchesActive(only.href, activeHref);
           const n = badgeByHref[only.href] ?? 0;
           return (
-            <div key={group.id}>
-              <Link className={linkClass(active, variant, showIcons)} href={only.href} onClick={onNavigate}>
-                {showIcons ? <NavItemIcon labelKey={only.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" /> : null}
-                <span className="min-w-0 flex-1 break-words">{t(only.labelKey, only.label)}</span>
+            <div
+              className={variant === "sidebar" ? "border-b border-white/10 last:border-b-0" : undefined}
+              key={group.id}
+            >
+              <Link
+                aria-current={active ? "page" : undefined}
+                className={
+                  variant === "sidebar"
+                    ? cn(
+                        "flex min-h-[var(--layout-sidebar-row-height)] min-w-0 items-center gap-1.5 px-3 text-[12.5px] font-medium text-white",
+                        uiClasses.transitionColors,
+                        active
+                          ? "bg-[var(--color-sidebar-active)]"
+                          : "hover:bg-white/10",
+                      )
+                    : linkClass(active, variant, showIcons)
+                }
+                href={only.href}
+                onClick={onNavigate}
+                title={t(only.labelKey, only.label)}
+              >
+                {showIcons ? (
+                  <NavItemIcon
+                    className="h-3.5 w-3.5 shrink-0"
+                    labelKey={only.labelKey}
+                    surface={variant === "sidebar" ? "navy" : "neutral"}
+                  />
+                ) : null}
+                <span className="min-w-0 flex-1 truncate">{t(only.labelKey, only.label)}</span>
                 {n > 0 ? (
                   <span className="ml-1 shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-tight text-white">
                     {n > 99 ? "99+" : n}
@@ -208,45 +235,116 @@ export function GroupedNavBlock({
           );
         }
 
-        const isOpen = openAccordionId === group.id;
+        const isOpen =
+          openAccordionId === group.id || groupContainsActiveRoute(group, activeHref);
         return (
-          <div key={group.id}>
+          <div
+            className={variant === "sidebar" ? "border-b border-white/10 last:border-b-0" : undefined}
+            key={group.id}
+          >
             <button
               aria-expanded={isOpen}
               className={cn(
-                uiClasses.navAccordionHeader,
+                variant === "sidebar"
+                  ? "flex min-h-[var(--layout-sidebar-row-height)] w-full min-w-0 items-center gap-1.5 px-3 text-left text-[12.5px] font-medium text-white"
+                  : uiClasses.navAccordionHeader,
                 uiClasses.transitionColors,
-                uiClasses.focusRing,
-                isOpen ? uiClasses.navAccordionHeaderOpen : uiClasses.navAccordionHeaderIdle,
+                variant === "sidebar"
+                  ? "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
+                  : uiClasses.focusRing,
+                variant === "sidebar"
+                  ? isOpen
+                    ? "bg-[var(--color-sidebar-active)]"
+                    : "hover:bg-white/10"
+                  : isOpen
+                    ? uiClasses.navAccordionHeaderOpen
+                    : uiClasses.navAccordionHeaderIdle,
               )}
+              title={t(group.groupLabelKey, group.label)}
               type="button"
               onClick={() => onGroupHeaderClick(group.id)}
             >
-              <span className="min-w-0 truncate">{t(group.groupLabelKey, group.label)}</span>
-              <ChevronDown
-                aria-hidden
-                className={cn(
-                  "h-4 w-4 shrink-0 text-[var(--color-text-soft)] transition-transform duration-150",
-                  isOpen ? "rotate-180" : "",
-                )}
-              />
+              {variant === "sidebar" ? (
+                <>
+                  <ChevronRight
+                    aria-hidden
+                    className={cn(
+                      "h-3 w-3 shrink-0 text-white/70 transition-transform duration-150 motion-reduce:transition-none",
+                      isOpen ? "rotate-90" : "",
+                    )}
+                    strokeWidth={1.8}
+                  />
+                  {showIcons ? (
+                    <NavGroupIcon
+                      className="h-3.5 w-3.5 shrink-0"
+                      groupId={group.id}
+                      surface="navy"
+                    />
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate">
+                    {t(group.groupLabelKey, group.label)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="flex min-w-0 items-center gap-2">
+                    {showIcons ? (
+                      <NavGroupIcon
+                        className="h-4 w-4 shrink-0"
+                        groupId={group.id}
+                        surface="light"
+                      />
+                    ) : null}
+                    <span className="min-w-0 truncate">
+                      {t(group.groupLabelKey, group.label)}
+                    </span>
+                  </span>
+                  <ChevronRight
+                    aria-hidden
+                    className={cn(
+                      "h-4 w-4 shrink-0 text-[var(--color-text-soft)] transition-transform duration-150 motion-reduce:transition-none",
+                      isOpen ? "rotate-90" : "",
+                    )}
+                    strokeWidth={1.8}
+                  />
+                </>
+              )}
             </button>
             {isOpen ? (
-              <div className="mt-1 space-y-0.5 border-l border-[var(--color-border)] pl-2.5">
+              <div
+                className={
+                  variant === "sidebar"
+                    ? "space-y-0 bg-[var(--color-sidebar-child-bg)] py-0.5"
+                    : "mt-1 space-y-0.5 border-l border-[var(--color-border)] pl-2.5"
+                }
+              >
                 {visible.map((item) => {
                   const active = navItemMatchesActive(item.href, activeHref);
                   const n = badgeByHref[item.href] ?? 0;
                   return (
                     <Link
+                      aria-current={active ? "page" : undefined}
                       className={linkClass(active, variant, showIcons)}
                       href={item.href}
                       key={item.href}
                       onClick={onNavigate}
+                      title={t(item.labelKey, item.label)}
                     >
                       {showIcons ? (
-                        <NavItemIcon labelKey={item.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" />
+                        <NavItemIcon
+                          className="h-3.5 w-3.5 shrink-0"
+                          labelKey={item.labelKey}
+                          surface={variant === "sidebar" ? "light" : "neutral"}
+                        />
                       ) : null}
-                      <span className="min-w-0 flex-1 break-words">{t(item.labelKey, item.label)}</span>
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1",
+                          variant === "sidebar" ? "truncate" : "break-words",
+                        )}
+                      >
+                        {t(item.labelKey, item.label)}
+                      </span>
                       {n > 0 ? (
                         <span className="ml-1 shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-tight text-white">
                           {n > 99 ? "99+" : n}

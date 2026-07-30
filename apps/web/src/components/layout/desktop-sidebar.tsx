@@ -1,228 +1,235 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronsLeft, ChevronsRight, LayoutDashboard, Settings, UserRound } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
-  getAllNavLinksForRole,
-  getEmployeeNavigationGroups,
-  getManagementNavigationGroups,
+  getDesktopSidebarNavigationTree,
+  nodeContainsActiveRoute,
+  type NavigationNode,
 } from "../../config/navigation";
 import type { NotificationSummary } from "../../features/notifications/api";
 import { navBadgesFromSummary } from "../../features/notifications/nav-badges";
-import { LogoutButton, useCurrentUser, UserAccountSummary } from "../../features/auth";
+import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { useT } from "../../lib/i18n";
 
-import { findDefaultAccordionGroupId, GroupedNavBlock } from "./grouped-nav";
-import { NavItemIcon } from "./nav-item-icon";
-
-const SIDEBAR_COLLAPSED_KEY = "timiq-sidebar-collapsed";
+import { useDesktopSidebarState } from "./desktop-sidebar-state";
+import { NavGroupIcon, NavItemIcon } from "./nav-item-icon";
+import { NavTree } from "./nav-tree";
 
 type DesktopSidebarProps = {
   activeHref?: string;
 };
 
+function rootSectionIconKey(node: NavigationNode): string {
+  if (node.iconKey) {
+    return node.iconKey;
+  }
+  return node.id;
+}
+
 export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProps) {
   const user = useCurrentUser();
   const t = useT();
-  const [collapsed, setCollapsed] = useState(false);
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
-      setCollapsed(raw === "1");
-    } catch {
-      /* ignore */
-    }
-    setHydrated(true);
-  }, []);
-
-  const setCollapsedPersist = useCallback((next: boolean) => {
-    setCollapsed(next);
-    try {
-      window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   const limited = userHasLimitedAccess(user);
-
-  const employeeGroups = useMemo(
-    () => getEmployeeNavigationGroups(user.system_role, { limitedAccess: limited }),
-    [user.system_role, limited],
+  const { collapsed, hydrated, setCollapsed } = useDesktopSidebarState();
+  const tree = useMemo(
+    () =>
+      getDesktopSidebarNavigationTree(user.system_role, {
+        limitedAccess: limited,
+      }),
+    [limited, user.system_role],
   );
-
-  const managementGroups = useMemo(
-    () => (limited ? [] : getManagementNavigationGroups(user.system_role)),
-    [user.system_role, limited],
-  );
-
-  const flatNav = useMemo(() => getAllNavLinksForRole(user.system_role), [user.system_role]);
-
-  const [accordionOpenGroupId, setAccordionOpenGroupId] = useState<string | null>(null);
+  const [forceOpenIds, setForceOpenIds] = useState<string[]>([]);
   const [navBadges, setNavBadges] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    const onSummary = (ev: Event) => {
-      const d = (ev as CustomEvent<NotificationSummary>).detail;
-      if (!d?.items) {
-        return;
-      }
-      setNavBadges(navBadgesFromSummary(d.items));
+    const onSummary = (event: Event) => {
+      const detail = (event as CustomEvent<NotificationSummary>).detail;
+      if (detail?.items) setNavBadges(navBadgesFromSummary(detail.items));
     };
     window.addEventListener("timiq:notification-summary", onSummary as EventListener);
-    return () => window.removeEventListener("timiq:notification-summary", onSummary as EventListener);
+    return () =>
+      window.removeEventListener("timiq:notification-summary", onSummary as EventListener);
   }, []);
 
   useEffect(() => {
-    setAccordionOpenGroupId(findDefaultAccordionGroupId(employeeGroups, managementGroups, activeHref));
-  }, [activeHref, employeeGroups, managementGroups]);
+    if (!collapsed && forceOpenIds.length > 0) {
+      const timer = window.setTimeout(() => setForceOpenIds([]), 0);
+      return () => window.clearTimeout(timer);
+    }
+    return undefined;
+  }, [collapsed, forceOpenIds]);
 
-  const sidebarWidth = collapsed ? "var(--layout-sidebar-collapsed)" : "var(--layout-sidebar-width)";
+  const width = collapsed
+    ? "var(--layout-sidebar-collapsed)"
+    : "var(--layout-sidebar-width)";
+  const resolvedWidth = hydrated ? width : "var(--layout-sidebar-responsive-default)";
+  const railButton =
+    "relative flex h-9 w-full shrink-0 items-center justify-center border-l-2 border-l-transparent text-[var(--color-sidebar-fg-muted)] transition-colors hover:bg-[var(--color-sidebar-active)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80";
+  const railLink =
+    "relative flex h-9 w-full shrink-0 items-center justify-center border-l-2 border-l-transparent text-[var(--color-sidebar-fg-muted)] transition-colors hover:bg-[var(--color-sidebar-active)] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80";
 
-  const collapsedIconLink =
-    "relative flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border transition-colors";
+  const onCollapsedSectionClick = (node: NavigationNode) => {
+    setForceOpenIds(node.children?.length ? [node.id] : []);
+    setCollapsed(false);
+  };
 
   return (
     <aside
-      className="timiq-print-hide-chrome timiq-desktop-sidebar hidden min-w-0 flex-col border-r border-[var(--color-border-dark)] bg-[var(--color-sidebar-bg)] text-sm transition-[width] duration-200 ease-out xl:flex xl:h-dvh xl:max-h-dvh xl:min-h-0 xl:shrink-0 xl:overflow-hidden"
-      style={{ width: hydrated ? sidebarWidth : "var(--layout-sidebar-width)" }}
+      className="timiq-print-hide-chrome timiq-desktop-sidebar hidden min-h-0 shrink-0 flex-col overflow-hidden border-r border-[var(--color-sidebar-border)] bg-[var(--color-sidebar-bg)] text-[var(--color-sidebar-fg)] transition-[width] duration-200 ease-out motion-reduce:transition-none lg:flex"
+      style={{ width: resolvedWidth }}
     >
-      <div className="flex shrink-0 items-start justify-between gap-1 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-2 py-2">
-        {collapsed ? (
-          <Link
-            aria-label={t("nav.dashboard", "Dashboard")}
-            className="mx-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-transparent text-[var(--color-text)] hover:bg-[var(--color-cell)]"
-            href="/dashboard"
-            title={t("nav.tagline", "TimIQ")}
-          >
-            <LayoutDashboard aria-hidden className="h-5 w-5" />
-          </Link>
-        ) : (
-          <div className="min-w-0 flex-1 px-1">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-              {t("shell.sidebar_section", "Navigation")}
-            </p>
-            <p className="text-base font-bold leading-tight tracking-tight text-[var(--color-text)]">
-              {t("nav.tagline", "TimIQ")}
-            </p>
-          </div>
-        )}
-        <button
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? t("shell.expand_nav", "Expand navigation") : t("shell.collapse_nav", "Collapse navigation")}
-          className="timiq-touch-target flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text)] hover:bg-[var(--color-btn-default-hover)]"
-          type="button"
-          onClick={() => setCollapsedPersist(!collapsed)}
-        >
-          {collapsed ? (
-            <ChevronsRight aria-hidden className="h-4 w-4" />
-          ) : (
-            <ChevronsLeft aria-hidden className="h-4 w-4" />
-          )}
-        </button>
-      </div>
-
       {collapsed ? (
         <nav
-          className="flex min-h-0 flex-1 flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden overscroll-y-contain px-1 py-2 [-webkit-overflow-scrolling:touch]"
           aria-label={t("shell.sidebar_section", "Navigation")}
+          className="timiq-sidebar-scrollbar flex min-h-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden overscroll-y-contain py-1 [-webkit-overflow-scrolling:touch]"
         >
-          {flatNav.map((item) => {
-            const label = t(item.labelKey, item.label);
-            const active =
-              item.href === "/dashboard"
-                ? activeHref === "/dashboard"
-                : activeHref === item.href || activeHref.startsWith(`${item.href}/`);
-            const n = navBadges[item.href] ?? 0;
+          {tree.map((node) => {
+            const label = t(node.labelKey, node.label);
+            const active = nodeContainsActiveRoute(node, activeHref);
+            const hasBadge = Boolean(
+              node.href
+                ? (navBadges[node.href] ?? 0) > 0
+                : node.children?.some((child) =>
+                    child.href ? (navBadges[child.href] ?? 0) > 0 : false,
+                  ),
+            );
             return (
-              <Link
-                aria-label={label}
-                className={[
-                  collapsedIconLink,
+              <button
+                aria-label={`${t("shell.expand_sidebar", "Expand sidebar")}: ${label}`}
+                className={`${railButton} ${
                   active
-                    ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] text-[var(--color-text)]"
-                    : "border-transparent text-[var(--color-text-muted)] hover:border-[var(--color-border)] hover:bg-[var(--color-cell)] hover:text-[var(--color-text)]",
-                ].join(" ")}
-                href={item.href}
-                key={item.href}
+                    ? "border-l-white/80 bg-[var(--color-sidebar-active)] text-white"
+                    : ""
+                }`}
+                key={node.id}
                 title={label}
+                type="button"
+                onClick={() => onCollapsedSectionClick(node)}
               >
-                <NavItemIcon labelKey={item.labelKey} className="h-[1.125rem] w-[1.125rem] shrink-0" />
-                {n > 0 ? (
-                  <span className="absolute right-0.5 top-0.5 h-2 w-2 rounded-full bg-red-600 ring-2 ring-[var(--color-sidebar-bg)]" />
+                {node.href && !node.children?.length ? (
+                  <NavItemIcon
+                    aria-hidden
+                    className="h-[var(--layout-sidebar-icon-size)] w-[var(--layout-sidebar-icon-size)]"
+                    labelKey={node.labelKey}
+                    surface="navy"
+                  />
+                ) : (
+                  <NavGroupIcon
+                    aria-hidden
+                    className="h-[var(--layout-sidebar-icon-size)] w-[var(--layout-sidebar-icon-size)]"
+                    groupId={rootSectionIconKey(node)}
+                    surface="navy"
+                  />
+                )}
+                {hasBadge ? (
+                  <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red-400 ring-2 ring-[var(--color-sidebar-bg)]" />
                 ) : null}
-              </Link>
+              </button>
             );
           })}
         </nav>
       ) : (
         <nav
-          className="flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden overscroll-y-contain px-2 py-2 [-webkit-overflow-scrolling:touch]"
           aria-label={t("shell.sidebar_section", "Navigation")}
+          className="timiq-sidebar-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain py-1 [-webkit-overflow-scrolling:touch]"
         >
-          <GroupedNavBlock
-            accordionOpenGroupId={accordionOpenGroupId}
+          <NavTree
             activeHref={activeHref}
             badgeByHref={navBadges}
-            groups={employeeGroups}
-            onAccordionOpenGroupChange={setAccordionOpenGroupId}
+            forceOpenIds={forceOpenIds}
+            nodes={tree}
             role={user.system_role}
             showIcons
-            storageScope="sidebar-desktop-primary"
+            storageScope="sidebar-desktop"
             variant="sidebar"
           />
-
-          {managementGroups.length > 0 ? (
-            <div className="mt-3 border-t border-[var(--color-border)] pt-2">
-              <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-                {t("nav.management", "Management")}
-              </p>
-              <GroupedNavBlock
-                accordionOpenGroupId={accordionOpenGroupId}
-                activeHref={activeHref}
-                badgeByHref={navBadges}
-                groups={managementGroups}
-                onAccordionOpenGroupChange={setAccordionOpenGroupId}
-                role={user.system_role}
-                showIcons
-                storageScope="sidebar-desktop-management"
-                variant="sidebar"
-              />
-            </div>
-          ) : null}
         </nav>
       )}
 
-      {collapsed ? (
-        <div className="flex shrink-0 flex-col items-center gap-1 border-t border-[var(--color-border-dark)] bg-[var(--color-cell)] px-1.5 py-2">
-          <Link
-            aria-label={t("nav.profile", "Profile")}
-            className={`${collapsedIconLink} border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]`}
-            href="/profile"
-            title={t("nav.profile", "Profile")}
-          >
-            <UserRound aria-hidden className="h-4 w-4" />
-          </Link>
-          <Link
-            aria-label={t("nav.settings", "Settings")}
-            className={`${collapsedIconLink} border-transparent text-[var(--color-text-muted)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]`}
-            href="/settings"
-            title={t("nav.settings", "Settings")}
-          >
-            <Settings aria-hidden className="h-4 w-4" />
-          </Link>
-          <LogoutButton iconOnly />
-        </div>
-      ) : (
-        <div className="shrink-0">
-          <UserAccountSummary layout="compact" />
-        </div>
-      )}
+      <div className="timiq-sidebar-scrollbar max-h-[50%] shrink-0 overflow-y-auto overscroll-contain border-t border-white/15 bg-[#142950]">
+        {collapsed ? (
+          <div className="flex flex-col items-center py-1.5">
+            <Link className={railLink} href="/profile" title={t("nav.profile", "Profile")}>
+              <NavItemIcon aria-hidden className="h-3.5 w-3.5" labelKey="nav.profile" surface="navy" />
+              <span className="sr-only">{t("nav.profile", "Profile")}</span>
+            </Link>
+            {!limited ? (
+              <>
+                <Link className={railLink} href="/settings" title={t("nav.settings", "Settings")}>
+                  <NavItemIcon aria-hidden className="h-3.5 w-3.5" labelKey="nav.settings" surface="navy" />
+                  <span className="sr-only">{t("nav.settings", "Settings")}</span>
+                </Link>
+                <Link className={railLink} href="/help" title={t("nav.help", "Help centre")}>
+                  <NavItemIcon aria-hidden className="h-3.5 w-3.5" labelKey="nav.help" surface="navy" />
+                  <span className="sr-only">{t("nav.help", "Help centre")}</span>
+                </Link>
+              </>
+            ) : null}
+            <span className="block w-full [&_button]:!h-9 [&_button]:!w-full [&_button]:!rounded-none [&_button]:!border-0 [&_button]:!border-l-2 [&_button]:!border-l-transparent [&_button]:!bg-transparent [&_button]:!p-0 [&_button]:!text-white/80 [&_button]:!shadow-none [&_button:hover]:!bg-[var(--color-sidebar-active)] [&_button:hover]:!text-white [&_svg]:!h-3.5 [&_svg]:!w-3.5 [&_svg]:!text-[#e6a0a0]">
+              <LogoutButton iconOnly />
+            </span>
+          </div>
+        ) : (
+          <div className="text-xs">
+            <div className="border-b border-white/10 px-3 py-1.5">
+              <p className="truncate font-medium text-white" title={user.email}>
+                {user.email}
+              </p>
+              <p className="mt-0.5 text-[10px] uppercase tracking-wide text-white/60">
+                {user.system_role}
+              </p>
+            </div>
+            <div className="py-1">
+              <Link
+                className="flex min-h-[var(--layout-sidebar-row-height)] w-full items-center gap-2 px-3 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
+                href="/profile"
+              >
+                <NavItemIcon
+                  aria-hidden
+                  className="h-3.5 w-3.5 shrink-0"
+                  labelKey="nav.profile"
+                  surface="navy"
+                />
+                {t("nav.profile", "Profile")}
+              </Link>
+              {!limited ? (
+                <>
+                  <Link
+                    className="flex min-h-[var(--layout-sidebar-row-height)] w-full items-center gap-2 px-3 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
+                    href="/settings"
+                  >
+                    <NavItemIcon
+                      aria-hidden
+                      className="h-3.5 w-3.5 shrink-0"
+                      labelKey="nav.settings"
+                      surface="navy"
+                    />
+                    {t("nav.settings", "Settings")}
+                  </Link>
+                  <Link
+                    className="flex min-h-[var(--layout-sidebar-row-height)] w-full items-center gap-2 px-3 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
+                    href="/help"
+                  >
+                    <NavItemIcon
+                      aria-hidden
+                      className="h-3.5 w-3.5 shrink-0"
+                      labelKey="nav.help"
+                      surface="navy"
+                    />
+                    {t("nav.help", "Help centre")}
+                  </Link>
+                </>
+              ) : null}
+              <span className="block [&_button]:!h-[var(--layout-sidebar-row-height)] [&_button]:!w-full [&_button]:!justify-start [&_button]:!gap-2 [&_button]:!rounded-none [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!px-3 [&_button]:!text-xs [&_button]:!font-medium [&_button]:!text-white/80 [&_button]:!shadow-none [&_button:hover]:!bg-white/10 [&_button:hover]:!text-white [&_svg]:!h-3.5 [&_svg]:!w-3.5 [&_svg]:!text-[#e6a0a0]">
+                <LogoutButton showIcon />
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
     </aside>
   );
 }
