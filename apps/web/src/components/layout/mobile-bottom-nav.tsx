@@ -4,7 +4,6 @@ import Link from "next/link";
 import {
   Banknote,
   Calendar,
-  CalendarRange,
   Clock,
   LayoutDashboard,
   UserRound,
@@ -47,30 +46,22 @@ const limitedAccessPrimaryLinks: MobileNavItem[] = [
   { labelKey: "nav.mobile.more", fallback: "Profile", href: "/profile", Icon: UserRound },
 ];
 
-const managementPrimaryLinks: MobileNavItem[] = [
-  { labelKey: "nav.mobile.dashboard", fallback: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
-  { labelKey: "nav.mobile.clock", fallback: "Clock", href: "/clock", Icon: Clock },
-  { labelKey: "nav.mobile.timesheets", fallback: "Timesheets", href: "/timesheets", Icon: Calendar },
-  { labelKey: "nav.mobile.week", fallback: "Week", href: "/week-report", Icon: CalendarRange },
-  { labelKey: "nav.mobile.more", fallback: "More", href: "/profile", Icon: UserRound },
-];
-
 export function MobileBottomNav({ activeHref = "/dashboard" }: MobileBottomNavProps) {
   const t = useT();
   const user = useCurrentUser();
   const limited = userHasLimitedAccess(user);
-  const links = limited
-    ? limitedAccessPrimaryLinks
-    : canAccessManagement(user)
-      ? managementPrimaryLinks
-      : employeePrimaryLinks;
+  if (canAccessManagement(user)) {
+    return null;
+  }
+
+  const links = limited ? limitedAccessPrimaryLinks : employeePrimaryLinks;
   const colClass =
     links.length === 3 ? "grid-cols-3" : links.length === 4 ? "grid-cols-4" : "grid-cols-5";
 
   return (
     <nav
       className={cn(
-        "timiq-print-hide-chrome fixed inset-x-0 bottom-0 z-30 grid pb-[env(safe-area-inset-bottom,0px)] text-[11px] leading-tight xl:hidden",
+        "timiq-print-hide-chrome fixed inset-x-0 bottom-0 z-30 grid pb-[env(safe-area-inset-bottom,0px)] text-[11px] leading-tight lg:hidden",
         colClass,
         uiClasses.bottomNavBar,
       )}

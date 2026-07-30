@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogOut } from "lucide-react";
 
@@ -15,17 +15,20 @@ type LogoutButtonProps = {
   className?: string;
   size?: "md" | "sm";
   iconOnly?: boolean;
+  showIcon?: boolean;
 };
 
 export function LogoutButton({
   className,
   size = "md",
   iconOnly = false,
+  showIcon = false,
 }: LogoutButtonProps = {}) {
   const router = useRouter();
   const { setLocale, t } = useI18n();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const openerRef = useRef<HTMLButtonElement>(null);
 
   async function handleLogout() {
     setIsLoggingOut(true);
@@ -62,6 +65,7 @@ export function LogoutButton({
       open={confirmOpen}
       onCancel={closeConfirm}
       onConfirm={() => void handleLogout()}
+      returnFocusRef={openerRef}
     />
   );
 
@@ -69,6 +73,7 @@ export function LogoutButton({
     return (
       <>
         <button
+          ref={openerRef}
           aria-label={label}
           className={cn(
             "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-btn-default-border)] bg-[var(--color-btn-default-bg)] text-[var(--color-text-muted)] hover:bg-[var(--color-btn-default-hover)] hover:text-[var(--color-text)] disabled:pointer-events-none disabled:opacity-60",
@@ -89,6 +94,7 @@ export function LogoutButton({
   return (
     <>
       <Button
+        ref={openerRef}
         className={className}
         disabled={isLoggingOut}
         onClick={openConfirm}
@@ -96,6 +102,7 @@ export function LogoutButton({
         type="button"
         variant="secondary"
       >
+        {showIcon ? <LogOut aria-hidden className="h-4 w-4 shrink-0" /> : null}
         {label}
       </Button>
       {dialog}
