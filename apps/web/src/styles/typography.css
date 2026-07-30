@@ -1,18 +1,25 @@
+/*
+ * Semantic typography classes. Sizes come from the responsive scale in
+ * tokens.css so mobile density is tuned in one place; weight, colour and
+ * tracking stay here.
+ */
+
 .timiq-title-xl {
   margin: 0;
   color: var(--color-text);
-  font-size: 1.75rem;
+  font-size: var(--text-hero-title);
   font-weight: 750;
-  line-height: 2.1rem;
+  line-height: var(--text-hero-title-lh);
   letter-spacing: -0.022em;
+  overflow-wrap: anywhere;
 }
 
 .timiq-title-lg {
   margin: 0;
   color: var(--color-text);
-  font-size: 1.625rem;
+  font-size: var(--text-page-title);
   font-weight: 720;
-  line-height: 2rem;
+  line-height: var(--text-page-title-lh);
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
   word-break: break-word;
@@ -21,37 +28,49 @@
 .timiq-title-md {
   margin: 0;
   color: var(--color-text);
-  font-size: 1.025rem;
+  font-size: var(--text-section-title);
   font-weight: 680;
-  line-height: 1.45rem;
+  line-height: var(--text-section-title-lh);
   letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.timiq-title-dialog {
+  margin: 0;
+  color: var(--color-text);
+  font-size: var(--text-dialog-title);
+  font-weight: 700;
+  line-height: var(--text-dialog-title-lh);
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
 }
 
 .timiq-body {
   margin: 0;
   color: var(--color-text-muted);
-  font-size: 0.9rem;
-  line-height: 1.45rem;
+  font-size: var(--text-body);
+  line-height: var(--text-body-lh);
 }
 
 .timiq-caption {
   margin: 0;
   color: var(--color-text-soft);
-  font-size: 0.765rem;
-  line-height: 1.2rem;
+  font-size: var(--text-secondary);
+  line-height: var(--text-secondary-lh);
+  overflow-wrap: anywhere;
 }
 
 .timiq-label {
   display: inline-block;
   color: var(--color-text);
-  font-size: 0.8rem;
+  font-size: var(--text-label);
   font-weight: 600;
-  line-height: 1.1rem;
+  line-height: var(--text-label-lh);
   letter-spacing: 0.01em;
 }
 
 .timiq-money {
-  font-size: 0.9rem;
+  font-size: var(--text-money);
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
@@ -59,7 +78,7 @@
 }
 
 .timiq-money-lg {
-  font-size: 1.18rem;
+  font-size: var(--text-money-lg);
   font-weight: 730;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;

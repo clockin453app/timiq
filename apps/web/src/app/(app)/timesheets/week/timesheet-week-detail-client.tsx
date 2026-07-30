@@ -74,9 +74,11 @@ function formatHoursDecimal(seconds: number | null | undefined): string {
 
 function InfoRow(props: { label: string; value: string; emphasize?: boolean }) {
   return (
-    <div className="grid grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)] gap-4 py-1.5 text-[15px]">
-      <dt className="font-bold text-[#667797]">{props.label}:</dt>
-      <dd className={`font-extrabold text-[#00143d] ${props.emphasize ? "text-base" : ""}`}>
+    <div className="grid min-w-0 grid-cols-[minmax(88px,0.7fr)_minmax(0,1fr)] gap-2 py-1 text-[length:var(--text-body)] sm:grid-cols-[minmax(120px,0.7fr)_minmax(0,1fr)] sm:gap-4 sm:py-1.5">
+      <dt className="min-w-0 break-words font-bold text-[#667797]">{props.label}:</dt>
+      <dd
+        className={`min-w-0 break-words font-extrabold text-[#00143d] ${props.emphasize ? "text-[length:var(--text-section-title)]" : ""}`}
+      >
         {props.value}
       </dd>
     </div>

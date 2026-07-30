@@ -14,7 +14,7 @@ export function Table({
   return (
     <div className="max-w-full min-w-0 w-full overflow-x-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-xs)] [-webkit-overflow-scrolling:touch]">
       <table
-        className={cn("w-full border-collapse text-sm", className)}
+        className={cn("w-full border-collapse text-[length:var(--text-table-cell)]", className)}
         {...props}
       />
     </div>
@@ -59,7 +59,7 @@ export function TableHead({
   return (
     <th
       className={cn(
-        "border-r border-[var(--color-border)] px-3 py-3 text-left text-xs font-bold uppercase tracking-wide text-[var(--color-text)] last:border-r-0",
+        "border-r border-[var(--color-border)] px-[var(--space-table-cell-x)] py-[var(--space-table-cell-y)] text-left text-[length:var(--text-table-head)] font-bold uppercase tracking-wide text-[var(--color-text)] last:border-r-0",
         className,
       )}
       {...props}
@@ -74,7 +74,7 @@ export function TableCell({
   return (
     <td
       className={cn(
-        "border-r border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-3 text-sm text-[var(--color-text)] last:border-r-0",
+        "border-r border-[var(--color-border)] bg-[var(--color-cell)] px-[var(--space-table-cell-x)] py-[var(--space-table-cell-y)] text-[length:var(--text-table-cell)] text-[var(--color-text)] last:border-r-0",
         className,
       )}
       {...props}

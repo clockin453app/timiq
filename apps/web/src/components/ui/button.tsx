@@ -24,9 +24,9 @@ const variantClasses: Record<ButtonVariant, string> = {
 };
 
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: "h-8 px-3 text-base md:text-sm",
-  md: "h-9 px-4 text-base md:text-sm",
-  lg: "h-10 px-5 text-base",
+  sm: "h-8 px-2.5 md:px-3",
+  md: "h-9 px-3 md:px-4",
+  lg: "h-10 px-4 md:px-5",
 };
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
@@ -37,7 +37,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
     <button
       ref={ref}
       className={cn(
-        "inline-flex items-center justify-center rounded-[var(--radius-md)] font-semibold active:translate-y-[0.5px] disabled:pointer-events-none disabled:opacity-60",
+        "timiq-touch-extend inline-flex max-w-full items-center justify-center gap-1.5 rounded-[var(--radius-md)] text-[length:var(--text-button)] font-semibold leading-none active:translate-y-[0.5px] disabled:pointer-events-none disabled:opacity-60",
         uiClasses.transitionColors,
         uiClasses.focusRing,
         variantClasses[variant],

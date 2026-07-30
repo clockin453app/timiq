@@ -39,7 +39,7 @@ function renderAdminDocumentBlock(detail: RamsAssessmentDetail, block: NonNullab
   if (block.type === "table" && block.rows?.length) {
     const columns = block.columns?.length ? block.columns : Object.keys(block.rows[0] ?? {});
     return (
-      <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+      <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
         <table className="min-w-full text-left text-xs">
           <thead className="bg-[var(--color-header)]"><tr>{columns.map((col) => <th className="px-3 py-2 font-semibold" key={col}>{col}</th>)}</tr></thead>
           <tbody>{block.rows.map((row, idx) => <tr className="border-t border-[var(--color-border)]" key={`${block.id}-${idx}`}>{columns.map((col) => <td className="px-3 py-2 align-top" key={col}>{String(row[col] ?? "")}</td>)}</tr>)}</tbody>
@@ -195,7 +195,7 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
 
             <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <h2 className="text-sm font-bold">Hazards and controls</h2>
-              <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+              <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
                 <Table><TableHeader><TableRow><TableHead>Hazard</TableHead><TableHead>Who may be harmed</TableHead><TableHead>Before</TableHead><TableHead>Controls</TableHead><TableHead>After</TableHead></TableRow></TableHeader>
                   <TableBody>{detail.hazards.map((h) => <TableRow key={h.id}><TableCell>{h.hazard}</TableCell><TableCell>{h.who_might_be_harmed ?? "—"}</TableCell><TableCell>{h.initial_risk_score} ({h.initial_risk_band})</TableCell><TableCell>{h.control_measures}</TableCell><TableCell>{h.residual_risk_score} ({h.residual_risk_band})</TableCell></TableRow>)}</TableBody>
                 </Table>
@@ -234,7 +234,7 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
                   </div>
                 </div>
               ) : null}
-              <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+              <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
                 <Table><TableHeader><TableRow><TableHead>Employee</TableHead><TableHead>Status</TableHead><TableHead>Signed at</TableHead><TableHead>Printed name</TableHead><TableHead>Signature</TableHead><TableHead>Notes/actions</TableHead></TableRow></TableHeader>
                   <TableBody>{detail.acknowledgements.map((a) => <TableRow key={a.user_id}><TableCell>{a.display_name || a.user_email || a.user_id}</TableCell><TableCell className="capitalize">{a.status}</TableCell><TableCell>{formatDate(a.acknowledged_at)}</TableCell><TableCell>{a.acknowledgement_name ?? "—"}</TableCell><TableCell>{signatureStatus(a)}</TableCell><TableCell className="space-x-2"><span>{a.manual_signature_note ?? a.declined_reason ?? "—"}</span>{a.status !== "acknowledged" && detail.status !== "archived" ? <Button disabled={busy} onClick={() => startManual(a)} size="sm" type="button" variant="secondary">Record manual signature</Button> : null}</TableCell></TableRow>)}</TableBody>
                 </Table>

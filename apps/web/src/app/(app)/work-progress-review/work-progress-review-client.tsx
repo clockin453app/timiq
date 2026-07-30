@@ -748,7 +748,7 @@ function WorkProgressPicturesBody() {
                         <span className="sr-only">Actions for {row.title}</span>
                         <select
                           aria-label={`Actions for ${row.title}`}
-                          className="h-7 max-w-[7.5rem] rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] px-1 text-xs"
+                          className="timiq-select h-8 w-full min-w-0 max-w-[11rem] rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] px-1"
                           defaultValue=""
                           disabled={busy}
                           onChange={(event) => {
@@ -866,11 +866,11 @@ function WorkProgressPicturesBody() {
         <div
           aria-labelledby="wp-permanent-delete-title"
           aria-modal="true"
-          className="fixed inset-0 z-[2300] flex items-start justify-center overflow-y-auto bg-black/55 p-3 md:p-6"
+          className="fixed inset-0 z-[2300] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/55 p-2 sm:p-3 md:p-6"
           role="dialog"
         >
           <div
-            className="mt-8 w-full max-w-lg rounded-[var(--radius-md)] border-2 border-[var(--color-danger-700)] bg-[var(--color-sheet)] shadow-lg"
+            className="mt-3 max-h-[calc(100dvh-1.5rem)] w-full min-w-0 max-w-full overflow-y-auto overflow-x-hidden overscroll-contain rounded-[var(--radius-md)] border-2 border-[var(--color-danger-700)] bg-[var(--color-sheet)] shadow-lg sm:mt-8 sm:max-w-lg"
             onClick={(event) => event.stopPropagation()}
             ref={deleteDialogRef}
           >

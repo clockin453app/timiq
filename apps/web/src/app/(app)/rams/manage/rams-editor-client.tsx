@@ -439,7 +439,7 @@ export function RamsEditorClient({ ramsId }: Props) {
 
             <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <h2 className="text-sm font-bold">Hazards and controls</h2>
-              <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+              <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
                 <Table><TableHeader><TableRow><TableHead>Hazard</TableHead><TableHead>Initial</TableHead><TableHead>Controls</TableHead><TableHead>Residual</TableHead><TableHead /></TableRow></TableHeader>
                   <TableBody>{detail.hazards.map((h) => <TableRow key={h.id}><TableCell>{h.hazard}</TableCell><TableCell>{h.initial_risk_score} ({h.initial_risk_band})</TableCell><TableCell>{h.control_measures}</TableCell><TableCell>{h.residual_risk_score} ({h.residual_risk_band})</TableCell><TableCell><Button disabled={busy || detail.status === "archived"} onClick={() => void deleteRamsHazard(detail.id, h.id).then(() => getRams(detail.id).then(setDetail)).catch((err) => setError(err instanceof Error ? err.message : "Could not delete hazard."))} size="sm" type="button" variant="secondary">Delete</Button></TableCell></TableRow>)}</TableBody>
                 </Table>

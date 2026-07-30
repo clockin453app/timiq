@@ -30,8 +30,12 @@ assert.match(client, /Permanently delete submission/);
 assert.match(client, /inline-flex max-w-full items-center gap-1/);
 assert.match(client, /submissionOffset - SUBMISSION_PAGE_SIZE/);
 
-assert.match(table, /px-3 py-3 text-sm/);
-assert.match(button, /sm: "h-8 px-3/);
+// The default cell uses the responsive density tokens, so the page's DENSE_CELL
+// override above is still measurably tighter than the shared default.
+assert.match(table, /px-\[var\(--space-table-cell-x\)] py-\[var\(--space-table-cell-y\)]/);
+assert.match(table, /text-\[length:var\(--text-table-cell\)]/);
+assert.match(table, /text-\[length:var\(--text-table-head\)]/);
+assert.match(button, /sm: "h-8 px-2\.5 md:px-3"/);
 
 const confirmDelete = client.slice(
   client.indexOf("async function confirmPermanentDelete()"),

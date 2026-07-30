@@ -186,7 +186,7 @@ export function FormsClient() {
             <p className="mt-2 text-sm text-[var(--color-text-soft)]">{t("forms.submissions_empty_body", "When you start a form, your drafts and sent forms will appear here.")}</p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+          <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
             <Table>
               <TableHeader>
                 <TableRow>

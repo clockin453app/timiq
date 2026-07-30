@@ -164,6 +164,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
             <div
               className={cn(
                 "absolute right-0 z-[60] mt-1.5 w-[17.5rem] max-w-[calc(100vw-1rem)]",
+                "max-h-[min(80dvh,calc(100dvh-var(--layout-topbar-height)-1rem))] overflow-y-auto overscroll-contain",
                 uiClasses.topBarDropdownPanel,
               )}
             >

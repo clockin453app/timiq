@@ -61,7 +61,7 @@ function renderDocumentBlock(detail: RamsAssessmentDetail, block: NonNullable<Ra
   if (block.type === "table" && block.rows?.length) {
     const columns = block.columns?.length ? block.columns : Object.keys(block.rows[0] ?? {});
     return (
-      <div className="overflow-x-auto rounded border border-[var(--color-border)]">
+      <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
         <table className="min-w-full text-left text-xs">
           <thead className="bg-[var(--color-header)]"><tr>{columns.map((col) => <th className="px-3 py-2 font-semibold" key={col}>{col}</th>)}</tr></thead>
           <tbody>{block.rows.map((row, idx) => <tr className="border-t border-[var(--color-border)]" key={`${block.id}-row-${idx}`}>{columns.map((col) => <td className="px-3 py-2 align-top" key={col}>{String(row[col] ?? "")}</td>)}</tr>)}</tbody>

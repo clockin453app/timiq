@@ -414,7 +414,7 @@ function OverviewKpiCard(props: {
         </span>
         <Info aria-hidden className="h-3.5 w-3.5 shrink-0 text-slate-300" />
       </div>
-      <p className="mt-3 text-2xl font-bold tabular-nums leading-none tracking-tight text-slate-900 sm:text-[1.75rem]">
+      <p className="mt-2 text-xl font-bold tabular-nums leading-none tracking-tight text-slate-900 sm:mt-3 sm:text-[1.75rem]">
         {props.primary}
       </p>
       <p className="mt-1.5 text-sm font-medium text-slate-700">{props.title}</p>
@@ -628,7 +628,9 @@ function ReadinessDonut(props: {
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-2xl font-bold tabular-nums leading-none text-slate-900">{props.percent}%</span>
+        <span className="text-xl font-bold tabular-nums leading-none text-slate-900 sm:text-2xl">
+          {props.percent}%
+        </span>
         <span className="mt-1 text-[11px] font-medium text-slate-500">{statusLabel}</span>
       </div>
     </div>
@@ -886,7 +888,9 @@ function TodayLiveMetricRow(props: {
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-xs text-slate-500">{props.label}</p>
-        <p className="text-lg font-bold tabular-nums text-slate-900">{props.primary}</p>
+        <p className="text-[length:var(--text-section-title)] font-bold tabular-nums text-slate-900 sm:text-lg">
+          {props.primary}
+        </p>
       </div>
       {props.secondary ? (
         <p className="shrink-0 text-xs font-medium tabular-nums text-slate-500">{props.secondary}</p>

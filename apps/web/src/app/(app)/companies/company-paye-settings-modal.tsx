@@ -172,19 +172,19 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">Employer PAYE</p>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 PAYE reference
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setPayeReference(e.target.value)} value={payeReference} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" onChange={(e) => setPayeReference(e.target.value)} value={payeReference} />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Accounts Office reference
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setAccountsOfficeReference(e.target.value)} value={accountsOfficeReference} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" onChange={(e) => setAccountsOfficeReference(e.target.value)} value={accountsOfficeReference} />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Default tax year
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setDefaultTaxYear(e.target.value)} placeholder="e.g. 2026-2027" value={defaultTaxYear} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" onChange={(e) => setDefaultTaxYear(e.target.value)} placeholder="e.g. 2026-2027" value={defaultTaxYear} />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 RTI status
-                <select className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setRtiStatus(e.target.value)} value={rtiStatus}>
+                <select className="timiq-input timiq-select mt-1 h-9 w-full min-w-0 sm:h-10" onChange={(e) => setRtiStatus(e.target.value)} value={rtiStatus}>
                   <option value="not_ready">Not ready</option>
                   <option value="ready">Ready</option>
                   <option value="exported">Exported</option>
@@ -200,19 +200,19 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">Pension defaults</p>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Pension provider / scheme name
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setPensionProviderName(e.target.value)} value={pensionProviderName} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" onChange={(e) => setPensionProviderName(e.target.value)} value={pensionProviderName} />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Default employee pension %
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setDefaultEmployeePensionPercent(e.target.value)} value={defaultEmployeePensionPercent} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" onChange={(e) => setDefaultEmployeePensionPercent(e.target.value)} value={defaultEmployeePensionPercent} />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Default employer pension %
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setDefaultEmployerPensionPercent(e.target.value)} value={defaultEmployerPensionPercent} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" onChange={(e) => setDefaultEmployerPensionPercent(e.target.value)} value={defaultEmployerPensionPercent} />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Default pension basis
-                <select className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setDefaultPensionBasis(e.target.value as PensionSchemeBasis)} value={defaultPensionBasis}>
+                <select className="timiq-input timiq-select mt-1 h-9 w-full min-w-0 sm:h-10" onChange={(e) => setDefaultPensionBasis(e.target.value as PensionSchemeBasis)} value={defaultPensionBasis}>
                   <option value="qualifying_earnings">Qualifying earnings</option>
                   <option value="total_earnings">Total earnings</option>
                 </select>
@@ -223,11 +223,11 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
               <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">Pay schedule</p>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Monthly payday rule
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setMonthlyPaydayRule(e.target.value)} placeholder="e.g. last working day" value={monthlyPaydayRule} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" onChange={(e) => setMonthlyPaydayRule(e.target.value)} placeholder="e.g. last working day" value={monthlyPaydayRule} />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 Pay period closing day
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" max={31} min={1} onChange={(e) => setPayPeriodClosingDay(e.target.value)} type="number" value={payPeriodClosingDay} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" max={31} min={1} onChange={(e) => setPayPeriodClosingDay(e.target.value)} type="number" value={payPeriodClosingDay} />
               </label>
             </section>
 
@@ -243,11 +243,11 @@ export function CompanyPayeSettingsModal({ company, onClose, onSaved }: CompanyP
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 PAYE overtime threshold hours
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" min={0} onChange={(e) => setPayeOvertimeThresholdHours(e.target.value)} type="number" value={payeOvertimeThresholdHours} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" min={0} onChange={(e) => setPayeOvertimeThresholdHours(e.target.value)} type="number" value={payeOvertimeThresholdHours} />
               </label>
               <label className="block text-xs font-bold text-[var(--color-text)]">
                 PAYE overtime multiplier
-                <input className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" min={0} onChange={(e) => setPayeOvertimeMultiplier(e.target.value)} step="0.01" type="number" value={payeOvertimeMultiplier} />
+                <input className="timiq-input mt-1 h-9 w-full min-w-0 sm:h-10" min={0} onChange={(e) => setPayeOvertimeMultiplier(e.target.value)} step="0.01" type="number" value={payeOvertimeMultiplier} />
               </label>
             </section>
 

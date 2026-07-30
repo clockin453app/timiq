@@ -197,6 +197,39 @@
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
     Arial, sans-serif;
 
+  /*
+   * Responsive typography scale. Values here are the mobile end of the scale and
+   * are widened back to the desktop sizes in the `min-width: 768px` block below,
+   * so phones get more information per screen without changing desktop output.
+   *
+   * `--text-form-control` deliberately stays at 16px on mobile: iOS Safari zooms
+   * the viewport when a focused field is smaller than that.
+   */
+  --text-hero-title: 1.5rem;
+  --text-hero-title-lh: 1.9rem;
+  --text-page-title: 1.375rem;
+  --text-page-title-lh: 1.75rem;
+  --text-section-title: 1rem;
+  --text-section-title-lh: 1.35rem;
+  --text-dialog-title: 1.0625rem;
+  --text-dialog-title-lh: 1.45rem;
+  --text-body: 0.875rem;
+  --text-body-lh: 1.3rem;
+  --text-secondary: 0.75rem;
+  --text-secondary-lh: 1.1rem;
+  --text-label: 0.75rem;
+  --text-label-lh: 1.05rem;
+  --text-button: 0.8125rem;
+  --text-table-head: 0.6875rem;
+  --text-table-cell: 0.75rem;
+  --text-nav-row: 0.8125rem;
+  --text-money: 0.8125rem;
+  --text-money-lg: 1.0625rem;
+  --text-form-control: 1rem;
+
+  /* Practical minimum touch height for primary controls on coarse pointers. */
+  --control-touch-min: 44px;
+
   --radius-sm: 0.375rem;
   --radius-md: 0.625rem;
   --radius-lg: 0.875rem;
@@ -210,14 +243,16 @@
   --shadow-topbar-active: 0 1px 2px rgba(15, 23, 42, 0.1), 0 2px 6px rgba(15, 23, 42, 0.14);
   --shadow-modal: 0 24px 56px rgba(11, 28, 49, 0.2);
 
-  --space-page-x: 1rem;
-  --space-page-y: 1rem;
-  --space-card: 1rem;
-  --space-section: 1.5rem;
-  --space-table-cell-x: 0.75rem;
-  --space-table-cell-y: 0.625rem;
-  --space-form-gap: 1rem;
-  --space-modal: 1.25rem;
+  --space-page-x: 0.75rem;
+  --space-page-y: 0.75rem;
+  --space-card: 0.875rem;
+  --space-section: 1.125rem;
+  --space-table-cell-x: 0.5rem;
+  --space-table-cell-y: 0.375rem;
+  --space-form-gap: 0.75rem;
+  --space-modal: 1rem;
+  --space-toolbar-gap: 0.5rem;
+  --space-grid-gap: 0.625rem;
 
   --layout-sidebar-width: 18.25rem;
   --layout-sidebar-collapsed: 4.5rem;
@@ -246,6 +281,40 @@
     --space-page-x: 1.5rem;
     --space-page-y: 1.25rem;
     --space-card: 1.25rem;
+  }
+}
+
+/* Desktop typography and density: restores the pre-density-pass desktop scale. */
+@media (min-width: 768px) {
+  :root {
+    --text-hero-title: 1.75rem;
+    --text-hero-title-lh: 2.1rem;
+    --text-page-title: 1.625rem;
+    --text-page-title-lh: 2rem;
+    --text-section-title: 1.025rem;
+    --text-section-title-lh: 1.45rem;
+    --text-dialog-title: 1.1875rem;
+    --text-dialog-title-lh: 1.6rem;
+    --text-body: 0.9rem;
+    --text-body-lh: 1.45rem;
+    --text-secondary: 0.765rem;
+    --text-secondary-lh: 1.2rem;
+    --text-label: 0.8rem;
+    --text-label-lh: 1.1rem;
+    --text-button: 0.875rem;
+    --text-table-head: 0.75rem;
+    --text-table-cell: 0.875rem;
+    --text-money: 0.9rem;
+    --text-money-lg: 1.18rem;
+    --text-form-control: 0.875rem;
+
+    --space-section: 1.5rem;
+    --space-table-cell-x: 0.75rem;
+    --space-table-cell-y: 0.625rem;
+    --space-form-gap: 1rem;
+    --space-modal: 1.25rem;
+    --space-toolbar-gap: 0.5rem;
+    --space-grid-gap: 0.75rem;
   }
 }
 
