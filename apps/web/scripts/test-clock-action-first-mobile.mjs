@@ -69,8 +69,15 @@ check("bottom nav height token includes safe-area", /--layout-mobile-bottom-nav-
 check("employee bottom nav still present", /employeePrimaryLinks[\s\S]*href: "\/clock"/.test(bottomNav));
 check("sheet body keeps bottom-nav padding", /layout-mobile-bottom-nav-height/.test(client));
 
-check("single page heading via PageHeader h1", /<PageHeader[\s\S]*title=\{t\("nav\.clock"/.test(client) && !/<h1[\s>]/.test(client));
-check("location summary uses h2 not second h1", /<h2[\s\S]*id="clock-location-summary-title"/.test(panel));
+check("Clock In / Out page heading is not visibly rendered", !/<PageHeader[\s\S]*nav\.clock/.test(client) && !/page_description_short/.test(client));
+check("GPS and a live selfie subtitle is not rendered", !/GPS and a live selfie are required to clock/.test(client));
+check("sr-only page title preserved for accessibility", /<h1 className="sr-only">/.test(client));
+check("site name not duplicated in active shift summary", !/shift_site_label|Site:/.test(client));
+check("Selfie required before clocking out is not rendered", !/Selfie required before clocking out/.test(client));
+check("GPS card remains", /ClockLocationSummary/.test(client) && /clock-location-summary/.test(panel));
+check("active shift start and duration remain", /clock-active-shift-summary/.test(client) && /Shift started at/.test(client) && /duration_label/.test(client));
+check("selfie capture action remains", /clock-capture-selfie/.test(client) && /Capture selfie to clock out/.test(client));
+check("location summary uses h2 not second visible h1", /<h2[\s\S]*id="clock-location-summary-title"/.test(panel));
 check("status live region present", /aria-live="polite"/.test(client));
 check("disabled reason associated via aria-describedby", /aria-describedby=\{/.test(client));
 check("help checklist is a disclosure", /clock-help-checklist/.test(client) && /Help and checklist/.test(client));

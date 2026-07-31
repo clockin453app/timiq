@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Button, PageHeader, Sheet, SheetBody } from "@/components/ui";
+import { Button, Sheet, SheetBody } from "@/components/ui";
 import {
   ClockLocationSummary,
   ClockMapGpsDetails,
@@ -803,15 +803,8 @@ export function ClockClient() {
 
   return (
     <Sheet>
-      <PageHeader
-        description={t(
-          "clock.page_description_short",
-          "GPS and a live selfie are required to clock.",
-        )}
-        title={t("nav.clock", "Clock In / Out")}
-        titleClassName="timiq-title-lg text-[length:var(--text-page-title)]"
-      />
-      <SheetBody className="timiq-mobile-form-pad min-w-0 space-y-3 overflow-x-hidden pb-[max(1.5rem,calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad)))] sm:space-y-4 sm:pb-8 xl:pb-6">
+      <h1 className="sr-only">{t("nav.clock", "Clock In / Out")}</h1>
+      <SheetBody className="timiq-mobile-form-pad min-w-0 space-y-2.5 overflow-x-hidden px-3 pb-[max(1.5rem,calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad)))] pt-3 sm:space-y-3 sm:px-5 sm:pb-8 sm:pt-4 xl:pb-6">
         {!networkOnline ? (
           <div className="rounded border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] p-3 text-sm text-[var(--color-warning-700)]">
             <p className="font-semibold">{t("clock.offline_title")}</p>
@@ -859,15 +852,15 @@ export function ClockClient() {
           </div>
         ) : null}
 
-        <div className="min-w-0 space-y-3 lg:grid lg:grid-cols-2 lg:items-start lg:gap-4 lg:space-y-0">
-          <div className="min-w-0 space-y-3 lg:order-1">
+        <div className="min-w-0 space-y-2.5 lg:grid lg:grid-cols-2 lg:items-start lg:gap-3 lg:space-y-0">
+          <div className="min-w-0 space-y-2.5 lg:order-1">
             <ClockLocationSummary {...sharedLocationProps} />
           </div>
 
           {clockStatus && flowStatus !== "completed_today" && flowStatus !== "no_assigned_sites" ? (
             <div
               className={cn(
-                "min-w-0 rounded-[var(--radius-md)] border-2 border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3 shadow-[var(--shadow-xs)] sm:p-4",
+                "min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2.5 shadow-[var(--shadow-xs)] sm:p-3",
                 "sticky z-20 lg:order-2 lg:static lg:z-auto",
                 "bottom-[calc(var(--layout-mobile-bottom-nav-height)+0.5rem)] lg:bottom-auto",
               )}
@@ -877,43 +870,43 @@ export function ClockClient() {
                 {actionReadinessLine}
               </div>
 
-              {(flowStatus === "on_shift" || flowStatus === "open_break") && (
-                <div className="mb-3 space-y-0.5 border-b border-[var(--color-border)] pb-2.5 text-[13px]">
-                  {clockStatus.open_shift_location_name ? (
-                    <p className="text-[var(--color-text-muted)]">
-                      {t("clock.shift_site_label", "Site")}:{" "}
-                      <span className="font-medium text-[var(--color-text)]">
-                        {clockStatus.open_shift_location_name}
-                      </span>
-                    </p>
-                  ) : null}
+              {(flowStatus === "on_shift" || flowStatus === "open_break") &&
+              (shiftStartedLabel || clockStatus.open_shift_clock_in_at) ? (
+                <p
+                  className="mb-2 text-[13px] leading-snug text-[var(--color-text)]"
+                  data-testid="clock-active-shift-summary"
+                >
                   {shiftStartedLabel ? (
-                    <p className="font-medium text-[var(--color-text)]">
+                    <span className="font-medium">
                       {t("clock.readiness_shift_started", "Shift started at {{time}}", {
                         time: shiftStartedLabel,
                       })}
-                    </p>
+                    </span>
+                  ) : null}
+                  {shiftStartedLabel && clockStatus.open_shift_clock_in_at ? (
+                    <span className="text-[var(--color-text-muted)]"> · </span>
                   ) : null}
                   {clockStatus.open_shift_clock_in_at ? (
-                    <p>
+                    <span>
                       <span className="text-[var(--color-text-muted)]">
-                        {t("clock.duration_label", "Duration")}:{" "}
+                        {t("clock.duration_label", "Duration")}{" "}
                       </span>
                       <span
-                        className="font-mono font-semibold text-[var(--color-text)]"
+                        className="font-mono font-semibold tabular-nums text-[var(--color-text)]"
                         suppressHydrationWarning
                       >
                         {currentShiftDurationParts.hms || currentShiftDurationParts.compact || "—"}
                       </span>
                       {flowStatus === "open_break" ? (
-                        <span className="ml-2 text-[var(--color-warning-700)]">
+                        <span className="text-[var(--color-warning-700)]">
+                          {" "}
                           · {t("clock.on_break", "On break")}
                         </span>
                       ) : null}
-                    </p>
+                    </span>
                   ) : null}
-                </div>
-              )}
+                </p>
+              ) : null}
 
               {flowStatus === "not_clocked_in" ? (
                 <div className="space-y-3" data-clock-mode="clock-in">
@@ -954,23 +947,36 @@ export function ClockClient() {
                           )}
                         </span>
                       </button>
-                      <p
-                        className="text-[13px] font-medium leading-snug text-[var(--color-text)]"
-                        data-testid="clock-action-readiness"
-                        id="clock-in-readiness"
-                      >
-                        {gpsAcquiring || !gpsAcceptable
-                          ? t("clock.readiness_waiting_gps", "Waiting for accurate GPS")
-                          : nearestSiteSummary?.outside
-                            ? t(
-                                "clock.readiness_move_within",
-                                "Move within {{meters}} m of the site",
-                                {
-                                  meters: nearestSiteSummary.site.geofence_radius_meters,
-                                },
-                              )
-                            : actionReadinessLine}
-                      </p>
+                      {gpsFailure === "denied" ||
+                      gpsFailure === "failed" ||
+                      gpsFailure === "unsupported" ||
+                      gpsAcquiring ||
+                      !gpsAcceptable ||
+                      nearestSiteSummary?.outside ? (
+                        <p
+                          className="text-[13px] font-medium leading-snug text-[var(--color-text)]"
+                          data-testid="clock-action-readiness"
+                          id="clock-in-readiness"
+                        >
+                          {gpsFailure === "denied" ||
+                          gpsFailure === "failed" ||
+                          gpsFailure === "unsupported"
+                            ? t("clock.location_access_required", "Location access required")
+                            : gpsAcquiring || !gpsAcceptable
+                              ? t("clock.readiness_waiting_gps", "Waiting for accurate GPS")
+                              : t(
+                                  "clock.readiness_move_within",
+                                  "Move within {{meters}} m of the site",
+                                  {
+                                    meters: nearestSiteSummary!.site.geofence_radius_meters,
+                                  },
+                                )}
+                        </p>
+                      ) : (
+                        <p className="sr-only" id="clock-in-readiness">
+                          {t("clock.capture_selfie_to_clock_in", "Capture selfie to clock in")}
+                        </p>
+                      )}
                     </>
                   ) : (
                     <>
@@ -1095,18 +1101,27 @@ export function ClockClient() {
                           )}
                         </span>
                       </button>
-                      <p
-                        className="text-[13px] font-medium leading-snug text-[var(--color-text)]"
-                        data-testid="clock-action-readiness"
-                        id="clock-out-readiness"
-                      >
-                        {gpsAcquiring || !gpsAcceptable
-                          ? t("clock.readiness_waiting_gps", "Waiting for accurate GPS")
-                          : t(
-                              "clock.readiness_selfie_out",
-                              "Selfie required before clocking out",
-                            )}
-                      </p>
+                      {gpsFailure === "denied" ||
+                      gpsFailure === "failed" ||
+                      gpsFailure === "unsupported" ||
+                      gpsAcquiring ||
+                      !gpsAcceptable ? (
+                        <p
+                          className="text-[13px] font-medium leading-snug text-[var(--color-text)]"
+                          data-testid="clock-action-readiness"
+                          id="clock-out-readiness"
+                        >
+                          {gpsFailure === "denied" ||
+                          gpsFailure === "failed" ||
+                          gpsFailure === "unsupported"
+                            ? t("clock.location_access_required", "Location access required")
+                            : t("clock.readiness_waiting_gps", "Waiting for accurate GPS")}
+                        </p>
+                      ) : (
+                        <p className="sr-only" id="clock-out-readiness">
+                          {t("clock.capture_selfie_to_clock_out", "Capture selfie to clock out")}
+                        </p>
+                      )}
                     </>
                   ) : (
                     <>

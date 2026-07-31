@@ -168,7 +168,7 @@ export function ClockLocationSummary({
   return (
     <section
       aria-labelledby="clock-location-summary-title"
-      className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 py-2.5 sm:px-4 sm:py-3"
+      className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2.5 py-2 sm:px-3 sm:py-2.5"
       data-testid="clock-location-summary"
     >
       <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
@@ -190,7 +190,7 @@ export function ClockLocationSummary({
         </div>
         <span
           className={cn(
-            "inline-flex shrink-0 items-center gap-1.5 rounded border px-2 py-1 text-[12px] font-semibold",
+            "inline-flex shrink-0 items-center gap-1.5 rounded border px-2 py-0.5 text-[12px] font-semibold",
             badgeClasses(locationBadge),
           )}
           data-location-badge={locationBadge}
@@ -203,12 +203,12 @@ export function ClockLocationSummary({
       </div>
 
       {hint ? (
-        <p className="mt-2 text-[13px] leading-snug text-[var(--color-text)]" role="status">
+        <p className="mt-1.5 text-[13px] leading-snug text-[var(--color-text)]" role="status">
           {hint}
         </p>
       ) : null}
 
-      <div className="mt-2">
+      <div className="mt-1.5">
         <Button
           className="min-h-9 w-full sm:w-auto"
           data-testid="clock-refresh-gps"
