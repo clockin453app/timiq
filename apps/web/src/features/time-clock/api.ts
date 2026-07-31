@@ -67,6 +67,7 @@ export async function getClockStatus(): Promise<ClockStatus> {
   const response = await fetch(`${API_URL}/api/time-clock/status`, {
     method: "GET",
     credentials: "include",
+    cache: "no-store",
   });
 
   if (!response.ok) {
