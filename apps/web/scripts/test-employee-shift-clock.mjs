@@ -88,6 +88,10 @@ check("quarter-hour ticks use stronger green styling", /isQuarter[\s\S]*RING_IN|
 check("60 programmatic ticks", /TICK_COUNT = 60/.test(shiftClock));
 check("ticks only for active/clocked-in state", /showActiveTicks = isClockedIn && !clockLoading/.test(shiftClock));
 check("blue clocked-out state does not mount tick ring when inactive", /showActiveTicks \? <ActiveShiftTickRing/.test(shiftClock));
+check("tick ring and outer ring share SVG centre", /const center = 50/.test(shiftClock) && /tickOuterRadius/.test(shiftClock) && /outerRadius/.test(shiftClock));
+check("all tick tips use tickOuterRadius baseline", /Math\.cos\(rad\) \* tickOuterRadius/.test(shiftClock));
+check("outer green ring drawn in same SVG", /data-shift-clock-ring="outer"/.test(shiftClock));
+check("tick SVG fills circle inset-0", /absolute inset-0/.test(shiftClock));
 check("status dot with Shift in progress", /rounded-full[\s\S]*Shift in progress|Shift in progress[\s\S]*rounded-full/.test(shiftClock) || /inline-block h-2 w-2[\s\S]*shift_in_progress/.test(shiftClock));
 check("timer remains dominant tabular mono", /employee-shift-clock-timer[\s\S]*tabular-nums|tabular-nums[\s\S]*employee-shift-clock-timer/.test(shiftClock));
 check("clock status fetch uses no-store for freshness", /getClockStatus[\s\S]*cache:\s*"no-store"/.test(api));

@@ -55,22 +55,24 @@ function ShiftClockIcon(props: { src: string; size: number; className?: string }
 
 /** Decorative radial tick marks for the active (clocked-in) shift face only. */
 function ActiveShiftTickRing() {
-  const cx = 50;
-  const cy = 50;
-  const outerR = 47;
+  const size = 100;
+  const center = 50;
+  const outerRadius = 47;
+  const tickOuterRadius = 43;
 
   const ticks = Array.from({ length: TICK_COUNT }, (_, index) => {
     const isQuarter = index % 15 === 0;
     const isMajor = index % 5 === 0;
-    const length = isQuarter ? 5.8 : isMajor ? 4.2 : 2.4;
+    const length = isQuarter ? 5.5 : isMajor ? 4 : 2.4;
     const strokeWidth = isQuarter ? 1.15 : isMajor ? 0.75 : 0.45;
     const stroke = isQuarter ? RING_IN : isMajor ? "#86EFAC" : "#D1D5DB";
     const angleDeg = (index / TICK_COUNT) * 360 - 90;
     const rad = (angleDeg * Math.PI) / 180;
-    const x1 = cx + Math.cos(rad) * outerR;
-    const y1 = cy + Math.sin(rad) * outerR;
-    const x2 = cx + Math.cos(rad) * (outerR - length);
-    const y2 = cy + Math.sin(rad) * (outerR - length);
+    // Every tick tip sits on the same concentric circle (tickOuterRadius).
+    const x1 = center + Math.cos(rad) * tickOuterRadius;
+    const y1 = center + Math.sin(rad) * tickOuterRadius;
+    const x2 = center + Math.cos(rad) * (tickOuterRadius - length);
+    const y2 = center + Math.sin(rad) * (tickOuterRadius - length);
     return (
       <line
         key={index}
@@ -89,11 +91,21 @@ function ActiveShiftTickRing() {
   return (
     <svg
       aria-hidden="true"
-      className="pointer-events-none absolute inset-[4%] z-0 h-auto w-auto"
+      className="pointer-events-none absolute inset-0 z-0 h-full w-full"
       data-testid="shift-clock-tick-ring"
       fill="none"
-      viewBox="0 0 100 100"
+      preserveAspectRatio="xMidYMid meet"
+      viewBox={`0 0 ${size} ${size}`}
     >
+      {/* Outer green ring shares this SVG centre with every tick. */}
+      <circle
+        cx={center}
+        cy={center}
+        data-shift-clock-ring="outer"
+        r={outerRadius}
+        stroke={RING_IN}
+        strokeWidth={1.65}
+      />
       {ticks}
     </svg>
   );
@@ -167,7 +179,7 @@ export function EmployeeShiftClock({
           event.currentTarget.click();
         }}
         style={{
-          borderColor: ringColor,
+          borderColor: showActiveTicks ? "transparent" : ringColor,
           ["--tw-ring-color" as string]: ringColor,
         }}
       >
