@@ -1198,10 +1198,6 @@ export function OverviewClient() {
 
   return (
     <div className="min-w-0 -mt-2 space-y-3 px-3 pb-5 sm:px-5 lg:space-y-4">
-      <h1 className="mb-0.5 text-sm font-semibold text-slate-900 sm:text-base xl:hidden">
-        {t("overview.page_title")}
-      </h1>
-
       <OverviewCommandCenterStrip
         adminControls={adminControls}
         generatedAt={data?.generated_at}

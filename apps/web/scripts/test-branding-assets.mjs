@@ -159,8 +159,21 @@ check("desktop collapsed mark is 28–30px", () => {
 check("desktop brand area keeps 10–12px expanded padding", () => {
   assert.match(desktop, /justify-between gap-3 px-3/);
 });
-check("mobile header logo size unchanged at 24px", () => {
-  assert.match(mobile, /markSize=\{24\}/);
+check("mobile header logo size uses approved full lockup ~95–115px", () => {
+  assert.match(mobile, /markSize=\{46\}|MOBILE_HEADER_LOGO_HEIGHT = 46/);
+  const height = 46;
+  const width = Math.round((height * 839) / 369);
+  assert.ok(width >= 95 && width <= 115, `expected 95–115px width, got ${width}`);
+});
+check("mobile header places logo on a light plate for navy contrast", () => {
+  assert.match(mobile, /surface="onDark"/);
+  assert.match(lockup, /surface === "onDark"|surface\?: "default" \| "onDark"/);
+  assert.match(lockup, /bg-white/);
+});
+check("mobile drawer does not render the large brand lockup", () => {
+  assert.doesNotMatch(mobile, /TimIQBrandLockup[\s\S]{0,120}markSize=\{50\}/);
+  // Only one lockup call site remains (main header).
+  assert.equal((mobile.match(/<TimIQBrandLockup/g) ?? []).length, 1);
 });
 check("collapse control retains panel icons", () => {
   assert.match(desktop, /PanelLeftOpen/);
@@ -173,8 +186,8 @@ check("collapsed desktop no longer renders a plain T", () =>
   assert.doesNotMatch(desktop, /<span[^>]*>\s*T\s*<\/span>/),
 );
 check("mobile header uses shared lockup", () => assert.match(mobile, /TimIQBrandLockup/));
-check("mobile drawer uses the lockup more than once", () => {
-  assert.ok((mobile.match(/<TimIQBrandLockup/g) ?? []).length >= 2);
+check("mobile main header keeps a single approved lockup", () => {
+  assert.equal((mobile.match(/<TimIQBrandLockup/g) ?? []).length, 1);
 });
 check("public shell uses shared lockup", () => assert.match(publicShell, /TimIQBrandLockup/));
 check("auth shell uses shared lockup", () => assert.match(authShell, /TimIQBrandLockup/));

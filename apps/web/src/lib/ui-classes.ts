@@ -188,15 +188,15 @@ export const uiClasses = {
   ].join(" "),
 
   navDrawerLinkBase:
-    "flex min-h-[44px] min-w-0 max-w-full items-center gap-2.5 break-words rounded-[var(--radius-md)] border px-2.5 py-2 text-[length:var(--text-nav-row)] font-medium",
+    "flex min-h-10 min-w-0 max-w-full items-center gap-2 rounded-none border border-l-[3px] px-2 py-1.5 text-[length:var(--text-nav-row)] font-medium",
 
   navDrawerLinkIdle: [
-    "border-transparent text-[var(--color-text-muted)]",
-    "hover:border-[var(--color-border)] hover:bg-[var(--color-header)] hover:text-[var(--color-text)]",
+    "border-transparent border-l-transparent text-[var(--color-text-muted)]",
+    "hover:border-transparent hover:border-l-transparent hover:bg-[var(--color-header)] hover:text-[var(--color-text)]",
   ].join(" "),
 
   navDrawerLinkActive: [
-    "border-[var(--color-brand)]/30 bg-[var(--color-brand-tint)] font-semibold text-[var(--color-brand-hover)]",
+    "border-transparent border-l-[var(--color-brand)] bg-[var(--color-brand-tint)] font-semibold text-[var(--color-brand-hover)]",
   ].join(" "),
 
   navAccordionHeader: [

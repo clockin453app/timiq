@@ -844,6 +844,28 @@ export function getMobileDrawerNavigationTree(
   return getDesktopSidebarNavigationTree(role, options);
 }
 
+/** Account actions live in the mobile drawer footer — omit from the scrollable tree. */
+const MOBILE_DRAWER_FOOTER_HREFS = new Set<string>(["/profile", "/settings", "/help"]);
+
+export function omitMobileDrawerFooterLeaves(nodes: NavigationNode[]): NavigationNode[] {
+  const out: NavigationNode[] = [];
+  for (const node of nodes) {
+    if (node.href && MOBILE_DRAWER_FOOTER_HREFS.has(node.href)) {
+      continue;
+    }
+    if (node.children?.length) {
+      const children = omitMobileDrawerFooterLeaves(node.children);
+      if (children.length === 0) {
+        continue;
+      }
+      out.push({ ...node, children });
+      continue;
+    }
+    out.push(node);
+  }
+  return out;
+}
+
 export function getMobileDrawerNavigationGroups(
   role: SystemRole,
   options?: { limitedAccess?: boolean },

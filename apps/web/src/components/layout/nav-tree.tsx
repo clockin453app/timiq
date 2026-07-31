@@ -204,7 +204,7 @@ function TreeRow({
   const open = isFolder ? isExpanded(node.id) : false;
   const activeLeaf = Boolean(node.href && navItemMatchesActive(node.href, activeHref));
   const containsActive = nodeContainsActiveRoute(node, activeHref);
-  const indentPx = depth * (variant === "drawer" ? 14 : 15);
+  const indentPx = depth * (variant === "drawer" ? 12 : 15);
   const badgeHref = node.badgeId ?? node.href;
   const badgeCount = badgeHref ? (badgeByHref[badgeHref] ?? 0) : 0;
   const nestedOnChildBg = variant === "sidebar" && depth > 0;
@@ -251,9 +251,11 @@ function TreeRow({
                       : "hover:bg-white/10",
                 )
               : cn(
-                  "min-h-11 rounded-none px-2 text-sm font-semibold text-[var(--color-text)]",
+                  "min-h-10 rounded-none border-l-[3px] px-2 text-[length:var(--text-nav-row)] font-medium text-[var(--color-text)]",
                   uiClasses.focusRing,
-                  open ? "bg-[var(--color-surface-muted)]" : "hover:bg-[var(--color-surface-muted)]",
+                  open || containsActive
+                    ? "border-l-[var(--color-brand)]/40 bg-[var(--color-brand-tint)]/50"
+                    : "border-l-transparent hover:bg-[var(--color-header)]",
                 ),
           )}
           style={{ paddingLeft: 8 + indentPx }}
@@ -265,7 +267,8 @@ function TreeRow({
           <ChevronRight
             aria-hidden
             className={cn(
-              "h-2.5 w-2.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+              "shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+              variant === "drawer" ? "h-3 w-3" : "h-2.5 w-2.5",
               nestedOnChildBg
                 ? "text-[var(--color-sidebar-child-fg)]/70"
                 : variant === "sidebar"
@@ -277,7 +280,7 @@ function TreeRow({
           />
           {showIcons ? (
             <NavGroupIcon
-              className="h-3.5 w-3.5 shrink-0"
+              className={cn("shrink-0", variant === "drawer" ? "h-3.5 w-3.5" : "h-3.5 w-3.5")}
               groupId={node.iconKey}
               surface={variant === "sidebar" ? (nestedOnChildBg ? "light" : "navy") : "light"}
             />
@@ -361,7 +364,7 @@ function TreeRow({
             )
           : cn(
               uiClasses.navDrawerLinkBase,
-              "min-h-11 gap-2.5",
+              "min-h-10 gap-2 rounded-none",
               activeLeaf ? uiClasses.navDrawerLinkActive : uiClasses.navDrawerLinkIdle,
             ),
       )}
@@ -378,12 +381,12 @@ function TreeRow({
     >
       {showIcons ? (
         <NavItemIcon
-          className="h-3.5 w-3.5 shrink-0"
+          className={cn("shrink-0", variant === "drawer" ? "h-3.5 w-3.5" : "h-3.5 w-3.5")}
           labelKey={leafIconKey}
           surface={variant === "sidebar" ? (isRootLeaf ? "navy" : "light") : "neutral"}
         />
       ) : null}
-      <span className={cn("min-w-0 flex-1", variant === "sidebar" ? "truncate" : "break-words")}>
+      <span className="min-w-0 flex-1 truncate">
         {label}
       </span>
       {badgeCount > 0 ? (
@@ -419,7 +422,7 @@ export function NavTree({
   }
 
   return (
-    <div className={variant === "sidebar" ? "space-y-0" : "space-y-0.5"}>
+    <div className={variant === "sidebar" ? "space-y-0" : "space-y-0"}>
       {nodes.map((node) => (
         <div
           className={variant === "sidebar" ? "border-b border-white/10 last:border-b-0" : undefined}

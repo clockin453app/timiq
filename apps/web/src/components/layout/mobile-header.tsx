@@ -6,8 +6,11 @@ import { Menu, X } from "lucide-react";
 
 import { TimIQBrandLockup } from "../brand";
 import { UserAvatar } from "../user-avatar";
-import { getMobileDrawerNavigationTree } from "../../config/navigation";
-import { canAccessManagement, LogoutButton, useCurrentUser } from "../../features/auth";
+import {
+  getMobileDrawerNavigationTree,
+  omitMobileDrawerFooterLeaves,
+} from "../../config/navigation";
+import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { employeeRoleLabel } from "../../lib/i18n/display-labels";
 import { useT } from "../../lib/i18n";
@@ -26,10 +29,13 @@ type MobileHeaderProps = {
   activeHref?: string;
 };
 
+/** ~104px wide at approved aspect (95–115 target). */
+const MOBILE_HEADER_LOGO_HEIGHT = 46;
+
 function mobileDrawerLinkClass(active: boolean): string {
   return cn(
     uiClasses.navDrawerLinkBase,
-    "gap-2.5",
+    "min-h-10 gap-2",
     uiClasses.transitionColors,
     active ? uiClasses.navDrawerLinkActive : uiClasses.navDrawerLinkIdle,
   );
@@ -45,18 +51,19 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const limited = userHasLimitedAccess(user);
-  const hasMobileBottomNav = !canAccessManagement(user);
+  const showAccountExtras = !limited;
 
   const closeMenu = useCallback((restoreFocus = true) => {
     dispatch({ type: "close" });
-    // The trigger stays mounted, so focus it now rather than waiting for a frame
-    // that can be starved while the tab is occluded.
     if (restoreFocus) menuButtonRef.current?.focus();
   }, []);
   const toggleMenu = useCallback(() => dispatch({ type: "toggle" }), []);
 
   const drawerTree = useMemo(
-    () => getMobileDrawerNavigationTree(user.system_role, { limitedAccess: limited }),
+    () =>
+      omitMobileDrawerFooterLeaves(
+        getMobileDrawerNavigationTree(user.system_role, { limitedAccess: limited }),
+      ),
     [user.system_role, limited],
   );
 
@@ -133,14 +140,16 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     >
       <div
         className={cn(
-          "relative flex min-w-0 max-w-full items-center justify-between gap-1.5 px-2 py-2.5 min-[400px]:gap-3 min-[400px]:px-3",
+          "relative flex min-h-14 min-w-0 max-w-full items-center justify-between gap-1.5 px-2 py-2 min-[400px]:gap-3 min-[400px]:px-3",
           menuOpen ? "z-40" : "z-[60]",
         )}
       >
-        <div className="min-w-0 flex-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 items-center overflow-hidden">
+          {/* Light plate keeps approved dark “Tim” readable on navy without recolouriing the asset. */}
           <TimIQBrandLockup
-            className="max-w-full"
-            markSize={24}
+            className="max-w-[min(100%,115px)]"
+            markSize={MOBILE_HEADER_LOGO_HEIGHT}
+            surface="onDark"
             variant="full"
           />
         </div>
@@ -152,12 +161,6 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
               <NotificationBell />
             </>
           ) : null}
-          <UserAvatar
-            email={user.email}
-            name={avatarName}
-            sizeClassName="h-8 w-8 min-[400px]:h-9 min-[400px]:w-9"
-            userId={user.id}
-          />
           <button
             aria-controls="timiq-mobile-menu"
             aria-expanded={menuOpen}
@@ -187,37 +190,54 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             onClick={() => closeMenu()}
           />
           <div
-            className="fixed bottom-0 right-0 top-0 z-[60] flex w-[min(100vw-1.5rem,19rem)] max-w-[calc(100vw-1rem)] flex-col overflow-hidden border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)]"
+            className="fixed bottom-0 right-0 top-0 z-[60] flex w-[min(92vw,360px)] min-w-[min(100%,300px)] max-w-[min(92vw,360px)] flex-col overflow-hidden border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)]"
             id="timiq-mobile-menu"
             role="dialog"
             aria-modal="true"
             aria-label={t("shell.drawer_nav", "More navigation")}
             ref={drawerRef}
           >
-            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-sheet)] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
-              <div className="min-w-0">
-                <TimIQBrandLockup markSize={28} variant="compact" />
-                <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">{roleLabel}</p>
+            {/* Fixed account header only — no logo */}
+            <div className="timiq-mobile-drawer-header shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sheet)] pt-[env(safe-area-inset-top,0px)]">
+              <div className="flex h-14 items-center gap-2 px-3">
+                <UserAvatar
+                  email={user.email}
+                  name={avatarName}
+                  sizeClassName="h-9 w-9"
+                  userId={user.id}
+                />
+                <div className="min-w-0 flex-1">
+                  <p
+                    className="truncate text-[13px] font-medium leading-tight text-[var(--color-text)]"
+                    title={user.email}
+                  >
+                    {user.email}
+                  </p>
+                  <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                    {roleLabel}
+                  </p>
+                </div>
+                <button
+                  aria-label={t("nav.close_menu", "Close menu")}
+                  className={cn(
+                    "timiq-touch-target flex h-11 w-11 shrink-0 items-center justify-center",
+                    uiClasses.headerIconButton,
+                    uiClasses.transitionColors,
+                    uiClasses.focusRing,
+                  )}
+                  type="button"
+                  onClick={() => closeMenu()}
+                  ref={closeButtonRef}
+                >
+                  <X aria-hidden className="h-[18px] w-[18px]" />
+                </button>
               </div>
-              <button
-                aria-label={t("nav.close_menu", "Close menu")}
-                className={cn(
-                  "timiq-touch-target flex shrink-0 items-center justify-center p-2",
-                  uiClasses.headerIconButton,
-                  uiClasses.transitionColors,
-                  uiClasses.focusRing,
-                )}
-                type="button"
-                onClick={() => closeMenu()}
-                ref={closeButtonRef}
-              >
-                <X aria-hidden className="h-5 w-5" />
-              </button>
             </div>
 
+            {/* Single scrollable menu: nav tree + account actions */}
             <nav
               aria-label={t("shell.drawer_nav", "More navigation")}
-              className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain p-2 text-sm [-webkit-overflow-scrolling:touch]"
+              className="timiq-mobile-drawer-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-2 py-1 text-[length:var(--text-nav-row)] [-webkit-overflow-scrolling:touch] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
             >
               {drawerTree.length > 0 ? (
                 <NavTree
@@ -233,38 +253,39 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                   {t("nav.drawer_hint_primary", "All primary pages are on the bottom bar.")}
                 </p>
               )}
-            </nav>
 
-            <div
-              className={cn(
-                "shrink-0 border-t border-[var(--color-border)] bg-[var(--color-header)] p-2",
-                hasMobileBottomNav
-                  ? "pb-[max(0.75rem,calc(var(--layout-mobile-bottom-nav-height)+env(safe-area-inset-bottom,0px)))]"
-                  : "pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
-              )}
-            >
-              <Link
-                className={mobileDrawerLinkClass(activeHref === "/profile")}
-                href="/profile"
-                onClick={() => closeMenu(false)}
-              >
-                <NavItemIcon labelKey="nav.profile" />
-                <span className="min-w-0 flex-1">{t("nav.profile", "Profile")}</span>
-              </Link>
-              {!limited ? (
+              <div className="mt-1 border-t border-[var(--color-border)] pt-1" role="group" aria-label={t("nav.group.account", "Account")}>
                 <Link
-                  className={mobileDrawerLinkClass(activeHref === "/settings")}
-                  href="/settings"
+                  className={mobileDrawerLinkClass(activeHref === "/profile")}
+                  href="/profile"
                   onClick={() => closeMenu(false)}
                 >
-                  <NavItemIcon labelKey="nav.settings" />
-                  <span className="min-w-0 flex-1">{t("nav.settings", "Settings")}</span>
+                  <NavItemIcon className="h-3.5 w-3.5 shrink-0" labelKey="nav.profile" />
+                  <span className="min-w-0 flex-1 truncate">{t("nav.profile", "Profile")}</span>
                 </Link>
-              ) : null}
-              <div className="mt-1 px-1">
-                <LogoutButton className="w-full" />
+                {showAccountExtras ? (
+                  <Link
+                    className={mobileDrawerLinkClass(activeHref === "/settings")}
+                    href="/settings"
+                    onClick={() => closeMenu(false)}
+                  >
+                    <NavItemIcon className="h-3.5 w-3.5 shrink-0" labelKey="nav.settings" />
+                    <span className="min-w-0 flex-1 truncate">{t("nav.settings", "Settings")}</span>
+                  </Link>
+                ) : null}
+                {showAccountExtras ? (
+                  <Link
+                    className={mobileDrawerLinkClass(activeHref === "/help")}
+                    href="/help"
+                    onClick={() => closeMenu(false)}
+                  >
+                    <NavItemIcon className="h-3.5 w-3.5 shrink-0" labelKey="nav.help" />
+                    <span className="min-w-0 flex-1 truncate">{t("nav.help", "Help centre")}</span>
+                  </Link>
+                ) : null}
+                <LogoutButton appearance="menuRow" className="min-h-10" />
               </div>
-            </div>
+            </nav>
           </div>
         </>
       ) : null}

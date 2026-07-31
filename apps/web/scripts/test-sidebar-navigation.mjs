@@ -255,10 +255,15 @@ check("disclosure chevron", /<ChevronRight/.test(navTree));
 check("active highlight", /bg-\[#d5e1ee\]/.test(navTree));
 check("folder icons present", /"mgmt-people-employees": Folder/.test(navIcons));
 check("mobile uses NavTree", /getMobileDrawerNavigationTree/.test(mobile) && /<NavTree/.test(mobile));
+check("mobile omits footer leaves from tree", /omitMobileDrawerFooterLeaves/.test(mobile));
 check("mobile escape", /event\.key === "Escape"/.test(mobile));
 check("mobile focus trap", /event\.key !== "Tab"/.test(mobile));
 check("mobile limited messages gate", /\{!limited \? \(\s*<>\s*<MessagesHeaderButton/.test(mobile));
+check("mobile drawer scroll hosts Profile", /timiq-mobile-drawer-scroll[\s\S]*\/profile/.test(mobile));
+check("mobile drawer logout is a menu row", /appearance="menuRow"/.test(mobile));
+check("mobile drawer has no fixed footer nav", !/timiq-mobile-drawer-footer/.test(mobile));
 check("logout a11y", /createPortal\(/.test(logoutDialog) && /returnFocusRef/.test(logoutButton));
+check("logout menuRow appearance exists", /appearance === "menuRow"/.test(logoutButton));
 check("public shell isolated", /uiClasses\.shellTopBar/.test(publicShell) && !/DesktopSidebar|color-utilitybar/.test(publicShell));
 check("scrollbar css", /\.timiq-sidebar-scrollbar::-webkit-scrollbar/.test(globals));
 

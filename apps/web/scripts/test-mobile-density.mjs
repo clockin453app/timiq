@@ -192,8 +192,10 @@ check("toolbars use the responsive gap token", /gap-\[var\(--space-toolbar-gap\)
 check("toolbars are tighter on mobile", /bg-\[var\(--color-toolbar-well\)] p-2 sm:p-3/.test(uiClasses));
 check("page headers are tighter on mobile", /px-\[var\(--space-card\)] py-2\.5 sm:flex-row/.test(uiClasses));
 check("drawer rows use the nav token", /navDrawerLinkBase:[\s\S]{0,220}text-\[length:var\(--text-nav-row\)]/.test(uiClasses));
-check("drawer rows keep a 44px touch target", /navDrawerLinkBase:[\s\S]{0,120}min-h-\[44px]/.test(uiClasses));
-check("drawer labels wrap rather than overflow", /navDrawerLinkBase:[\s\S]{0,220}break-words/.test(uiClasses));
+check("drawer rows keep a compact touch target", /navDrawerLinkBase:[\s\S]{0,120}min-h-10/.test(uiClasses));
+check("drawer labels truncate rather than overflow", /min-w-0 flex-1 truncate/.test(read("components/layout/nav-tree.tsx")));
+check("drawer active state is not colour-only", /navDrawerLinkActive:[\s\S]{0,220}border-l-\[var\(--color-brand\)\]/.test(uiClasses));
+check("drawer rows stay flat without oversized rounding", /navDrawerLinkBase:[\s\S]{0,160}rounded-none/.test(uiClasses));
 check("bottom nav items keep a 44px touch target", /bottomNavItemBase:[\s\S]{0,160}min-h-\[44px]/.test(uiClasses));
 check(
   "PAYE filter controls no longer force a sub-16px mobile font",

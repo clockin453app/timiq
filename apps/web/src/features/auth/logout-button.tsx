@@ -16,6 +16,8 @@ type LogoutButtonProps = {
   size?: "md" | "sm";
   iconOnly?: boolean;
   showIcon?: boolean;
+  /** Full-width drawer/menu row (not a boxed secondary button). */
+  appearance?: "button" | "menuRow";
 };
 
 export function LogoutButton({
@@ -23,6 +25,7 @@ export function LogoutButton({
   size = "md",
   iconOnly = false,
   showIcon = false,
+  appearance = "button",
 }: LogoutButtonProps = {}) {
   const router = useRouter();
   const { setLocale, t } = useI18n();
@@ -68,6 +71,30 @@ export function LogoutButton({
       returnFocusRef={openerRef}
     />
   );
+
+  if (appearance === "menuRow") {
+    return (
+      <>
+        <button
+          ref={openerRef}
+          aria-label={label}
+          className={cn(
+            "flex min-h-10 w-full min-w-0 max-w-full items-center gap-2 rounded-none border border-transparent px-2 py-1.5 text-left text-[length:var(--text-nav-row)] font-medium",
+            "text-[var(--color-danger-700)] hover:bg-[var(--color-danger-50)]",
+            "focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)] disabled:pointer-events-none disabled:opacity-60",
+            className,
+          )}
+          disabled={isLoggingOut}
+          onClick={openConfirm}
+          type="button"
+        >
+          <LogOut aria-hidden className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+        </button>
+        {dialog}
+      </>
+    );
+  }
 
   if (iconOnly) {
     return (

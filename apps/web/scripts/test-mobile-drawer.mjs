@@ -28,7 +28,8 @@ const {
   mobileDrawerReducer,
 } = loadModule("components/layout/mobile-drawer-state.ts");
 
-const { getMobileDrawerNavigationTree, collectNavigationLeaves } = loadModule("config/navigation.ts");
+const { getMobileDrawerNavigationTree, collectNavigationLeaves, omitMobileDrawerFooterLeaves } =
+  loadModule("config/navigation.ts");
 
 let passed = 0;
 function check(name, condition) {
@@ -205,6 +206,28 @@ check(
 );
 check("orientation changes are handled", /orientationchange/.test(header));
 check("background content is made inert", /appMain\.inert = true/.test(header));
+check("drawer uses flex column shell", /flex-col overflow-hidden/.test(header));
+check("drawer account header is fixed", /timiq-mobile-drawer-header/.test(header) && /safe-area-inset-top/.test(header));
+check("drawer header shows email and role, not the logo", /timiq-mobile-drawer-header[\s\S]*user\.email/.test(header) && !/timiq-mobile-drawer-header[\s\S]*TimIQBrandLockup/.test(header));
+check("main header hosts the large approved logo", /MOBILE_HEADER_LOGO_HEIGHT = 46/.test(header) && /surface="onDark"/.test(header));
+check("drawer does not repeat the brand lockup", (header.match(/<TimIQBrandLockup/g) ?? []).length === 1);
+check("single scroll container holds nav and account actions", /timiq-mobile-drawer-scroll[\s\S]*min-h-0 flex-1 overflow-x-hidden overflow-y-auto/.test(header));
+check("there is no fixed footer navigation block", !/timiq-mobile-drawer-footer/.test(header));
+check("Profile lives in the scrollable menu", /timiq-mobile-drawer-scroll[\s\S]*href="\/profile"/.test(header));
+check("Settings is gated for limited users", /showAccountExtras \? \([\s\S]*href="\/settings"/.test(header));
+check("Help is gated for limited users", /showAccountExtras \? \([\s\S]*href="\/help"/.test(header));
+check("Logout appears as a menu row in the scrollable menu", /timiq-mobile-drawer-scroll[\s\S]*appearance="menuRow"/.test(header));
+check("account identity is not duplicated below the header", !/timiq-mobile-drawer-scroll[\s\S]*UserAvatar/.test(header));
+check("account leaves are omitted from the NavTree", /omitMobileDrawerFooterLeaves/.test(header));
+check("drawer width is min(92vw, 360px)", /w-\[min\(92vw,360px\)\]/.test(header));
+check("close control has a large touch target", /h-11 w-11/.test(header));
+check("logout confirmation remains wired", /LogoutButton/.test(header));
+check("top bar avatar is not a duplicate account menu", !/<UserAvatar[\s\S]{0,200}menuButtonRef/.test(header.split("{menuOpen")[0] ?? ""));
+
+const overview = read("app/(app)/overview/overview-client.tsx");
+const pageGuide = read("components/layout/page-location-guide.tsx");
+check("Overview client no longer duplicates a mobile page title", !/overview\.page_title/.test(overview));
+check("root destinations use a single semantic heading in the page guide", /usePageHeading[\s\S]*<h1/.test(pageGuide));
 
 const employeeTree = getMobileDrawerNavigationTree("employee");
 const limitedTree = getMobileDrawerNavigationTree("employee", { limitedAccess: true });
@@ -226,5 +249,28 @@ check(
 check("limited access drawer excludes PAYE pay history", !limitedHrefs.includes("/paye-pay-history"));
 check("limited access drawer excludes the clock", !limitedHrefs.includes("/clock"));
 check("limited access drawer excludes management pages", !limitedHrefs.includes("/employees"));
+
+const employeeFooterTree = omitMobileDrawerFooterLeaves(employeeTree);
+const limitedFooterTree = omitMobileDrawerFooterLeaves(limitedTree);
+const footerHrefs = (nodes) => collectNavigationLeaves(nodes).map((leaf) => leaf.href);
+check(
+  "employee scroll tree omits profile/settings/help",
+  !footerHrefs(employeeFooterTree).includes("/profile") &&
+    !footerHrefs(employeeFooterTree).includes("/settings") &&
+    !footerHrefs(employeeFooterTree).includes("/help"),
+);
+check(
+  "limited scroll tree omits profile",
+  !footerHrefs(limitedFooterTree).includes("/profile"),
+);
+check(
+  "omitting footer leaves keeps other employee routes",
+  footerHrefs(employeeFooterTree).includes("/clock") || footerHrefs(employeeFooterTree).includes("/messages"),
+);
+
+const logoutButton = read("features/auth/logout-button.tsx");
+check("LogoutButton supports menuRow appearance", /appearance === "menuRow"/.test(logoutButton));
+check("menuRow logout still opens confirmation", /appearance === "menuRow"[\s\S]*openConfirm/.test(logoutButton));
+check("menuRow logout is not a boxed Button variant", /appearance === "menuRow"[\s\S]*<button[\s\S]*LogOut/.test(logoutButton));
 
 console.log(`${passed} mobile drawer checks passed`);

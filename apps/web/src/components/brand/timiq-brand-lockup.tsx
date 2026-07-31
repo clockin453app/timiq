@@ -16,6 +16,11 @@ type TimIQBrandLockupProps = {
   subtitle?: string;
   /** @deprecated Unused with approved raster logo. */
   subtitleClassName?: string;
+  /**
+   * `onDark` places the unchanged approved raster on a light plate so dark wordmark
+   * strokes remain readable on navy chrome. Does not recolour or replace the asset.
+   */
+  surface?: "default" | "onDark";
   /** @deprecated Approved rasters are not recoloured; retained for call-site compatibility. */
   tone?: "default" | "inverse";
   variant?: "mark" | "compact" | "full";
@@ -31,6 +36,7 @@ type TimIQBrandLockupProps = {
 export function TimIQBrandLockup({
   className,
   markSize,
+  surface = "default",
   variant = "full",
 }: TimIQBrandLockupProps) {
   const markOnly = variant === "mark" || variant === "compact";
@@ -45,9 +51,17 @@ export function TimIQBrandLockup({
   }
 
   const width = Math.round((height * TIMIQ_LOGO_NATIVE_WIDTH) / TIMIQ_LOGO_NATIVE_HEIGHT);
+  const onDark = surface === "onDark";
 
   return (
-    <span className={cn("inline-flex min-w-0 max-w-full items-center", className)}>
+    <span
+      className={cn(
+        "inline-flex min-w-0 max-w-full items-center",
+        onDark &&
+          "rounded-[var(--radius-md)] bg-white px-1.5 py-0.5 shadow-[0_1px_2px_rgba(15,23,42,0.12)]",
+        className,
+      )}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element -- approved static brand asset */}
       <img
         alt="TimIQ"

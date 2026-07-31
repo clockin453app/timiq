@@ -39,6 +39,7 @@ export function PageLocationGuide({ activeHref }: PageLocationGuideProps) {
   const groupLabel = t(location.groupLabelKey, location.groupLabel);
   const pageLabel = t(location.pageLabelKey, location.pageLabel);
   const showBackButton = !isOverviewHomePath(activeHref);
+  const usePageHeading = !location.showGroup && !showBackButton;
 
   return (
     <div className="mb-3 flex min-w-0 max-w-full items-start justify-between gap-3 text-xs leading-snug text-[var(--color-text-muted)]">
@@ -53,7 +54,14 @@ export function PageLocationGuide({ activeHref }: PageLocationGuideProps) {
               </span>
             </>
           ) : null}
-          <span className="font-semibold text-[var(--color-text)]">{pageLabel}</span>
+          {/* Root destinations (e.g. Overview) use h1 here so pages need not repeat the title. */}
+          {usePageHeading ? (
+            <h1 className="inline truncate text-sm font-semibold text-[var(--color-text)] sm:text-base">
+              {pageLabel}
+            </h1>
+          ) : (
+            <span className="font-semibold text-[var(--color-text)]">{pageLabel}</span>
+          )}
         </nav>
       </div>
 
