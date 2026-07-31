@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   Badge,
@@ -21,7 +21,6 @@ import {
 } from "@/components/ui";
 import { UserAvatar } from "@/components/user-avatar";
 import { isAdministrator, RoleGuard, useCurrentUser } from "@/features/auth";
-import { CompanySelector } from "@/features/companies/company-selector";
 import { listCompanies, type Company } from "@/features/companies/api";
 import { useAdministratorCompanyScope } from "@/features/companies/selected-company";
 import {
@@ -36,9 +35,12 @@ import { listSiteAccessRecords, type SiteAccessRecord } from "@/features/site-ac
 import { FaceCheckBadge } from "@/features/face-check/face-check-badge";
 import { formatDurationSeconds } from "@/features/time-records/format-duration";
 import { browserDefaultTimeZone } from "@/features/timesheets/week-utils";
-import { fromDatetimeLocalToIso, nowDatetimeLocalValue } from "@/lib/datetime-local";
+import {
+  fromDatetimeLocalToIso,
+  isValidDatetimeLocalValue,
+  nowDatetimeLocalValue,
+} from "@/lib/datetime-local";
 import { useT } from "@/lib/i18n";
-
 function isFormLikeFocused(): boolean {
   const el = document.activeElement;
   if (!el || !(el instanceof HTMLElement)) {
@@ -132,8 +134,14 @@ export function LiveAttendanceClient() {
   const [locationPick, setLocationPick] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionBusy, setActionBusy] = useState(false);
+  const [flashMessage, setFlashMessage] = useState("");
+  const [supportError, setSupportError] = useState("");
   const localTimeZoneLabel = useMemo(() => browserDefaultTimeZone(), []);
-
+  const clockInAtRef = useRef<HTMLInputElement | null>(null);
+  const clockOutAtRef = useRef<HTMLInputElement | null>(null);
+  const reasonInRef = useRef<HTMLTextAreaElement | null>(null);
+  const reasonOutRef = useRef<HTMLTextAreaElement | null>(null);
+  const locationPickRef = useRef<HTMLSelectElement | null>(null);
   useEffect(() => {
     const handle = window.setTimeout(() => {
       setSearchDebounced(searchInput.trim());
@@ -150,18 +158,42 @@ export function LiveAttendanceClient() {
 
   const loadCommonData = useCallback(async () => {
     const locationCompanyId = adminAllCompanies ? companyScope.companyId : currentUser?.company_id ?? null;
-    try {
-      const [locData, accessData] = await Promise.all([
-        listLocations(locationCompanyId),
-        listSiteAccessRecords(),
-      ]);
-      setLocations(locData);
-      setSiteAccess(accessData);
-    } catch {
+    if (adminAllCompanies && !locationCompanyId) {
       setLocations([]);
       setSiteAccess([]);
+      setSupportError("");
+      return;
     }
 
+    const locationPromise = listLocations(locationCompanyId)
+      .then((locData) => {
+        setLocations(locData);
+        return true;
+      })
+      .catch(() => {
+        setLocations([]);
+        return false;
+      });
+
+    // Administrators must scope site-access by company_id (same as Site Access page).
+    const accessPromise = listSiteAccessRecords(locationCompanyId)
+      .then((accessData) => {
+        setSiteAccess(accessData);
+        return true;
+      })
+      .catch(() => {
+        setSiteAccess([]);
+        return false;
+      });
+
+    const [locationsOk, accessOk] = await Promise.all([locationPromise, accessPromise]);
+    if (!locationsOk) {
+      setSupportError("Could not load locations for manual clock actions.");
+    } else if (!accessOk) {
+      setSupportError("Could not load site access for manual clock actions.");
+    } else {
+      setSupportError("");
+    }
     if (adminAllCompanies) {
       try {
         const co = await listCompanies();
@@ -171,7 +203,6 @@ export function LiveAttendanceClient() {
       }
     }
   }, [adminAllCompanies, companyScope.companyId, currentUser?.company_id]);
-
   useEffect(() => {
     void loadCommonData();
   }, [loadCommonData]);
@@ -269,6 +300,25 @@ export function LiveAttendanceClient() {
 
   void tick;
 
+  useEffect(() => {
+    if (!flashMessage) return;
+    const id = window.setTimeout(() => setFlashMessage(""), 5000);
+    return () => window.clearTimeout(id);
+  }, [flashMessage]);
+
+  useEffect(() => {
+    if (!modalInUser) return;
+    if (locationPick) return;
+    const preferred = modalInUser.location_id;
+    if (preferred && assignableLocationsForUser.some((loc) => loc.id === preferred)) {
+      setLocationPick(preferred);
+      return;
+    }
+    if (assignableLocationsForUser.length === 1) {
+      setLocationPick(assignableLocationsForUser[0].id);
+    }
+  }, [modalInUser, assignableLocationsForUser, locationPick]);
+
   function openClockIn(row: LiveAttendanceEmployeeRow) {
     setActionError("");
     setReasonIn("");
@@ -286,18 +336,29 @@ export function LiveAttendanceClient() {
 
   async function handleManualClockIn(event: FormEvent) {
     event.preventDefault();
-    if (!modalInUser || !locationPick.trim()) {
+    if (actionBusy || !modalInUser) {
+      return;
+    }
+    if (!locationPick.trim()) {
       setActionError("Choose a location.");
+      locationPickRef.current?.focus();
       return;
     }
     const reason = reasonIn.trim();
     if (!reason) {
       setActionError("Reason is required.");
+      reasonInRef.current?.focus();
+      return;
+    }
+    if (!isValidDatetimeLocalValue(clockInAtLocal)) {
+      setActionError("Enter a valid clock-in date and time.");
+      clockInAtRef.current?.focus();
       return;
     }
     const effectiveAt = fromDatetimeLocalToIso(clockInAtLocal);
     if (!effectiveAt) {
       setActionError("Enter a valid clock-in date and time.");
+      clockInAtRef.current?.focus();
       return;
     }
     setActionBusy(true);
@@ -310,6 +371,7 @@ export function LiveAttendanceClient() {
         effective_at: effectiveAt,
       });
       setModalInUser(null);
+      setFlashMessage(`Manual clock-in saved for ${modalInUser.display_name || "employee"}.`);
       await loadSnapshot({ silent: true });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Clock-in failed.");
@@ -320,21 +382,29 @@ export function LiveAttendanceClient() {
 
   async function handleManualClockOut(event: FormEvent) {
     event.preventDefault();
-    if (!modalOutUser) {
+    if (actionBusy || !modalOutUser) {
       return;
     }
     const reason = reasonOut.trim();
     if (!reason) {
       setActionError("Reason is required.");
+      reasonOutRef.current?.focus();
+      return;
+    }
+    if (!isValidDatetimeLocalValue(clockOutAtLocal)) {
+      setActionError("Enter a valid clock-out date and time.");
+      clockOutAtRef.current?.focus();
       return;
     }
     const effectiveAt = fromDatetimeLocalToIso(clockOutAtLocal);
     if (!effectiveAt) {
       setActionError("Enter a valid clock-out date and time.");
+      clockOutAtRef.current?.focus();
       return;
     }
     if (modalOutUser.clock_in_at && new Date(effectiveAt) <= new Date(modalOutUser.clock_in_at)) {
       setActionError("Clock-out time must be after the clock-in time.");
+      clockOutAtRef.current?.focus();
       return;
     }
     setActionBusy(true);
@@ -346,6 +416,7 @@ export function LiveAttendanceClient() {
         effective_at: effectiveAt,
       });
       setModalOutUser(null);
+      setFlashMessage(`Manual clock-out saved for ${modalOutUser.display_name || "employee"}.`);
       await loadSnapshot({ silent: true });
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Clock-out failed.");
@@ -353,7 +424,6 @@ export function LiveAttendanceClient() {
       setActionBusy(false);
     }
   }
-
   const summary = snapshot?.summary;
   const refreshDisabled = isRefreshing || (isInitialLoad && !snapshot);
 
@@ -362,6 +432,24 @@ export function LiveAttendanceClient() {
       <PageHeader
         title="Live Attendance"
         description="Snapshot of today’s roster, open shifts, and manual clock controls for administrators."
+        action={
+          <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+            <Button
+              type="button"
+              variant="secondary"
+              className="min-h-11 w-full sm:min-h-9 sm:w-auto"
+              disabled={refreshDisabled}
+              onClick={() => void loadSnapshot({ silent: Boolean(snapshot) })}
+            >
+              {isRefreshing ? "Refreshing…" : "Refresh"}
+            </Button>
+            {snapshot ? (
+              <span className="text-center text-xs text-[var(--color-text-muted)] sm:text-left">
+                Updated {new Date(snapshot.generated_at).toLocaleTimeString()}
+              </span>
+            ) : null}
+          </div>
+        }
       />
       <SheetBody className="min-w-0">
         <RoleGuard
@@ -372,22 +460,40 @@ export function LiveAttendanceClient() {
             </div>
           }
         >
-          <div className="mb-4 flex flex-wrap items-center gap-2 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={refreshDisabled}
-              onClick={() => void loadSnapshot({ silent: Boolean(snapshot) })}
+          {flashMessage ? (
+            <div
+              className="timiq-live-flash mb-3 flex max-w-full items-start gap-2 break-words rounded-[var(--radius-md)] border border-[var(--color-brand)]/30 bg-[var(--color-brand-tint)] px-3 py-2 text-sm text-[var(--color-brand-hover)]"
+              role="status"
+              aria-live="polite"
             >
-              {isRefreshing ? "Refreshing…" : "Refresh"}
-            </Button>
-            {isRefreshing ? <span className="text-xs text-[var(--color-text-muted)]">Updating…</span> : null}
-            {snapshot ? (
-              <span className="text-xs text-[var(--color-text-muted)]">
-                Updated {new Date(snapshot.generated_at).toLocaleTimeString()}
-              </span>
-            ) : null}
-          </div>
+              <p className="min-w-0 flex-1">{flashMessage}</p>
+              <button
+                aria-label="Dismiss confirmation"
+                className="shrink-0 rounded px-2 py-1 text-xs font-semibold underline"
+                type="button"
+                onClick={() => setFlashMessage("")}
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
+
+          {supportError ? (
+            <div
+              className="mb-3 flex max-w-full items-start gap-2 break-words rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]"
+              role="alert"
+            >
+              <p className="min-w-0 flex-1">{supportError}</p>
+              <button
+                aria-label="Dismiss error"
+                className="shrink-0 rounded px-2 py-1 text-xs font-semibold underline"
+                type="button"
+                onClick={() => setSupportError("")}
+              >
+                Dismiss
+              </button>
+            </div>
+          ) : null}
 
           <p className="mb-3 text-sm text-[var(--color-text)] md:hidden">
             <span className="font-semibold tabular-nums">{snapshot?.employees.length ?? 0}</span> employees
@@ -400,22 +506,30 @@ export function LiveAttendanceClient() {
             ) : null}
           </p>
 
-          <div className="mb-4 hidden gap-3 sm:grid sm:grid-cols-2 lg:grid-cols-4">
-            <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
-              <div className="text-xs font-bold text-[var(--color-text-muted)]">Present today</div>
-              <div className="text-xl font-semibold tabular-nums sm:text-2xl">{summary?.present_today ?? "—"}</div>
+          <div className="mb-4 grid grid-cols-1 gap-2 min-[400px]:grid-cols-2 lg:grid-cols-4">
+            <div className="min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2.5 sm:p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)] sm:text-xs">
+                Present today
+              </div>
+              <div className="text-lg font-semibold tabular-nums sm:text-2xl">{summary?.present_today ?? "—"}</div>
             </div>
-            <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
-              <div className="text-xs font-bold text-[var(--color-text-muted)]">Open shifts</div>
-              <div className="text-xl font-semibold tabular-nums sm:text-2xl">{summary?.open_shifts ?? "—"}</div>
+            <div className="min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2.5 sm:p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)] sm:text-xs">
+                Open shifts
+              </div>
+              <div className="text-lg font-semibold tabular-nums sm:text-2xl">{summary?.open_shifts ?? "—"}</div>
             </div>
-            <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
-              <div className="text-xs font-bold text-[var(--color-text-muted)]">Absent</div>
-              <div className="text-xl font-semibold tabular-nums sm:text-2xl">{summary?.absent_count ?? "—"}</div>
+            <div className="min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2.5 sm:p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)] sm:text-xs">
+                Absent
+              </div>
+              <div className="text-lg font-semibold tabular-nums sm:text-2xl">{summary?.absent_count ?? "—"}</div>
             </div>
-            <div className="border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3">
-              <div className="text-xs font-bold text-[var(--color-text-muted)]">Attendance rate</div>
-              <div className="text-xl font-semibold tabular-nums sm:text-2xl">
+            <div className="min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-2.5 sm:p-3">
+              <div className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)] sm:text-xs">
+                Attendance rate
+              </div>
+              <div className="text-lg font-semibold tabular-nums sm:text-2xl">
                 {summary && summary.attendance_rate !== null && summary.attendance_rate !== undefined
                   ? `${Math.round(summary.attendance_rate * 100)}%`
                   : "—"}
@@ -431,11 +545,11 @@ export function LiveAttendanceClient() {
           ) : null}
 
           <div className="mb-3 min-w-0 border border-[var(--color-border)] bg-[var(--color-cell)] p-2 sm:mb-4 sm:p-3">
-            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] md:gap-3">
-              <label className="block text-[11px] font-bold text-[var(--color-text)] sm:text-xs">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)] md:gap-3">
+              <label className="block min-w-0 text-[11px] font-bold text-[var(--color-text)] sm:text-xs">
                 Search
                 <Input
-                  className="mt-0.5 h-9 text-sm sm:mt-1 sm:h-10"
+                  className="mt-0.5 h-11 w-full min-w-0 text-base sm:mt-1 sm:h-10 sm:text-sm"
                   value={searchInput}
                   onChange={(event) => setSearchInput(event.target.value)}
                   placeholder="Name or email"
@@ -443,10 +557,10 @@ export function LiveAttendanceClient() {
                 />
               </label>
 
-              <label className="block text-xs font-bold text-[var(--color-text)]">
+              <label className="block min-w-0 text-xs font-bold text-[var(--color-text)]">
                 Location filter
                 <select
-                  className="mt-0.5 h-9 w-full border border-[var(--color-border-dark)] text-sm sm:mt-1 sm:h-10 bg-[var(--color-input)] px-2 text-sm"
+                  className="mt-0.5 h-11 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-base sm:mt-1 sm:h-10 sm:text-sm"
                   value={locationFilter}
                   onChange={(event) => setLocationFilter(event.target.value)}
                 >
@@ -460,10 +574,10 @@ export function LiveAttendanceClient() {
               </label>
 
               {adminAllCompanies && companyScope.companies.length > 0 ? (
-                <label className="block text-xs font-bold text-[var(--color-text)]">
+                <label className="block min-w-0 text-xs font-bold text-[var(--color-text)]">
                   Company
                   <select
-                    className="mt-0.5 h-9 w-full border border-[var(--color-border-dark)] text-sm sm:mt-1 sm:h-10 bg-[var(--color-input)] px-2 text-sm"
+                    className="mt-0.5 h-11 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-base sm:mt-1 sm:h-10 sm:text-sm"
                     value={companyScope.companyId ?? ""}
                     onChange={(event) => {
                       companyScope.setCompanyId(event.target.value);
@@ -478,9 +592,7 @@ export function LiveAttendanceClient() {
                     ))}
                   </select>
                 </label>
-              ) : (
-                <div />
-              )}
+              ) : null}
             </div>
           </div>
 
@@ -495,12 +607,122 @@ export function LiveAttendanceClient() {
           ) : null}
 
           {loadError ? (
-            <div className="mb-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
-              {loadError}
+            <div
+              className="mb-3 flex max-w-full items-start gap-2 break-words border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]"
+              role="alert"
+            >
+              <p className="min-w-0 flex-1">{loadError}</p>
+              <button
+                aria-label="Dismiss load error"
+                className="shrink-0 rounded px-2 py-1 text-xs font-semibold underline"
+                type="button"
+                onClick={() => setLoadError("")}
+              >
+                Dismiss
+              </button>
             </div>
           ) : null}
 
-          <div className="min-w-0 max-w-full">
+          {/* Mobile attendance cards — avoid forcing the wide table into the viewport */}
+          <div className="space-y-2 md:hidden">
+            {isInitialLoad && !snapshot ? (
+              <p className="border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-4 text-sm text-[var(--color-text-muted)]">
+                Loading attendance…
+              </p>
+            ) : null}
+            {!isInitialLoad && snapshot && snapshot.employees.length === 0 ? (
+              <p className="border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-4 text-sm text-[var(--color-text-muted)]">
+                No employees match the current filters.
+              </p>
+            ) : null}
+            {snapshot
+              ? snapshot.employees.map((row) => {
+                  void tick;
+                  const canClockIn = row.status !== "open_shift" && Boolean(row.company_id);
+                  const canClockOut = row.status === "open_shift";
+                  return (
+                    <article
+                      key={row.user_id}
+                      className="min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-3"
+                    >
+                      <div className="flex min-w-0 items-start gap-2.5">
+                        <UserAvatar
+                          email={row.email}
+                          name={row.display_name}
+                          sizeClassName="h-9 w-9"
+                          userId={row.user_id}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <h3 className="truncate text-sm font-semibold text-[var(--color-text)]">
+                            {row.display_name || "Employee"}
+                          </h3>
+                          {row.email ? (
+                            <p className="truncate text-xs text-[var(--color-text-muted)]">{row.email}</p>
+                          ) : null}
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            {statusBadge(row.status)}
+                            {row.status === "open_shift" && row.face_check_status ? (
+                              <FaceCheckBadge status={row.face_check_status} />
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                      <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                        <div className="min-w-0">
+                          <dt className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                            Site
+                          </dt>
+                          <dd className="truncate text-[var(--color-text)]">{row.location_name ?? "—"}</dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                            Duration
+                          </dt>
+                          <dd className="tabular-nums text-[var(--color-text)]">{outOrDurationLabel(row)}</dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                            Clock in
+                          </dt>
+                          <dd className="tabular-nums text-[var(--color-text)]">{formatTimeShort(row.clock_in_at)}</dd>
+                        </div>
+                        <div className="min-w-0">
+                          <dt className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">
+                            Clock out
+                          </dt>
+                          <dd className="tabular-nums text-[var(--color-text)]">{formatTimeShort(row.clock_out_at)}</dd>
+                        </div>
+                      </dl>
+                      <div className="mt-3 grid grid-cols-1 gap-2 min-[380px]:grid-cols-2">
+                        <Button
+                          type="button"
+                          size="md"
+                          variant="secondary"
+                          className="min-h-11 w-full"
+                          disabled={!canClockIn}
+                          aria-label={`Manual clock in ${row.display_name || "employee"}`}
+                          onClick={() => openClockIn(row)}
+                        >
+                          Manual clock in
+                        </Button>
+                        <Button
+                          type="button"
+                          size="md"
+                          className="min-h-11 w-full"
+                          disabled={!canClockOut}
+                          aria-label={`Manual clock out ${row.display_name || "employee"}`}
+                          onClick={() => openClockOut(row)}
+                        >
+                          Manual clock out
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })
+              : null}
+          </div>
+
+          <div className="hidden min-w-0 max-w-full md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -522,12 +744,12 @@ export function LiveAttendanceClient() {
               <TableBody>
                 {isInitialLoad && !snapshot ? (
                   <TableRow>
-                    <TableCell colSpan={10}>Loading attendance…</TableCell>
+                    <TableCell colSpan={11}>Loading attendance…</TableCell>
                   </TableRow>
                 ) : null}
                 {!isInitialLoad && snapshot && snapshot.employees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={10}>No employees match the current filters.</TableCell>
+                    <TableCell colSpan={11}>No employees match the current filters.</TableCell>
                   </TableRow>
                 ) : null}
                 {snapshot
@@ -598,6 +820,7 @@ export function LiveAttendanceClient() {
                   ? `${modalInUser.display_name} · ${modalInUser.email}`
                   : modalInUser.display_name
               }
+              closeEnabled={!actionBusy}
               onClose={() => {
                 if (!actionBusy) setModalInUser(null);
               }}
@@ -615,6 +838,7 @@ export function LiveAttendanceClient() {
                     type="submit"
                     form="force-clock-in-form"
                     disabled={actionBusy || assignableLocationsForUser.length === 0}
+                    aria-busy={actionBusy}
                   >
                     {actionBusy ? "Saving…" : "Confirm clock in"}
                   </Button>
@@ -631,6 +855,7 @@ export function LiveAttendanceClient() {
                     className="timiq-input timiq-select"
                     id="force-clock-in-location"
                     required
+                    ref={locationPickRef}
                     value={locationPick}
                     onChange={(event) => setLocationPick(event.target.value)}
                   >
@@ -658,6 +883,7 @@ export function LiveAttendanceClient() {
                     className="timiq-input"
                     id="force-clock-in-at"
                     required
+                    ref={clockInAtRef}
                     type="datetime-local"
                     value={clockInAtLocal}
                     onChange={(event) => setClockInAtLocal(event.target.value)}
@@ -668,6 +894,7 @@ export function LiveAttendanceClient() {
                     className="timiq-input min-h-[72px] py-2"
                     id="force-clock-in-reason"
                     required
+                    ref={reasonInRef}
                     value={reasonIn}
                     onChange={(event) => setReasonIn(event.target.value)}
                   />
@@ -692,6 +919,7 @@ export function LiveAttendanceClient() {
                   ? `${modalOutUser.display_name} · ${modalOutUser.email}`
                   : modalOutUser.display_name
               }
+              closeEnabled={!actionBusy}
               onClose={() => {
                 if (!actionBusy) setModalOutUser(null);
               }}
@@ -705,7 +933,12 @@ export function LiveAttendanceClient() {
                   >
                     Cancel
                   </Button>
-                  <Button type="submit" form="force-clock-out-form" disabled={actionBusy}>
+                  <Button
+                    type="submit"
+                    form="force-clock-out-form"
+                    disabled={actionBusy}
+                    aria-busy={actionBusy}
+                  >
                     {actionBusy ? "Saving…" : "Confirm clock out"}
                   </Button>
                 </FormActions>
@@ -719,6 +952,7 @@ export function LiveAttendanceClient() {
                 {modalOutUser.clock_in_at ? (
                   <p className="timiq-caption break-words">
                     Open since {new Date(modalOutUser.clock_in_at).toLocaleString()}
+                    {modalOutUser.location_name ? ` · ${modalOutUser.location_name}` : ""}
                   </p>
                 ) : null}
                 <FormField
@@ -731,6 +965,7 @@ export function LiveAttendanceClient() {
                     className="timiq-input"
                     id="force-clock-out-at"
                     required
+                    ref={clockOutAtRef}
                     type="datetime-local"
                     value={clockOutAtLocal}
                     onChange={(event) => setClockOutAtLocal(event.target.value)}
@@ -741,6 +976,7 @@ export function LiveAttendanceClient() {
                     className="timiq-input min-h-[72px] py-2"
                     id="force-clock-out-reason"
                     required
+                    ref={reasonOutRef}
                     value={reasonOut}
                     onChange={(event) => setReasonOut(event.target.value)}
                   />
@@ -755,8 +991,7 @@ export function LiveAttendanceClient() {
                 ) : null}
               </form>
             </Modal>
-          ) : null}
-        </RoleGuard>
+          ) : null}        </RoleGuard>
       </SheetBody>
     </Sheet>
   );

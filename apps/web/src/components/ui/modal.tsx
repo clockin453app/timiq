@@ -12,6 +12,8 @@ type ModalProps = {
   /** Action row pinned below the scrolling body. */
   footer?: ReactNode;
   onClose: () => void;
+  /** When false, Escape and backdrop click do not close (e.g. while submitting). */
+  closeEnabled?: boolean;
   /** Tailwind max-width for the panel on `sm` and up. */
   widthClassName?: string;
   labelledById?: string;
@@ -24,12 +26,13 @@ type ModalProps = {
  */
 export function Modal({
   children,
+  closeEnabled = true,
   footer,
   labelledById = "timiq-modal-title",
   onClose,
   subtitle,
   title,
-  widthClassName = "sm:max-w-[min(40rem,calc(100vw-3rem))]",
+  widthClassName = "max-w-[calc(100vw-24px)] sm:max-w-[min(40rem,calc(100vw-3rem))]",
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
 
@@ -37,7 +40,7 @@ export function Modal({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        if (closeEnabled) onClose();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -48,13 +51,13 @@ export function Modal({
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [onClose]);
+  }, [closeEnabled, onClose]);
 
   return (
     <div
-      className="fixed inset-0 z-[1200] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-2 sm:p-4 md:p-6"
+      className="fixed inset-0 z-[1200] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-[max(0.5rem,env(safe-area-inset-top,0px))] sm:p-4 md:p-6"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
+        if (event.target === event.currentTarget && closeEnabled) onClose();
       }}
     >
       <div
