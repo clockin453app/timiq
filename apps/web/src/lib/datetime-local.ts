@@ -39,3 +39,23 @@ export function nowDatetimeLocalValue(): string {
 export function isValidDatetimeLocalValue(localValue: string): boolean {
   return localValue.trim().length > 0 && fromDatetimeLocalToIso(localValue) !== "";
 }
+
+/** Today's calendar date in the browser timezone as `YYYY-MM-DD` (not UTC). */
+export function todayLocalDateString(now: Date = new Date()): string {
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+/** True when `value` is a plausible `YYYY-MM-DD` calendar date. */
+export function isValidLocalDateString(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value.trim())) {
+    return false;
+  }
+  const [y, m, d] = value.split("-").map((part) => Number.parseInt(part, 10));
+  if (!y || !m || !d) {
+    return false;
+  }
+  const parsed = new Date(y, m - 1, d);
+  return (
+    parsed.getFullYear() === y && parsed.getMonth() === m - 1 && parsed.getDate() === d
+  );
+}

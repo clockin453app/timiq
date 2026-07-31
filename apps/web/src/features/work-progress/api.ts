@@ -83,7 +83,8 @@ export type WorkProgressCreateBody = {
   work_date: string;
   location_id: string;
   workplace_id?: string | null;
-  title: string;
+  /** Optional; empty string is accepted by the API. */
+  title?: string;
   progress_status: string;
   notes?: string | null;
   percent_complete?: number | null;

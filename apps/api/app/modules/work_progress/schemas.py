@@ -76,7 +76,8 @@ class WorkProgressCreateRequest(BaseModel):
     work_date: date
     location_id: uuid.UUID
     workplace_id: uuid.UUID | None = None
-    title: str = Field(..., min_length=1, max_length=300)
+    """Optional summary. Empty string is stored as-is (column is non-null)."""
+    title: str = Field(default="", max_length=300)
     progress_status: str = Field(..., min_length=1, max_length=32)
     notes: str | None = Field(default=None, max_length=8000)
     percent_complete: int | None = Field(default=None, ge=0, le=100)
