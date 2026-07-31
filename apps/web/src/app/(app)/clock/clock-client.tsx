@@ -19,6 +19,8 @@ import {
   type ClockAssignedSite,
   type ClockStatus,
 } from "@/features/time-clock/api";
+import { writeClockOutSummary } from "@/features/time-clock/clock-out-summary";
+import { fetchAuthoritativeTodayWorkedSeconds } from "@/features/time-clock/fetch-today-worked-seconds";
 import {
   BACKEND_MAX_ACCURACY_M,
   type GpsCapture,
@@ -522,6 +524,22 @@ export function ClockClient() {
       setSelfieClockIn(null);
       setGeoCapture(null);
       setGpsAcquisitionKey((key) => key + 1);
+
+      const clockedOutAt = new Date().toISOString();
+      const totalWorkedSecondsToday = await fetchAuthoritativeTodayWorkedSeconds();
+
+      if (
+        totalWorkedSecondsToday !== null &&
+        Number.isFinite(totalWorkedSecondsToday) &&
+        totalWorkedSecondsToday >= 0
+      ) {
+        writeClockOutSummary({
+          totalWorkedSecondsToday,
+          clockedOutAt,
+          createdAt: Date.now(),
+        });
+      }
+
       redirectingRef.current = true;
       router.replace("/dashboard");
     } catch (error) {

@@ -112,6 +112,12 @@ check("Capture selfie to clock out label present", /Capture selfie to clock out/
 check("GPS-disabled reasons after selfie are specific", /Waiting for accurate GPS/.test(client) && /Move within the allowed site radius/.test(client) && /Location access required/.test(client));
 check("successful Clock In redirects with router.replace", /clockInWithSelfie[\s\S]*router\.replace\("\/dashboard"\)/.test(client));
 check("successful Clock Out redirects with router.replace", /clockOutWithSelfie[\s\S]*router\.replace\("\/dashboard"\)/.test(client));
+check("successful Clock Out writes one-time summary before redirect", /writeClockOutSummary[\s\S]*router\.replace\("\/dashboard"\)/.test(client));
+check("Clock Out day total uses company timezone helper not browser-only bounds", /fetchAuthoritativeTodayWorkedSeconds/.test(client) && !/browserDefaultTimeZone\(\)/.test(client));
+check("successful Clock In does not write clock-out summary", (() => {
+  const inBlock = client.slice(client.indexOf("async function handleClockIn"), client.indexOf("async function handleClockOut"));
+  return !/writeClockOutSummary|CLOCK_OUT_SUMMARY/.test(inBlock);
+})());
 check("no window.location navigation used", !/window\.location/.test(client));
 check("redirect guarded against double submit", /redirectingRef/.test(client) && /isSubmitting \|\| redirectingRef\.current/.test(client));
 check("failure path does not call router.replace", (() => {

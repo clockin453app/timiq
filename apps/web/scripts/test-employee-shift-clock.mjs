@@ -37,6 +37,12 @@ const oldCardPath = path.join(srcRoot, "features/time-clock/employee-dashboard-c
 check("old employee-dashboard-clock-card.tsx removed", !fs.existsSync(oldCardPath));
 check("dashboard does not import old clock card", !/employee-dashboard-clock-card/.test(dashboard));
 check("dashboard uses EmployeeShiftClock", /EmployeeShiftClock/.test(dashboard));
+check("dashboard can show clock-out summary above shift clock", (() => {
+  const banner = dashboard.indexOf("ClockOutSummaryBanner");
+  const clock = dashboard.indexOf("<EmployeeShiftClock");
+  return banner > 0 && clock > banner;
+})());
+check("dashboard consumes one-time clock-out summary", /consumeClockOutSummary\(\)/.test(dashboard));
 check("CLOCKED OUT badge not rendered", !/CLOCKED OUT|clocked_out_badge|StatusBadge/.test(shiftClock));
 check("clocked-out copy present", /You are not currently clocked in/.test(shiftClock));
 check("Open clock action text present", /"Open clock"/.test(shiftClock));

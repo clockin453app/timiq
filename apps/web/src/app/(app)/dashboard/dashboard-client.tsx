@@ -8,6 +8,11 @@ import { isAdministrator, isEmployee, useCurrentUser } from "@/features/auth";
 import { readStoredCompanyId } from "@/features/companies/selected-company";
 import { fetchManagementSummary, type ManagementSummary } from "@/features/dashboard/api";
 import { getClockStatus, type ClockStatus } from "@/features/time-clock/api";
+import { ClockOutSummaryBanner } from "@/features/time-clock/clock-out-summary-banner";
+import {
+  consumeClockOutSummary,
+  type ClockOutSummary,
+} from "@/features/time-clock/clock-out-summary";
 import { EmployeeShiftClock } from "@/features/time-clock/employee-shift-clock";
 import { useLiveShiftDurationParts } from "@/features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "@/features/timesheets/week-utils";
@@ -86,11 +91,16 @@ function EmployeeDashboard() {
   const [clockStatus, setClockStatus] = useState<ClockStatus | null>(null);
   const [clockError, setClockError] = useState("");
   const [clockLoading, setClockLoading] = useState(true);
+  const [clockOutSummary, setClockOutSummary] = useState<ClockOutSummary | null>(null);
 
   const onShiftDurationParts = useLiveShiftDurationParts(
     clockStatus?.open_shift_clock_in_at,
     Boolean(clockStatus?.has_open_shift && clockStatus?.open_shift_clock_in_at),
   );
+
+  useEffect(() => {
+    setClockOutSummary(consumeClockOutSummary());
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +148,10 @@ function EmployeeDashboard() {
 
   const isClockedIn = Boolean(clockStatus?.has_open_shift);
 
+  const dismissClockOutSummary = useCallback(() => {
+    setClockOutSummary(null);
+  }, []);
+
   return (
     <Sheet>
       <PageHeader
@@ -152,6 +166,14 @@ function EmployeeDashboard() {
         >
           {t("dashboard.welcome_back", "Welcome back, {{name}}", { name: displayName })}
         </p>
+
+        {clockOutSummary && !isClockedIn ? (
+          <ClockOutSummaryBanner
+            onDismiss={dismissClockOutSummary}
+            summary={clockOutSummary}
+            t={t}
+          />
+        ) : null}
 
         <EmployeeShiftClock
           assignedLocationCount={
