@@ -8,7 +8,7 @@ import { isAdministrator, isEmployee, useCurrentUser } from "@/features/auth";
 import { readStoredCompanyId } from "@/features/companies/selected-company";
 import { fetchManagementSummary, type ManagementSummary } from "@/features/dashboard/api";
 import { getClockStatus, type ClockStatus } from "@/features/time-clock/api";
-import { EmployeeDashboardClockCard } from "@/features/time-clock/employee-dashboard-clock-card";
+import { EmployeeShiftClock } from "@/features/time-clock/employee-shift-clock";
 import { useLiveShiftDurationParts } from "@/features/time-clock/shift-duration";
 import { browserDefaultTimeZone } from "@/features/timesheets/week-utils";
 import { payrollStatusLabel } from "@/lib/i18n/display-labels";
@@ -131,25 +131,12 @@ function EmployeeDashboard() {
     { labelKey: "nav.profile", fallback: "Profile", href: "/profile" },
   ];
 
-  function describeShift(clock: ClockStatus): string {
-    if (!clock.has_open_shift) {
-      return t("dashboard.no_open_shift", "No open shift — clock in when your shift starts.");
-    }
-    if (clock.current_break_open) {
-      return t("dashboard.on_break", "On shift — currently on break.");
-    }
-    return t("dashboard.on_shift", "On shift — working.");
-  }
+  const displayName =
+    [user.profile_first_name, user.profile_last_name].filter(Boolean).join(" ").trim() ||
+    user.email.split("@")[0] ||
+    user.email;
 
-  function formatClockLine(status: ClockStatus): string {
-    if (status.status === "clocked_in") {
-      return t("dashboard.clocked_in", "Clocked in");
-    }
-    if (status.status === "clocked_out") {
-      return t("dashboard.clocked_out", "Clocked out");
-    }
-    return status.status.replace(/_/g, " ");
-  }
+  const isClockedIn = Boolean(clockStatus?.has_open_shift);
 
   return (
     <Sheet>
@@ -158,14 +145,25 @@ function EmployeeDashboard() {
         title={t("dashboard.emp_title", "Dashboard")}
       />
 
-      <SheetBody className="min-w-0 space-y-4 md:p-5">
-        <EmployeeDashboardClockCard
+      <SheetBody className="timiq-mobile-form-pad min-w-0 space-y-4 pb-[max(1rem,calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad)))] md:p-5 md:pb-5">
+        <p
+          className="text-center text-[15px] font-semibold text-[var(--color-brand-navy)] sm:text-base"
+          data-testid="employee-dashboard-welcome"
+        >
+          {t("dashboard.welcome_back", "Welcome back, {{name}}", { name: displayName })}
+        </p>
+
+        <EmployeeShiftClock
+          assignedLocationCount={
+            clockStatus ? clockStatus.active_location_count : null
+          }
           clockError={clockError}
+          clockInAt={clockStatus?.open_shift_clock_in_at}
           clockLoading={clockLoading}
-          clockStatus={clockStatus}
-          describeShift={describeShift}
-          formatClockLine={formatClockLine}
-          onShiftDurationParts={onShiftDurationParts}
+          elapsedHms={onShiftDurationParts.hms}
+          href="/clock"
+          isClockedIn={isClockedIn}
+          siteName={clockStatus?.open_shift_location_name ?? null}
           t={t}
         />
 

@@ -17,7 +17,8 @@ function formatElapsed(ms: number): string {
   return `${minutes}m`;
 }
 
-function formatElapsedHms(ms: number): string {
+/** Zero-padded HH:MM:SS from elapsed ms; hours may exceed 24 (no wrap). */
+export function formatElapsedHms(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
   const h = Math.floor(totalSec / 3600);
   const m = Math.floor((totalSec % 3600) / 60);
