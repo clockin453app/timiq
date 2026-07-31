@@ -1,9 +1,5 @@
 /**
- * Employee Clock In / Out action-first mobile layout coverage.
- *
- * Asserts hierarchy (actions before map), collapsed map disclosure on mobile,
- * semantic Clock In / Out colours, sticky offset above bottom nav, and that
- * GPS/selfie enablement rules remain client-side only (no backend edits).
+ * Employee Clock In / Out action-first + selfie-first hierarchy coverage.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -11,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, "../src");
+const webRoot = path.join(here, "..");
 const read = (relative) => fs.readFileSync(path.join(root, relative), "utf8").replace(/\r\n/g, "\n");
 
 let passed = 0;
@@ -27,6 +24,7 @@ const client = read("app/(app)/clock/clock-client.tsx");
 const panel = read("features/time-clock/clock-location-panel.tsx");
 const gps = read("features/time-clock/gps.ts");
 const map = read("components/maps/clock-sites-map.tsx");
+const api = read("features/time-clock/api.ts");
 const tokens = read("styles/tokens.css");
 const bottomNav = read("components/layout/mobile-bottom-nav.tsx");
 
@@ -53,7 +51,11 @@ check("map height targets mobile band (~240–260px)", /h-\[240px\]/.test(panel)
 check("Clock In enabled uses success colour token", /CLOCK_ACTION_ENABLED[\s\S]*color-success-700/.test(client));
 check("Clock Out enabled uses danger colour token", /CLOCK_OUT_ENABLED[\s\S]*color-danger-700/.test(client));
 check("disabled clock action uses neutral header surface", /CLOCK_ACTION_DISABLED[\s\S]*color-header/.test(client));
-check("Capture selfie uses primary (brand blue) variant", /data-testid="clock-capture-selfie"[\s\S]*variant="primary"/.test(client));
+check("supplied capture-selfie-camera.svg referenced", /capture-selfie-camera\.svg/.test(client));
+check(
+  "capture selfie camera asset exists",
+  fs.existsSync(path.join(webRoot, "public/icons/clock/capture-selfie-camera.svg")),
+);
 
 check("open shift shows Clock Out mode, not Clock In as main action", /data-clock-mode="clock-out"/.test(client) && /flowStatus === "on_shift"/.test(client));
 check("no open shift shows Clock In mode", /data-clock-mode="clock-in"/.test(client) && /flowStatus === "not_clocked_in"/.test(client));
@@ -83,6 +85,37 @@ check("clockInWithSelfie / clockOutWithSelfie still wired", /clockInWithSelfie/.
 check("compact location summary test id present", /data-testid="clock-location-summary"/.test(panel));
 check("Refresh GPS control present", /clock-refresh-gps/.test(panel));
 check("status badges include text labels (not colour alone)", /Inside radius/.test(panel) && /Outside radius/.test(panel) && /Improving accuracy/.test(panel));
+
+check("before selfie Clock In is gated behind selfieClockIn", /!selfieClockIn \|\| activeSelfiePhase === "clock_in"/.test(client));
+check("before selfie Clock Out is gated behind selfieClockOut", /!selfieClockOut \|\| activeSelfiePhase === "clock_out"/.test(client));
+check("Clock In button only in post-selfie branch", (() => {
+  const clockInMode = client.slice(client.indexOf('data-clock-mode="clock-in"'), client.indexOf('data-clock-mode="clock-out"'));
+  const captureIdx = clockInMode.indexOf('data-testid="clock-capture-selfie"');
+  const buttonIdx = clockInMode.indexOf('data-testid="clock-in-button"');
+  return captureIdx >= 0 && buttonIdx > captureIdx && /selfie_captured|Selfie captured/.test(clockInMode);
+})());
+check("Clock Out button only in post-selfie branch", (() => {
+  const clockOutMode = client.slice(client.indexOf('data-clock-mode="clock-out"'));
+  const captureIdx = clockOutMode.indexOf('data-testid="clock-capture-selfie"');
+  const buttonIdx = clockOutMode.indexOf('data-testid="clock-out-button"');
+  return captureIdx >= 0 && buttonIdx > captureIdx;
+})());
+check("Capture selfie to clock in label present", /Capture selfie to clock in/.test(client));
+check("Capture selfie to clock out label present", /Capture selfie to clock out/.test(client));
+check("GPS-disabled reasons after selfie are specific", /Waiting for accurate GPS/.test(client) && /Move within the allowed site radius/.test(client) && /Location access required/.test(client));
+check("successful Clock In redirects with router.replace", /clockInWithSelfie[\s\S]*router\.replace\("\/dashboard"\)/.test(client));
+check("successful Clock Out redirects with router.replace", /clockOutWithSelfie[\s\S]*router\.replace\("\/dashboard"\)/.test(client));
+check("no window.location navigation used", !/window\.location/.test(client));
+check("redirect guarded against double submit", /redirectingRef/.test(client) && /isSubmitting \|\| redirectingRef\.current/.test(client));
+check("failure path does not call router.replace", (() => {
+  const failIn = client.match(/Clock-in failed[\s\S]{0,220}/)?.[0] ?? "";
+  const failOut = client.match(/Clock-out failed[\s\S]{0,220}/)?.[0] ?? "";
+  return !/router\.replace/.test(failIn) && !/router\.replace/.test(failOut);
+})());
+check("getClockStatus uses no-store for dashboard freshness", /cache:\s*"no-store"/.test(api));
+check("selfie cleared after successful clock in", /Clock-in successful[\s\S]*setSelfieClockIn\(null\)/.test(client));
+check("selfie cleared after successful clock out", /Clock-out successful[\s\S]*setSelfieClockOut\(null\)/.test(client));
+check("no nested button in capture control", !/<button[\s\S]*?<Button[\s\S]*?<\/button>/.test(client.slice(client.indexOf("clock-capture-selfie") - 200, client.indexOf("clock-capture-selfie") + 800)));
 
 if (failures.length) {
   console.error(`FAILED (${failures.length}):`);

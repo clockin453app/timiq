@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button, PageHeader, Sheet, SheetBody } from "@/components/ui";
@@ -28,6 +29,7 @@ import {
 import { ClockSelfieCameraOverlay } from "@/features/time-clock/clock-selfie-camera-overlay";
 import { useLiveShiftDurationParts } from "@/features/time-clock/shift-duration";
 import { cn } from "@/lib/cn";
+import { uiClasses } from "@/lib/ui-classes";
 import { haversineDistanceMeters } from "@/lib/geo";
 import { isEmployee, useCurrentUser } from "@/features/auth";
 import { userHasLimitedAccess } from "@/features/auth/limited-access";
@@ -97,11 +99,15 @@ const CLOCK_OUT_ENABLED =
 const CLOCK_ACTION_DISABLED =
   "border-[var(--color-border-dark)] bg-[var(--color-header)] text-[var(--color-text-muted)] hover:border-[var(--color-border-dark)] hover:bg-[var(--color-header)] disabled:opacity-100";
 
+const CAPTURE_SELFIE_CAMERA_ICON = "/icons/clock/capture-selfie-camera.svg";
+
 export function ClockClient() {
   const t = useT();
+  const router = useRouter();
   const user = useCurrentUser();
   const clockInConfirmButtonRef = useRef<HTMLButtonElement>(null);
   const clockOutConfirmButtonRef = useRef<HTMLButtonElement>(null);
+  const redirectingRef = useRef(false);
 
   const [clockStatus, setClockStatus] = useState<ClockStatus | null>(null);
   const [geoCapture, setGeoCapture] = useState<GpsCapture | null>(null);
@@ -455,6 +461,9 @@ export function ClockClient() {
   }
 
   async function handleClockIn() {
+    if (isSubmitting || redirectingRef.current) {
+      return;
+    }
     setErrorMessage("");
     setSuccessMessage("");
     if (!geoCapture || !isGpsClientSubmittable(geoCapture)) {
@@ -476,7 +485,8 @@ export function ClockClient() {
       );
       setSelfieClockIn(null);
       setSelfieClockOut(null);
-      await refreshStatus();
+      redirectingRef.current = true;
+      router.replace("/dashboard");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Clock-in failed.");
       void refreshStatus();
@@ -486,6 +496,9 @@ export function ClockClient() {
   }
 
   async function handleClockOut() {
+    if (isSubmitting || redirectingRef.current) {
+      return;
+    }
     setErrorMessage("");
     setSuccessMessage("");
     if (!geoCapture || !isGpsClientSubmittable(geoCapture)) {
@@ -509,7 +522,8 @@ export function ClockClient() {
       setSelfieClockIn(null);
       setGeoCapture(null);
       setGpsAcquisitionKey((key) => key + 1);
-      await refreshStatus();
+      redirectingRef.current = true;
+      router.replace("/dashboard");
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : "Clock-out failed.");
       void refreshStatus();
@@ -587,25 +601,28 @@ export function ClockClient() {
       );
     }
     if (gpsFailure === "denied") {
-      return "Allow location access first.";
+      return t("clock.location_access_required", "Location access required");
     }
     if (gpsFailure === "unsupported") {
       return "Geolocation is not supported in this browser.";
     }
     if (gpsFailure === "failed") {
-      return "Could not get a reliable GPS fix. Use Retry location.";
+      return t("clock.location_access_required", "Location access required");
     }
     if (gpsAcquiring && !gpsAcceptable) {
-      return "Waiting for accurate GPS.";
+      return t("clock.readiness_waiting_gps", "Waiting for accurate GPS");
     }
     if (!gpsAcceptable) {
       if (geoCapture) {
-        return "Waiting for accurate GPS.";
+        return t("clock.readiness_waiting_gps", "Waiting for accurate GPS");
       }
-      return "Waiting for location…";
+      return t("clock.readiness_waiting_gps", "Waiting for accurate GPS");
     }
     if (nearestSiteSummary?.outside) {
-      return "You may be outside the nearest assigned site; the server will confirm on submit.";
+      return t(
+        "clock.readiness_move_within_radius",
+        "Move within the allowed site radius",
+      );
     }
     if (!selfieClockIn) {
       return "Take a clock-in selfie.";
@@ -624,6 +641,7 @@ export function ClockClient() {
     nearestSiteSummary?.outside,
     selfieClockIn,
     selfieGateIdle,
+    t,
   ]);
 
   const clockOutDisabledReason = useMemo(() => {
@@ -637,22 +655,22 @@ export function ClockClient() {
       );
     }
     if (gpsFailure === "denied") {
-      return "Allow location access first.";
+      return t("clock.location_access_required", "Location access required");
     }
     if (gpsFailure === "unsupported") {
       return "Geolocation is not supported in this browser.";
     }
     if (gpsFailure === "failed") {
-      return "Could not get a reliable GPS fix. Use Retry location.";
+      return t("clock.location_access_required", "Location access required");
     }
     if (gpsAcquiring && !gpsAcceptable) {
-      return "Waiting for accurate GPS.";
+      return t("clock.readiness_waiting_gps", "Waiting for accurate GPS");
     }
     if (!gpsAcceptable) {
       if (geoCapture) {
-        return "Waiting for accurate GPS.";
+        return t("clock.readiness_waiting_gps", "Waiting for accurate GPS");
       }
-      return "Waiting for location…";
+      return t("clock.readiness_waiting_gps", "Waiting for accurate GPS");
     }
     if (!selfieClockOut) {
       return "Take a clock-out selfie.";
@@ -670,6 +688,7 @@ export function ClockClient() {
     geoCapture,
     selfieClockOut,
     selfieGateIdle,
+    t,
   ]);
 
   const breakStartEnabled =
@@ -898,65 +917,126 @@ export function ClockClient() {
 
               {flowStatus === "not_clocked_in" ? (
                 <div className="space-y-3" data-clock-mode="clock-in">
-                  <p
-                    className="text-[13px] font-medium leading-snug text-[var(--color-text)]"
-                    data-testid="clock-action-readiness"
-                    id="clock-in-readiness"
-                  >
-                    {actionReadinessLine}
-                  </p>
-                  <Button
-                    className="min-h-[3rem] w-full text-[15px]"
-                    data-testid="clock-capture-selfie"
-                    disabled={isSubmitting || activeSelfiePhase !== null}
-                    onClick={() => openSelfieCapture("clock_in")}
-                    type="button"
-                    variant="primary"
-                  >
-                    {selfieClockIn
-                      ? t("clock.retake_selfie_in", "Retake clock-in selfie")
-                      : t("clock.capture_selfie", "Capture selfie")}
-                  </Button>
-                  {selfieClockIn && clockInPreviewUrl ? (
-                    <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        alt={t("clock.alt_selfie_in", "Clock-in selfie preview")}
-                        className="mx-auto max-h-28 max-w-full object-contain"
-                        src={clockInPreviewUrl}
-                      />
-                    </div>
-                  ) : null}
-                  <Button
-                    ref={clockInConfirmButtonRef}
-                    aria-describedby={
-                      !clockInEnabled && clockInDisabledReason ? "clock-in-disabled-reason" : "clock-in-readiness"
-                    }
-                    className={cn(
-                      "min-h-[3.25rem] w-full text-[15px] font-semibold",
-                      clockInEnabled ? CLOCK_ACTION_ENABLED : CLOCK_ACTION_DISABLED,
-                      selfieClockIn &&
-                        clockInEnabled &&
-                        "ring-2 ring-[var(--color-success-700)] ring-offset-2 ring-offset-[var(--color-cell)]",
-                    )}
-                    data-clock-action="clock-in"
-                    data-clock-enabled={clockInEnabled ? "true" : "false"}
-                    data-testid="clock-in-button"
-                    disabled={!clockInEnabled}
-                    onClick={handleClockIn}
-                    type="button"
-                    variant="secondary"
-                  >
-                    {t("clock.action_clock_in", "Clock in")}
-                  </Button>
-                  {!clockInEnabled && clockInDisabledReason ? (
-                    <p
-                      className="text-[12px] text-[var(--color-text-muted)]"
-                      id="clock-in-disabled-reason"
-                    >
-                      {clockInDisabledReason}
-                    </p>
-                  ) : null}
+                  {!selfieClockIn || activeSelfiePhase === "clock_in" ? (
+                    <>
+                      <button
+                        aria-label={t(
+                          "clock.capture_selfie_to_clock_in",
+                          "Capture selfie to clock in",
+                        )}
+                        className={cn(
+                          "flex w-full min-h-[8.5rem] flex-col items-center justify-center gap-2 rounded-[1.25rem] border-2 border-[#93C5FD] bg-[#EFF6FF] px-4 py-5 text-center",
+                          "hover:bg-[#DBEAFE]",
+                          uiClasses.focusRing,
+                          "focus-visible:ring-2 focus-visible:ring-[var(--color-brand-blue-600)] focus-visible:ring-offset-2",
+                        )}
+                        data-testid="clock-capture-selfie"
+                        disabled={isSubmitting || activeSelfiePhase !== null}
+                        onClick={() => openSelfieCapture("clock_in")}
+                        type="button"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          alt=""
+                          aria-hidden="true"
+                          className="h-[5rem] w-[5rem] object-contain"
+                          height={80}
+                          src={CAPTURE_SELFIE_CAMERA_ICON}
+                          width={80}
+                        />
+                        <span className="text-[15px] font-semibold text-[var(--color-brand-navy)] sm:text-[16px]">
+                          {t("clock.capture_selfie_to_clock_in", "Capture selfie to clock in")}
+                        </span>
+                        <span className="text-[13px] text-[var(--color-text-muted)]">
+                          {t(
+                            "clock.capture_selfie_support",
+                            "Use your live camera to continue",
+                          )}
+                        </span>
+                      </button>
+                      <p
+                        className="text-[13px] font-medium leading-snug text-[var(--color-text)]"
+                        data-testid="clock-action-readiness"
+                        id="clock-in-readiness"
+                      >
+                        {gpsAcquiring || !gpsAcceptable
+                          ? t("clock.readiness_waiting_gps", "Waiting for accurate GPS")
+                          : nearestSiteSummary?.outside
+                            ? t(
+                                "clock.readiness_move_within",
+                                "Move within {{meters}} m of the site",
+                                {
+                                  meters: nearestSiteSummary.site.geofence_radius_meters,
+                                },
+                              )
+                            : actionReadinessLine}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
+                        {clockInPreviewUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            alt={t("clock.alt_selfie_in", "Clock-in selfie preview")}
+                            className="mx-auto max-h-28 max-w-full object-contain"
+                            src={clockInPreviewUrl}
+                          />
+                        ) : null}
+                        <p className="text-center text-[14px] font-semibold text-[var(--color-text)]">
+                          {t("clock.selfie_captured", "Selfie captured")}
+                        </p>
+                        <Button
+                          className="w-full"
+                          data-testid="clock-retake-selfie"
+                          disabled={isSubmitting || activeSelfiePhase !== null}
+                          onClick={() => openSelfieCapture("clock_in")}
+                          type="button"
+                          variant="secondary"
+                        >
+                          {t("clock.retake_selfie", "Retake selfie")}
+                        </Button>
+                      </div>
+                      <Button
+                        ref={clockInConfirmButtonRef}
+                        aria-describedby={
+                          !clockInEnabled && clockInDisabledReason
+                            ? "clock-in-disabled-reason"
+                            : "clock-in-readiness"
+                        }
+                        className={cn(
+                          "min-h-[3.15rem] w-full text-[15px] font-semibold",
+                          clockInEnabled ? CLOCK_ACTION_ENABLED : CLOCK_ACTION_DISABLED,
+                          clockInEnabled &&
+                            "ring-2 ring-[var(--color-success-700)] ring-offset-2 ring-offset-[var(--color-cell)]",
+                        )}
+                        data-clock-action="clock-in"
+                        data-clock-enabled={clockInEnabled ? "true" : "false"}
+                        data-testid="clock-in-button"
+                        disabled={!clockInEnabled}
+                        onClick={handleClockIn}
+                        type="button"
+                        variant="secondary"
+                      >
+                        {t("clock.action_clock_in", "Clock in")}
+                      </Button>
+                      <p
+                        className="sr-only"
+                        data-testid="clock-action-readiness"
+                        id="clock-in-readiness"
+                      >
+                        {actionReadinessLine}
+                      </p>
+                      {!clockInEnabled && clockInDisabledReason ? (
+                        <p
+                          className="text-[12px] text-[var(--color-text-muted)]"
+                          id="clock-in-disabled-reason"
+                        >
+                          {clockInDisabledReason}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               ) : null}
 
@@ -978,81 +1058,123 @@ export function ClockClient() {
 
               {flowStatus === "on_shift" ? (
                 <div className="space-y-3" data-clock-mode="clock-out">
-                  <p
-                    className="text-[13px] font-medium leading-snug text-[var(--color-text)]"
-                    data-testid="clock-action-readiness"
-                    id="clock-out-readiness"
-                  >
-                    {(() => {
-                      if (gpsAcquiring || !gpsAcceptable) {
-                        return t("clock.readiness_waiting_gps", "Waiting for accurate GPS");
-                      }
-                      if (!selfieClockOut) {
-                        return t(
-                          "clock.readiness_selfie_out",
-                          "Selfie required before clocking out",
-                        );
-                      }
-                      if (clockOutEnabled) {
-                        return t("clock.confirm_selfie_out", "Selfie captured. Confirm clock out.");
-                      }
-                      return clockOutDisabledReason;
-                    })()}
-                  </p>
-                  <Button
-                    className="min-h-[3rem] w-full text-[15px]"
-                    data-testid="clock-capture-selfie"
-                    disabled={isSubmitting || activeSelfiePhase !== null}
-                    onClick={() => openSelfieCapture("clock_out")}
-                    type="button"
-                    variant="primary"
-                  >
-                    {selfieClockOut
-                      ? t("clock.retake_selfie_out", "Retake clock-out selfie")
-                      : t("clock.capture_selfie", "Capture selfie")}
-                  </Button>
-                  {selfieClockOut && clockOutPreviewUrl ? (
-                    <div className="rounded border border-[var(--color-border-dark)] bg-[var(--color-header)] p-2">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        alt={t("clock.alt_selfie_out", "Clock-out selfie preview")}
-                        className="mx-auto max-h-28 max-w-full object-contain"
-                        src={clockOutPreviewUrl}
-                      />
-                    </div>
-                  ) : null}
-                  <Button
-                    ref={clockOutConfirmButtonRef}
-                    aria-describedby={
-                      !clockOutEnabled && clockOutDisabledReason
-                        ? "clock-out-disabled-reason"
-                        : "clock-out-readiness"
-                    }
-                    className={cn(
-                      "min-h-[3.25rem] w-full text-[15px] font-semibold",
-                      clockOutEnabled ? CLOCK_OUT_ENABLED : CLOCK_ACTION_DISABLED,
-                      selfieClockOut &&
-                        clockOutEnabled &&
-                        "ring-2 ring-[var(--color-danger-700)] ring-offset-2 ring-offset-[var(--color-cell)]",
-                    )}
-                    data-clock-action="clock-out"
-                    data-clock-enabled={clockOutEnabled ? "true" : "false"}
-                    data-testid="clock-out-button"
-                    disabled={!clockOutEnabled}
-                    onClick={handleClockOut}
-                    type="button"
-                    variant="secondary"
-                  >
-                    {t("clock.action_clock_out", "Clock out")}
-                  </Button>
-                  {!clockOutEnabled && clockOutDisabledReason ? (
-                    <p
-                      className="text-[12px] text-[var(--color-text-muted)]"
-                      id="clock-out-disabled-reason"
-                    >
-                      {clockOutDisabledReason}
-                    </p>
-                  ) : null}
+                  {!selfieClockOut || activeSelfiePhase === "clock_out" ? (
+                    <>
+                      <button
+                        aria-label={t(
+                          "clock.capture_selfie_to_clock_out",
+                          "Capture selfie to clock out",
+                        )}
+                        className={cn(
+                          "flex w-full min-h-[8.5rem] flex-col items-center justify-center gap-2 rounded-[1.25rem] border-2 border-[#93C5FD] bg-[#EFF6FF] px-4 py-5 text-center",
+                          "hover:bg-[#DBEAFE]",
+                          uiClasses.focusRing,
+                          "focus-visible:ring-2 focus-visible:ring-[var(--color-brand-blue-600)] focus-visible:ring-offset-2",
+                        )}
+                        data-testid="clock-capture-selfie"
+                        disabled={isSubmitting || activeSelfiePhase !== null}
+                        onClick={() => openSelfieCapture("clock_out")}
+                        type="button"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          alt=""
+                          aria-hidden="true"
+                          className="h-[5rem] w-[5rem] object-contain"
+                          height={80}
+                          src={CAPTURE_SELFIE_CAMERA_ICON}
+                          width={80}
+                        />
+                        <span className="text-[15px] font-semibold text-[var(--color-brand-navy)] sm:text-[16px]">
+                          {t("clock.capture_selfie_to_clock_out", "Capture selfie to clock out")}
+                        </span>
+                        <span className="text-[13px] text-[var(--color-text-muted)]">
+                          {t(
+                            "clock.capture_selfie_support",
+                            "Use your live camera to continue",
+                          )}
+                        </span>
+                      </button>
+                      <p
+                        className="text-[13px] font-medium leading-snug text-[var(--color-text)]"
+                        data-testid="clock-action-readiness"
+                        id="clock-out-readiness"
+                      >
+                        {gpsAcquiring || !gpsAcceptable
+                          ? t("clock.readiness_waiting_gps", "Waiting for accurate GPS")
+                          : t(
+                              "clock.readiness_selfie_out",
+                              "Selfie required before clocking out",
+                            )}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
+                        {clockOutPreviewUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            alt={t("clock.alt_selfie_out", "Clock-out selfie preview")}
+                            className="mx-auto max-h-28 max-w-full object-contain"
+                            src={clockOutPreviewUrl}
+                          />
+                        ) : null}
+                        <p className="text-center text-[14px] font-semibold text-[var(--color-text)]">
+                          {t("clock.selfie_captured", "Selfie captured")}
+                        </p>
+                        <Button
+                          className="w-full"
+                          data-testid="clock-retake-selfie"
+                          disabled={isSubmitting || activeSelfiePhase !== null}
+                          onClick={() => openSelfieCapture("clock_out")}
+                          type="button"
+                          variant="secondary"
+                        >
+                          {t("clock.retake_selfie", "Retake selfie")}
+                        </Button>
+                      </div>
+                      <Button
+                        ref={clockOutConfirmButtonRef}
+                        aria-describedby={
+                          !clockOutEnabled && clockOutDisabledReason
+                            ? "clock-out-disabled-reason"
+                            : "clock-out-readiness"
+                        }
+                        className={cn(
+                          "min-h-[3.15rem] w-full text-[15px] font-semibold",
+                          clockOutEnabled ? CLOCK_OUT_ENABLED : CLOCK_ACTION_DISABLED,
+                          clockOutEnabled &&
+                            "ring-2 ring-[var(--color-danger-700)] ring-offset-2 ring-offset-[var(--color-cell)]",
+                        )}
+                        data-clock-action="clock-out"
+                        data-clock-enabled={clockOutEnabled ? "true" : "false"}
+                        data-testid="clock-out-button"
+                        disabled={!clockOutEnabled}
+                        onClick={handleClockOut}
+                        type="button"
+                        variant="secondary"
+                      >
+                        {t("clock.action_clock_out", "Clock out")}
+                      </Button>
+                      <p
+                        className="sr-only"
+                        data-testid="clock-action-readiness"
+                        id="clock-out-readiness"
+                      >
+                        {clockOutEnabled
+                          ? t("clock.confirm_selfie_out", "Selfie captured. Confirm clock out.")
+                          : clockOutDisabledReason}
+                      </p>
+                      {!clockOutEnabled && clockOutDisabledReason ? (
+                        <p
+                          className="text-[12px] text-[var(--color-text-muted)]"
+                          id="clock-out-disabled-reason"
+                        >
+                          {clockOutDisabledReason}
+                        </p>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               ) : null}
 

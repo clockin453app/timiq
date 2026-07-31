@@ -31,6 +31,7 @@ function check(label, condition) {
 const dashboard = read("app/(app)/dashboard/dashboard-client.tsx");
 const shiftClock = read("features/time-clock/employee-shift-clock.tsx");
 const duration = read("features/time-clock/shift-duration.ts");
+const api = read("features/time-clock/api.ts");
 const oldCardPath = path.join(srcRoot, "features/time-clock/employee-dashboard-clock-card.tsx");
 
 check("old employee-dashboard-clock-card.tsx removed", !fs.existsSync(oldCardPath));
@@ -80,6 +81,16 @@ check(
   "employee dashboard loads clock status without per-second polling",
   /getClockStatus\(\)/.test(employeeDashboardBlock) && !/setInterval\(/.test(employeeDashboardBlock),
 );
+
+check("active state has decorative radial tick layer", /ActiveShiftTickRing|shift-clock-tick-ring/.test(shiftClock));
+check("tick layer is aria-hidden", /data-testid="shift-clock-tick-ring"[\s\S]*aria-hidden="true"|aria-hidden="true"[\s\S]*data-testid="shift-clock-tick-ring"/.test(shiftClock));
+check("quarter-hour ticks use stronger green styling", /isQuarter[\s\S]*RING_IN|#16A34A/.test(shiftClock) && /data-tick=\{isQuarter \? "quarter"/.test(shiftClock));
+check("60 programmatic ticks", /TICK_COUNT = 60/.test(shiftClock));
+check("ticks only for active/clocked-in state", /showActiveTicks = isClockedIn && !clockLoading/.test(shiftClock));
+check("blue clocked-out state does not mount tick ring when inactive", /showActiveTicks \? <ActiveShiftTickRing/.test(shiftClock));
+check("status dot with Shift in progress", /rounded-full[\s\S]*Shift in progress|Shift in progress[\s\S]*rounded-full/.test(shiftClock) || /inline-block h-2 w-2[\s\S]*shift_in_progress/.test(shiftClock));
+check("timer remains dominant tabular mono", /employee-shift-clock-timer[\s\S]*tabular-nums|tabular-nums[\s\S]*employee-shift-clock-timer/.test(shiftClock));
+check("clock status fetch uses no-store for freshness", /getClockStatus[\s\S]*cache:\s*"no-store"/.test(api));
 
 function loadDurationModule() {
   const source = read("features/time-clock/shift-duration.ts");
