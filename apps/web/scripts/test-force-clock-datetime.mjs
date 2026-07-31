@@ -205,9 +205,22 @@ check(
   (liveApi.match(/effective_at\?: string;/g) ?? []).length === 2,
 );
 
-// Submit buttons are outside the scrolling form, so they must stay associated.
-check("clock-in submit stays wired to its form", /form="force-clock-in-form"/.test(live));
-check("clock-out submit stays wired to its form", /form="force-clock-out-form"/.test(live));
+// Actions live inside the single form — Cancel is type=button, Confirm is type=submit.
+check("clock-in form has no HTML action attribute", /id="force-clock-in-form"[\s\S]{0,120}onSubmit=\{handleManualClockIn\}/.test(live));
+check("clock-out form has no HTML action attribute", /id="force-clock-out-form"[\s\S]{0,120}onSubmit=\{handleManualClockOut\}/.test(live));
+check("clock-in Cancel is explicitly type=button", /force-clock-in-form[\s\S]*?type="button"[\s\S]*?Cancel/.test(live));
+check("clock-out Cancel is explicitly type=button", /force-clock-out-form[\s\S]*?type="button"[\s\S]*?Cancel/.test(live));
+check("clock-in Confirm is the only submit control", /force-clock-in-form[\s\S]*?type="submit"[\s\S]*?Confirm clock in/.test(live));
+check("clock-out Confirm is the only submit control", /force-clock-out-form[\s\S]*?type="submit"[\s\S]*?Confirm clock out/.test(live));
+check("submit buttons are not detached via form= attribute", !/form="force-clock-in-form"/.test(live) && !/form="force-clock-out-form"/.test(live));
+check("Enter on inputs cannot activate submit", /preventEnterSubmit/.test(live));
+check("submit handler calls preventDefault", /event\.preventDefault\(\);/.test(clockInHandler));
+check("forms declare noValidate to avoid native navigation-style validation UX", /noValidate/.test(live));
+check("each dialog contains exactly one form element", (live.match(/id="force-clock-in-form"/g) ?? []).length === 1);
+check("clock-out dialog contains exactly one form element", (live.match(/id="force-clock-out-form"/g) ?? []).length === 1);
+check("Modal does not wrap children in another form", !/<Modal[\s\S]{0,200}<form[\s\S]{0,80}<form/.test(live));
+check("no window.location in Live Attendance", !/window\.location/.test(live));
+check("no router.refresh in Live Attendance", !/router\.refresh|useRouter\(/.test(live));
 check("submit is disabled while saving", /disabled=\{actionBusy/.test(live));
 check("busy state is visible in the submit label", /actionBusy \? "Saving…"/.test(live));
 check("errors are announced", /role="alert"/.test(live));
@@ -216,6 +229,11 @@ check(
   "the timezone the value is interpreted in is stated to the administrator",
   /Entered in your local time \(\$\{localTimeZoneLabel\}\) and stored in UTC/.test(live),
 );
+check("duration tick pauses while a manual-clock modal is open", /if \(modalInUser \|\| modalOutUser\) \{\s*return;/.test(live));
+check("roster polling pauses while a manual-clock modal is open", /if \(modalInUser \|\| modalOutUser\) \{\s*return;[\s\S]{0,200}loadSnapshot\(\{ silent: true \}\)/.test(live));
+check("modal close handlers are stable callbacks", /const closeClockInModal = useCallback/.test(live) && /const closeClockOutModal = useCallback/.test(live));
+check("location defaults are set once on open, not by a remounting effect", /setLocationPick\(resolveAssignableLocationId\(row\)\)/.test(live));
+check("no continuous locationPick effect remains", !/useEffect\(\(\) => \{\s*if \(!modalInUser\) return;[\s\S]{0,200}setLocationPick/.test(live));
 
 /* ------------------------------------------------------------------ *
  * 3. Mobile fit of the force-clock dialog
@@ -233,11 +251,13 @@ check("modal header stays reachable", /shrink-0 border-b/.test(modal));
 check("modal actions stay reachable", /shrink-0 border-t/.test(modal));
 check("modal actions clear the home indicator", /env\(safe-area-inset-bottom/.test(modal));
 check("modal traps escape", /event\.key === "Escape"/.test(modal));
-check("modal escape respects closeEnabled", /closeEnabled/.test(modal));
+check("modal escape respects closeEnabled", /closeEnabledRef/.test(modal));
 check("modal blocks background scroll", /document\.body\.style\.overflow = "hidden"/.test(modal));
-check("modal moves focus into the panel", /panelRef\.current\?\.focus\(\)/.test(modal));
+check("modal moves focus into the panel once on mount", /panelRef\.current\?\.focus\(\)/.test(modal) && /onCloseRef\.current = onClose/.test(modal));
+check("modal effect deps stay empty so parent re-renders do not re-focus", /\}, \[\]\);/.test(modal));
 check("backdrop click closes only from the backdrop", /event\.target === event\.currentTarget/.test(modal));
 check("modal sits above the app shell chrome", /z-\[1200]/.test(modal));
+check("modal panel stops backdrop mousedown propagation", /onMouseDown=\{\(event\) => event\.stopPropagation\(\)\}/.test(modal));
 
 check("form fields allow their controls to shrink", /min-w-0/.test(formField));
 check("form action rows stack on narrow screens", /flex-col-reverse gap-2 sm:flex-row/.test(formField));

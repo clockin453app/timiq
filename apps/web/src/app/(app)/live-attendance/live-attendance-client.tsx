@@ -1,6 +1,14 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   Badge,
@@ -150,11 +158,16 @@ export function LiveAttendanceClient() {
   }, [searchInput]);
 
   useEffect(() => {
+    // Duration labels only need a live tick while the roster is visible — not while
+    // a manual-clock dialog is open (re-renders were remounting modal focus).
+    if (modalInUser || modalOutUser) {
+      return;
+    }
     const id = window.setInterval(() => {
       setTick((value) => value + 1);
     }, 1000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [modalInUser, modalOutUser]);
 
   const loadCommonData = useCallback(async () => {
     const locationCompanyId = adminAllCompanies ? companyScope.companyId : currentUser?.company_id ?? null;
@@ -306,23 +319,37 @@ export function LiveAttendanceClient() {
     return () => window.clearTimeout(id);
   }, [flashMessage]);
 
-  useEffect(() => {
-    if (!modalInUser) return;
-    if (locationPick) return;
-    const preferred = modalInUser.location_id;
-    if (preferred && assignableLocationsForUser.some((loc) => loc.id === preferred)) {
-      setLocationPick(preferred);
-      return;
-    }
-    if (assignableLocationsForUser.length === 1) {
-      setLocationPick(assignableLocationsForUser[0].id);
-    }
-  }, [modalInUser, assignableLocationsForUser, locationPick]);
+  const resolveAssignableLocationId = useCallback(
+    (row: LiveAttendanceEmployeeRow): string => {
+      const assigned = new Set(
+        siteAccess.filter((r) => r.user_id === row.user_id).map((r) => r.location_id),
+      );
+      const options = filteredLocationOptions.filter(
+        (loc) => loc.company_id === row.company_id && assigned.has(loc.id),
+      );
+      if (row.location_id && options.some((loc) => loc.id === row.location_id)) {
+        return row.location_id;
+      }
+      if (options.length === 1) {
+        return options[0].id;
+      }
+      return "";
+    },
+    [filteredLocationOptions, siteAccess],
+  );
+
+  const closeClockInModal = useCallback(() => {
+    if (!actionBusy) setModalInUser(null);
+  }, [actionBusy]);
+
+  const closeClockOutModal = useCallback(() => {
+    if (!actionBusy) setModalOutUser(null);
+  }, [actionBusy]);
 
   function openClockIn(row: LiveAttendanceEmployeeRow) {
     setActionError("");
     setReasonIn("");
-    setLocationPick("");
+    setLocationPick(resolveAssignableLocationId(row));
     setClockInAtLocal(nowDatetimeLocalValue());
     setModalInUser(row);
   }
@@ -334,8 +361,16 @@ export function LiveAttendanceClient() {
     setModalOutUser(row);
   }
 
-  async function handleManualClockIn(event: FormEvent) {
+  function preventEnterSubmit(event: KeyboardEvent) {
+    if (event.key === "Enter" && event.target instanceof HTMLInputElement) {
+      // datetime-local / text inputs must not activate the form's submit control.
+      event.preventDefault();
+    }
+  }
+
+  async function handleManualClockIn(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    event.stopPropagation();
     if (actionBusy || !modalInUser) {
       return;
     }
@@ -380,8 +415,9 @@ export function LiveAttendanceClient() {
     }
   }
 
-  async function handleManualClockOut(event: FormEvent) {
+  async function handleManualClockOut(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    event.stopPropagation();
     if (actionBusy || !modalOutUser) {
       return;
     }
@@ -821,34 +857,14 @@ export function LiveAttendanceClient() {
                   : modalInUser.display_name
               }
               closeEnabled={!actionBusy}
-              onClose={() => {
-                if (!actionBusy) setModalInUser(null);
-              }}
-              footer={
-                <FormActions>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={actionBusy}
-                    onClick={() => setModalInUser(null)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    form="force-clock-in-form"
-                    disabled={actionBusy || assignableLocationsForUser.length === 0}
-                    aria-busy={actionBusy}
-                  >
-                    {actionBusy ? "Saving…" : "Confirm clock in"}
-                  </Button>
-                </FormActions>
-              }
+              onClose={closeClockInModal}
             >
               <form
                 className="space-y-[var(--space-form-gap)]"
                 id="force-clock-in-form"
+                noValidate
                 onSubmit={handleManualClockIn}
+                onKeyDown={preventEnterSubmit}
               >
                 <FormField label="Location" htmlFor="force-clock-in-location" required>
                   <select
@@ -907,6 +923,23 @@ export function LiveAttendanceClient() {
                     {actionError}
                   </div>
                 ) : null}
+                <FormActions>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={actionBusy}
+                    onClick={closeClockInModal}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={actionBusy || assignableLocationsForUser.length === 0}
+                    aria-busy={actionBusy}
+                  >
+                    {actionBusy ? "Saving…" : "Confirm clock in"}
+                  </Button>
+                </FormActions>
               </form>
             </Modal>
           ) : null}
@@ -920,34 +953,14 @@ export function LiveAttendanceClient() {
                   : modalOutUser.display_name
               }
               closeEnabled={!actionBusy}
-              onClose={() => {
-                if (!actionBusy) setModalOutUser(null);
-              }}
-              footer={
-                <FormActions>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={actionBusy}
-                    onClick={() => setModalOutUser(null)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="submit"
-                    form="force-clock-out-form"
-                    disabled={actionBusy}
-                    aria-busy={actionBusy}
-                  >
-                    {actionBusy ? "Saving…" : "Confirm clock out"}
-                  </Button>
-                </FormActions>
-              }
+              onClose={closeClockOutModal}
             >
               <form
                 className="space-y-[var(--space-form-gap)]"
                 id="force-clock-out-form"
+                noValidate
                 onSubmit={handleManualClockOut}
+                onKeyDown={preventEnterSubmit}
               >
                 {modalOutUser.clock_in_at ? (
                   <p className="timiq-caption break-words">
@@ -989,9 +1002,24 @@ export function LiveAttendanceClient() {
                     {actionError}
                   </div>
                 ) : null}
+                <FormActions>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={actionBusy}
+                    onClick={closeClockOutModal}
+                  >
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={actionBusy} aria-busy={actionBusy}>
+                    {actionBusy ? "Saving…" : "Confirm clock out"}
+                  </Button>
+                </FormActions>
               </form>
             </Modal>
-          ) : null}        </RoleGuard>
+          ) : null}
+
+        </RoleGuard>
       </SheetBody>
     </Sheet>
   );

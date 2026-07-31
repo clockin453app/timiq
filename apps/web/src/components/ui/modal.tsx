@@ -23,6 +23,10 @@ type ModalProps = {
  * Viewport-safe modal shell: never wider than the viewport minus safe margins,
  * height capped against `100dvh`, and only the body scrolls so the title and
  * action row stay reachable when the mobile keyboard is open.
+ *
+ * Focus is moved into the panel once on mount. `onClose` / `closeEnabled` are
+ * read from refs so parent re-renders (polling ticks, roster updates) do not
+ * re-run the effect and steal focus from inputs such as datetime-local.
  */
 export function Modal({
   children,
@@ -35,12 +39,16 @@ export function Modal({
   widthClassName = "max-w-[calc(100vw-24px)] sm:max-w-[min(40rem,calc(100vw-3rem))]",
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const closeEnabledRef = useRef(closeEnabled);
+  onCloseRef.current = onClose;
+  closeEnabledRef.current = closeEnabled;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        if (closeEnabled) onClose();
+        if (closeEnabledRef.current) onCloseRef.current();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -51,13 +59,15 @@ export function Modal({
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [closeEnabled, onClose]);
+  }, []);
 
   return (
     <div
       className="fixed inset-0 z-[1200] flex items-start justify-center overflow-x-hidden overflow-y-auto bg-black/45 p-2 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-[max(0.5rem,env(safe-area-inset-top,0px))] sm:p-4 md:p-6"
       onMouseDown={(event) => {
-        if (event.target === event.currentTarget && closeEnabled) onClose();
+        if (event.target === event.currentTarget && closeEnabledRef.current) {
+          onCloseRef.current();
+        }
       }}
     >
       <div
@@ -71,6 +81,7 @@ export function Modal({
         ref={panelRef}
         role="dialog"
         tabIndex={-1}
+        onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sheet)] px-[var(--space-modal)] py-2.5 sm:py-3">
           <h2 className="timiq-title-dialog" id={labelledById}>
