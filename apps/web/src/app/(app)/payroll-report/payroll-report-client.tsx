@@ -1845,7 +1845,7 @@ export function PayrollReportClient() {
                         const paymentModeLabel = row.payment_mode_label || "Not provided";
                         return (
                         <Fragment key={row.id}>
-                          <TableRow className="transition-colors hover:bg-[var(--color-brand-muted)]/35">
+                          <TableRow className="transition-colors hover:bg-[var(--color-brand-tint)]/35">
                             <TableCell className={payrollTableCell}>
                               <Button
                                 aria-expanded={expandedUserId === row.user_id}

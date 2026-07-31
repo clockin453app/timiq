@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, type ReactNode } from "react";
 import { Menu, X } from "lucide-react";
 
+import { TimIQBrandLockup } from "../brand";
 import { cn } from "../../lib/cn";
 import { uiClasses } from "../../lib/ui-classes";
 
@@ -38,9 +39,8 @@ export function PublicSiteShell({ children, activePath, variant = "marketing" }:
     <div className={cn(uiClasses.publicPage, "timiq-public-page")}>
       <header className={cn(uiClasses.shellTopBar, "sticky top-0 z-40 shrink-0")}>
         <div className="mx-auto flex min-h-[var(--layout-topbar-height)] w-full min-w-0 max-w-6xl items-center justify-between gap-3 px-4 sm:px-6">
-          <Link className="min-w-0 no-underline" href="/product">
-            <p className={uiClasses.topBarBrandTitle}>{PUBLIC_BRAND.name}</p>
-            <p className={cn(uiClasses.topBarBrandSubtitle, "hidden sm:block")}>{PUBLIC_BRAND.tagline}</p>
+          <Link aria-label={PUBLIC_BRAND.name} className="min-w-0 no-underline" href="/product">
+            <TimIQBrandLockup markSize={28} tone="inverse" variant="full" />
           </Link>
 
           <nav aria-label="Public" className="hidden items-center gap-1 md:flex">

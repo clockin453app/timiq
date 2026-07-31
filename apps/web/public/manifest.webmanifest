@@ -5,20 +5,20 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#eef0f2",
-  "theme_color": "#eef0f2",
+  "background_color": "#F3F4F6",
+  "theme_color": "#192F60",
   "icons": [
     {
-      "src": "/icons/timiq-icon-192.svg",
+      "src": "/branding/timiq-app-192.png",
       "sizes": "192x192",
-      "type": "image/svg+xml",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/timiq-icon-512.svg",
+      "src": "/branding/timiq-app-512.png",
       "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

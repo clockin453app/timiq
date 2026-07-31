@@ -132,7 +132,7 @@ export const uiClasses = {
   ].join(" "),
 
   navLinkActive: [
-    "border-[var(--color-brand)]/35 bg-[var(--color-brand-muted)] text-[var(--color-brand-hover)] shadow-[var(--shadow-xs)]",
+    "border-[var(--color-brand)]/35 bg-[var(--color-brand-tint)] text-[var(--color-brand-hover)] shadow-[var(--shadow-xs)]",
   ].join(" "),
 
   navTriggerBase:
@@ -144,7 +144,7 @@ export const uiClasses = {
   ].join(" "),
 
   navTriggerOpen: [
-    "border-[var(--color-brand)]/30 bg-[var(--color-brand-muted)] text-[var(--color-text)] shadow-[var(--shadow-xs)]",
+    "border-[var(--color-brand)]/30 bg-[var(--color-brand-tint)] text-[var(--color-text)] shadow-[var(--shadow-xs)]",
   ].join(" "),
 
   /** White dropdown panels (mobile drawer, legacy). */
@@ -162,8 +162,8 @@ export const uiClasses = {
   ].join(" "),
 
   navDropdownItemActive: [
-    "border-[var(--color-brand)]/30 bg-[var(--color-brand-muted)] text-[var(--color-brand-hover)]",
-    "hover:bg-[var(--color-brand-muted)]",
+    "border-[var(--color-brand)]/30 bg-[var(--color-brand-tint)] text-[var(--color-brand-hover)]",
+    "hover:bg-[var(--color-brand-tint)]",
   ].join(" "),
 
   /** Navy-themed desktop top-bar dropdown (matches chrome). */
@@ -196,7 +196,7 @@ export const uiClasses = {
   ].join(" "),
 
   navDrawerLinkActive: [
-    "border-[var(--color-brand)]/30 bg-[var(--color-brand-muted)] font-semibold text-[var(--color-brand-hover)]",
+    "border-[var(--color-brand)]/30 bg-[var(--color-brand-tint)] font-semibold text-[var(--color-brand-hover)]",
   ].join(" "),
 
   navAccordionHeader: [
@@ -210,7 +210,7 @@ export const uiClasses = {
   ].join(" "),
 
   navAccordionHeaderOpen: [
-    "border-[var(--color-brand)]/30 bg-[var(--color-brand-muted)] text-[var(--color-brand-hover)]",
+    "border-[var(--color-brand)]/30 bg-[var(--color-brand-tint)] text-[var(--color-brand-hover)]",
   ].join(" "),
 
   bottomNavBar: [
@@ -224,7 +224,7 @@ export const uiClasses = {
   bottomNavItemIdle: "text-[var(--color-text-muted)] hover:bg-[var(--color-header)]",
 
   bottomNavItemActive:
-    "bg-[var(--color-brand-muted)] font-semibold text-[var(--color-brand-hover)]",
+    "bg-[var(--color-brand-tint)] font-semibold text-[var(--color-brand-hover)]",
 
   headerIconButton: [
     "inline-flex h-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border",
@@ -233,7 +233,7 @@ export const uiClasses = {
   ].join(" "),
 
   headerIconButtonActive: [
-    "border-[var(--color-brand)]/30 bg-[var(--color-brand-muted)] text-[var(--color-brand-hover)]",
+    "border-[var(--color-brand)]/30 bg-[var(--color-brand-tint)] text-[var(--color-brand-hover)]",
   ].join(" "),
 
   payeFilterLabel: "timiq-label block text-[10px] uppercase tracking-wide text-[var(--color-text-soft)]",

@@ -6,7 +6,7 @@ import "../styles/globals.css";
 import "../styles/typography.css";
 
 export const viewport: Viewport = {
-  themeColor: "#f1f5f9",
+  themeColor: "#192F60",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -26,10 +26,11 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icons/timiq-icon-192.svg", sizes: "192x192", type: "image/svg+xml" },
-      { url: "/icons/timiq-icon-512.svg", sizes: "512x512", type: "image/svg+xml" },
+      { url: "/branding/timiq-favicon-16.png", sizes: "16x16", type: "image/png" },
+      { url: "/branding/timiq-favicon-32.png", sizes: "32x32", type: "image/png" },
     ],
-    apple: [{ url: "/icons/timiq-icon-192.svg", sizes: "180x180", type: "image/svg+xml" }],
+    shortcut: [{ url: "/branding/timiq-favicon-32.png" }],
+    apple: [{ url: "/branding/timiq-app-192.png", sizes: "192x192", type: "image/png" }],
   },
 };
 

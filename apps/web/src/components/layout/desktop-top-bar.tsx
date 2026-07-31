@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { CircleHelp, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 
+import { TimIQBrandLockup } from "../brand";
 import { UserAvatar } from "../user-avatar";
 import { getDefaultLandingPath } from "../../config/navigation";
 import { formatSystemRole, LogoutButton, useCurrentUser } from "../../features/auth";
@@ -68,32 +69,27 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
         <div
           className={cn(
             "flex min-h-[var(--layout-topbar-height)] shrink-0 items-center border-l-[3px] border-l-[var(--color-sidebar-active)] border-r border-r-[var(--color-utilitybar-border-strong)] transition-[width,padding] duration-200 ease-out motion-reduce:transition-none",
-            resolvedCollapsed !== false ? "justify-between gap-0 px-1" : "gap-2 px-3",
+            resolvedCollapsed !== false
+              ? "justify-between gap-1 px-1.5"
+              : "justify-between gap-3 px-3",
           )}
           style={{ width: brandWidth }}
         >
           <Link
             aria-label={t("nav.tagline", "TimIQ")}
             className={cn(
-              "min-w-0 no-underline",
+              "flex min-w-0 items-center no-underline",
               resolvedCollapsed !== false
-                ? "flex h-9 w-6 shrink-0 items-center justify-center text-sm font-bold text-[var(--color-utilitybar-fg)]"
-                : "flex-1",
+                ? "h-7 w-7 shrink-0 justify-center"
+                : "min-h-0 flex-1 self-center py-0",
             )}
             href={getDefaultLandingPath(user.system_role, { limitedAccess: limited })}
             title={t("nav.tagline", "TimIQ")}
           >
             {resolvedCollapsed !== false ? (
-              <span aria-hidden>T</span>
+              <TimIQBrandLockup markSize={28} variant="mark" />
             ) : (
-              <span>
-                <span className={cn(uiClasses.topBarBrandTitle, "block text-[15px] text-[var(--color-utilitybar-fg)]")}>
-                  {t("nav.tagline", "TimIQ")}
-                </span>
-                <span className={cn(uiClasses.topBarBrandSubtitle, "block text-[11px] text-[var(--color-utilitybar-fg-muted)]")}>
-                  {t("nav.tagline_sub", "Payroll & workforce")}
-                </span>
-              </span>
+              <TimIQBrandLockup markSize={43} variant="full" />
             )}
           </Link>
           <button
@@ -104,7 +100,8 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
                 : t("shell.collapse_nav", "Collapse navigation")
             }
             className={cn(
-              "flex h-9 w-9 shrink-0 items-center justify-center rounded border border-[var(--color-utilitybar-border)] bg-white text-[var(--color-utilitybar-fg)] hover:bg-[var(--color-utilitybar-hover)]",
+              "flex shrink-0 items-center justify-center rounded-[5px] border border-[var(--color-brand-border)] bg-white text-[var(--color-brand-navy)] hover:bg-[var(--color-brand-neutral)]",
+              resolvedCollapsed !== false ? "h-7 w-7" : "h-8 w-8",
               uiClasses.transitionColors,
               uiClasses.focusRing,
             )}
@@ -117,7 +114,7 @@ export function DesktopTopBar({ activeHref = "/dashboard" }: DesktopTopBarProps)
             type="button"
           >
             {resolvedCollapsed !== false ? (
-              <PanelLeftOpen aria-hidden className="h-4 w-4" />
+              <PanelLeftOpen aria-hidden className="h-3.5 w-3.5" />
             ) : (
               <PanelLeftClose aria-hidden className="h-4 w-4" />
             )}

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { Menu, X } from "lucide-react";
 
+import { TimIQBrandLockup } from "../brand";
 import { UserAvatar } from "../user-avatar";
 import { getMobileDrawerNavigationTree } from "../../config/navigation";
 import { canAccessManagement, LogoutButton, useCurrentUser } from "../../features/auth";
@@ -136,11 +137,12 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
           menuOpen ? "z-40" : "z-[60]",
         )}
       >
-        <div className="min-w-0 flex-1">
-          <p className={cn(uiClasses.topBarBrandTitle, "truncate")}>{t("nav.tagline", "TimIQ")}</p>
-          <p className={cn(uiClasses.topBarBrandSubtitle, "hidden truncate min-[400px]:block")}>
-            {t("nav.tagline_sub", "Payroll & workforce")}
-          </p>
+        <div className="min-w-0 flex-1 overflow-hidden">
+          <TimIQBrandLockup
+            className="max-w-full"
+            markSize={24}
+            variant="full"
+          />
         </div>
 
         <div className="flex min-w-0 shrink-0 items-center gap-0.5 min-[400px]:gap-1.5">
@@ -194,10 +196,8 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
           >
             <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--color-border)] bg-[var(--color-sheet)] px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
               <div className="min-w-0">
-                <p className="truncate text-base font-bold tracking-tight text-[var(--color-text)]">
-                  {t("nav.tagline", "TimIQ")}
-                </p>
-                <p className="truncate text-xs text-[var(--color-text-muted)]">{roleLabel}</p>
+                <TimIQBrandLockup markSize={28} variant="compact" />
+                <p className="mt-1 truncate text-xs text-[var(--color-text-muted)]">{roleLabel}</p>
               </div>
               <button
                 aria-label={t("nav.close_menu", "Close menu")}

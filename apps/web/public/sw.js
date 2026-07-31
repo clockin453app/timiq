@@ -1,20 +1,22 @@
 /**
- * TimIQ — minimal install / offline shell only.
+ * TimIQ - minimal install / offline shell only.
  *
- * Cached: offline page, manifest, local SVG icons only.
+ * Cached: offline page, manifest, and versioned local brand icons only.
  * Never cached: /api/*, HTML documents (except offline fallback), auth pages,
  * payroll, budgets, uploads, downloads, or any JSON from the API.
  *
  * Offline shell: precached assets + navigate fallback to offline.html only.
  * Never cache /api/*, HTML app routes, payroll, documents, downloads, or private JSON.
- * Queued work lives in IndexedDB from the app — not in the service worker cache.
+ * Queued work lives in IndexedDB from the app, not in the service worker cache.
  */
-const SHELL_CACHE = "timiq-pwa-shell-v1";
+const SHELL_CACHE = "timiq-pwa-shell-approved-raster";
 const PRECACHE_URLS = [
   "/offline.html",
   "/manifest.webmanifest",
-  "/icons/timiq-icon-192.svg",
-  "/icons/timiq-icon-512.svg",
+  "/branding/timiq-mark-approved.png",
+  "/branding/timiq-logo-approved.png",
+  "/branding/timiq-app-192.png",
+  "/branding/timiq-app-512.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -94,8 +96,8 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(title, {
       body,
-      icon: "/icons/timiq-icon-192.svg",
-      badge: "/icons/timiq-icon-192.svg",
+      icon: "/branding/timiq-app-192.png",
+      badge: "/branding/timiq-app-192.png",
       data: {
         url: safeUrl,
         kind: typeof payload.kind === "string" ? payload.kind : "",

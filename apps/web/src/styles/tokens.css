@@ -113,11 +113,26 @@
   --color-text-muted: #42566f;
   --color-text-soft: #60758f;
 
-  /* Brand / link blue */
+  /* TimIQ identity. Kept separate from action/link tokens. */
+  --color-brand-navy-dark: #0b1d3a;
+  --color-brand-navy-deep: #102a56;
+  --color-brand-navy: #192f60;
+  --color-brand-blue-700: #1d4ed8;
+  --color-brand-blue-600: #2563eb;
+  --color-brand-blue-500: #3b82f6;
+  --color-brand-muted: #5f6b7a;
+  --color-brand-secondary: #27477f;
+  --color-brand-neutral: #f3f4f6;
+  --color-brand-border: #d8e1eb;
+  /* Compatibility aliases for older brand references */
+  --color-brand-accent: var(--color-brand-blue-600);
+  --color-brand-accent-light: var(--color-brand-blue-500);
+
+  /* Brand / link blue (product action colour unchanged) */
   --color-brand: #1f5fd0;
   --color-brand-hover: #184cad;
   --color-brand-foreground: #ffffff;
-  --color-brand-muted: #e9f1ff;
+  --color-brand-tint: #e9f1ff;
 
   /* Default neutral button */
   --color-btn-default-bg: #ffffff;
@@ -135,7 +150,7 @@
   /* Outline / link actions (legacy pages + timiq-button-primary) */
   --color-action-border: var(--color-brand);
   --color-action-text: var(--color-brand);
-  --color-action-hover-bg: var(--color-brand-muted);
+  --color-action-hover-bg: var(--color-brand-tint);
 
   /*
    * Legacy: white fill for outline-style controls in pages that predate solid primary.
