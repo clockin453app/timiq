@@ -45,8 +45,27 @@ export type ManualClockActionResponse = {
   worked_seconds: number | null;
 };
 
+function statusFallback(status: number): string {
+  switch (status) {
+    case 400:
+      return "Invalid request.";
+    case 403:
+      return "You do not have permission for this attendance action.";
+    case 404:
+      return "Employee or open shift was not found.";
+    case 409:
+      return "This conflicts with existing attendance for this employee.";
+    case 422:
+      return "The selected date and time is not valid for this shift.";
+    case 500:
+      return "Unexpected server failure. Try again.";
+    default:
+      return `Request failed (${status}).`;
+  }
+}
+
 async function readApiError(response: Response): Promise<string> {
-  const fallback = `Request failed (${response.status}).`;
+  const fallback = statusFallback(response.status);
   try {
     const data = (await response.json()) as { detail?: unknown };
     return fastApiDetailToMessage(data.detail, fallback);

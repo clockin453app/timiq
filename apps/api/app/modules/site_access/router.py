@@ -13,6 +13,7 @@ from app.modules.site_access.schemas import (
 )
 from app.modules.site_access.service import (
     SiteAccessDuplicateError,
+    SiteAccessError,
     SiteAccessLocationNotFoundError,
     SiteAccessNotFoundError,
     SiteAccessPermissionError,

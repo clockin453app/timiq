@@ -24,7 +24,13 @@ export function toDatetimeLocalValue(iso: string): string {
 
 /** Convert a browser-local `datetime-local` value to a UTC ISO timestamp. */
 export function fromDatetimeLocalToIso(localValue: string): string {
-  const parsed = new Date(localValue);
+  const trimmed = localValue.trim();
+  if (!trimmed) {
+    return "";
+  }
+  // Some engines are pickier about minute-only values; append seconds once.
+  const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(trimmed) ? `${trimmed}:00` : trimmed;
+  const parsed = new Date(normalized);
   if (Number.isNaN(parsed.getTime())) {
     return "";
   }

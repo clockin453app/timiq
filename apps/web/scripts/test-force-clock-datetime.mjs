@@ -226,13 +226,14 @@ const formField = read("components/ui/form-field.tsx");
 const globals = read("styles/globals.css");
 
 check("force-clock uses the shared viewport-safe modal", /<Modal/.test(live));
-check("modal width never exceeds the viewport", /max-w-full/.test(modal));
+check("modal width never exceeds the viewport", /max-w-\[calc\(100vw-24px\)\]|max-w-full/.test(modal));
 check("modal height is capped against dvh", /max-h-\[calc\(100dvh-1rem\)]/.test(modal));
 check("modal body scrolls internally", /min-h-0 flex-1 overflow-y-auto/.test(modal));
 check("modal header stays reachable", /shrink-0 border-b/.test(modal));
 check("modal actions stay reachable", /shrink-0 border-t/.test(modal));
 check("modal actions clear the home indicator", /env\(safe-area-inset-bottom/.test(modal));
 check("modal traps escape", /event\.key === "Escape"/.test(modal));
+check("modal escape respects closeEnabled", /closeEnabled/.test(modal));
 check("modal blocks background scroll", /document\.body\.style\.overflow = "hidden"/.test(modal));
 check("modal moves focus into the panel", /panelRef\.current\?\.focus\(\)/.test(modal));
 check("backdrop click closes only from the backdrop", /event\.target === event\.currentTarget/.test(modal));
@@ -240,6 +241,7 @@ check("modal sits above the app shell chrome", /z-\[1200]/.test(modal));
 
 check("form fields allow their controls to shrink", /min-w-0/.test(formField));
 check("form action rows stack on narrow screens", /flex-col-reverse gap-2 sm:flex-row/.test(formField));
+check("form action buttons go full width on mobile", /\[&_button\]:w-full/.test(formField));
 check("validation errors wrap", /break-words/.test(formField));
 
 check(
@@ -258,6 +260,31 @@ check(
   "form controls stay at 16px on mobile so iOS does not zoom on focus",
   /--text-form-control: 1rem;/.test(read("styles/tokens.css")),
 );
+
+/* ------------------------------------------------------------------ *
+ * 4. Site-access scoping + mobile Live Attendance layout
+ * ------------------------------------------------------------------ */
+
+check(
+  "Live Attendance loads site access with the selected company scope",
+  /listSiteAccessRecords\(locationCompanyId\)/.test(live),
+);
+check(
+  "Live Attendance no longer calls unscoped site access",
+  !/listSiteAccessRecords\(\s*\)/.test(live),
+);
+check(
+  "location and site-access loads fail independently",
+  /const \[locationsOk, accessOk\] = await Promise\.all/.test(live),
+);
+check("mobile attendance uses card rows", /md:hidden[\s\S]{0,200}<article/.test(live) || /space-y-2 md:hidden[\s\S]*<article/.test(live));
+check("desktop table remains available", /hidden min-w-0 max-w-full md:block[\s\S]*<Table/.test(live));
+check("mobile actions do not share one non-wrapping row", /grid-cols-1 gap-2 min-\[380px\]:grid-cols-2/.test(live));
+check("success confirmation is announced", /role="status"[\s\S]{0,80}aria-live="polite"/.test(live));
+check("submit advertises busy state", /aria-busy=\{actionBusy\}/.test(live));
+check("modal close is blocked while saving", /closeEnabled=\{!actionBusy\}/.test(live));
+check("inputs are preserved after failure (modal stays open)", /catch \(error\) \{\s*setActionError\(/.test(live));
+check("API maps structured status fallbacks", /case 409:/.test(liveApi) && /case 422:/.test(liveApi));
 
 if (failures.length > 0) {
   console.error(`${failures.length} force clock check(s) failed:`);
