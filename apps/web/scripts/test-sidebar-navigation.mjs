@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import ts from "typescript";
 
@@ -126,6 +128,45 @@ const pageExists = (href) =>
   fs.existsSync(new URL(`app${href}/page.tsx`, root));
 const missingRoutes = visibleRoutes.filter((href) => !pageExists(href));
 check("every leaf has page.tsx", missingRoutes.length === 0);
+
+// Page → leaf orphan matrix for list/hub pages under (app).
+const appGroupDir = path.join(fileURLToPath(root), "app", "(app)");
+const intentionalOrphans = new Set([
+  // Deliberately out of nav trees; still linked from admin-guide content.
+  "/workplaces",
+  // Gate/redirect; management leaf is /clock-selfie-review.
+  "/clock-selfies",
+]);
+const skipDirNames = new Set(["new", "edit", "week", "start", "submissions"]);
+
+function listHubPages(dir, prefix = "") {
+  /** @type {string[]} */
+  const hubs = [];
+  if (!fs.existsSync(dir)) return hubs;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith("[") || skipDirNames.has(entry.name)) continue;
+    const href = `${prefix}/${entry.name}`;
+    const childDir = path.join(dir, entry.name);
+    if (fs.existsSync(path.join(childDir, "page.tsx"))) {
+      hubs.push(href);
+    }
+    hubs.push(...listHubPages(childDir, href));
+  }
+  return hubs;
+}
+
+const hubPages = listHubPages(appGroupDir);
+const allNavLeaves = new Set(visibleRoutes);
+const orphanHubs = hubPages.filter((href) => !allNavLeaves.has(href) && !intentionalOrphans.has(href));
+check(
+  `no unexpected hub page orphans (${orphanHubs.join(", ") || "none"})`,
+  orphanHubs.length === 0,
+);
+check("intentional orphan /workplaces exists as page", hubPages.includes("/workplaces"));
+check("intentional orphan /clock-selfies exists as page", hubPages.includes("/clock-selfies"));
+check("intentional orphans are not nav leaves", ![...intentionalOrphans].some((h) => allNavLeaves.has(h)));
+
 
 for (const tree of [admin, administrator, employee, limited]) {
   const hrefs = leafHrefs(tree);
