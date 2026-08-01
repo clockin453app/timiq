@@ -30,15 +30,160 @@ const payroll = read(srcRoot, "app/(app)/payroll-report/payroll-report-client.ts
 const timesheets = read(srcRoot, "app/(app)/timesheets/timesheets-client.tsx");
 const api = read(srcRoot, "features/timesheet-extra-hours/api.ts");
 const modal = read(srcRoot, "features/timesheet-extra-hours/extra-hours-modal.tsx");
+const roles = read(srcRoot, "features/auth/roles.ts");
 const schemas = read(apiRoot, "app/modules/timesheet_extra_hours/schemas.py");
 const service = read(apiRoot, "app/modules/timesheet_extra_hours/service.py");
 const repo = read(apiRoot, "app/modules/timesheet_extra_hours/repository.py");
 
-check("Add extra hours button for admins", /Add extra hours/.test(payroll) && /data-testid="add-extra-hours-button"/.test(payroll));
+const toolbarBlock = payroll.slice(
+  payroll.indexOf('aria-label={t("payroll.report.actions"'),
+  payroll.indexOf("payroll.report.total_hours") > 0
+    ? payroll.indexOf('{paidRowCount > 0 ? (')
+    : payroll.length,
+);
+
+check(
+  "original lucide toolbar icon imports",
+  /import \{ Calendar, FileDown, FileSpreadsheet, FileText, Printer \} from "lucide-react"/.test(
+    payroll,
+  ),
+);
+check("toolbar uses FileDown icon component", /<FileDown\b/.test(toolbarBlock));
+check("toolbar uses FileSpreadsheet icon component", /<FileSpreadsheet\b/.test(toolbarBlock));
+check("toolbar uses Printer icon component", /<Printer\b/.test(toolbarBlock));
+check("toolbar uses FileText icon component", /<FileText\b/.test(toolbarBlock));
+check(
+  "no Unicode placeholder toolbar icons",
+  !/[📥📄🖨📋📤]|\\u[0-9a-fA-F]{4}/.test(toolbarBlock) &&
+    !/aria-label=\{t\("payroll\.report\.export_csv_short"[\s\S]{0,220}>\s*[A-Za-z📄📥]/.test(
+      toolbarBlock,
+    ),
+);
+check("CSV handler connected", /onClick=\{handleCsv\}/.test(toolbarBlock));
+check("Excel handler connected", /onClick=\{handleExcelDownload\}/.test(toolbarBlock));
+check("Print handler connected", /onClick=\{handlePrint\}/.test(toolbarBlock));
+check("PDF handler connected", /onClick=\{handlePdfDownload\}/.test(toolbarBlock));
+check(
+  "toolbar icon buttons keep compact square sizing",
+  /className="h-9 w-9 shrink-0 px-0"/.test(toolbarBlock) &&
+    /<FileDown[^>]*className="h-4 w-4 shrink-0"/.test(toolbarBlock),
+);
+check("toolbar icons keep aria-labels", /aria-label=\{t\("payroll\.report\.export_csv_short"/.test(toolbarBlock));
+check("toolbar icons keep title tooltips", /title=\{t\("payroll\.report\.export_csv_short"/.test(toolbarBlock));
+check(
+  "toolbar icons keep disabled/loading behaviour",
+  /disabled=\{loading \|\| !activeCompanyId\}/.test(toolbarBlock),
+);
+
+check("canAccessManagement used for Extra hours gate", /canAccessManagement\(user\)/.test(payroll));
+check(
+  "canAccessManagement covers Admin and Administrator",
+  /function canAccessManagement\(user: AuthUser\) \{\s*return isAdministrator\(user\) \|\| isAdmin\(user\);/.test(
+    roles,
+  ),
+);
+check(
+  "Add extra hours gated for management roles only",
+  /canManageExtraHours \? \([\s\S]*?data-testid="add-extra-hours-button"[\s\S]*?Add extra hours[\s\S]*?\) : null/.test(
+    payroll,
+  ),
+);
+check(
+  "employees do not get ungated Add extra hours",
+  !/data-testid="add-extra-hours-button"[\s\S]{0,80}Add extra hours/.test(
+    payroll.replace(
+      /canManageExtraHours \? \([\s\S]*?data-testid="add-extra-hours-button"[\s\S]*?\) : null/,
+      "",
+    ),
+  ),
+);
+check(
+  "Add extra hours beside SHIFT LINES heading",
+  /Shift lines \(this week\)[\s\S]{0,400}data-testid="add-extra-hours-button"/.test(payroll) &&
+    !/justify-between[\s\S]{0,120}Shift lines \(this week\)/.test(payroll),
+);
+check(
+  "Add extra hours not gated on Extra hours array length",
+  !/extraList\.length[\s\S]{0,80}add-extra-hours-button|add-extra-hours-button[\s\S]{0,80}extraList\.length/.test(
+    payroll,
+  ),
+);
+check(
+  "Add extra hours visible while Extra hours loading",
+  /canManageExtraHours \? \([\s\S]*?add-extra-hours-button[\s\S]*?\) : null[\s\S]*?extraRows === "loading"/.test(
+    payroll,
+  ),
+);
+check(
+  "no malformed Unicode in Extra hours UI text",
+  !/ÔÇ|â€|â |�|\uFFFD|Loading extra hours…/.test(payroll) &&
+    /Loading extra hours\.\.\./.test(payroll) &&
+    !/ÔÇ|â€|â |�|\uFFFD/.test(
+      read(srcRoot, "app/(app)/timesheets/timesheets-client.tsx"),
+    ),
+);
+check(
+  "Add extra hours remains visible after list error",
+  /extraRows === "error"/.test(payroll) &&
+    /data-testid="extra-hours-load-error"/.test(payroll) &&
+    /setExtraHoursByUser\(\(prev\) => \(\{ \.\.\.prev, \[userId\]: "error" \}\)\)/.test(payroll) &&
+    /canManageExtraHours \? \([\s\S]*?add-extra-hours-button[\s\S]*?\) : null[\s\S]*?extraRows === "error"/.test(
+      payroll,
+    ),
+);
+check(
+  "error state has Retry button",
+  /data-testid="extra-hours-retry-button"/.test(payroll) &&
+    /aria-label="Retry loading extra hours"/.test(payroll) &&
+    /data-testid="extra-hours-retry-button"[\s\S]{0,500}type="button"[\s\S]{0,120}>\s*Retry/.test(
+      payroll,
+    ),
+);
+check(
+  "Retry calls existing Extra hours loader only",
+  /async function reloadExtraHoursForUser\(userId: string\)/.test(payroll) &&
+    /onClick=\{\(\) => void reloadExtraHoursForUser\(row\.user_id\)\}/.test(payroll) &&
+    /await reloadExtraHoursForUser\(userId\)/.test(payroll) &&
+    !/onClick=\{\(\) => void reloadExtraHoursForUser\(row\.user_id\)\}[\s\S]{0,300}(?:loadReport|recalculatePayroll)/.test(
+      payroll,
+    ),
+);
+check(
+  "clicking Add extra hours opens modal with user_id",
+  /setExtraHoursModal\(\{[\s\S]*?mode: "create"[\s\S]*?userId: row\.user_id/.test(payroll),
+);
+check(
+  "modal receives employee user_id not payroll item id",
+  /employeeUserId=\{extraHoursModal\.userId\}/.test(payroll) &&
+    !/employeeUserId=\{extraHoursModal\.id\}/.test(payroll) &&
+    !/userId: row\.id/.test(payroll),
+);
+check(
+  "modal receives current payroll week",
+  /weekStart=\{weekStart\}/.test(payroll) && /weekEndInclusive=\{addDaysIsoYmd\(weekStart, 6\)\}/.test(payroll),
+);
+check("company context preserved on modal", /companyId=\{activeCompanyId\}/.test(payroll));
+check(
+  "Add extra hours does not trigger payroll recalculation",
+  !/onSaved[\s\S]{0,500}recalculatePayroll|setExtraHoursModal[\s\S]{0,400}recalculatePayroll/.test(
+    payroll,
+  ),
+);
+check(
+  "Add extra hours does not approve payroll",
+  !/setExtraHoursModal[\s\S]{0,400}approvePayroll|onSaved[\s\S]{0,400}approvePayroll/.test(payroll),
+);
+
 check("EXTRA HOURS non-payroll section", /Extra hours - non-payroll/.test(payroll));
 check("Non-payroll badge in admin rows", /Non-payroll/.test(payroll));
 check("informational Extra recorded hours separate", /Extra recorded hours/.test(payroll));
-check("TOTAL HOURS still from payroll rounded seconds", /total_rounded_seconds/.test(payroll) && /Total hours/.test(payroll));
+check(
+  "payroll totals remain from period rounded seconds / money fields",
+  /total_rounded_seconds/.test(payroll) &&
+    /period\.total_gross/.test(payroll) &&
+    /period\.total_net/.test(payroll) &&
+    !/extraTotal[\s\S]{0,80}total_rounded_seconds|formatHoursFromSeconds\(extra/.test(payroll),
+);
 check("exclusive end date weekStart+7 for extra hours", /listAdminExtraHours[\s\S]{0,220}end_date:\s*addDaysIsoYmd\(weekStart,\s*7\)/.test(payroll));
 check("no recalculatePayroll after extra hours save", !/onSaved[\s\S]{0,400}recalculatePayroll/.test(payroll));
 check("Edit shift action still present", /Edit shift/.test(payroll));

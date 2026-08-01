@@ -25,7 +25,13 @@ import {
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { uiClasses } from "@/lib/ui-classes";
-import { isAdministrator, listManagedUsers, useCurrentUser, type AuthUser } from "@/features/auth";
+import {
+  canAccessManagement,
+  isAdministrator,
+  listManagedUsers,
+  useCurrentUser,
+  type AuthUser,
+} from "@/features/auth";
 import { listCompanies, type Company } from "@/features/companies/api";
 import { useAdministratorCompanyScope } from "@/features/companies/selected-company";
 import { listLocations, type Location } from "@/features/locations/api";
@@ -658,7 +664,7 @@ export function PayrollReportClient() {
     {},
   );
   const [extraHoursByUser, setExtraHoursByUser] = useState<
-    Record<string, TimesheetExtraHoursRow[] | "loading">
+    Record<string, TimesheetExtraHoursRow[] | "loading" | "error">
   >({});
   const [extraHoursModal, setExtraHoursModal] = useState<{
     mode: "create" | "edit";
@@ -707,6 +713,7 @@ export function PayrollReportClient() {
   }, [weekStart]);
 
   const policyTimeZone = report?.period.timezone_name ?? browserDefaultTimeZone();
+  const canManageExtraHours = canAccessManagement(user);
 
   const monthFromWeek = useMemo(() => {
     const y = Number(weekStart.slice(0, 4));
@@ -1364,12 +1371,29 @@ export function PayrollReportClient() {
     setAppliedHistoryDateTo(nextDateTo);
   }
 
+  async function reloadExtraHoursForUser(userId: string) {
+    if (!activeCompanyId) {
+      return;
+    }
+    setExtraHoursByUser((prev) => ({ ...prev, [userId]: "loading" }));
+    try {
+      const extra = await listAdminExtraHours({
+        company_id: activeCompanyId,
+        user_id: userId,
+        start_date: weekStart,
+        end_date: addDaysIsoYmd(weekStart, 7),
+      });
+      setExtraHoursByUser((prev) => ({ ...prev, [userId]: extra }));
+    } catch {
+      setExtraHoursByUser((prev) => ({ ...prev, [userId]: "error" }));
+    }
+  }
+
   async function reloadShiftRows(userId: string) {
     if (!activeCompanyId) {
       return;
     }
     setShiftRowsByUser((prev) => ({ ...prev, [userId]: "loading" }));
-    setExtraHoursByUser((prev) => ({ ...prev, [userId]: "loading" }));
     try {
       const rows = await listAdminTimeRecords({
         company_id: isAdministrator(user) ? activeCompanyId : undefined,
@@ -1382,17 +1406,7 @@ export function PayrollReportClient() {
     } catch {
       setShiftRowsByUser((prev) => ({ ...prev, [userId]: [] }));
     }
-    try {
-      const extra = await listAdminExtraHours({
-        company_id: activeCompanyId,
-        user_id: userId,
-        start_date: weekStart,
-        end_date: addDaysIsoYmd(weekStart, 7),
-      });
-      setExtraHoursByUser((prev) => ({ ...prev, [userId]: extra }));
-    } catch {
-      setExtraHoursByUser((prev) => ({ ...prev, [userId]: [] }));
-    }
+    await reloadExtraHoursForUser(userId);
   }
 
   async function toggleExpandShifts(userId: string) {
@@ -1747,7 +1761,7 @@ export function PayrollReportClient() {
                     </Button>
                     <Button
                       aria-label={t("payroll.report.export_csv_short", "Export CSV")}
-                      className="w-8 px-0"
+                      className="h-9 w-9 shrink-0 px-0"
                       disabled={loading || !activeCompanyId}
                       onClick={handleCsv}
                       size="sm"
@@ -1755,11 +1769,11 @@ export function PayrollReportClient() {
                       type="button"
                       variant="secondary"
                     >
-                      <FileDown aria-hidden="true" className="h-4 w-4" />
+                      <FileDown aria-hidden="true" className="h-4 w-4 shrink-0" />
                     </Button>
                     <Button
                       aria-label={t("payroll.report.export_xlsx", "Export Excel")}
-                      className="w-8 px-0"
+                      className="h-9 w-9 shrink-0 px-0"
                       disabled={loading || !activeCompanyId}
                       onClick={handleExcelDownload}
                       size="sm"
@@ -1767,11 +1781,11 @@ export function PayrollReportClient() {
                       type="button"
                       variant="secondary"
                     >
-                      <FileSpreadsheet aria-hidden="true" className="h-4 w-4" />
+                      <FileSpreadsheet aria-hidden="true" className="h-4 w-4 shrink-0" />
                     </Button>
                     <Button
                       aria-label={t("payroll.report.print_report", "Print report")}
-                      className="w-8 px-0"
+                      className="h-9 w-9 shrink-0 px-0"
                       disabled={loading || !activeCompanyId}
                       onClick={handlePrint}
                       size="sm"
@@ -1779,11 +1793,11 @@ export function PayrollReportClient() {
                       type="button"
                       variant="secondary"
                     >
-                      <Printer aria-hidden="true" className="h-4 w-4" />
+                      <Printer aria-hidden="true" className="h-4 w-4 shrink-0" />
                     </Button>
                     <Button
                       aria-label={t("payroll.report.export_pdf", "Download PDF report")}
-                      className="w-8 px-0"
+                      className="h-9 w-9 shrink-0 px-0"
                       disabled={loading || !activeCompanyId}
                       onClick={handlePdfDownload}
                       size="sm"
@@ -1791,7 +1805,7 @@ export function PayrollReportClient() {
                       type="button"
                       variant="secondary"
                     >
-                      <FileText aria-hidden="true" className="h-4 w-4" />
+                      <FileText aria-hidden="true" className="h-4 w-4 shrink-0" />
                     </Button>
                   </div>
                 </div>
@@ -2012,29 +2026,31 @@ export function PayrollReportClient() {
                           {expandedUserId === row.user_id ? (
                             <TableRow>
                               <TableCell className="bg-[var(--color-header)]/60 py-3" colSpan={13}>
-                                <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+                                <div className="mb-2 flex min-w-0 flex-wrap items-center gap-2">
                                   <p className="timiq-caption font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
                                     Shift lines (this week)
                                   </p>
-                                  <Button
-                                    className="min-h-8 px-2.5 py-1 text-[11px]"
-                                    data-testid="add-extra-hours-button"
-                                    onClick={() =>
-                                      setExtraHoursModal({
-                                        mode: "create",
-                                        userId: row.user_id,
-                                        employeeLabel:
-                                          row.employee_name?.trim() ||
-                                          row.employee_email ||
-                                          row.user_id,
-                                        initial: null,
-                                      })
-                                    }
-                                    type="button"
-                                    variant="secondary"
-                                  >
-                                    Add extra hours
-                                  </Button>
+                                  {canManageExtraHours ? (
+                                    <Button
+                                      className="min-h-8 shrink-0 px-2.5 py-1 text-[11px]"
+                                      data-testid="add-extra-hours-button"
+                                      onClick={() =>
+                                        setExtraHoursModal({
+                                          mode: "create",
+                                          userId: row.user_id,
+                                          employeeLabel:
+                                            row.employee_name?.trim() ||
+                                            row.employee_email ||
+                                            row.user_id,
+                                          initial: null,
+                                        })
+                                      }
+                                      type="button"
+                                      variant="secondary"
+                                    >
+                                      Add extra hours
+                                    </Button>
+                                  ) : null}
                                 </div>
                                 <div className="mb-2">
                                   <PayrollEmployeeIdentity
@@ -2131,8 +2147,7 @@ export function PayrollReportClient() {
                                 )}
                                 {(() => {
                                   const extraRows = extraHoursByUser[row.user_id];
-                                  const extraList =
-                                    extraRows && extraRows !== "loading" ? extraRows : [];
+                                  const extraList = Array.isArray(extraRows) ? extraRows : [];
                                   const extraTotal = extraList.reduce(
                                     (sum, e) => sum + e.duration_minutes,
                                     0,
@@ -2154,8 +2169,28 @@ export function PayrollReportClient() {
                                       </p>
                                       {extraRows === "loading" ? (
                                         <p className="text-xs text-[var(--color-text-muted)]">
-                                          Loading extra hours…
+                                          Loading extra hours...
                                         </p>
+                                      ) : extraRows === "error" ? (
+                                        <div
+                                          className="flex flex-wrap items-center gap-2"
+                                          data-testid="extra-hours-load-error"
+                                        >
+                                          <p className="text-xs text-[var(--color-danger-700)]">
+                                            Could not load extra hours.
+                                          </p>
+                                          <Button
+                                            aria-label="Retry loading extra hours"
+                                            className="min-h-7 px-2 py-0.5 text-[11px]"
+                                            data-testid="extra-hours-retry-button"
+                                            onClick={() => void reloadExtraHoursForUser(row.user_id)}
+                                            size="sm"
+                                            type="button"
+                                            variant="secondary"
+                                          >
+                                            Retry
+                                          </Button>
+                                        </div>
                                       ) : extraList.length === 0 ? (
                                         <p className="text-xs text-[var(--color-text-muted)]">
                                           No extra hours recorded for this week.
@@ -2231,7 +2266,7 @@ export function PayrollReportClient() {
                                                             await deleteExtraHours(eh.id);
                                                             setExtraHoursByUser((prev) => {
                                                               const cur = prev[row.user_id];
-                                                              if (!cur || cur === "loading") {
+                                                              if (!Array.isArray(cur)) {
                                                                 return prev;
                                                               }
                                                               return {
@@ -2984,7 +3019,7 @@ export function PayrollReportClient() {
             onSaved={(saved) => {
               setExtraHoursByUser((prev) => {
                 const cur = prev[extraHoursModal.userId];
-                const list = !cur || cur === "loading" ? [] : [...cur];
+                const list = Array.isArray(cur) ? [...cur] : [];
                 const idx = list.findIndex((x) => x.id === saved.id);
                 if (idx >= 0) {
                   list[idx] = saved;
