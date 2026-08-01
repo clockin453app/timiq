@@ -377,11 +377,17 @@ export function RamsEditorClient({ ramsId }: Props) {
                   <p className="text-xs text-[var(--color-text-soft)]">Edit the RAMS pack as document pages. Hazards, attachments, and signatures render inside this same model.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button disabled={busy || detail.status === "archived"} onClick={() => void saveDetail()} type="button">Save draft</Button>
-                  <Button disabled={busy} onClick={() => router.push(`/rams/manage/${detail.id}`)} type="button" variant="secondary">Preview</Button>
-                  <Button disabled={busy || detail.status === "archived"} onClick={() => void publishCurrentRams().catch((err) => setError(err instanceof Error ? err.message : "Could not publish RAMS."))} type="button" variant="secondary">Publish</Button>
+                  {detail.status === "draft" ? (
+                    <Button disabled={busy} onClick={() => void saveDetail()} type="button">Save draft</Button>
+                  ) : null}
+                  <Button disabled={busy} onClick={() => router.push(`/rams/manage/${detail.id}`)} type="button" variant="secondary">Open record</Button>
+                  {detail.status === "draft" ? (
+                    <Button disabled={busy} onClick={() => void publishCurrentRams().catch((err) => setError(err instanceof Error ? err.message : "Could not publish RAMS."))} type="button" variant="secondary">Publish</Button>
+                  ) : null}
                   <Button disabled={busy} onClick={() => void downloadRamsPdf(detail.id, detail.reference ?? detail.id)} type="button" variant="secondary">Download PDF</Button>
-                  <Button disabled={busy || detail.status === "archived"} onClick={() => void archiveCurrentRams().catch((err) => setError(err instanceof Error ? err.message : "Could not archive RAMS."))} type="button" variant="secondary">Archive</Button>
+                  {detail.status === "published" || detail.status === "reviewed" ? (
+                    <Button disabled={busy} onClick={() => void archiveCurrentRams().catch((err) => setError(err instanceof Error ? err.message : "Could not archive RAMS."))} type="button" variant="secondary">Archive</Button>
+                  ) : null}
                 </div>
               </div>
               <div className="grid gap-0 lg:grid-cols-[260px_minmax(0,1fr)]">

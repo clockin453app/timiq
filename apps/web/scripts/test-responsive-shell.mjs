@@ -143,8 +143,16 @@ check(
 check("AppShell root is width constrained", /w-full min-w-0 max-w-full/.test(shell));
 check("AppShell main remains min-w-0", /timiq-app-main flex min-h-0 min-w-0/.test(shell));
 check("main content owns overflow", /max-w-full flex-1 overflow-auto/.test(shell));
-check("management receives no mobile bottom padding", /hasMobileBottomNav[\s\S]*: "pb-\[var\(--space-page-y\)\]"/.test(shell));
+// Management has no bottom nav: standard page-y padding when chrome is visible.
+// Reader routes use hideMobileBottomNav → p-0 (nested ternary; not the old binary false branch).
+check(
+  "management receives standard page-y padding when chrome visible",
+  /!hideMobileBottomNav\s*\?\s*"pb-\[var\(--space-page-y\)\]"/.test(shell) &&
+    /hasMobileBottomNav/.test(shell) &&
+    /hideMobileBottomNav/.test(shell),
+);
 check("employee receives bottom-nav scroll padding", /scroll-pb-\[calc\(var\(--layout-mobile-bottom-nav-height\)/.test(shell));
+check("RAMS reader suppresses shell chrome padding", /hideMobileBottomNav[\s\S]*\? "p-0"/.test(shell));
 
 const messages = read("app/(app)/messages/messages-client.tsx");
 check("messages desktop height switches at lg", /lg:h-\[calc\(var\(--layout-desktop-content-height\)/.test(messages));

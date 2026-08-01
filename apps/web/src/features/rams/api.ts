@@ -162,6 +162,7 @@ export type RamsAcknowledgement = {
   manual_signature_note: string | null;
   declined_reason: string | null;
   has_signature: boolean;
+  signature_image_href?: string | null;
 };
 
 export type RamsAssessmentDetail = {
@@ -833,6 +834,33 @@ export async function deleteRams(assessmentId: string): Promise<void> {
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, "Could not delete RAMS."));
   }
+}
+
+export function ramsSignatureImageUrl(href: string | null | undefined): string | null {
+  if (!href) return null;
+  if (href.startsWith("http://") || href.startsWith("https://")) return href;
+  return `${API_URL}${href.startsWith("/") ? href : `/${href}`}`;
+}
+
+export async function downloadRamsSignedRecord(assessmentId: string, referenceOrId?: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/signed-record.pdf`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not download signed record."));
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const safe = (referenceOrId ?? assessmentId).replace(/[^\w.-]+/g, "_").slice(0, 80);
+  a.download = `rams-signed-record-${safe || assessmentId}.pdf`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function downloadRamsCsv(assessmentId: string): Promise<void> {

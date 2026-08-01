@@ -19,6 +19,7 @@ import {
   acknowledgeRams,
   openRamsPrint,
   ramsAttachmentUrl,
+  ramsSignatureImageUrl,
   type RamsAssessmentDetail,
   type RamsAssessmentListItem,
 } from "@/features/rams/api";
@@ -264,7 +265,7 @@ export function RamsClient() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title={t("rams.title", "RAMS / risk assessments")}
+        title={t("rams.title", "My RAMS")}
         description={t("rams.employee_intro", "Review assigned risk assessments and acknowledge.")}
       />
       {!isEmployee(currentUser) ? (
@@ -311,7 +312,7 @@ export function RamsClient() {
                 <p className="mt-1 text-xs text-[var(--color-text-soft)]">
                   {t("rams.col_your_status", "Your status")}: {row.my_ack_status ?? "—"}
                 </p>
-                <p className="mt-3 text-xs font-medium text-[var(--color-link)]">{t("rams.open", "Open")} →</p>
+                <p className="mt-3 text-xs font-medium text-[var(--color-link)]">Open RAMS</p>
               </button>
             ))
           )}
@@ -347,10 +348,10 @@ export function RamsClient() {
                           )
                         }
                       >
-                        {t("rams.download_rams_pdf", "Download RAMS PDF")}
+                        Download PDF
                       </Button>
                       <Button type="button" variant="secondary" size="sm" onClick={() => openRamsPrint(detail.id)}>
-                        {t("rams.open_print_pack", "Print view")}
+                        Print
                       </Button>
                     </>
                   ) : null}
@@ -392,7 +393,7 @@ export function RamsClient() {
                       <div className="space-y-2 rounded border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
                         <p>You must open the RAMS and view all pages before acknowledging.</p>
                         <Link
-                          className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-primary)] px-3 text-sm font-semibold text-white"
+                          className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-3 text-sm font-semibold text-[var(--color-btn-primary-fg)] hover:border-[var(--color-btn-primary-hover-bg)] hover:bg-[var(--color-btn-primary-hover-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-btn-primary-border)]"
                           href={`/rams/${detail.id}/read`}
                         >
                           Open RAMS
@@ -453,14 +454,31 @@ export function RamsClient() {
                     {myRow?.status === "acknowledged" ? (
                       <>
                         <p>{t("rams.already_ack", "You have already acknowledged this RAMS.")}</p>
+                        {myRow.acknowledgement_name ? (
+                          <p className="text-xs">Printed name: {myRow.acknowledgement_name}</p>
+                        ) : null}
                         {myRow.acknowledged_at ? (
                           <p className="text-xs">Signed: {formatDate(myRow.acknowledged_at)}</p>
                         ) : null}
                         {detail.uploaded_pdf?.version != null ? (
                           <p className="text-xs">Document version {detail.uploaded_pdf.version}</p>
                         ) : null}
+                        {myRow.signature_image_href ? (
+                          <div className="rounded border border-[var(--color-border)] bg-white p-2">
+                            <p className="mb-1 text-xs font-medium text-[var(--color-text)]">Your signature</p>
+                            {/* eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin PNG */}
+                            <img
+                              alt="Your RAMS signature"
+                              className="h-16 max-w-full object-contain object-left"
+                              src={ramsSignatureImageUrl(myRow.signature_image_href) ?? undefined}
+                            />
+                          </div>
+                        ) : null}
                         {detail.source_type === "uploaded_pdf" ? (
-                          <Link className="inline-flex text-sm font-semibold underline" href={`/rams/${detail.id}/read`}>
+                          <Link
+                            className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-3 text-sm font-semibold text-[var(--color-btn-primary-fg)]"
+                            href={`/rams/${detail.id}/read`}
+                          >
                             Open RAMS
                           </Link>
                         ) : null}

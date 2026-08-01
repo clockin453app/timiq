@@ -69,7 +69,7 @@ export function UploadedRamsDocumentCard({
       </p>
       <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
         <Link
-          className="inline-flex h-11 min-h-[44px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-primary)] px-3 text-sm font-semibold text-white sm:w-auto"
+          className="inline-flex h-11 min-h-[44px] w-full items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-3 text-sm font-semibold text-[var(--color-btn-primary-fg)] hover:border-[var(--color-btn-primary-hover-bg)] hover:bg-[var(--color-btn-primary-hover-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-btn-primary-border)] sm:w-auto"
           href={`/rams/${assessmentId}/read`}
         >
           Open RAMS

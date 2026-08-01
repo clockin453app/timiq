@@ -20,6 +20,13 @@ function check(name, cond) {
 check("pdfjs-dist dependency present", /"pdfjs-dist"/.test(pkg));
 check("embedded PDF removed from employee detail", !/UploadedRamsPdfPreview/.test(employee));
 check("compact Open RAMS card appears", /UploadedRamsDocumentCard/.test(employee) && /Open RAMS/.test(card));
+check(
+  "Open RAMS uses solid primary tokens not white-on-white",
+  /bg-\[var\(--color-btn-primary-bg\)\]/.test(card) &&
+    /text-\[var\(--color-btn-primary-fg\)\]/.test(card) &&
+    !/bg-\[var\(--color-primary\)\].*text-white|text-white.*bg-\[var\(--color-primary\)\]/.test(card),
+);
+check("Open RAMS links to reader route", /href=\{`\/rams\/\$\{assessmentId\}\/read`\}/.test(card));
 check("full-screen viewer route exists", /RamsReaderClient/.test(page) && /assessmentId/.test(page));
 check("reader uses pdfjs getDocument", /getDocument/.test(reader) && /pdfjs-dist/.test(reader));
 check("IntersectionObserver page visibility", /IntersectionObserver/.test(reader) && /VISIBLE_RATIO/.test(reader));

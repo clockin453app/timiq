@@ -124,28 +124,28 @@ const SITE_PROGRESS: NavigationItem = {
 };
 
 const TOOLBOX_TALKS: NavigationItem = {
-  label: "Toolbox Talks",
+  label: "My Toolbox Talks",
   labelKey: "nav.toolbox_talks",
   href: "/toolbox-talks",
   allowedRoles: ALL,
 };
 
 const TOOLBOX_TALKS_MANAGE: NavigationItem = {
-  label: "Toolbox Talks",
+  label: "Manage Toolbox Talks",
   labelKey: "nav.toolbox_talks_manage",
   href: "/toolbox-talks/manage",
   allowedRoles: MGMT,
 };
 
 const RAMS: NavigationItem = {
-  label: "RAMS",
+  label: "My RAMS",
   labelKey: "nav.rams",
   href: "/rams",
   allowedRoles: ALL,
 };
 
 const RAMS_MANAGE: NavigationItem = {
-  label: "RAMS",
+  label: "Manage RAMS",
   labelKey: "nav.rams_manage",
   href: "/rams/manage",
   allowedRoles: MGMT,

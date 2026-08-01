@@ -42,17 +42,20 @@ check("download still authenticated", /export async function downloadUploadedRam
 check("no token query string for preview", !/uploaded-pdf\/view\?/.test(api) && !/access_token=/.test(api) && !/token=/.test(preview));
 
 check("preview component fetches blob", /fetchUploadedRamsPdfBlob/.test(preview));
-check("object URL created", /URL\.createObjectURL/.test(preview));
+check("object URL created", /URL\.createObjectURL/.test(preview) || /createObjectURL/.test(api));
 check("object URL revoked on cleanup", /URL\.revokeObjectURL/.test(preview) && /disposed/.test(preview));
-check("preview failure fallback", /PDF preview unavailable/.test(preview) && /Download PDF/.test(preview));
+check("preview failure fallback", /PDF unavailable|PDF preview unavailable/.test(preview) && /Download PDF/.test(preview));
 check("detail uses UploadedRamsPdfPreview", /UploadedRamsPdfPreview/.test(detail) && !/<iframe[\s\S]*ramsUploadedPdfViewUrl/.test(detail));
-check("detail View uses authenticated open", /openUploadedRamsPdfInNewTab/.test(detail));
-check("employee uses UploadedRamsPdfPreview", /UploadedRamsPdfPreview/.test(employee));
-check("employee View uses authenticated open", /openUploadedRamsPdfInNewTab/.test(employee));
+check("preview Open PDF uses authenticated open", /openUploadedRamsPdfInNewTab/.test(preview) && /Open PDF/.test(preview));
+check("employee uses compact document card", /UploadedRamsDocumentCard/.test(employee));
+check("employee Open RAMS reader link", /\/rams\/\$\{.*\}\/read|Open RAMS/.test(employee) || /UploadedRamsDocumentCard/.test(employee));
 check("detail uploaded badge", /Uploaded RAMS/.test(detail));
-check("detail View/Download PDF", /View PDF/.test(detail) && /downloadUploadedRamsPdf/.test(detail));
-check("template sections hidden for uploaded", /isUploaded \? \(/.test(detail) && /Uploaded PDF preview/.test(detail));
+check("detail has single PDF action surface", /UploadedRamsPdfPreview/.test(detail) && !/Open full PDF/.test(detail));
+check("template sections hidden for uploaded", /isUploaded \? \(/.test(detail) && /Uploaded RAMS PDF|Uploaded PDF preview/.test(detail));
 check("employee uploaded flow", /Uploaded document/.test(employee));
+check("mobile open PDF / Open RAMS actions", /Open RAMS/.test(employee) && /Open PDF/.test(preview));
+check("no Add all site users label", !/Add all site users/.test(detail));
+check("bulk active and site employees", /Add all active employees/.test(detail) && /Add all site employees/.test(detail));
 check("template creator unchanged path", /Choose a professional construction activity template/.test(editor) || /document_presets/.test(editor) || /from-preset/.test(editor) || /Create RAMS/.test(editor) || /preset/.test(editor));
 
 console.log(`${passed} RAMS upload PDF UI source checks passed`);

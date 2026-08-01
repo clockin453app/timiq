@@ -137,7 +137,7 @@ const intentionalOrphans = new Set([
   // Gate/redirect; management leaf is /clock-selfie-review.
   "/clock-selfies",
 ]);
-const skipDirNames = new Set(["new", "edit", "week", "start", "submissions"]);
+const skipDirNames = new Set(["new", "edit", "upload", "week", "start", "submissions"]);
 
 function listHubPages(dir, prefix = "") {
   /** @type {string[]} */

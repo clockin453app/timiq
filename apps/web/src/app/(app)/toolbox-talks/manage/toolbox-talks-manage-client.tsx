@@ -75,7 +75,7 @@ export function ToolboxTalksManageClient() {
     <Sheet>
       <PageHeader
         description={t("toolbox_talks.manage_intro", "Create toolbox talks, assign attendees, publish, and export sign-off records.")}
-        title={t("toolbox_talks.manage_title", "Manage toolbox talks")}
+        title={t("toolbox_talks.manage_title", "Manage Toolbox Talks")}
       />
       <SheetBody className="min-w-0 space-y-5">
         {error ? <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
@@ -117,10 +117,10 @@ export function ToolboxTalksManageClient() {
             </Button>
           </div>
           <Link
-            className="inline-flex h-9 items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-4 text-sm font-medium text-[var(--color-btn-primary-text)]"
+            className="inline-flex h-9 items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-4 text-sm font-medium text-[var(--color-btn-primary-fg)]"
             href="/toolbox-talks/manage/new"
           >
-            {t("toolbox_talks.create_talk", "Create talk")}
+            Create Toolbox Talk
           </Link>
         </div>
 
@@ -155,7 +155,7 @@ export function ToolboxTalksManageClient() {
                     </TableCell>
                     <TableCell>
                       <Link className="text-sm font-semibold text-[var(--color-text)] underline" href={`/toolbox-talks/manage/${row.id}`}>
-                        {t("toolbox_talks.open", "Open")}
+                        {row.status === "draft" ? "Continue Draft" : "Open record"}
                       </Link>
                     </TableCell>
                   </TableRow>

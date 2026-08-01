@@ -32,6 +32,7 @@ import {
   previewBulkToolboxTalkAttendees,
   publishToolboxTalk,
   removeToolboxTalkAttendee,
+  toolboxTalkSignatureImageUrl,
   voidToolboxTalk,
   type ToolboxTalkAttendee,
   type ToolboxTalkBulkPreview,
@@ -47,9 +48,27 @@ function formatDate(iso: string | null | undefined) {
 }
 
 function signatureStatus(a: ToolboxTalkAttendee) {
-  if (a.signature_method === "app_signature" || a.has_signature) return "Signed in app";
+  if (a.signature_method === "app_signature" || a.has_signature) {
+    if (a.signature_image_available === false) return "Signature image unavailable";
+    return "Signed in app";
+  }
   if (a.signature_method === "manual_paper" || a.status === "signed") return "Manual/paper signed";
   return "Not signed";
+}
+
+function SignatureCell({ a }: { a: ToolboxTalkAttendee }) {
+  const src = toolboxTalkSignatureImageUrl(a.signature_image_href);
+  if (src) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin PNG
+      <img
+        alt={`Signature for ${a.display_name || a.user_email || "employee"}`}
+        className="h-10 max-w-[9rem] object-contain object-left"
+        src={src}
+      />
+    );
+  }
+  return <span>{signatureStatus(a)}</span>;
 }
 
 function talkSections(body: string) {
@@ -88,11 +107,25 @@ export function ToolboxTalkDetailClient({ talkId }: { talkId: string }) {
     setLoading(true);
     setError("");
     try {
-      const [row, locs, managed] = await Promise.all([getToolboxTalk(talkId), listLocations(), listManagedUsers()]);
+      const row = await getToolboxTalk(talkId);
       setDetail(row);
-      setLocations(locs);
-      setUsers(managed);
+      const [locsResult, usersResult] = await Promise.allSettled([
+        listLocations(row.company_id),
+        listManagedUsers(),
+      ]);
+      if (locsResult.status === "fulfilled") {
+        setLocations(locsResult.value);
+      } else {
+        setLocations([]);
+        setError(locsResult.reason instanceof Error ? locsResult.reason.message : "Could not load locations.");
+      }
+      if (usersResult.status === "fulfilled") {
+        setUsers(usersResult.value);
+      } else if (locsResult.status === "fulfilled") {
+        setError(usersResult.reason instanceof Error ? usersResult.reason.message : "Could not load employees.");
+      }
     } catch (err) {
+      setDetail(null);
       setError(err instanceof Error ? err.message : "Could not load toolbox talk.");
     } finally {
       setLoading(false);
@@ -515,6 +548,20 @@ export function ToolboxTalkDetailClient({ talkId }: { talkId: string }) {
                   </div>
                 </div>
               ) : null}
+              {detail.attendees.some((a) => a.signature_evidence_warning) ? (
+                <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  <p className="font-semibold">Signature evidence warning</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-5">
+                    {detail.attendees
+                      .filter((a) => a.signature_evidence_warning)
+                      .map((a) => (
+                        <li key={a.user_id}>
+                          {(a.display_name || a.user_email || "Employee") + ": " + a.signature_evidence_warning}
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              ) : null}
               <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
                 <Table>
                   <TableHeader>
@@ -534,7 +581,7 @@ export function ToolboxTalkDetailClient({ talkId }: { talkId: string }) {
                         <TableCell className="capitalize">{a.status}</TableCell>
                         <TableCell>{formatDate(a.signed_at)}</TableCell>
                         <TableCell>{a.signature_name ?? "—"}</TableCell>
-                        <TableCell>{signatureStatus(a)}</TableCell>
+                        <TableCell><SignatureCell a={a} /></TableCell>
                         <TableCell>
                           <div className="flex flex-wrap items-center gap-2">
                             <span>{a.manual_signature_note ?? a.declined_reason ?? "—"}</span>

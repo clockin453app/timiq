@@ -23,6 +23,7 @@ import {
   getToolboxTalk,
   listMyToolboxTalks,
   signToolboxTalk,
+  toolboxTalkSignatureImageUrl,
   type ToolboxTalkDetail,
   type ToolboxTalkSummary,
 } from "@/features/toolbox-talks/api";
@@ -211,13 +212,13 @@ export function ToolboxTalksClient() {
         <PageHeader
           description={t(
             "toolbox_talks.employee_only_hint",
-            "Toolbox talk sign-off is for employee accounts. Use Manage toolbox talks to create and assign talks.",
+            "Toolbox talk sign-off is for employee accounts. Use Manage Toolbox Talks to create and assign talks.",
           )}
-          title={t("toolbox_talks.title", "Toolbox talks")}
+          title={t("toolbox_talks.title", "My Toolbox Talks")}
         />
         <p className="text-sm text-[var(--color-text-soft)]">
           <a className="font-semibold text-[var(--color-text)] underline" href="/toolbox-talks/manage">
-            {t("toolbox_talks.manage_link", "Manage toolbox talks")}
+            {t("toolbox_talks.manage_link", "Manage Toolbox Talks")}
           </a>
         </p>
       </div>
@@ -273,7 +274,7 @@ export function ToolboxTalksClient() {
                   </TableCell>
                   <TableCell>
                     <Button onClick={() => void openDetail(row.id)} size="sm" type="button" variant="secondary">
-                      {t("common.details", "Details")}
+                      Open Toolbox Talk
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -348,7 +349,7 @@ export function ToolboxTalksClient() {
               {myRow?.status === "pending" && detail.status === "published" ? (
                 <div className="space-y-4 border-t border-[var(--color-border)] pt-4">
                   <h3 className="text-sm font-semibold text-[var(--color-text)]">
-                    {t("toolbox_talks.sign_heading", "Sign talk")}
+                    Sign Toolbox Talk
                   </h3>
                   {offlineBlock ? (
                     <p className="text-sm text-amber-800">{t("toolbox_talks.offline_sign", "Signing requires an internet connection.")}</p>
@@ -376,7 +377,7 @@ export function ToolboxTalksClient() {
                     </div>
                     <SignaturePad disabled={actionBusy || offlineBlock} value={signaturePng} onChange={setSignaturePng} />
                     <Button disabled={actionBusy || offlineBlock || !signaturePng || !signName.trim() || !attendedAck} type="submit">
-                      {t("toolbox_talks.sign_button", "Sign")}
+                      Sign Toolbox Talk
                     </Button>
                   </form>
                   <form className="space-y-2 border-t border-[var(--color-border)] pt-4" onSubmit={onDecline}>
@@ -398,18 +399,34 @@ export function ToolboxTalksClient() {
                     {` · ${signatureMethodLabel(myRow.signature_method)}`}
                   </p>
                   {myRow.status === "signed" ? (
-                    <Button
-                      size="sm"
-                      type="button"
-                      variant="secondary"
-                      onClick={() =>
-                        void downloadToolboxTalkPdf(detail.id).catch((e) =>
-                          setError(e instanceof Error ? e.message : t("toolbox_talks.error_pdf", "Could not download PDF.")),
-                        )
-                      }
-                    >
-                      {t("toolbox_talks.download_pdf", "Download PDF")}
-                    </Button>
+                    <div className="space-y-2">
+                      {myRow.signature_name ? (
+                        <p className="text-xs">Printed name: {myRow.signature_name}</p>
+                      ) : null}
+                      {myRow.signature_image_href ? (
+                        <div className="rounded border border-[var(--color-border)] bg-white p-2">
+                          <p className="mb-1 text-xs font-medium text-[var(--color-text)]">Your signature</p>
+                          {/* eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin PNG */}
+                          <img
+                            alt="Your toolbox talk signature"
+                            className="h-16 max-w-full object-contain object-left"
+                            src={toolboxTalkSignatureImageUrl(myRow.signature_image_href) ?? undefined}
+                          />
+                        </div>
+                      ) : null}
+                      <Button
+                        size="sm"
+                        type="button"
+                        variant="secondary"
+                        onClick={() =>
+                          void downloadToolboxTalkPdf(detail.id).catch((e) =>
+                            setError(e instanceof Error ? e.message : t("toolbox_talks.error_pdf", "Could not download PDF.")),
+                          )
+                        }
+                      >
+                        {t("toolbox_talks.download_pdf", "Download PDF")}
+                      </Button>
+                    </div>
                   ) : null}
                 </div>
               ) : null}

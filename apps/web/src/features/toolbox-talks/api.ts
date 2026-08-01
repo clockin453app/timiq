@@ -52,6 +52,9 @@ export type ToolboxTalkAttendee = {
   signature_method: string;
   manual_signature_note: string | null;
   has_signature: boolean;
+  signature_image_available?: boolean | null;
+  signature_evidence_warning?: string | null;
+  signature_image_href?: string | null;
   declined_reason: string | null;
 };
 
@@ -429,6 +432,12 @@ export async function deleteToolboxTalk(talkId: string): Promise<void> {
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, "Could not delete talk."));
   }
+}
+
+export function toolboxTalkSignatureImageUrl(href: string | null | undefined): string | null {
+  if (!href) return null;
+  if (href.startsWith("http://") || href.startsWith("https://")) return href;
+  return `${API_URL}${href.startsWith("/") ? href : `/${href}`}`;
 }
 
 export async function downloadToolboxTalkCsv(talkId: string): Promise<void> {

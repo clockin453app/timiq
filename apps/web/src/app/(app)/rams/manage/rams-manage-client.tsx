@@ -110,7 +110,7 @@ export function RamsManageClient() {
               Upload RAMS
             </Link>
             <Link
-              className="inline-flex h-9 w-full items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-4 text-sm font-medium text-[var(--color-btn-primary-text)] sm:w-auto"
+              className="inline-flex h-9 w-full items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-4 text-sm font-medium text-[var(--color-btn-primary-fg)] sm:w-auto"
               href="/rams/manage/new"
             >
               Create RAMS
@@ -131,7 +131,7 @@ export function RamsManageClient() {
                 Upload RAMS
               </Link>
               <Link
-                className="inline-flex h-9 items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-4 text-sm font-medium text-[var(--color-btn-primary-text)]"
+                className="inline-flex h-9 items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-4 text-sm font-medium text-[var(--color-btn-primary-fg)]"
                 href="/rams/manage/new"
               >
                 Create RAMS
@@ -165,7 +165,7 @@ export function RamsManageClient() {
                     <TableCell className="capitalize">{row.status}</TableCell>
                     <TableCell>
                       <Link className="text-sm font-semibold text-[var(--color-text)] underline" href={`/rams/manage/${row.id}`}>
-                        Open
+                        {row.status === "draft" ? "Continue Draft" : "Open record"}
                       </Link>
                     </TableCell>
                   </TableRow>

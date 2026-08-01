@@ -406,7 +406,7 @@ export function RamsReaderClient({ assessmentId }: Props) {
             aria-valuenow={viewedCount}
           >
             <div
-              className="h-full bg-[var(--color-primary)] transition-all"
+              className="h-full bg-[var(--color-btn-primary-bg)] transition-all"
               style={{ width: `${Math.min(100, (viewedCount / totalPages) * 100)}%` }}
             />
           </div>
@@ -545,7 +545,7 @@ export function RamsReaderClient({ assessmentId }: Props) {
           </Button>
           {complete ? (
             <Link
-              className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-primary)] px-3 text-sm font-semibold text-white"
+              className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-3 text-sm font-semibold text-[var(--color-btn-primary-fg)] hover:border-[var(--color-btn-primary-hover-bg)] hover:bg-[var(--color-btn-primary-hover-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-btn-primary-border)]"
               href="/rams"
               onClick={() => {
                 try {

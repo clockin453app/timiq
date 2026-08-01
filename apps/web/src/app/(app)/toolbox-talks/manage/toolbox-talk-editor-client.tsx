@@ -4,43 +4,21 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import { Button, Input, PageHeader, Sheet, SheetBody, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
+import { Button, Input, PageHeader, Sheet, SheetBody } from "@/components/ui";
 import { isAdministrator, listManagedUsers, useCurrentUser, type AuthUser } from "@/features/auth";
 import { listCompanies, type Company } from "@/features/companies/api";
 import { listLocations, type Location } from "@/features/locations/api";
 import {
-  addToolboxTalkAttendees,
-  archiveToolboxTalk,
-  completeToolboxTalk,
   createToolboxTalk,
-  deleteToolboxTalk,
-  downloadToolboxTalkPdf,
   getToolboxTalk,
   listToolboxTemplates,
   listToolboxTopics,
-  manualSignToolboxTalkAttendee,
-  openToolboxTalkPrint,
   patchToolboxTalk,
-  publishToolboxTalk,
-  removeToolboxTalkAttendee,
-  type ToolboxTalkAttendee,
   type ToolboxTalkDetail,
   type ToolboxTopicOption,
   type ToolboxTopicTemplate,
 } from "@/features/toolbox-talks/api";
 import { useT } from "@/lib/i18n";
-
-function formatDate(iso: string | null | undefined) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
-
-function signatureMethodLabel(method: string | null | undefined) {
-  if (method === "app_signature") return "Signed in app";
-  if (method === "manual_paper") return "Manual/paper signed";
-  return "Not signed";
-}
 
 function templateBody(tpl: ToolboxTopicTemplate) {
   const blocks = [
@@ -85,13 +63,14 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
   const [scheduledDate, setScheduledDate] = useState("");
   const [presenterId, setPresenterId] = useState("");
   const [talkBody, setTalkBody] = useState("");
-  const [pickUserId, setPickUserId] = useState("");
-  const [manualUserId, setManualUserId] = useState("");
-  const [manualName, setManualName] = useState("");
-  const [manualNote, setManualNote] = useState("Signed on paper");
 
   const loadStatic = useCallback(async () => {
-    const [tops, tpls, locs, people] = await Promise.all([listToolboxTopics(), listToolboxTemplates(), listLocations(), listManagedUsers()]);
+    const [tops, tpls, locs, people] = await Promise.all([
+      listToolboxTopics(),
+      listToolboxTemplates(),
+      listLocations(),
+      listManagedUsers(),
+    ]);
     setTopics(tops);
     setTemplates(tpls);
     setLocations(locs);
@@ -137,11 +116,20 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
     void loadDetail();
   }, [loadDetail]);
 
-  const scopedLocations = useMemo(() => locations.filter((l) => !companyId || l.company_id === companyId), [locations, companyId]);
-  const scopedUsers = useMemo(() => users.filter((u) => !companyId || u.company_id === companyId), [users, companyId]);
-  const employeeUsers = scopedUsers.filter((u) => u.system_role === "employee");
+  const scopedLocations = useMemo(
+    () => locations.filter((l) => !companyId || l.company_id === companyId),
+    [locations, companyId],
+  );
+  const scopedUsers = useMemo(
+    () => users.filter((u) => !companyId || u.company_id === companyId),
+    [users, companyId],
+  );
+
+  const draftEditable = !editing || detail?.status === "draft";
+  const recordHref = detail ? `/toolbox-talks/manage/${detail.id}` : "/toolbox-talks/manage";
 
   function applyTemplate(tpl: ToolboxTopicTemplate) {
+    if (!draftEditable) return;
     setTitle(tpl.default_title);
     setTopic(tpl.topic);
     setTopicCustom("");
@@ -151,6 +139,7 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
 
   async function save(ev?: FormEvent) {
     ev?.preventDefault();
+    if (!draftEditable) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -167,7 +156,7 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
           talk_body: talkBody.trim(),
         });
         setDetail(next);
-        setNotice("Talk saved.");
+        router.push(`/toolbox-talks/manage/${next.id}`);
       } else {
         const created = await createToolboxTalk({
           company_id: isAdministrator(currentUser) ? companyId : null,
@@ -189,68 +178,38 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
     }
   }
 
-  async function action(fn: () => Promise<ToolboxTalkDetail>, message: string) {
-    setBusy(true);
-    setError("");
-    setNotice("");
-    try {
-      const next = await fn();
-      setDetail(next);
-      setNotice(message);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t("toolbox_talks.error_action", "Action failed."));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function addOneAttendee() {
-    if (!detail || !pickUserId) return;
-    await action(() => addToolboxTalkAttendees(detail.id, { user_ids: [pickUserId] }), "Attendee added.");
-    setPickUserId("");
-  }
-
-  function startManualSign(a: ToolboxTalkAttendee) {
-    setManualUserId(a.user_id);
-    setManualName(a.signature_name ?? a.display_name ?? "");
-    setManualNote(a.manual_signature_note ?? "Signed on paper");
-  }
-
-  async function manualSign() {
-    if (!detail) return;
-    if (!manualUserId || !manualName.trim()) return;
-    await action(
-      () =>
-        manualSignToolboxTalkAttendee(detail.id, manualUserId, {
-          signature_name: manualName.trim(),
-          manual_signature_note: manualNote.trim() || "Signed on paper",
-        }),
-      "Manual signature recorded.",
-    );
-    setManualUserId("");
-    setManualName("");
-    setManualNote("Signed on paper");
-  }
-
-  const draftEditable = !editing || detail?.status === "draft";
-
   return (
     <Sheet>
       <PageHeader
-        description="Build, assign, sign, and export professional toolbox talk records."
-        title={editing ? "Edit toolbox talk" : "Create toolbox talk"}
+        description="Edit draft content and metadata. Assign employees and publish from the talk record."
+        title={editing ? "Edit Toolbox Talk" : "Create Toolbox Talk"}
       />
       <SheetBody className="min-w-0 space-y-5">
-        <Link className="text-sm text-[var(--color-text-muted)] underline" href={detail ? `/toolbox-talks/manage/${detail.id}` : "/toolbox-talks/manage"}>
-          {detail ? "Back to talk record" : "Back to toolbox talks"}
+        <Link className="text-sm text-[var(--color-text-muted)] underline" href={recordHref}>
+          {detail ? "Back to talk record" : "Back to Manage Toolbox Talks"}
         </Link>
         {error ? <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">{error}</div> : null}
         {notice ? <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">{notice}</div> : null}
         {loading ? <p className="text-sm text-[var(--color-text-soft)]">{t("common.loading", "Loading…")}</p> : null}
 
+        {editing && detail && detail.status !== "draft" ? (
+          <div className="rounded border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+            <p className="font-semibold">Only draft Toolbox Talks can be edited.</p>
+            <p className="mt-1">Use the talk record for assignment, publishing, and evidence actions.</p>
+            <Link
+              className="mt-3 inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-3 text-sm font-semibold text-[var(--color-btn-primary-fg)]"
+              href={`/toolbox-talks/manage/${detail.id}`}
+            >
+              Open record
+            </Link>
+          </div>
+        ) : null}
+
         <section className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
           <h2 className="text-sm font-bold text-[var(--color-text)]">Professional topics</h2>
-          <p className="mt-1 text-sm text-[var(--color-text-soft)]">Choose a ready-made topic, then edit the content before publishing.</p>
+          <p className="mt-1 text-sm text-[var(--color-text-soft)]">
+            Choose a ready-made topic, then edit the content before returning to the record to assign and publish.
+          </p>
           <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {templates.map((tpl) => (
               <button
@@ -263,9 +222,6 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
                 <p className="font-semibold text-[var(--color-text)]">{tpl.default_title.replace("Toolbox talk: ", "")}</p>
                 <p className="mt-1 text-xs text-[var(--color-text-soft)]">{tpl.category} · 10-15 minutes</p>
                 <p className="mt-2 line-clamp-3 text-xs text-[var(--color-text-muted)]">{tpl.default_body}</p>
-                <p className="mt-2 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                  Includes key hazards, controls, questions, and attendee sign-off
-                </p>
               </button>
             ))}
           </div>
@@ -275,9 +231,16 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
           {isAdministrator(currentUser) && !editing ? (
             <label className="text-xs font-semibold text-[var(--color-text)]">
               Company
-              <select className="mt-1 block h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setCompanyId(e.target.value)} required value={companyId}>
+              <select
+                className="mt-1 block h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                onChange={(e) => setCompanyId(e.target.value)}
+                required
+                value={companyId}
+              >
                 {companies.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
               </select>
             </label>
@@ -289,26 +252,59 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
           <div className="grid gap-3 md:grid-cols-2">
             <label className="text-xs font-semibold text-[var(--color-text)]">
               Topic/category
-              <select className="mt-1 block h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" disabled={!draftEditable} onChange={(e) => setTopic(e.target.value)} value={topic}>
-                {topics.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              <select
+                className="mt-1 block h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                disabled={!draftEditable}
+                onChange={(e) => setTopic(e.target.value)}
+                value={topic}
+              >
+                {topics.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="text-xs font-semibold text-[var(--color-text)]">
               Site
-              <select className="mt-1 block h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" disabled={!draftEditable} onChange={(e) => setLocationId(e.target.value)} value={locationId}>
+              <select
+                className="mt-1 block h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                disabled={!draftEditable}
+                onChange={(e) => setLocationId(e.target.value)}
+                value={locationId}
+              >
                 <option value="">No specific site</option>
-                {scopedLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+                {scopedLocations.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
               </select>
             </label>
             <label className="text-xs font-semibold text-[var(--color-text)]">
               Scheduled date
-              <Input className="mt-1" disabled={!draftEditable} onChange={(e) => setScheduledDate(e.target.value)} type="date" value={scheduledDate} />
+              <Input
+                className="mt-1"
+                disabled={!draftEditable}
+                onChange={(e) => setScheduledDate(e.target.value)}
+                type="date"
+                value={scheduledDate}
+              />
             </label>
             <label className="text-xs font-semibold text-[var(--color-text)]">
               Presenter
-              <select className="mt-1 block h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" disabled={!draftEditable} onChange={(e) => setPresenterId(e.target.value)} value={presenterId}>
+              <select
+                className="mt-1 block h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
+                disabled={!draftEditable}
+                onChange={(e) => setPresenterId(e.target.value)}
+                value={presenterId}
+              >
                 <option value="">None</option>
-                {scopedUsers.map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}
+                {scopedUsers.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.email}
+                  </option>
+                ))}
               </select>
             </label>
           </div>
@@ -320,95 +316,30 @@ export function ToolboxTalkEditorClient({ talkId }: Props) {
           ) : null}
           <label className="text-xs font-semibold text-[var(--color-text)]">
             Talk content
-            <textarea className="mt-1 min-h-[420px] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-3 py-2 text-sm" disabled={!draftEditable} onChange={(e) => setTalkBody(e.target.value)} required value={talkBody} />
+            <textarea
+              className="mt-1 min-h-[420px] w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-3 py-2 text-sm"
+              disabled={!draftEditable}
+              onChange={(e) => setTalkBody(e.target.value)}
+              required
+              value={talkBody}
+            />
           </label>
-          <div className="flex flex-wrap gap-2">
-            {draftEditable ? <Button disabled={busy || !title.trim() || !talkBody.trim()} type="submit">Save draft</Button> : null}
-            {detail?.status === "draft" ? <Button disabled={busy} onClick={() => void action(() => publishToolboxTalk(detail.id), "Talk published.")} type="button" variant="secondary">Publish</Button> : null}
-            {detail?.status === "published" ? <Button disabled={busy} onClick={() => void action(() => completeToolboxTalk(detail.id), "Talk completed.")} type="button" variant="secondary">Mark complete</Button> : null}
-            {detail ? <Button disabled={busy} onClick={() => void action(() => archiveToolboxTalk(detail.id), "Talk archived.")} type="button" variant="secondary">Archive</Button> : null}
-            {detail ? <Button disabled={busy} onClick={() => void downloadToolboxTalkPdf(detail.id).catch((err) => setError(err instanceof Error ? err.message : "PDF download failed."))} type="button" variant="secondary">Download PDF</Button> : null}
-            {detail ? <Button disabled={busy} onClick={() => void openToolboxTalkPrint(detail.id).catch((err) => setError(err instanceof Error ? err.message : "Print failed."))} type="button" variant="secondary">Print</Button> : null}
-            {detail?.status === "draft" ? (
-              <Button
-                disabled={busy || detail.attendees.some((a) => a.status === "signed")}
-                onClick={() => {
-                  if (!window.confirm("Delete this draft talk? This cannot be undone.")) return;
-                  void deleteToolboxTalk(detail.id).then(() => router.replace("/toolbox-talks/manage")).catch((err) => setError(err instanceof Error ? err.message : "Delete failed."));
-                }}
-                type="button"
-                variant="secondary"
-              >
-                Delete
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:flex-wrap">
+            {draftEditable ? (
+              <Button className="w-full sm:w-auto" disabled={busy || !title.trim() || !talkBody.trim()} type="submit">
+                Save draft
               </Button>
+            ) : null}
+            {detail ? (
+              <Link
+                className="inline-flex min-h-[44px] w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-3 text-sm font-semibold text-[var(--color-text)] sm:w-auto"
+                href={`/toolbox-talks/manage/${detail.id}`}
+              >
+                Continue to assignment and publishing
+              </Link>
             ) : null}
           </div>
         </form>
-
-        {detail ? (
-          <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-            <h2 className="text-sm font-bold text-[var(--color-text)]">Attendees</h2>
-            <div className="flex flex-wrap gap-2">
-              <select className="h-10 min-w-[14rem] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm" onChange={(e) => setPickUserId(e.target.value)} value={pickUserId}>
-                <option value="">Select employee</option>
-                {employeeUsers.map((u) => <option key={u.id} value={u.id}>{u.email}</option>)}
-              </select>
-              <Button disabled={busy || !pickUserId || detail.status === "archived"} onClick={() => void addOneAttendee()} size="sm" type="button">Add employee</Button>
-              <Button disabled={busy || !detail.location_id || detail.status === "archived"} onClick={() => void action(() => addToolboxTalkAttendees(detail.id, { user_ids: [], all_site_users: true }), "Site users added.")} size="sm" type="button" variant="secondary">Add all site users</Button>
-            </div>
-            {manualUserId ? (
-              <div className="grid gap-3 rounded border border-[var(--color-border)] bg-[var(--color-header)] p-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
-                <label className="text-xs font-semibold text-[var(--color-text)]">
-                  Manual/paper printed name
-                  <Input className="mt-1" onChange={(e) => setManualName(e.target.value)} value={manualName} />
-                </label>
-                <label className="text-xs font-semibold text-[var(--color-text)]">
-                  Note
-                  <Input className="mt-1" onChange={(e) => setManualNote(e.target.value)} value={manualNote} />
-                </label>
-                <div className="flex gap-2">
-                  <Button disabled={busy || !manualName.trim()} onClick={() => void manualSign()} size="sm" type="button">
-                    Record manual signature
-                  </Button>
-                  <Button disabled={busy} onClick={() => setManualUserId("")} size="sm" type="button" variant="secondary">
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-            <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Employee</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Signature method</TableHead>
-                    <TableHead>Signed at</TableHead>
-                    <TableHead>Printed name</TableHead>
-                    <TableHead>Note</TableHead>
-                    <TableHead />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.attendees.map((a) => (
-                    <TableRow key={a.user_id}>
-                      <TableCell>{a.display_name || a.user_email || a.user_id}</TableCell>
-                      <TableCell className="capitalize">{a.status}</TableCell>
-                      <TableCell>{signatureMethodLabel(a.signature_method)}</TableCell>
-                      <TableCell>{formatDate(a.signed_at)}</TableCell>
-                      <TableCell>{a.signature_name ?? "—"}</TableCell>
-                      <TableCell>{a.manual_signature_note ?? a.declined_reason ?? "—"}</TableCell>
-                      <TableCell className="space-x-2 text-right">
-                        {a.status !== "signed" && detail.status !== "archived" ? <Button disabled={busy} onClick={() => startManualSign(a)} size="sm" type="button" variant="secondary">Manual sign</Button> : null}
-                        {a.status === "pending" ? <Button disabled={busy} onClick={() => void action(() => removeToolboxTalkAttendee(detail.id, a.user_id), "Attendee removed.")} size="sm" type="button" variant="secondary">Remove</Button> : null}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </section>
-        ) : null}
       </SheetBody>
     </Sheet>
   );
