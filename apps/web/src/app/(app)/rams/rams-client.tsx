@@ -14,19 +14,18 @@ import { isEmployee, useCurrentUser } from "@/features/auth";
 import {
   declineRams,
   downloadRamsPdf,
-  downloadUploadedRamsPdf,
   getRams,
   listMyRams,
   acknowledgeRams,
   openRamsPrint,
-  openUploadedRamsPdfInNewTab,
   ramsAttachmentUrl,
   type RamsAssessmentDetail,
   type RamsAssessmentListItem,
 } from "@/features/rams/api";
-import { UploadedRamsPdfPreview } from "@/features/rams/uploaded-pdf-preview";
+import { UploadedRamsDocumentCard } from "@/features/rams/uploaded-rams-document-card";
 import { listLocations, type Location } from "@/features/locations/api";
 import { useT } from "@/lib/i18n";
+import Link from "next/link";
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) {
@@ -185,12 +184,34 @@ export function RamsClient() {
     }
   };
 
+  useEffect(() => {
+    try {
+      const resume = sessionStorage.getItem("timiq_rams_resume");
+      if (resume && employee) {
+        sessionStorage.removeItem("timiq_rams_resume");
+        void openDetail(resume);
+      }
+    } catch {
+      // ignore
+    }
+    // Resume once after returning from the full-screen reader.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [employee]);
+
   const myRow = useMemo(() => {
     if (!detail || !currentUser) {
       return null;
     }
     return detail.acknowledgements.find((a) => a.user_id === currentUser.id) ?? null;
   }, [detail, currentUser]);
+
+  const readingComplete =
+    !detail?.reading_required || detail.reading_progress?.status === "completed";
+  const canAcknowledge =
+    isEmployee(currentUser) &&
+    myRow?.status === "pending" &&
+    (detail?.status === "published" || detail?.status === "reviewed");
+  const ackControlsEnabled = Boolean(canAcknowledge && readingComplete && !offlineBlock);
 
   const submitAck = async (ev: FormEvent) => {
     ev.preventDefault();
@@ -298,7 +319,7 @@ export function RamsClient() {
       ) : null}
 
       <Sheet>
-        <SheetBody>
+        <SheetBody className="min-w-0 space-y-4 pb-[max(1.5rem,calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad)))] md:pb-5">
           {detailLoading && selectedId ? (
             <p className="text-sm text-[var(--color-text-soft)]">{t("rams.loading", "Loading…")}</p>
           ) : null}
@@ -312,35 +333,10 @@ export function RamsClient() {
                     </span>
                   ) : null}
                   <h2 className="text-lg font-semibold text-[var(--color-text)]">{detail.title}</h2>
+                  <p className="text-xs capitalize text-[var(--color-text-soft)]">{detail.status}</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {detail.source_type === "uploaded_pdf" ? (
-                    <>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        onClick={() =>
-                          void openUploadedRamsPdfInNewTab(detail.id).catch((e) =>
-                            setError(e instanceof Error ? e.message : t("rams.error_pdf", "Could not open PDF.")),
-                          )
-                        }
-                      >
-                        View PDF
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() =>
-                          void downloadUploadedRamsPdf(detail.id, detail.uploaded_pdf?.original_filename).catch((e) =>
-                            setError(e instanceof Error ? e.message : t("rams.error_pdf", "Could not download PDF.")),
-                          )
-                        }
-                      >
-                        {t("rams.download_rams_pdf", "Download RAMS PDF")}
-                      </Button>
-                    </>
-                  ) : (
+                  {detail.source_type !== "uploaded_pdf" ? (
                     <>
                       <Button
                         type="button"
@@ -357,7 +353,7 @@ export function RamsClient() {
                         {t("rams.open_print_pack", "Print view")}
                       </Button>
                     </>
-                  )}
+                  ) : null}
                   <Button type="button" variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
                     {t("rams.close_detail", "Close")}
                   </Button>
@@ -371,18 +367,13 @@ export function RamsClient() {
               </div>
               <div className="space-y-5">
                 {detail.source_type === "uploaded_pdf" ? (
-                  <section className="space-y-2 rounded border border-[var(--color-border)] bg-white p-4">
-                    <h3 className="text-base font-semibold text-[var(--color-text)]">Uploaded RAMS PDF</h3>
-                    <p className="text-xs text-[var(--color-text-soft)]">
-                      Please open and read the PDF before signing. {detail.uploaded_pdf?.original_filename}
-                    </p>
-                    <UploadedRamsPdfPreview
-                      assessmentId={detail.id}
-                      filenameHint={detail.uploaded_pdf?.original_filename}
-                      iframeClassName="h-[24rem] w-full min-w-0 rounded border border-[var(--color-border)]"
-                      reloadKey={`${detail.uploaded_pdf?.version ?? 1}-${detail.uploaded_pdf?.checksum_sha256 ?? ""}`}
-                    />
-                  </section>
+                  <UploadedRamsDocumentCard
+                    assessmentId={detail.id}
+                    fileSizeBytes={detail.uploaded_pdf?.file_size_bytes}
+                    filename={detail.uploaded_pdf?.original_filename}
+                    readingProgress={detail.reading_progress}
+                    version={detail.uploaded_pdf?.version}
+                  />
                 ) : (
                   (detail.document_sections ?? []).filter((section) => section.visible_in_pdf).map((section) => (
                     <section className="rounded border border-[var(--color-border)] bg-white p-4" key={section.id}>
@@ -395,16 +386,62 @@ export function RamsClient() {
               </div>
               <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                 <h3 className="text-base font-semibold text-[var(--color-text)]">Final acknowledgement</h3>
-                {isEmployee(currentUser) && myRow?.status === "pending" && (detail.status === "published" || detail.status === "reviewed") ? (
+                {canAcknowledge ? (
                   <>
+                    {detail.reading_required && !readingComplete ? (
+                      <div className="space-y-2 rounded border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
+                        <p>You must open the RAMS and view all pages before acknowledging.</p>
+                        <Link
+                          className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-primary)] px-3 text-sm font-semibold text-white"
+                          href={`/rams/${detail.id}/read`}
+                        >
+                          Open RAMS
+                        </Link>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-emerald-900">
+                        {detail.reading_required
+                          ? "All pages viewed. You can now acknowledge this RAMS."
+                          : null}
+                      </p>
+                    )}
                     <form className="space-y-3" onSubmit={submitAck}>
                       <label className="flex items-start gap-2">
-                        <input type="checkbox" checked={readAck} onChange={(e) => setReadAck(e.target.checked)} className="mt-1" />
-                        <span>{t("rams.read_ack", "I have read and understood this RAMS and agree to follow the controls.")}</span>
+                        <input
+                          type="checkbox"
+                          checked={readAck}
+                          disabled={!ackControlsEnabled}
+                          onChange={(e) => setReadAck(e.target.checked)}
+                          className="mt-1"
+                        />
+                        <span>
+                          I confirm that I have been given access to this RAMS, have progressed through all pages, and
+                          understand that I must follow the controls and method described.
+                        </span>
                       </label>
-                      <Input label={t("signature.printed_name_label", "Printed name")} value={ackName} onChange={(e) => setAckName(e.target.value)} />
-                      <SignaturePad disabled={actionBusy || offlineBlock} value={signaturePng} onChange={setSignaturePng} />
-                      <Button type="submit" disabled={actionBusy || offlineBlock || !readAck || !ackName.trim() || !signaturePng}>{t("rams.acknowledge", "Sign RAMS")}</Button>
+                      <p className="text-xs text-[var(--color-text-soft)]">
+                        Ask your supervisor before acknowledging if anything is unclear. TimIQ records that pages were
+                        presented; it does not prove every word was carefully read.
+                      </p>
+                      <Input
+                        disabled={!ackControlsEnabled}
+                        label={t("signature.printed_name_label", "Printed name")}
+                        value={ackName}
+                        onChange={(e) => setAckName(e.target.value)}
+                      />
+                      <SignaturePad disabled={!ackControlsEnabled || actionBusy} value={signaturePng} onChange={setSignaturePng} />
+                      <Button
+                        type="submit"
+                        disabled={
+                          !ackControlsEnabled ||
+                          actionBusy ||
+                          !readAck ||
+                          !ackName.trim() ||
+                          !signaturePng
+                        }
+                      >
+                        {t("rams.acknowledge", "Sign RAMS")}
+                      </Button>
                     </form>
                     <form className="space-y-2 border-t border-[var(--color-border)] pt-3" onSubmit={submitDecline}>
                       <Input label={t("rams.decline_reason", "Decline reason")} value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} />
@@ -412,7 +449,26 @@ export function RamsClient() {
                     </form>
                   </>
                 ) : (
-                  <p className="text-[var(--color-text-soft)]">{myRow?.status === "acknowledged" ? t("rams.already_ack", "You have already acknowledged this RAMS.") : t("rams.signoff_unavailable", "Sign-off is not required or is not available for this RAMS.")}</p>
+                  <div className="space-y-2 text-[var(--color-text-soft)]">
+                    {myRow?.status === "acknowledged" ? (
+                      <>
+                        <p>{t("rams.already_ack", "You have already acknowledged this RAMS.")}</p>
+                        {myRow.acknowledged_at ? (
+                          <p className="text-xs">Signed: {formatDate(myRow.acknowledged_at)}</p>
+                        ) : null}
+                        {detail.uploaded_pdf?.version != null ? (
+                          <p className="text-xs">Document version {detail.uploaded_pdf.version}</p>
+                        ) : null}
+                        {detail.source_type === "uploaded_pdf" ? (
+                          <Link className="inline-flex text-sm font-semibold underline" href={`/rams/${detail.id}/read`}>
+                            Open RAMS
+                          </Link>
+                        ) : null}
+                      </>
+                    ) : (
+                      <p>{t("rams.signoff_unavailable", "Sign-off is not required or is not available for this RAMS.")}</p>
+                    )}
+                  </div>
                 )}
               </section>
             </div>

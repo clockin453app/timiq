@@ -225,6 +225,23 @@ export type RamsAssessmentDetail = {
     acknowledged: number;
     declined: number;
   } | null;
+  reading_progress?: RamsReadingProgress | null;
+  reading_required?: boolean;
+};
+
+export type RamsReadingProgress = {
+  assessment_id: string;
+  document_source_type: string;
+  document_version: number;
+  document_sha256: string;
+  total_pages: number | null;
+  viewed_pages: number[];
+  viewed_count: number;
+  highest_page_reached: number;
+  status: "not_started" | "in_progress" | "completed" | string;
+  started_at: string | null;
+  completed_at: string | null;
+  first_unread_page: number | null;
 };
 
 export type RamsCreateBody = {
@@ -296,6 +313,26 @@ export type RamsHazardCreateBody = {
 export type RamsHazardPatchBody = Partial<RamsHazardCreateBody>;
 
 export type RamsAcknowledgementsAddBody = { user_ids: string[]; all_site_users?: boolean };
+
+export type RamsBulkScope = "company" | "site";
+
+export type RamsBulkPreview = {
+  scope: RamsBulkScope;
+  total_eligible: number;
+  already_assigned: number;
+  will_add: number;
+  ineligible: number;
+  site_id: string | null;
+};
+
+export type RamsBulkAssignResult = {
+  scope: RamsBulkScope;
+  total_eligible: number;
+  added: number;
+  skipped_already_assigned: number;
+  ineligible: number;
+  site_id: string | null;
+};
 
 export type RamsAcknowledgeBody = {
   read_understood_ack: boolean;
@@ -651,6 +688,37 @@ export async function addRamsAcknowledgements(
   return response.json() as Promise<RamsAssessmentDetail>;
 }
 
+export async function previewBulkRamsAcknowledgements(
+  assessmentId: string,
+  scope: RamsBulkScope,
+): Promise<RamsBulkPreview> {
+  const q = new URLSearchParams({ scope });
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/acknowledgements/bulk-preview?${q}`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not preview bulk assignment."));
+  }
+  return response.json() as Promise<RamsBulkPreview>;
+}
+
+export async function bulkAssignRamsAcknowledgements(
+  assessmentId: string,
+  scope: RamsBulkScope,
+): Promise<RamsBulkAssignResult> {
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/acknowledgements/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ scope }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not assign employees."));
+  }
+  return response.json() as Promise<RamsBulkAssignResult>;
+}
+
 export async function acknowledgeRams(assessmentId: string, body: RamsAcknowledgeBody): Promise<RamsAssessmentDetail> {
   const response = await fetch(`${API_URL}/api/rams/${assessmentId}/acknowledge`, {
     method: "POST",
@@ -662,6 +730,44 @@ export async function acknowledgeRams(assessmentId: string, body: RamsAcknowledg
     throw new Error(await parseErrorMessage(response, "Could not acknowledge RAMS."));
   }
   return response.json() as Promise<RamsAssessmentDetail>;
+}
+
+export async function getRamsReadingProgress(assessmentId: string): Promise<RamsReadingProgress> {
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/reading-progress`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not load reading progress."));
+  }
+  return response.json() as Promise<RamsReadingProgress>;
+}
+
+export async function startRamsReadingProgress(assessmentId: string): Promise<RamsReadingProgress> {
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/reading-progress/start`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not start reading progress."));
+  }
+  return response.json() as Promise<RamsReadingProgress>;
+}
+
+export async function reportRamsReadingPage(
+  assessmentId: string,
+  pageNumber: number,
+): Promise<RamsReadingProgress> {
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/reading-progress/pages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ page_number: pageNumber }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not save reading progress."));
+  }
+  return response.json() as Promise<RamsReadingProgress>;
 }
 
 export async function manualSignRamsAcknowledgement(

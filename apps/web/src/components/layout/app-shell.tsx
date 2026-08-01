@@ -28,6 +28,7 @@ export function AppShell({ activeHref, children }: AppShellProps) {
   const resolvedActiveHref = activeHref ?? pathname;
   const user = useCurrentUser();
   const hasMobileBottomNav = !canAccessManagement(user);
+  const hideMobileBottomNav = /\/rams\/[^/]+\/read\/?$/.test(pathname);
 
   return (
     <div
@@ -38,32 +39,37 @@ export function AppShell({ activeHref, children }: AppShellProps) {
       <PushSubscriptionSync />
       <PushEnablePrompt />
       <PresenceHeartbeat />
-      <DesktopTopBar activeHref={resolvedActiveHref} />
-      <MobileHeader activeHref={resolvedActiveHref} />
+      {!hideMobileBottomNav ? <DesktopTopBar activeHref={resolvedActiveHref} /> : null}
+      {!hideMobileBottomNav ? <MobileHeader activeHref={resolvedActiveHref} /> : null}
 
       <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        <DesktopSidebar activeHref={resolvedActiveHref} />
+        {!hideMobileBottomNav ? <DesktopSidebar activeHref={resolvedActiveHref} /> : null}
         <main
           className="timiq-app-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           id="main-content"
         >
           <div
             className={cn(
-              "box-border min-h-0 w-full min-w-0 max-w-full flex-1 overflow-auto px-[var(--space-page-x)] py-[var(--space-page-y)]",
-              hasMobileBottomNav
+              "box-border min-h-0 w-full min-w-0 max-w-full flex-1 overflow-auto",
+              hideMobileBottomNav
+                ? "p-0"
+                : "px-[var(--space-page-x)] py-[var(--space-page-y)]",
+              !hideMobileBottomNav && hasMobileBottomNav
                 ? "scroll-pb-[calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad))] pb-[calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad))] lg:scroll-pb-[var(--space-page-y)] lg:pb-[var(--space-page-y)]"
-                : "pb-[var(--space-page-y)]",
+                : !hideMobileBottomNav
+                  ? "pb-[var(--space-page-y)]"
+                  : "",
             )}
           >
             <PageLocationActionProvider>
-              <PageLocationGuide activeHref={resolvedActiveHref} />
+              {!hideMobileBottomNav ? <PageLocationGuide activeHref={resolvedActiveHref} /> : null}
               <LimitedAccessRouteGuard>{children}</LimitedAccessRouteGuard>
             </PageLocationActionProvider>
           </div>
         </main>
       </div>
 
-      <MobileBottomNav activeHref={resolvedActiveHref} />
+      {hasMobileBottomNav && !hideMobileBottomNav ? <MobileBottomNav activeHref={resolvedActiveHref} /> : null}
     </div>
   );
 }
