@@ -509,6 +509,7 @@ def _ack_to_response(
             method = "manual_paper"
         else:
             method = "not_signed"
+    can_see_signature = has_sig and (is_self or viewer.system_role != SystemRole.EMPLOYEE)
     return RamsAcknowledgementResponse(
         user_id=row.user_id,
         user_email=email if is_self or viewer.system_role != SystemRole.EMPLOYEE else None,
@@ -520,6 +521,11 @@ def _ack_to_response(
         manual_signature_note=row.manual_signature_note if is_self or viewer.system_role != SystemRole.EMPLOYEE else None,
         declined_reason=None if hide_peer_decline else row.declined_reason,
         has_signature=has_sig,
+        signature_image_href=(
+            f"/api/rams/{row.assessment_id}/acknowledgements/{row.user_id}/signature"
+            if can_see_signature
+            else None
+        ),
     )
 
 
@@ -2521,6 +2527,236 @@ def download_uploaded_rams_pdf(
         },
     )
     return body, fname
+
+
+def _validate_stored_signature_png(data: bytes) -> None:
+    if not data or len(data) < 8 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise RamsValidationError("Stored signature image is not a valid PNG.")
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as im:
+            im.verify()
+    except RamsValidationError:
+        raise
+    except Exception as exc:
+        raise RamsValidationError("Stored signature image is corrupt.") from exc
+
+
+def _read_ack_signature_png(ack: RamsAcknowledgement) -> tuple[bytes | None, str]:
+    method = (ack.signature_method or "").strip()
+    path = (ack.signature_image_path or "").strip()
+    if not method:
+        if path:
+            method = "app_signature"
+        elif ack.status == "acknowledged":
+            method = "manual_paper"
+        else:
+            method = "not_signed"
+    if method != "app_signature":
+        return None, "unsupported_method"
+    if not path:
+        return None, "missing_path"
+    backend = get_storage_backend()
+    try:
+        if not backend.exists(path):
+            return None, "missing_object"
+        raw = backend.read_bytes(path)
+    except Exception:
+        return None, "missing_object"
+    try:
+        _validate_stored_signature_png(raw)
+    except Exception:
+        return None, "corrupt"
+    return raw, "ok"
+
+
+def download_acknowledgement_signature_png(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> tuple[bytes, str]:
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_view_assessment(db, actor, row):
+        raise RamsNotFoundError()
+    is_self = actor.id == user_id
+    if actor.system_role == SystemRole.EMPLOYEE:
+        if not is_self:
+            raise RamsPermissionError()
+    elif not _can_admin_manage_company(actor, row.company_id):
+        raise RamsNotFoundError()
+    ack = rams_repo.get_acknowledgement(db, assessment_id, user_id)
+    if ack is None:
+        raise RamsNotFoundError()
+    raw, _reason = _read_ack_signature_png(ack)
+    if raw is None:
+        raise RamsNotFoundError()
+    return raw, f"rams-signature-{user_id}.png"
+
+
+def _build_signed_record_ack_rows(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+    *,
+    document_version: str,
+) -> list[Any]:
+    from app.modules.rams.signed_record import RamsAckPdfRow, format_signed_at
+
+    rows: list[RamsAckPdfRow] = []
+    for ack in rams_repo.list_acknowledgements_for_assessment(db, assessment_id):
+        is_self = actor.id == ack.user_id
+        if actor.system_role == SystemRole.EMPLOYEE and not is_self:
+            continue
+        u = get_user_by_id(db, ack.user_id)
+        email = u.email if u else ""
+        display = _display_name(db, ack.user_id) or ""
+        name_cell = f"{display} ({email})".strip() if email else (display or email or "Employee")
+        printed = (ack.acknowledgement_name or "—") if ack.status == "acknowledged" else "—"
+        note = (ack.manual_signature_note or ack.declined_reason or "").strip() or None
+        sig_img, load_reason = _read_ack_signature_png(ack)
+        method = (ack.signature_method or "").strip()
+        if not method:
+            if (ack.signature_image_path or "").strip():
+                method = "app_signature"
+            elif ack.status == "acknowledged":
+                method = "manual_paper"
+            else:
+                method = "not_signed"
+        if sig_img and load_reason == "ok":
+            sig_text = None
+        elif method == "app_signature":
+            sig_text = "Signature unavailable"
+            sig_img = None
+        elif method == "manual_paper":
+            sig_text = printed if printed != "—" else "Manual/paper signed"
+            sig_img = None
+        elif ack.status == "acknowledged":
+            sig_text = printed if printed != "—" else "Signed electronically"
+            sig_img = None
+        else:
+            sig_text = "—"
+            sig_img = None
+        rows.append(
+            RamsAckPdfRow(
+                employee=name_cell[:160],
+                status=ack.status,
+                signed_date=format_signed_at(ack.acknowledged_at),
+                printed_name=(printed or "—")[:120],
+                document_version=document_version,
+                signature_image=sig_img,
+                signature_text=sig_text,
+                note=note,
+            ),
+        )
+    return rows
+
+
+def export_signed_record_pdf_bytes(db: Session, actor: User, assessment_id: uuid.UUID) -> tuple[bytes, str]:
+    """Original RAMS pages (uploaded) or template pack, plus acknowledgement register with signatures."""
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_view_assessment(db, actor, row):
+        raise RamsNotFoundError()
+    if actor.system_role == SystemRole.EMPLOYEE:
+        # Employees may download their assigned record evidence when acknowledged or assigned.
+        ack = rams_repo.get_acknowledgement(db, assessment_id, actor.id)
+        if ack is None:
+            raise RamsNotFoundError()
+
+    source_type = getattr(row, "source_type", None) or "template"
+    company = get_company_by_id(db, row.company_id)
+    company_name = company.name if company else "Company"
+    site_name = None
+    if row.location_id:
+        loc = get_location_by_id(db, row.location_id)
+        site_name = loc.name if loc else None
+
+    if source_type == "uploaded_pdf":
+        version = str(int(getattr(row, "uploaded_pdf_version", None) or 1))
+        path = (row.uploaded_pdf_storage_path or "").strip()
+        if not path:
+            raise RamsValidationError("The RAMS PDF is missing from storage.")
+        storage = get_storage_backend()
+        try:
+            if not storage.exists(path):
+                raise RamsValidationError("The RAMS PDF is missing from storage.")
+            original = storage.read_bytes(path)
+        except RamsValidationError:
+            raise
+        except Exception as exc:
+            raise RamsValidationError("The RAMS PDF cannot be read from storage.") from exc
+        from app.modules.rams.signed_record import (
+            build_acknowledgement_register_pdf,
+            merge_original_pdf_with_register,
+        )
+
+        register = build_acknowledgement_register_pdf(
+            title=row.title,
+            reference=row.reference,
+            document_version=version,
+            company_name=company_name,
+            site_name=site_name,
+            rows=_build_signed_record_ack_rows(db, actor, assessment_id, document_version=version),
+        )
+        pdf = merge_original_pdf_with_register(original, register)
+        fname = f"rams-signed-record-{assessment_id}.pdf"
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="rams.signed_record_exported",
+            entity_type="rams_assessment",
+            entity_id=str(assessment_id),
+            company_id=row.company_id,
+            details={
+                "assessment_id": str(assessment_id),
+                "actor_user_id": str(actor.id),
+                "export_type": "signed_record",
+                "source_type": "uploaded_pdf",
+                "document_version": version,
+            },
+        )
+        return pdf, fname
+
+    detail = _build_detail(db, row, actor)
+    from app.modules.rams.pdf_export import build_rams_assessment_pdf
+
+    pdf = build_rams_assessment_pdf(detail)
+    version = "template"
+    from app.modules.rams.signed_record import (
+        build_acknowledgement_register_pdf,
+        merge_original_pdf_with_register,
+    )
+
+    register = build_acknowledgement_register_pdf(
+        title=row.title,
+        reference=row.reference,
+        document_version=version,
+        company_name=company_name,
+        site_name=site_name,
+        rows=_build_signed_record_ack_rows(db, actor, assessment_id, document_version=version),
+    )
+    pdf = merge_original_pdf_with_register(pdf, register)
+    fname = f"rams-signed-record-{assessment_id}.pdf"
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="rams.signed_record_exported",
+        entity_type="rams_assessment",
+        entity_id=str(assessment_id),
+        company_id=row.company_id,
+        details={
+            "assessment_id": str(assessment_id),
+            "actor_user_id": str(actor.id),
+            "export_type": "signed_record",
+            "source_type": "template",
+        },
+    )
+    return pdf, fname
 
 
 def export_assessment_pdf_bytes(db: Session, actor: User, assessment_id: uuid.UUID) -> tuple[bytes, str]:

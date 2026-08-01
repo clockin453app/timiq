@@ -59,6 +59,9 @@ class ToolboxTalkAttendeeResponse(BaseModel):
     signature_method: str = "not_signed"
     manual_signature_note: str | None = None
     has_signature: bool = False
+    signature_image_available: bool | None = None
+    signature_evidence_warning: str | None = None
+    signature_image_href: str | None = None
     declined_reason: str | None = None
 
 

@@ -55,8 +55,12 @@ def test_signature_cell_fallbacks_for_export() -> None:
         signature_name="Ada",
         signature_image_path="toolbox-talk-signatures/co/talk/user/signature.png",
     )
-    assert _signature_cell_for_export(drawn, image_bytes=b"PNGDATA", image_load_attempted=True) == (b"PNGDATA", None)
-    assert _signature_cell_for_export(drawn, image_bytes=None, image_load_attempted=True) == (
+    assert _signature_cell_for_export(drawn, image_bytes=b"\x89PNG\r\n\x1a\n", load_reason="ok")[0] == b"\x89PNG\r\n\x1a\n"
+    assert _signature_cell_for_export(drawn, image_bytes=None, load_reason="missing_object") == (
+        None,
+        "Signature unavailable",
+    )
+    assert _signature_cell_for_export(drawn, image_bytes=None, load_reason="missing_path") == (
         None,
         "Signature unavailable",
     )
@@ -70,9 +74,9 @@ def test_signature_cell_fallbacks_for_export() -> None:
         signature_name="Ada",
         signature_image_path=None,
     )
-    assert _signature_cell_for_export(electronic, image_bytes=None, image_load_attempted=False) == (
+    assert _signature_cell_for_export(electronic, image_bytes=None, load_reason="missing_path") == (
         None,
-        "Signed electronically",
+        "Signature unavailable",
     )
 
     paper = ToolboxTalkAttendee(
@@ -84,7 +88,7 @@ def test_signature_cell_fallbacks_for_export() -> None:
         signature_name="Paper Name",
         signature_image_path=None,
     )
-    assert _signature_cell_for_export(paper, image_bytes=None, image_load_attempted=False) == (None, "Paper Name")
+    assert _signature_cell_for_export(paper, image_bytes=None, load_reason="unsupported_method") == (None, "Paper Name")
 
 
 def test_format_display_date_compact() -> None:

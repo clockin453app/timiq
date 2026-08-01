@@ -239,7 +239,8 @@ def _attendee_row_to_schema(
     display = _display_name(db, row.user_id)
     is_self = viewer.id == row.user_id
     hide_peer_decline = viewer.system_role == SystemRole.EMPLOYEE and not is_self
-    has_sig = bool((row.signature_image_path or "").strip())
+    path = (row.signature_image_path or "").strip()
+    has_sig = bool(path)
     method = row.signature_method
     if not method:
         if has_sig:
@@ -248,6 +249,35 @@ def _attendee_row_to_schema(
             method = "manual_paper"
         else:
             method = "not_signed"
+
+    signature_image_available: bool | None = None
+    signature_evidence_warning: str | None = None
+    check_object = viewer.system_role != SystemRole.EMPLOYEE or is_self
+    if check_object and method == "app_signature" and row.status == "signed":
+        if not path:
+            signature_image_available = False
+            if viewer.system_role != SystemRole.EMPLOYEE:
+                signature_evidence_warning = (
+                    "Drawn signature image was not stored. Printed name and signed time remain on record; "
+                    "do not treat PDF as containing a drawing."
+                )
+        else:
+            try:
+                signature_image_available = get_storage_backend().exists(path)
+            except Exception:
+                signature_image_available = False
+            if signature_image_available is False and viewer.system_role != SystemRole.EMPLOYEE:
+                signature_evidence_warning = (
+                    "Drawn signature image is missing from private storage. "
+                    "Printed name and signed time remain on record; PDF shows Signature unavailable. "
+                    "Do not fabricate a replacement image."
+                )
+
+    can_see_signature = (
+        check_object
+        and method == "app_signature"
+        and signature_image_available is True
+    )
     return ToolboxTalkAttendeeResponse(
         user_id=row.user_id,
         user_email=email if is_self or viewer.system_role != SystemRole.EMPLOYEE else None,
@@ -258,6 +288,13 @@ def _attendee_row_to_schema(
         signature_method=method,
         manual_signature_note=row.manual_signature_note if viewer.system_role != SystemRole.EMPLOYEE or is_self else None,
         has_signature=has_sig,
+        signature_image_available=signature_image_available if check_object else None,
+        signature_evidence_warning=signature_evidence_warning,
+        signature_image_href=(
+            f"/api/toolbox-talks/{row.talk_id}/attendees/{row.user_id}/signature"
+            if can_see_signature
+            else None
+        ),
         declined_reason=None if hide_peer_decline else row.declined_reason,
     )
 
@@ -870,18 +907,46 @@ def sign_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalkSig
     if not body.attended_ack:
         raise ToolboxTalkValidationError("You must confirm you have attended and understood this talk.")
     name = body.signature_name.strip()
+    if not (body.signature_image_data or "").strip():
+        raise ToolboxTalkValidationError("A drawn signature image is required.")
     try:
         png = decode_png_data_url(body.signature_image_data)
     except SignatureDataUrlError as exc:
         raise ToolboxTalkValidationError(str(exc)) from exc
+
     rel = f"toolbox-talk-signatures/{talk.company_id}/{talk_id}/{actor.id}/signature-{uuid.uuid4().hex}.png"
     backend = get_storage_backend()
-    if att.signature_image_path:
+    previous_path = (att.signature_image_path or "").strip() or None
+
+    try:
+        backend.write_bytes(rel, png)
+        if not backend.exists(rel):
+            raise ToolboxTalkValidationError(
+                "Could not store your signature image. Please try again.",
+            )
+        stored = backend.read_bytes(rel)
+        _validate_stored_signature_png(stored)
+    except ToolboxTalkValidationError:
         try:
-            backend.delete_file(att.signature_image_path)
+            backend.delete_file(rel)
         except Exception:
             pass
-    backend.write_bytes(rel, png)
+        raise
+    except Exception as exc:
+        try:
+            backend.delete_file(rel)
+        except Exception:
+            pass
+        logger.warning(
+            "toolbox talk signature storage write failed talk_id=%s attendee_id=%s",
+            talk_id,
+            att.id,
+            exc_info=False,
+        )
+        raise ToolboxTalkValidationError(
+            "Could not store your signature image. Please try again.",
+        ) from exc
+
     att.status = "signed"
     att.signature_name = name
     att.signature_method = "app_signature"
@@ -890,16 +955,38 @@ def sign_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalkSig
     att.signed_at = _utc_now()
     att.updated_at = _utc_now()
     att.declined_reason = None
-    tt_repo.save_attendee(db, att)
-    create_internal_audit_event(
-        db_session=db,
-        actor=actor,
-        action="toolbox_talk.signed",
-        entity_type="toolbox_talk_attendee",
-        entity_id=str(att.id),
-        company_id=talk.company_id,
-        details={"talk_id": str(talk.id), "actor_user_id": str(actor.id), "status": att.status, "topic": talk.topic},
-    )
+    try:
+        tt_repo.save_attendee(db, att)
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="toolbox_talk.signed",
+            entity_type="toolbox_talk_attendee",
+            entity_id=str(att.id),
+            company_id=talk.company_id,
+            details={
+                "talk_id": str(talk.id),
+                "actor_user_id": str(actor.id),
+                "status": att.status,
+                "topic": talk.topic,
+                "signature_method": "app_signature",
+                "has_signature_image": True,
+            },
+        )
+    except Exception:
+        db.rollback()
+        try:
+            backend.delete_file(rel)
+        except Exception:
+            pass
+        # Preserve pending state; printed name was never committed as signed evidence.
+        raise
+
+    if previous_path and previous_path != rel:
+        try:
+            backend.delete_file(previous_path)
+        except Exception:
+            pass
     return build_talk_detail(db, actor, talk)
 
 
@@ -998,32 +1085,84 @@ def manual_sign_attendee(
     return build_talk_detail(db, actor, talk)
 
 
+def _validate_stored_signature_png(data: bytes) -> None:
+    if not data or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise ToolboxTalkValidationError("Stored signature image is not a valid PNG.")
+    try:
+        from PIL import Image
+
+        with Image.open(io.BytesIO(data)) as im:
+            im.verify()
+    except ToolboxTalkValidationError:
+        raise
+    except Exception as exc:
+        raise ToolboxTalkValidationError("Stored signature image is corrupt.") from exc
+
+
 def _company_timezone_name(db: Session, company_id: uuid.UUID) -> str:
     policy = get_company_time_policy(db, company_id)
     return resolve_company_timezone_name(policy.timezone_name if policy else None)
 
 
-def _read_attendee_signature_png(attendee: ToolboxTalkAttendee) -> bytes | None:
+def _read_attendee_signature_png(attendee: ToolboxTalkAttendee) -> tuple[bytes | None, str]:
+    """
+    Load signature PNG for PDF/print.
+
+    Returns (bytes|None, reason) where reason is one of:
+    ok | missing_path | missing_object | corrupt | unsupported_method
+    """
+    method = (attendee.signature_method or "").strip()
     path = (attendee.signature_image_path or "").strip()
+    if not method:
+        if path:
+            method = "app_signature"
+        elif attendee.status == "signed":
+            method = "manual_paper"
+        else:
+            method = "not_signed"
+
+    if method != "app_signature":
+        return None, "unsupported_method"
     if not path:
-        return None
+        return None, "missing_path"
+
+    backend = get_storage_backend()
     try:
-        return get_storage_backend().read_bytes(path)
+        if not backend.exists(path):
+            logger.warning(
+                "toolbox talk signature object missing attendee_id=%s talk_id=%s reason=missing_object",
+                attendee.id,
+                attendee.talk_id,
+            )
+            return None, "missing_object"
+        raw = backend.read_bytes(path)
     except Exception:
         logger.warning(
-            "toolbox talk signature image load failed attendee_id=%s talk_id=%s",
+            "toolbox talk signature image load failed attendee_id=%s talk_id=%s reason=missing_object",
             attendee.id,
             attendee.talk_id,
             exc_info=False,
         )
-        return None
+        return None, "missing_object"
+
+    try:
+        _validate_stored_signature_png(raw)
+    except Exception:
+        logger.warning(
+            "toolbox talk signature image corrupt attendee_id=%s talk_id=%s reason=corrupt",
+            attendee.id,
+            attendee.talk_id,
+            exc_info=False,
+        )
+        return None, "corrupt"
+    return raw, "ok"
 
 
 def _signature_cell_for_export(
     attendee: ToolboxTalkAttendee,
     *,
     image_bytes: bytes | None,
-    image_load_attempted: bool,
+    load_reason: str,
 ) -> tuple[bytes | None, str | None]:
     """Return (png_bytes, fallback_text). Never returns a storage path."""
     method = (attendee.signature_method or "").strip()
@@ -1035,13 +1174,12 @@ def _signature_cell_for_export(
         else:
             method = "not_signed"
 
-    if image_bytes:
+    if image_bytes and load_reason == "ok":
         return image_bytes, None
 
     if method == "app_signature":
-        if image_load_attempted or (attendee.signature_image_path or "").strip():
-            return None, "Signature unavailable"
-        return None, "Signed electronically"
+        # Drawn workflow requires an image; never claim "Signed in app" without one.
+        return None, "Signature unavailable"
 
     if method == "manual_paper":
         name = (attendee.signature_name or "").strip()
@@ -1095,17 +1233,14 @@ def _build_export_attendee_rows(
         printed = (att.signature_name or "—") if att.status == "signed" else "—"
         note = _attendee_note_for_export(att)
 
-        load_attempted = False
-        sig_img: bytes | None = None
         can_load_image = include_peer_signatures or is_self or actor.system_role != SystemRole.EMPLOYEE
-        if can_load_image and (att.signature_image_path or "").strip():
-            load_attempted = True
-            sig_img = _read_attendee_signature_png(att)
-        sig_img, sig_text = _signature_cell_for_export(
-            att,
-            image_bytes=sig_img,
-            image_load_attempted=load_attempted,
-        )
+        sig_img: bytes | None = None
+        load_reason = "unsupported_method"
+        if can_load_image:
+            sig_img, load_reason = _read_attendee_signature_png(att)
+        else:
+            load_reason = "missing_path"
+        sig_img, sig_text = _signature_cell_for_export(att, image_bytes=sig_img, load_reason=load_reason)
 
         rows.append(
             ToolboxTalkAttendeePdfRow(
@@ -1368,6 +1503,32 @@ def delete_talk_hard(db: Session, actor: User, talk_id: uuid.UUID) -> None:
     except Exception:
         db.rollback()
         raise
+
+
+def download_attendee_signature_png(
+    db: Session,
+    actor: User,
+    talk_id: uuid.UUID,
+    user_id: uuid.UUID,
+) -> tuple[bytes, str]:
+    talk = tt_repo.get_talk(db, talk_id)
+    if talk is None:
+        raise ToolboxTalkNotFoundError()
+    # Reuse viewer access gate via get_talk_for_viewer.
+    get_talk_for_viewer(db, actor, talk_id)
+    is_self = actor.id == user_id
+    if actor.system_role == SystemRole.EMPLOYEE:
+        if not is_self:
+            raise ToolboxTalkPermissionError()
+    elif not _can_admin_manage_company(actor, talk.company_id):
+        raise ToolboxTalkNotFoundError()
+    att = tt_repo.get_attendee(db, talk_id, user_id)
+    if att is None:
+        raise ToolboxTalkNotFoundError()
+    raw, reason = _read_attendee_signature_png(att)
+    if raw is None or reason != "ok":
+        raise ToolboxTalkNotFoundError()
+    return raw, f"toolbox-talk-signature-{user_id}.png"
 
 
 def export_talk_pdf_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple[bytes, str]:

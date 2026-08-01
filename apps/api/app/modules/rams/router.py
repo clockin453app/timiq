@@ -61,10 +61,12 @@ from app.modules.rams.service import (
     delete_assessment_hard,
     delete_hazard,
     delete_rams_attachment_service,
+    download_acknowledgement_signature_png,
     download_rams_attachment_file,
     download_uploaded_rams_pdf,
     export_assessment_pdf_bytes,
     export_csv_bytes,
+    export_signed_record_pdf_bytes,
     get_assessment_detail,
     get_presets,
     get_reading_progress_for_employee,
@@ -604,6 +606,40 @@ def get_rams_pdf(
         _raise_http(exc)
     headers = {"Content-Disposition": content_disposition_attachment(filename)}
     return Response(content=raw, media_type="application/pdf", headers=headers)
+
+
+@router.get("/{assessment_id}/signed-record.pdf")
+def get_rams_signed_record(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        raw, filename = export_signed_record_pdf_bytes(db_session, current_user, assessment_id)
+    except RamsError as exc:
+        _raise_http(exc)
+    headers = {"Content-Disposition": content_disposition_attachment(filename)}
+    return Response(content=raw, media_type="application/pdf", headers=headers)
+
+
+@router.get("/{assessment_id}/acknowledgements/{user_id}/signature")
+def get_rams_acknowledgement_signature(
+    assessment_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        raw, filename = download_acknowledgement_signature_png(
+            db_session, current_user, assessment_id, user_id,
+        )
+    except RamsError as exc:
+        _raise_http(exc)
+    headers = {
+        "Content-Disposition": content_disposition_inline(filename),
+        "Cache-Control": "private, no-store",
+    }
+    return Response(content=raw, media_type="image/png", headers=headers)
 
 
 @router.delete("/{assessment_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)

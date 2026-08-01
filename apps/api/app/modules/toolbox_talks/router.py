@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.core.storage.file_response import content_disposition_attachment
+from app.core.storage.file_response import content_disposition_attachment, content_disposition_inline
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import (
     get_current_user,
@@ -47,6 +47,7 @@ from app.modules.toolbox_talks.service import (
     create_talk,
     decline_talk,
     delete_talk_hard,
+    download_attendee_signature_png,
     export_csv_bytes,
     export_talk_pdf_bytes,
     get_talk_for_viewer,
@@ -266,6 +267,26 @@ def get_toolbox_talk_attendees(
         return detail.attendees
     except ToolboxTalkError as exc:
         _raise_http_from_toolbox_exc(exc)
+
+
+@router.get("/{talk_id}/attendees/{user_id}/signature")
+def get_toolbox_talk_attendee_signature(
+    talk_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        raw, filename = download_attendee_signature_png(
+            db_session, current_user, talk_id, user_id,
+        )
+    except ToolboxTalkError as exc:
+        _raise_http_from_toolbox_exc(exc)
+    headers = {
+        "Content-Disposition": content_disposition_inline(filename),
+        "Cache-Control": "private, no-store",
+    }
+    return Response(content=raw, media_type="image/png", headers=headers)
 
 
 @router.post("/{talk_id}/attendees", response_model=ToolboxTalkDetailResponse)

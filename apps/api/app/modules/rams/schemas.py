@@ -194,6 +194,8 @@ class RamsAcknowledgementResponse(BaseModel):
     manual_signature_note: str | None = None
     declined_reason: str | None
     has_signature: bool = False
+    # Authenticated GET for drawn signature PNG (admin or self). Path never exposed.
+    signature_image_href: str | None = None
 
 
 class RamsAcknowledgementsAddRequest(BaseModel):
