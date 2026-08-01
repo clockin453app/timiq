@@ -24,6 +24,9 @@ from app.modules.toolbox_talks.models import ToolboxTalk, ToolboxTalkAttendee
 from app.modules.toolbox_talks.schemas import (
     ToolboxTalkAttendeeResponse,
     ToolboxTalkAttendeesAddRequest,
+    ToolboxTalkBulkAttendeesRequest,
+    ToolboxTalkBulkAttendeesResponse,
+    ToolboxTalkBulkPreviewResponse,
     ToolboxTalkCreateRequest,
     ToolboxTalkDeclineRequest,
     ToolboxTalkDetailResponse,
@@ -31,6 +34,7 @@ from app.modules.toolbox_talks.schemas import (
     ToolboxTalkManualSignRequest,
     ToolboxTalkSignRequest,
     ToolboxTalkSummaryResponse,
+    ToolboxTalkVoidRequest,
     ToolboxTopicOption,
     ToolboxTopicTemplateResponse,
 )
@@ -52,8 +56,11 @@ class ToolboxTalkValidationError(ToolboxTalkError):
     pass
 
 
-ALLOWED_TALK_STATUS = frozenset({"draft", "published", "completed", "archived"})
+ALLOWED_TALK_STATUS = frozenset({"draft", "published", "completed", "archived", "voided"})
 ALLOWED_ATTENDEE_STATUS = frozenset({"pending", "signed", "declined", "absent"})
+ASSIGNABLE_TALK_STATUSES = frozenset({"draft", "published"})
+LOCKED_TALK_STATUSES = frozenset({"completed", "archived", "voided"})
+EMPLOYEE_VISIBLE_TALK_STATUSES = frozenset({"published", "completed", "archived", "voided"})
 
 
 def _utc_now() -> datetime:
@@ -118,6 +125,96 @@ def _assert_location_for_company(db: Session, company_id: uuid.UUID, location_id
     loc = get_location_by_id(db, location_id)
     if loc is None or loc.company_id != company_id:
         raise ToolboxTalkValidationError("Location is not valid for this company.")
+
+
+def _is_eligible_employee(user: User | None, company_id: uuid.UUID) -> bool:
+    if user is None:
+        return False
+    if user.company_id != company_id:
+        return False
+    if not user.is_active:
+        return False
+    if user.system_role != SystemRole.EMPLOYEE:
+        return False
+    return True
+
+
+def _assert_talk_allows_attendee_assignment(talk: ToolboxTalk) -> None:
+    if talk.status in LOCKED_TALK_STATUSES:
+        raise ToolboxTalkValidationError(
+            f"Cannot modify attendees on a {talk.status} toolbox talk.",
+        )
+    if talk.status not in ASSIGNABLE_TALK_STATUSES:
+        raise ToolboxTalkValidationError("Attendees can only be assigned on draft or published talks.")
+
+
+def _assert_talk_allows_pending_removal(talk: ToolboxTalk) -> None:
+    if talk.status in LOCKED_TALK_STATUSES:
+        raise ToolboxTalkValidationError(
+            f"Cannot remove attendees from a {talk.status} toolbox talk.",
+        )
+    if talk.status not in ASSIGNABLE_TALK_STATUSES:
+        raise ToolboxTalkValidationError("Attendees can only be removed on draft or published talks.")
+
+
+def _resolve_bulk_eligible_ids(
+    db: Session,
+    talk: ToolboxTalk,
+    *,
+    scope: str,
+) -> tuple[list[uuid.UUID], int, uuid.UUID | None]:
+    """Return (eligible_user_ids, ineligible_count, site_id)."""
+    scope_norm = (scope or "").strip().lower()
+    if scope_norm not in ("company", "site"):
+        raise ToolboxTalkValidationError('scope must be "company" or "site".')
+
+    site_id: uuid.UUID | None = None
+    if scope_norm == "company":
+        candidates = tt_repo.list_active_employees_for_company(db, talk.company_id)
+        eligible = [u.id for u in candidates if _is_eligible_employee(u, talk.company_id)]
+        return eligible, 0, None
+
+    if talk.location_id is None:
+        raise ToolboxTalkValidationError(
+            "Site scope requires the toolbox talk to have a location. Assign a site first.",
+        )
+    site_id = talk.location_id
+    _assert_location_for_company(db, talk.company_id, site_id)
+    access_rows = list_site_access_for_location_ids(db, [site_id])
+    eligible: list[uuid.UUID] = []
+    ineligible = 0
+    seen: set[uuid.UUID] = set()
+    for row in access_rows:
+        if row.user_id in seen:
+            continue
+        seen.add(row.user_id)
+        user = get_user_by_id(db, row.user_id)
+        if _is_eligible_employee(user, talk.company_id):
+            eligible.append(row.user_id)
+        else:
+            ineligible += 1
+    return eligible, ineligible, site_id
+
+
+def _bulk_preview_counts(
+    db: Session,
+    talk: ToolboxTalk,
+    *,
+    scope: str,
+) -> ToolboxTalkBulkPreviewResponse:
+    eligible_ids, ineligible, site_id = _resolve_bulk_eligible_ids(db, talk, scope=scope)
+    assigned = tt_repo.list_assigned_user_ids_for_talk(db, talk.id)
+    eligible_set = set(eligible_ids)
+    already = len(eligible_set & assigned)
+    will_add = len(eligible_set - assigned)
+    return ToolboxTalkBulkPreviewResponse(
+        scope=scope.strip().lower(),
+        total_eligible=len(eligible_set),
+        already_assigned=already,
+        will_add=will_add,
+        ineligible=ineligible,
+        site_id=site_id,
+    )
 
 
 def _attendee_row_to_schema(
@@ -191,6 +288,9 @@ def build_talk_detail(db: Session, actor: User, talk: ToolboxTalk) -> ToolboxTal
         created_at=talk.created_at,
         updated_at=talk.updated_at,
         archived_at=talk.archived_at,
+        voided_at=talk.voided_at,
+        voided_by_user_id=talk.voided_by_user_id,
+        void_reason=talk.void_reason,
         attendees=attendee_schemas,
     )
 
@@ -206,7 +306,7 @@ def get_talk_for_viewer(db: Session, actor: User, talk_id: uuid.UUID) -> Toolbox
         att = tt_repo.get_attendee(db, talk_id, actor.id)
         if att is None:
             raise ToolboxTalkNotFoundError()
-        if talk.status not in ("published", "completed", "archived"):
+        if talk.status not in EMPLOYEE_VISIBLE_TALK_STATUSES:
             raise ToolboxTalkNotFoundError()
         return build_talk_detail(db, actor, talk)
     if not _can_admin_manage_company(actor, talk.company_id):
@@ -461,11 +561,74 @@ def archive_talk(db: Session, actor: User, talk_id: uuid.UUID) -> ToolboxTalkDet
         raise ToolboxTalkNotFoundError()
     if not _can_admin_manage_company(actor, talk.company_id):
         raise ToolboxTalkNotFoundError()
+    if talk.status == "archived":
+        raise ToolboxTalkValidationError("This talk is already archived.")
+    if talk.status == "voided":
+        raise ToolboxTalkValidationError("Voided talks cannot be archived.")
+    if talk.status not in ("published", "completed"):
+        raise ToolboxTalkValidationError("Only published or completed talks can be archived.")
     talk.status = "archived"
     talk.archived_at = _utc_now()
     talk.updated_at = _utc_now()
     tt_repo.save_talk(db, talk)
     _audit_talk_transition(db, actor, talk, "toolbox_talk.archived")
+    return build_talk_detail(db, actor, talk)
+
+
+def void_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalkVoidRequest) -> ToolboxTalkDetailResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise ToolboxTalkPermissionError()
+    talk = tt_repo.get_talk(db, talk_id)
+    if talk is None:
+        raise ToolboxTalkNotFoundError()
+    if not _can_admin_manage_company(actor, talk.company_id):
+        raise ToolboxTalkNotFoundError()
+    if talk.status == "voided":
+        raise ToolboxTalkValidationError("This talk is already voided.")
+    if talk.status != "published":
+        raise ToolboxTalkValidationError("Only published toolbox talks can be voided.")
+    reason = (body.reason or "").strip()
+    if not reason:
+        raise ToolboxTalkValidationError("A void reason is required.")
+    if len(reason) > 500:
+        raise ToolboxTalkValidationError("Void reason is too long.")
+
+    prior_status = talk.status
+    signed_count = tt_repo.count_signed_attendees_for_talk(db, talk.id)
+    declined_count = tt_repo.count_declined_attendees_for_talk(db, talk.id)
+    attendee_count = tt_repo.count_attendees_for_talk(db, talk.id)
+    now = _utc_now()
+    talk.status = "voided"
+    talk.voided_at = now
+    talk.voided_by_user_id = actor.id
+    talk.void_reason = reason
+    talk.updated_at = now
+    try:
+        tt_repo.flush_talk(db, talk)
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="toolbox_talk.voided",
+            entity_type="toolbox_talk",
+            entity_id=str(talk.id),
+            company_id=talk.company_id,
+            details={
+                "talk_id": str(talk.id),
+                "company_id": str(talk.company_id),
+                "title": talk.title,
+                "prior_status": prior_status,
+                "attendee_count": attendee_count,
+                "signed_count": signed_count,
+                "declined_count": declined_count,
+                "reason": reason,
+                "actor_user_id": str(actor.id),
+                "voided_at": now.isoformat(),
+            },
+        )
+    except Exception:
+        db.rollback()
+        raise
+    db.refresh(talk)
     return build_talk_detail(db, actor, talk)
 
 
@@ -480,66 +643,171 @@ def add_attendees(
         raise ToolboxTalkNotFoundError()
     if not _can_admin_manage_company(actor, talk.company_id):
         raise ToolboxTalkNotFoundError()
-    if talk.status == "archived":
-        raise ToolboxTalkValidationError("Cannot modify attendees on an archived talk.")
+    _assert_talk_allows_attendee_assignment(talk)
 
     user_ids: set[uuid.UUID] = set(body.user_ids)
     if body.all_site_users:
         if talk.location_id is None:
             raise ToolboxTalkValidationError("all_site_users requires the talk to have a location.")
+        _assert_location_for_company(db, talk.company_id, talk.location_id)
         rows = list_site_access_for_location_ids(db, [talk.location_id])
         for r in rows:
             u = get_user_by_id(db, r.user_id)
-            if u is not None and u.company_id == talk.company_id:
+            if _is_eligible_employee(u, talk.company_id):
                 user_ids.add(r.user_id)
 
     now = _utc_now()
     added = 0
-    for uid in user_ids:
-        target = get_user_by_id(db, uid)
-        if target is None or target.company_id != talk.company_id:
-            continue
-        if tt_repo.get_attendee(db, talk_id, uid) is not None:
-            continue
-        att = ToolboxTalkAttendee(
-            talk_id=talk_id,
-            company_id=talk.company_id,
-            user_id=uid,
-            status="pending",
-            signature_name=None,
-            signature_method=None,
-            manual_signature_note=None,
-            signature_image_path=None,
-            signed_at=None,
-            declined_reason=None,
-            created_at=now,
-            updated_at=now,
-        )
-        tt_repo.save_attendee(db, att)
-        if talk.status == "published":
-            record_toolbox_sign_required(
-                db,
+    try:
+        for uid in user_ids:
+            target = get_user_by_id(db, uid)
+            if not _is_eligible_employee(target, talk.company_id):
+                continue
+            if tt_repo.get_attendee(db, talk_id, uid) is not None:
+                continue
+            att = ToolboxTalkAttendee(
+                talk_id=talk_id,
                 company_id=talk.company_id,
-                talk_id=talk.id,
-                recipient_user_id=uid,
+                user_id=uid,
+                status="pending",
+                signature_name=None,
+                signature_method=None,
+                manual_signature_note=None,
+                signature_image_path=None,
+                signed_at=None,
+                declined_reason=None,
+                created_at=now,
+                updated_at=now,
             )
-        added += 1
+            tt_repo.flush_attendee(db, att)
+            if talk.status == "published":
+                record_toolbox_sign_required(
+                    db,
+                    company_id=talk.company_id,
+                    talk_id=talk.id,
+                    recipient_user_id=uid,
+                )
+            added += 1
 
-    create_internal_audit_event(
-        db_session=db,
-        actor=actor,
-        action="toolbox_talk.attendees_added",
-        entity_type="toolbox_talk",
-        entity_id=str(talk.id),
-        company_id=talk.company_id,
-        details={
-            "talk_id": str(talk.id),
-            "actor_user_id": str(actor.id),
-            "attendee_count": added,
-            "topic": talk.topic,
-        },
-    )
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="toolbox_talk.attendees_added",
+            entity_type="toolbox_talk",
+            entity_id=str(talk.id),
+            company_id=talk.company_id,
+            details={
+                "talk_id": str(talk.id),
+                "actor_user_id": str(actor.id),
+                "attendee_count": added,
+                "topic": talk.topic,
+            },
+        )
+    except Exception:
+        db.rollback()
+        raise
     return build_talk_detail(db, actor, talk)
+
+
+def preview_bulk_attendees(
+    db: Session,
+    actor: User,
+    talk_id: uuid.UUID,
+    *,
+    scope: str,
+) -> ToolboxTalkBulkPreviewResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise ToolboxTalkPermissionError()
+    talk = tt_repo.get_talk(db, talk_id)
+    if talk is None:
+        raise ToolboxTalkNotFoundError()
+    if not _can_admin_manage_company(actor, talk.company_id):
+        raise ToolboxTalkNotFoundError()
+    _assert_talk_allows_attendee_assignment(talk)
+    return _bulk_preview_counts(db, talk, scope=scope)
+
+
+def bulk_add_attendees(
+    db: Session,
+    actor: User,
+    talk_id: uuid.UUID,
+    body: ToolboxTalkBulkAttendeesRequest,
+) -> ToolboxTalkBulkAttendeesResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise ToolboxTalkPermissionError()
+    talk = tt_repo.get_talk(db, talk_id)
+    if talk is None:
+        raise ToolboxTalkNotFoundError()
+    if not _can_admin_manage_company(actor, talk.company_id):
+        raise ToolboxTalkNotFoundError()
+    _assert_talk_allows_attendee_assignment(talk)
+
+    scope = (body.scope or "").strip().lower()
+    eligible_ids, ineligible, site_id = _resolve_bulk_eligible_ids(db, talk, scope=scope)
+    assigned = tt_repo.list_assigned_user_ids_for_talk(db, talk.id)
+    eligible_set = set(eligible_ids)
+    skipped = len(eligible_set & assigned)
+    to_add = sorted(eligible_set - assigned, key=lambda x: str(x))
+
+    now = _utc_now()
+    added = 0
+    try:
+        for uid in to_add:
+            att = ToolboxTalkAttendee(
+                talk_id=talk_id,
+                company_id=talk.company_id,
+                user_id=uid,
+                status="pending",
+                signature_name=None,
+                signature_method=None,
+                manual_signature_note=None,
+                signature_image_path=None,
+                signed_at=None,
+                declined_reason=None,
+                created_at=now,
+                updated_at=now,
+            )
+            tt_repo.flush_attendee(db, att)
+            if talk.status == "published":
+                record_toolbox_sign_required(
+                    db,
+                    company_id=talk.company_id,
+                    talk_id=talk.id,
+                    recipient_user_id=uid,
+                )
+            added += 1
+
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="toolbox_talk.attendees_bulk_added",
+            entity_type="toolbox_talk",
+            entity_id=str(talk.id),
+            company_id=talk.company_id,
+            details={
+                "talk_id": str(talk.id),
+                "company_id": str(talk.company_id),
+                "scope": scope,
+                "site_id": str(site_id) if site_id else None,
+                "total_eligible": len(eligible_set),
+                "added": added,
+                "skipped_already_assigned": skipped,
+                "ineligible": ineligible,
+                "actor_user_id": str(actor.id),
+            },
+        )
+    except Exception:
+        db.rollback()
+        raise
+
+    return ToolboxTalkBulkAttendeesResponse(
+        scope=scope,
+        total_eligible=len(eligible_set),
+        added=added,
+        skipped_already_assigned=skipped,
+        ineligible=ineligible,
+        site_id=site_id,
+    )
 
 
 def remove_attendee(db: Session, actor: User, talk_id: uuid.UUID, user_id: uuid.UUID) -> ToolboxTalkDetailResponse:
@@ -548,21 +816,26 @@ def remove_attendee(db: Session, actor: User, talk_id: uuid.UUID, user_id: uuid.
         raise ToolboxTalkNotFoundError()
     if not _can_admin_manage_company(actor, talk.company_id):
         raise ToolboxTalkNotFoundError()
+    _assert_talk_allows_pending_removal(talk)
     row = tt_repo.get_attendee(db, talk_id, user_id)
     if row is None:
         raise ToolboxTalkNotFoundError()
     if row.status != "pending":
         raise ToolboxTalkValidationError("Only pending attendees can be removed.")
-    tt_repo.delete_attendee(db, row)
-    create_internal_audit_event(
-        db_session=db,
-        actor=actor,
-        action="toolbox_talk.attendee_removed",
-        entity_type="toolbox_talk",
-        entity_id=str(talk.id),
-        company_id=talk.company_id,
-        details={"talk_id": str(talk.id), "subject_user_id": str(user_id), "actor_user_id": str(actor.id)},
-    )
+    try:
+        tt_repo.flush_delete_attendee(db, row)
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="toolbox_talk.attendee_removed",
+            entity_type="toolbox_talk",
+            entity_id=str(talk.id),
+            company_id=talk.company_id,
+            details={"talk_id": str(talk.id), "subject_user_id": str(user_id), "actor_user_id": str(actor.id)},
+        )
+    except Exception:
+        db.rollback()
+        raise
     return build_talk_detail(db, actor, talk)
 
 
@@ -573,8 +846,8 @@ def sign_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalkSig
     talk = tt_repo.get_talk(db, talk_id)
     if talk is None or talk.company_id != company_id:
         raise ToolboxTalkNotFoundError()
-    if talk.status == "archived":
-        raise ToolboxTalkValidationError("This talk is archived and cannot be signed.")
+    if talk.status in ("archived", "voided", "completed"):
+        raise ToolboxTalkValidationError(f"This talk is {talk.status} and cannot be signed.")
     if talk.status not in ("published",):
         raise ToolboxTalkValidationError("This talk is not open for signing.")
     att = tt_repo.get_attendee(db, talk_id, actor.id)
@@ -627,8 +900,8 @@ def decline_talk(db: Session, actor: User, talk_id: uuid.UUID, body: ToolboxTalk
     talk = tt_repo.get_talk(db, talk_id)
     if talk is None or talk.company_id != company_id:
         raise ToolboxTalkNotFoundError()
-    if talk.status == "archived":
-        raise ToolboxTalkValidationError("This talk is archived.")
+    if talk.status in ("archived", "voided", "completed"):
+        raise ToolboxTalkValidationError(f"This talk is {talk.status}.")
     if talk.status not in ("published",):
         raise ToolboxTalkValidationError("This talk is not open for responses.")
     att = tt_repo.get_attendee(db, talk_id, actor.id)
@@ -677,8 +950,8 @@ def manual_sign_attendee(
         raise ToolboxTalkNotFoundError()
     if not _can_admin_manage_company(actor, talk.company_id):
         raise ToolboxTalkNotFoundError()
-    if talk.status == "archived":
-        raise ToolboxTalkValidationError("This talk is archived.")
+    if talk.status in ("archived", "voided", "completed"):
+        raise ToolboxTalkValidationError(f"This talk is {talk.status}.")
     att = tt_repo.get_attendee(db, talk_id, user_id)
     if att is None:
         raise ToolboxTalkNotFoundError()
@@ -879,10 +1152,13 @@ def delete_talk_hard(db: Session, actor: User, talk_id: uuid.UUID) -> None:
         raise ToolboxTalkNotFoundError()
     if talk.status != "draft":
         raise ToolboxTalkValidationError(
-            "Only draft toolbox talks can be deleted. Archive published or completed records instead.",
+            "Only draft toolbox talks can be deleted. Void published talks or archive completed records instead.",
         )
-    if tt_repo.count_signed_attendees_for_talk(db, talk_id) > 0:
-        raise ToolboxTalkValidationError("This record has compliance sign-offs. Archive it instead of deleting.")
+    if tt_repo.count_evidence_attendees_for_talk(db, talk_id) > 0:
+        raise ToolboxTalkValidationError(
+            "This record has compliance sign-offs or declines. It cannot be permanently deleted.",
+        )
+    pending_count = tt_repo.count_pending_attendees_for_talk(db, talk_id)
     for a in tt_repo.list_attendees_for_talk(db, talk_id):
         if a.signature_image_path:
             try:
@@ -890,16 +1166,29 @@ def delete_talk_hard(db: Session, actor: User, talk_id: uuid.UUID) -> None:
             except Exception:
                 pass
     cid = talk.company_id
-    tt_repo.delete_talk_row(db, talk)
-    create_internal_audit_event(
-        db_session=db,
-        actor=actor,
-        action="toolbox_talk.deleted",
-        entity_type="toolbox_talk",
-        entity_id=str(talk_id),
-        company_id=cid,
-        details={"talk_id": str(talk_id), "actor_user_id": str(actor.id), "company_id": str(cid)},
-    )
+    title = talk.title
+    prior_status = talk.status
+    try:
+        tt_repo.flush_delete_talk(db, talk)
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="toolbox_talk.deleted",
+            entity_type="toolbox_talk",
+            entity_id=str(talk_id),
+            company_id=cid,
+            details={
+                "talk_id": str(talk_id),
+                "company_id": str(cid),
+                "title": title,
+                "prior_status": prior_status,
+                "pending_attendee_count": pending_count,
+                "actor_user_id": str(actor.id),
+            },
+        )
+    except Exception:
+        db.rollback()
+        raise
 
 
 def export_talk_pdf_bytes(db: Session, actor: User, talk_id: uuid.UUID) -> tuple[bytes, str]:

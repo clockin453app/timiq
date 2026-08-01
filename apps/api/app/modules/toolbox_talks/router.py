@@ -21,6 +21,9 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.toolbox_talks.schemas import (
     ToolboxTalkAttendeeResponse,
     ToolboxTalkAttendeesAddRequest,
+    ToolboxTalkBulkAttendeesRequest,
+    ToolboxTalkBulkAttendeesResponse,
+    ToolboxTalkBulkPreviewResponse,
     ToolboxTalkCreateRequest,
     ToolboxTalkDeclineRequest,
     ToolboxTalkDetailResponse,
@@ -28,6 +31,7 @@ from app.modules.toolbox_talks.schemas import (
     ToolboxTalkPatchRequest,
     ToolboxTalkSignRequest,
     ToolboxTalkSummaryResponse,
+    ToolboxTalkVoidRequest,
     ToolboxTopicOption,
     ToolboxTopicTemplateResponse,
 )
@@ -38,6 +42,7 @@ from app.modules.toolbox_talks.service import (
     ToolboxTalkValidationError,
     add_attendees,
     archive_talk,
+    bulk_add_attendees,
     complete_talk,
     create_talk,
     decline_talk,
@@ -51,10 +56,12 @@ from app.modules.toolbox_talks.service import (
     list_topic_templates,
     manual_sign_attendee,
     patch_talk,
+    preview_bulk_attendees,
     publish_talk,
     remove_attendee,
     render_print_html,
     sign_talk,
+    void_talk,
 )
 
 router = APIRouter(prefix="/api/toolbox-talks", tags=["toolbox_talks"])
@@ -194,6 +201,19 @@ def post_archive_toolbox_talk(
         _raise_http_from_toolbox_exc(exc)
 
 
+@router.post("/{talk_id}/void", response_model=ToolboxTalkDetailResponse)
+def post_void_toolbox_talk(
+    talk_id: uuid.UUID,
+    body: ToolboxTalkVoidRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> ToolboxTalkDetailResponse:
+    try:
+        return void_talk(db_session, current_user, talk_id, body)
+    except ToolboxTalkError as exc:
+        _raise_http_from_toolbox_exc(exc)
+
+
 @router.delete("/{talk_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
 def delete_toolbox_talk_route(
     talk_id: uuid.UUID,
@@ -257,6 +277,32 @@ def post_toolbox_talk_attendees(
 ) -> ToolboxTalkDetailResponse:
     try:
         return add_attendees(db_session, current_user, talk_id, body)
+    except ToolboxTalkError as exc:
+        _raise_http_from_toolbox_exc(exc)
+
+
+@router.get("/{talk_id}/attendees/bulk-preview", response_model=ToolboxTalkBulkPreviewResponse)
+def get_toolbox_talk_attendees_bulk_preview(
+    talk_id: uuid.UUID,
+    scope: str = Query(..., description='Either "company" or "site".'),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> ToolboxTalkBulkPreviewResponse:
+    try:
+        return preview_bulk_attendees(db_session, current_user, talk_id, scope=scope)
+    except ToolboxTalkError as exc:
+        _raise_http_from_toolbox_exc(exc)
+
+
+@router.post("/{talk_id}/attendees/bulk", response_model=ToolboxTalkBulkAttendeesResponse)
+def post_toolbox_talk_attendees_bulk(
+    talk_id: uuid.UUID,
+    body: ToolboxTalkBulkAttendeesRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> ToolboxTalkBulkAttendeesResponse:
+    try:
+        return bulk_add_attendees(db_session, current_user, talk_id, body)
     except ToolboxTalkError as exc:
         _raise_http_from_toolbox_exc(exc)
 

@@ -60,6 +60,13 @@ class ToolboxTalk(Base):
     published_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    voided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    voided_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    void_reason: Mapped[str] = mapped_column(String(500), nullable=True)
 
 
 class ToolboxTalkAttendee(Base):

@@ -85,12 +85,41 @@ class ToolboxTalkDetailResponse(ToolboxTalkSummaryResponse):
     created_at: datetime
     updated_at: datetime
     archived_at: datetime | None
+    voided_at: datetime | None = None
+    voided_by_user_id: uuid.UUID | None = None
+    void_reason: str | None = None
     attendees: list[ToolboxTalkAttendeeResponse] = Field(default_factory=list)
 
 
 class ToolboxTalkAttendeesAddRequest(BaseModel):
     user_ids: list[uuid.UUID] = Field(default_factory=list)
     all_site_users: bool = False
+
+
+class ToolboxTalkVoidRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class ToolboxTalkBulkAttendeesRequest(BaseModel):
+    scope: str = Field(description='Either "company" or "site".')
+
+
+class ToolboxTalkBulkAttendeesResponse(BaseModel):
+    scope: str
+    total_eligible: int
+    added: int
+    skipped_already_assigned: int
+    ineligible: int = 0
+    site_id: uuid.UUID | None = None
+
+
+class ToolboxTalkBulkPreviewResponse(BaseModel):
+    scope: str
+    total_eligible: int
+    already_assigned: int
+    will_add: int
+    ineligible: int = 0
+    site_id: uuid.UUID | None = None
 
 
 class ToolboxTalkSignRequest(BaseModel):

@@ -15,6 +15,9 @@ def test_toolbox_talk_routes_registered() -> None:
     assert "/api/toolbox-talks/{talk_id}/pdf" in paths
     assert "/api/toolbox-talks/{talk_id}/record.pdf" in paths
     assert "/api/toolbox-talks/{talk_id}/attendees/{user_id}/manual-sign" in paths
+    assert "/api/toolbox-talks/{talk_id}/void" in paths
+    assert "/api/toolbox-talks/{talk_id}/attendees/bulk" in paths
+    assert "/api/toolbox-talks/{talk_id}/attendees/bulk-preview" in paths
 
 
 def test_topics_requires_authentication() -> None:

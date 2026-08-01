@@ -6,6 +6,7 @@ from datetime import date, datetime
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
+from app.modules.auth.models import SystemRole, User
 from app.modules.toolbox_talks.models import ToolboxTalk, ToolboxTalkAttendee
 
 
@@ -29,6 +30,11 @@ def list_attendees_for_talk(db: Session, talk_id: uuid.UUID) -> list[ToolboxTalk
         .order_by(ToolboxTalkAttendee.created_at.asc())
     )
     return list(db.scalars(stmt).all())
+
+
+def list_assigned_user_ids_for_talk(db: Session, talk_id: uuid.UUID) -> set[uuid.UUID]:
+    stmt = select(ToolboxTalkAttendee.user_id).where(ToolboxTalkAttendee.talk_id == talk_id)
+    return set(db.scalars(stmt).all())
 
 
 def list_talks_for_admin(
@@ -64,8 +70,19 @@ def list_talks_for_employee(db: Session, user_id: uuid.UUID) -> list[ToolboxTalk
         select(ToolboxTalk)
         .join(ToolboxTalkAttendee, ToolboxTalkAttendee.talk_id == ToolboxTalk.id)
         .where(ToolboxTalkAttendee.user_id == user_id)
-        .where(ToolboxTalk.status.in_(("published", "completed", "archived")))
+        .where(ToolboxTalk.status.in_(("published", "completed", "archived", "voided")))
         .order_by(ToolboxTalk.updated_at.desc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def list_active_employees_for_company(db: Session, company_id: uuid.UUID) -> list[User]:
+    stmt = (
+        select(User)
+        .where(User.company_id == company_id)
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
+        .order_by(User.created_at.asc())
     )
     return list(db.scalars(stmt).all())
 
@@ -77,6 +94,13 @@ def save_talk(db: Session, row: ToolboxTalk) -> ToolboxTalk:
     return row
 
 
+def flush_talk(db: Session, row: ToolboxTalk) -> ToolboxTalk:
+    """Flush talk mutation; caller owns the commit (with audit)."""
+    db.add(row)
+    db.flush()
+    return row
+
+
 def save_attendee(db: Session, row: ToolboxTalkAttendee) -> ToolboxTalkAttendee:
     db.add(row)
     db.commit()
@@ -84,9 +108,20 @@ def save_attendee(db: Session, row: ToolboxTalkAttendee) -> ToolboxTalkAttendee:
     return row
 
 
+def flush_attendee(db: Session, row: ToolboxTalkAttendee) -> ToolboxTalkAttendee:
+    db.add(row)
+    db.flush()
+    return row
+
+
 def delete_attendee(db: Session, row: ToolboxTalkAttendee) -> None:
     db.delete(row)
     db.commit()
+
+
+def flush_delete_attendee(db: Session, row: ToolboxTalkAttendee) -> None:
+    db.delete(row)
+    db.flush()
 
 
 def count_pending_sign_for_user(db: Session, user_id: uuid.UUID) -> int:
@@ -117,8 +152,12 @@ def count_talks_by_status_global(db: Session, talk_status: str) -> int:
 
 
 def count_attendees_for_talk(db: Session, talk_id: uuid.UUID) -> int:
-    stmt = select(ToolboxTalkAttendee).where(ToolboxTalkAttendee.talk_id == talk_id)
-    return len(list(db.scalars(stmt).all()))
+    stmt = (
+        select(func.count())
+        .select_from(ToolboxTalkAttendee)
+        .where(ToolboxTalkAttendee.talk_id == talk_id)
+    )
+    return int(db.scalar(stmt) or 0)
 
 
 def count_signed_attendees_for_talk(db: Session, talk_id: uuid.UUID) -> int:
@@ -131,6 +170,42 @@ def count_signed_attendees_for_talk(db: Session, talk_id: uuid.UUID) -> int:
     return int(db.scalar(stmt) or 0)
 
 
+def count_declined_attendees_for_talk(db: Session, talk_id: uuid.UUID) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(ToolboxTalkAttendee)
+        .where(ToolboxTalkAttendee.talk_id == talk_id)
+        .where(ToolboxTalkAttendee.status == "declined")
+    )
+    return int(db.scalar(stmt) or 0)
+
+
+def count_pending_attendees_for_talk(db: Session, talk_id: uuid.UUID) -> int:
+    stmt = (
+        select(func.count())
+        .select_from(ToolboxTalkAttendee)
+        .where(ToolboxTalkAttendee.talk_id == talk_id)
+        .where(ToolboxTalkAttendee.status == "pending")
+    )
+    return int(db.scalar(stmt) or 0)
+
+
+def count_evidence_attendees_for_talk(db: Session, talk_id: uuid.UUID) -> int:
+    """Signed or declined attendees — blocks hard delete."""
+    stmt = (
+        select(func.count())
+        .select_from(ToolboxTalkAttendee)
+        .where(ToolboxTalkAttendee.talk_id == talk_id)
+        .where(ToolboxTalkAttendee.status.in_(("signed", "declined")))
+    )
+    return int(db.scalar(stmt) or 0)
+
+
 def delete_talk_row(db: Session, talk: ToolboxTalk) -> None:
     db.delete(talk)
     db.commit()
+
+
+def flush_delete_talk(db: Session, talk: ToolboxTalk) -> None:
+    db.delete(talk)
+    db.flush()
