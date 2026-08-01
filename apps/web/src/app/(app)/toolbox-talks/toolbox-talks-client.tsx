@@ -26,6 +26,7 @@ import {
   type ToolboxTalkDetail,
   type ToolboxTalkSummary,
 } from "@/features/toolbox-talks/api";
+import { ToolboxTalkStatusBadge } from "@/features/toolbox-talks/status";
 import { listLocations, type Location } from "@/features/locations/api";
 import { useT } from "@/lib/i18n";
 
@@ -117,6 +118,9 @@ export function ToolboxTalksClient() {
       }
       if (s.status === "completed") {
         return 1;
+      }
+      if (s.status === "voided") {
+        return 3;
       }
       return 2;
     };
@@ -264,7 +268,9 @@ export function ToolboxTalksClient() {
                   </TableCell>
                   <TableCell className="text-sm text-[var(--color-text-soft)]">{locationName(row.location_id)}</TableCell>
                   <TableCell className="text-sm">{formatDate(row.scheduled_date)}</TableCell>
-                  <TableCell className="text-sm capitalize">{row.status}</TableCell>
+                  <TableCell>
+                    <ToolboxTalkStatusBadge status={row.status} />
+                  </TableCell>
                   <TableCell>
                     <Button onClick={() => void openDetail(row.id)} size="sm" type="button" variant="secondary">
                       {t("common.details", "Details")}
@@ -285,7 +291,10 @@ export function ToolboxTalksClient() {
           {detail && selectedId === detail.id ? (
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold text-[var(--color-text)]">{detail.title}</h2>
+                <div className="min-w-0 space-y-1">
+                  <ToolboxTalkStatusBadge status={detail.status} />
+                  <h2 className="text-lg font-semibold text-[var(--color-text)]">{detail.title}</h2>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     size="sm"
@@ -303,6 +312,19 @@ export function ToolboxTalksClient() {
                   </Button>
                 </div>
               </div>
+              {detail.status === "voided" ? (
+                <div className="rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+                  {t(
+                    "toolbox_talks.voided_employee_notice",
+                    "This Toolbox Talk was voided. Sign-off is closed. Your existing record remains available below.",
+                  )}
+                  {detail.void_reason ? (
+                    <p className="mt-1">
+                      {t("toolbox_talks.void_reason_label", "Reason")}: {detail.void_reason}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
               <div className="flex flex-wrap gap-2 text-sm text-[var(--color-text-soft)]">
                 <span>
                   {t("toolbox_talks.topic", "Topic")}:{" "}

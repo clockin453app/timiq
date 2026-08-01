@@ -63,7 +63,30 @@ export type ToolboxTalkDetail = ToolboxTalkSummary & {
   created_at: string;
   updated_at: string;
   archived_at: string | null;
+  voided_at: string | null;
+  voided_by_user_id: string | null;
+  void_reason: string | null;
   attendees: ToolboxTalkAttendee[];
+};
+
+export type ToolboxTalkBulkScope = "company" | "site";
+
+export type ToolboxTalkBulkPreview = {
+  scope: ToolboxTalkBulkScope;
+  total_eligible: number;
+  already_assigned: number;
+  will_add: number;
+  ineligible: number;
+  site_id: string | null;
+};
+
+export type ToolboxTalkBulkAssignResult = {
+  scope: ToolboxTalkBulkScope;
+  total_eligible: number;
+  added: number;
+  skipped_already_assigned: number;
+  ineligible: number;
+  site_id: string | null;
 };
 
 export type ToolboxTalkCreateBody = {
@@ -242,6 +265,50 @@ export async function archiveToolboxTalk(talkId: string): Promise<ToolboxTalkDet
     throw new Error(await parseErrorMessage(response, "Could not archive talk."));
   }
   return response.json() as Promise<ToolboxTalkDetail>;
+}
+
+export async function voidToolboxTalk(talkId: string, reason: string): Promise<ToolboxTalkDetail> {
+  const response = await fetch(`${API_URL}/api/toolbox-talks/${talkId}/void`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ reason }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not void talk."));
+  }
+  return response.json() as Promise<ToolboxTalkDetail>;
+}
+
+export async function previewBulkToolboxTalkAttendees(
+  talkId: string,
+  scope: ToolboxTalkBulkScope,
+): Promise<ToolboxTalkBulkPreview> {
+  const q = new URLSearchParams({ scope });
+  const response = await fetch(`${API_URL}/api/toolbox-talks/${talkId}/attendees/bulk-preview?${q}`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not preview bulk assignment."));
+  }
+  return response.json() as Promise<ToolboxTalkBulkPreview>;
+}
+
+export async function bulkAssignToolboxTalkAttendees(
+  talkId: string,
+  scope: ToolboxTalkBulkScope,
+): Promise<ToolboxTalkBulkAssignResult> {
+  const response = await fetch(`${API_URL}/api/toolbox-talks/${talkId}/attendees/bulk`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({ scope }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not assign attendees."));
+  }
+  return response.json() as Promise<ToolboxTalkBulkAssignResult>;
 }
 
 export async function addToolboxTalkAttendees(

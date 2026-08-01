@@ -8,6 +8,7 @@ import { isAdministrator, useCurrentUser } from "@/features/auth";
 import { listCompanies, type Company } from "@/features/companies/api";
 import { listLocations, type Location } from "@/features/locations/api";
 import { listToolboxTalksAdmin, type ToolboxTalkSummary } from "@/features/toolbox-talks/api";
+import { ToolboxTalkStatusBadge } from "@/features/toolbox-talks/status";
 import { useT } from "@/lib/i18n";
 
 function formatDate(iso: string | null | undefined) {
@@ -108,6 +109,7 @@ export function ToolboxTalksManageClient() {
                 <option value="published">Published</option>
                 <option value="completed">Completed</option>
                 <option value="archived">Archived</option>
+                <option value="voided">Voided</option>
               </select>
             </label>
             <Button onClick={() => void load()} size="sm" type="button" variant="secondary">
@@ -148,7 +150,9 @@ export function ToolboxTalksManageClient() {
                     <TableCell className="text-sm">{row.topic_display}</TableCell>
                     <TableCell className="text-sm text-[var(--color-text-soft)]">{locationName(row.location_id)}</TableCell>
                     <TableCell className="text-sm">{formatDate(row.scheduled_date)}</TableCell>
-                    <TableCell className="text-sm capitalize">{row.status}</TableCell>
+                    <TableCell>
+                      <ToolboxTalkStatusBadge status={row.status} />
+                    </TableCell>
                     <TableCell>
                       <Link className="text-sm font-semibold text-[var(--color-text)] underline" href={`/toolbox-talks/manage/${row.id}`}>
                         {t("toolbox_talks.open", "Open")}
