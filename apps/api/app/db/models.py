@@ -41,6 +41,7 @@ from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAtt
 from app.modules.toolbox_talks.models import ToolboxTalk, ToolboxTalkAttendee
 from app.modules.workplaces.models import Workplace
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
+from app.modules.timesheet_extra_hours.models import TimesheetExtraHours
 
 __all__ = [
     "AuditEvent",
@@ -100,4 +101,5 @@ __all__ = [
     "ToolboxTalkAttendee",
     "WorkProgressEntry",
     "WorkProgressAttachment",
+    "TimesheetExtraHours",
 ]

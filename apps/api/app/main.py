@@ -12,6 +12,7 @@ from app.modules.dashboard.router import router as dashboard_router
 from app.modules.employee_profiles.router import router as employee_profiles_router
 from app.modules.leave.router import router as leave_router
 from app.modules.live_attendance.router import router as live_attendance_router
+from app.modules.timesheet_extra_hours.router import router as timesheet_extra_hours_router
 from app.modules.locations.router import router as locations_router
 from app.modules.site_access.router import router as site_access_router
 from app.modules.system.router import router as system_api_router
@@ -68,6 +69,7 @@ app.include_router(system_api_router)
 app.include_router(system_health_router)
 app.include_router(time_clock_router)
 app.include_router(leave_router)
+app.include_router(timesheet_extra_hours_router)
 app.include_router(live_attendance_router)
 app.include_router(time_records_router)
 app.include_router(timesheets_router)
