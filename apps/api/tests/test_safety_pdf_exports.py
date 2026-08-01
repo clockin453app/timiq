@@ -124,7 +124,7 @@ def test_toolbox_talk_pdf_is_pdf() -> None:
         title="Talk",
         topic_display="Manual handling",
         location_name="Site A",
-        scheduled="2026-01-01",
+        scheduled="1 Jan 2026",
         talk_status="published",
         presenter_display="Presenter",
         talk_body="Body text",
@@ -132,7 +132,7 @@ def test_toolbox_talk_pdf_is_pdf() -> None:
         do_list=["Do this"],
         dont_list=["Do not that"],
         ppe_reminders=["Boots"],
-        attendees_rows=[["User (u@e.com)", "signed", "2026-01-02", "Printed", "Signed in app", "—"]],
+        attendees_rows=[["User (u@e.com)", "signed", "2 Jan 2026", "Printed", "Signed electronically", "—"]],
     )
     assert raw[:4] == b"%PDF"
     assert b"storage_path" not in raw.lower()
