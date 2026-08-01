@@ -498,6 +498,13 @@ export function TimesheetsClient() {
         : Boolean(sheet && completedCount === 0)),
   );
   const daysWithAttendance = sheet?.days.filter(dayHasAttendance) ?? [];
+  const payableExtraSeconds = useMemo(
+    () =>
+      extraHours
+        .filter((row) => row.affects_payroll)
+        .reduce((sum, row) => sum + row.duration_minutes * 60, 0),
+    [extraHours],
+  );
   const visibleRecentWeeks = useMemo(
     () => recentWeeks.filter(hasVisibleTimesheetWeekActivity),
     [recentWeeks],
@@ -833,7 +840,7 @@ export function TimesheetsClient() {
             <TimesheetWeekSummaryLine
               breakSeconds={sheet.week_break_seconds}
               clocked={sheet.week_actual_seconds}
-              payable={sheet.week_counted_seconds}
+              payable={sheet.week_counted_seconds + payableExtraSeconds}
               payroll={sheet.week_rounded_seconds}
               timeZone={sheet.company_timezone}
               weekStart={sheet.week_start}
@@ -1044,40 +1051,44 @@ export function TimesheetsClient() {
           >
             <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
               <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                Additional recorded hours
+                Payable hours adjustments
               </p>
               <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
-                Extra recorded hours - non-payroll:{" "}
-                <span className="font-semibold tabular-nums text-[var(--color-text)]">
-                  {formatExtraHoursDuration(
-                    extraHours.reduce((sum, row) => sum + row.duration_minutes, 0),
-                  )}
-                </span>
-                . Separate from clocked hours; not included in payroll totals.
+                Added payable time shown separately from clocked shifts. These do not rewrite clock-in or
+                clock-out times.
               </p>
             </div>
             <ul className="divide-y divide-[var(--color-border)] px-3 py-1">
               {extraHours.map((row) => (
                 <li
-                  className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 py-2 text-sm"
+                  className="flex min-w-0 flex-col gap-1 py-2 text-sm"
+                  data-testid={row.affects_payroll ? "payable-adjustment-row" : "non-payroll-extra-row"}
                   key={row.id}
                 >
-                  <span className="font-medium text-[var(--color-text)]">{formatDay(row.work_date)}</span>
-                  <span className="tabular-nums text-[var(--color-text)]">
-                    {formatExtraHoursDuration(row.duration_minutes)}
-                  </span>
-                  <span className="text-[var(--color-text-muted)]">{reasonLabel(row.reason)}</span>
-                  <span className="inline-block rounded border border-[var(--color-border-dark)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-                    Non-payroll
-                  </span>
+                  <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                    <span className="font-medium text-[var(--color-text)]">{formatDay(row.work_date)}</span>
+                    <span className="font-semibold tabular-nums text-[var(--color-text)]">
+                      +{formatExtraHoursDuration(row.duration_minutes)}
+                    </span>
+                    <span className="text-[var(--color-text-muted)]">{reasonLabel(row.reason)}</span>
+                    <span
+                      className={
+                        row.affects_payroll
+                          ? "inline-block rounded border border-[var(--color-success-700)]/40 bg-[var(--color-success-50)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-success-700)]"
+                          : "inline-block rounded border border-[var(--color-border-dark)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]"
+                      }
+                    >
+                      {row.affects_payroll ? "Payable adjustment" : "Non-payroll"}
+                    </span>
+                  </div>
                   {row.location_name ? (
                     <span className="text-xs text-[var(--color-text-muted)]">{row.location_name}</span>
                   ) : null}
                   {row.note ? (
-                    <span className="w-full text-xs text-[var(--color-text-muted)]">{row.note}</span>
+                    <span className="text-xs text-[var(--color-text-muted)]">{row.note}</span>
                   ) : null}
                   {row.created_by_name || row.created_by_email ? (
-                    <span className="w-full text-[11px] text-[var(--color-text-muted)]">
+                    <span className="text-[11px] text-[var(--color-text-muted)]">
                       Added by {row.created_by_name || row.created_by_email}
                     </span>
                   ) : null}

@@ -115,7 +115,7 @@ export function ExtraHoursModal({
       labelledById={titleId}
       onClose={onClose}
       subtitle={employeeLabel}
-      title={mode === "edit" ? "Edit extra hours" : "Add extra hours"}
+      title={mode === "edit" ? "Edit payable hours" : "Add payable hours"}
       widthClassName="max-w-[calc(100vw-24px)] sm:max-w-[min(28rem,calc(100vw-3rem))]"
       footer={
         <div className="flex flex-wrap justify-end gap-2">
@@ -123,7 +123,7 @@ export function ExtraHoursModal({
             Cancel
           </Button>
           <Button disabled={submitting} form="extra-hours-form" type="submit">
-            {mode === "edit" ? "Save changes" : "Add extra hours"}
+            {mode === "edit" ? "Save changes" : "Add payable hours"}
           </Button>
         </div>
       }
@@ -133,7 +133,12 @@ export function ExtraHoursModal({
           className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-[12px] text-[var(--color-text-muted)]"
           role="note"
         >
-          This entry will appear on the employee timesheet but will not affect payroll calculations.
+          This adjustment will be added to payable hours and will trigger payroll recalculation. It does
+          not change the employee&apos;s clock-in or clock-out times.
+        </p>
+        <p className="text-[12px] leading-relaxed text-[var(--color-text-muted)]" role="note">
+          Use Edit shift when the recorded clock times are wrong. Add payable extra hours when additional
+          paid time must be added without changing the original shift.
         </p>
 
         <FormField label="Employee">
@@ -221,8 +226,8 @@ export function ExtraHoursModal({
 
         {reason === "shift_correction" ? (
           <p className="text-[12px] leading-relaxed text-[var(--color-text-muted)]" role="note">
-            Use Edit shift when the original clock-in or clock-out time is wrong. Use extra hours only
-            when an additional non-payroll record is required.
+            Prefer Edit shift when the original clock-in or clock-out time is wrong. Use payable hours only
+            when additional paid time must be recorded without rewriting the shift.
           </p>
         ) : null}
 

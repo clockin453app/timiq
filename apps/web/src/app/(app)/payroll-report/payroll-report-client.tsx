@@ -2048,7 +2048,7 @@ export function PayrollReportClient() {
                                       type="button"
                                       variant="secondary"
                                     >
-                                      Add extra hours
+                                      Add payable hours
                                     </Button>
                                   ) : null}
                                 </div>
@@ -2058,8 +2058,9 @@ export function PayrollReportClient() {
                                     employee_name={row.employee_name}
                                   />
                                   <p className="mt-1.5 text-xs text-[var(--color-text-muted)]">
-                                    Shift times come from Time Records. Editing a completed shift marks payroll as
-                                    needing recalculation.
+                                    Shift times come from Time Records. Use Edit shift when clock times are wrong.
+                                    Add payable hours when additional paid time must be recorded without changing the
+                                    original shift.
                                   </p>
                                 </div>
                                 {shiftRowsByUser[row.user_id] === "loading" ? (
@@ -2148,156 +2149,213 @@ export function PayrollReportClient() {
                                 {(() => {
                                   const extraRows = extraHoursByUser[row.user_id];
                                   const extraList = Array.isArray(extraRows) ? extraRows : [];
-                                  const extraTotal = extraList.reduce(
+                                  const payableList = extraList.filter((e) => e.affects_payroll);
+                                  const nonPayrollList = extraList.filter((e) => !e.affects_payroll);
+                                  const payableMinutes = payableList.reduce(
                                     (sum, e) => sum + e.duration_minutes,
                                     0,
                                   );
-                                  return (
-                                    <div
-                                      className="mt-4 border-t border-[var(--color-border-dark)] pt-3"
-                                      data-testid="extra-hours-non-payroll-section"
-                                    >
-                                      <p className="timiq-caption mb-1 font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-                                        Extra hours - non-payroll
-                                      </p>
-                                      <p className="mb-2 text-[11px] text-[var(--color-text-muted)]">
-                                        Non-payroll extra hours · informational only · does not change Total hours or
-                                        pay.
-                                        {extraTotal > 0
-                                          ? ` Extra recorded hours: ${formatExtraHoursDuration(extraTotal)}`
-                                          : ""}
-                                      </p>
-                                      {extraRows === "loading" ? (
-                                        <p className="text-xs text-[var(--color-text-muted)]">
-                                          Loading extra hours...
-                                        </p>
-                                      ) : extraRows === "error" ? (
-                                        <div
-                                          className="flex flex-wrap items-center gap-2"
-                                          data-testid="extra-hours-load-error"
-                                        >
-                                          <p className="text-xs text-[var(--color-danger-700)]">
-                                            Could not load extra hours.
-                                          </p>
-                                          <Button
-                                            aria-label="Retry loading extra hours"
-                                            className="min-h-7 px-2 py-0.5 text-[11px]"
-                                            data-testid="extra-hours-retry-button"
-                                            onClick={() => void reloadExtraHoursForUser(row.user_id)}
-                                            size="sm"
-                                            type="button"
-                                            variant="secondary"
-                                          >
-                                            Retry
-                                          </Button>
-                                        </div>
-                                      ) : extraList.length === 0 ? (
-                                        <p className="text-xs text-[var(--color-text-muted)]">
-                                          No extra hours recorded for this week.
-                                        </p>
-                                      ) : (
-                                        <div className="min-w-0 max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
-                                          <table className="w-full min-w-[32rem] border-collapse text-left text-xs">
-                                            <thead>
-                                              <tr className="border-b border-[var(--color-border-dark)] text-[var(--color-text-soft)]">
-                                                <th className="py-1 pr-2">Date</th>
-                                                <th className="py-1 pr-2">Duration</th>
-                                                <th className="py-1 pr-2">Reason</th>
-                                                <th className="py-1 pr-2">Site</th>
-                                                <th className="py-1 pr-2">Added by</th>
-                                                <th className="py-1 pr-2">Action</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody>
-                                              {extraList.map((eh) => (
-                                                <tr
-                                                  key={eh.id}
-                                                  className="border-b border-[var(--color-border)]"
-                                                >
-                                                  <td className="py-1 pr-2 tabular-nums">{eh.work_date}</td>
-                                                  <td className="py-1 pr-2 tabular-nums">
-                                                    {formatExtraHoursDuration(eh.duration_minutes)}
-                                                  </td>
-                                                  <td className="py-1 pr-2">
-                                                    {reasonLabel(eh.reason)}
-                                                    <span className="ml-1 inline-block rounded border border-[var(--color-border-dark)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-                                                      Non-payroll
-                                                    </span>
-                                                  </td>
-                                                  <td className="py-1 pr-2 text-[var(--color-text-muted)]">
-                                                    {eh.location_name || "—"}
-                                                  </td>
-                                                  <td className="py-1 pr-2 text-[var(--color-text-muted)]">
-                                                    {eh.created_by_name || eh.created_by_email || "—"}
-                                                  </td>
-                                                  <td className="py-1 pr-2">
-                                                    <div className="flex flex-wrap gap-1">
-                                                      <Button
-                                                        className="min-h-7 px-2 py-0.5 text-[11px]"
-                                                        disabled={extraHoursBusyId === eh.id}
-                                                        onClick={() =>
-                                                          setExtraHoursModal({
-                                                            mode: "edit",
-                                                            userId: row.user_id,
-                                                            employeeLabel:
-                                                              row.employee_name?.trim() ||
-                                                              row.employee_email ||
-                                                              row.user_id,
-                                                            initial: eh,
-                                                          })
-                                                        }
-                                                        type="button"
-                                                        variant="secondary"
-                                                      >
-                                                        Edit
-                                                      </Button>
-                                                      <Button
-                                                        className="min-h-7 px-2 py-0.5 text-[11px]"
-                                                        disabled={extraHoursBusyId === eh.id}
-                                                        onClick={async () => {
-                                                          const ok = window.confirm(
-                                                            "Delete this non-payroll extra-hours entry? This will not change the employee’s clock records or payroll.",
-                                                          );
-                                                          if (!ok) {
-                                                            return;
-                                                          }
-                                                          setExtraHoursBusyId(eh.id);
-                                                          try {
-                                                            await deleteExtraHours(eh.id);
-                                                            setExtraHoursByUser((prev) => {
-                                                              const cur = prev[row.user_id];
-                                                              if (!Array.isArray(cur)) {
-                                                                return prev;
-                                                              }
-                                                              return {
-                                                                ...prev,
-                                                                [row.user_id]: cur.filter((x) => x.id !== eh.id),
-                                                              };
-                                                            });
-                                                          } catch (err) {
-                                                            setError(
-                                                              err instanceof Error
-                                                                ? err.message
-                                                                : "Could not delete extra hours.",
-                                                            );
-                                                          } finally {
-                                                            setExtraHoursBusyId(null);
-                                                          }
-                                                        }}
-                                                        type="button"
-                                                        variant="secondary"
-                                                      >
-                                                        Delete
-                                                      </Button>
-                                                    </div>
-                                                  </td>
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
-                                        </div>
-                                      )}
+                                  const shiftRows =
+                                    shiftRowsByUser[row.user_id] === "loading"
+                                      ? []
+                                      : ((shiftRowsByUser[row.user_id] as TimeRecordShiftRow[] | undefined) ??
+                                        []);
+                                  const clockedSeconds = shiftRows.reduce(
+                                    (sum, s) => sum + (s.rounded_seconds ?? 0),
+                                    0,
+                                  );
+                                  const payableAdjSeconds = payableMinutes * 60;
+                                  const totalPayableSeconds = clockedSeconds + payableAdjSeconds;
+
+                                  const renderExtraActions = (eh: TimesheetExtraHoursRow) => (
+                                    <div className="flex flex-wrap gap-1">
+                                      <Button
+                                        className="min-h-7 px-2 py-0.5 text-[11px]"
+                                        disabled={extraHoursBusyId === eh.id}
+                                        onClick={() =>
+                                          setExtraHoursModal({
+                                            mode: "edit",
+                                            userId: row.user_id,
+                                            employeeLabel:
+                                              row.employee_name?.trim() ||
+                                              row.employee_email ||
+                                              row.user_id,
+                                            initial: eh,
+                                          })
+                                        }
+                                        type="button"
+                                        variant="secondary"
+                                      >
+                                        Edit
+                                      </Button>
+                                      <Button
+                                        className="min-h-7 px-2 py-0.5 text-[11px]"
+                                        disabled={extraHoursBusyId === eh.id}
+                                        onClick={async () => {
+                                          const ok = window.confirm(
+                                            eh.affects_payroll
+                                              ? "Delete this payable hours adjustment? The original shift will stay unchanged. Payroll will need recalculation."
+                                              : "Delete this non-payroll recorded-hours entry? This will not change clock records or payroll.",
+                                          );
+                                          if (!ok) {
+                                            return;
+                                          }
+                                          setExtraHoursBusyId(eh.id);
+                                          try {
+                                            await deleteExtraHours(eh.id);
+                                            setExtraHoursByUser((prev) => {
+                                              const cur = prev[row.user_id];
+                                              if (!Array.isArray(cur)) {
+                                                return prev;
+                                              }
+                                              return {
+                                                ...prev,
+                                                [row.user_id]: cur.filter((x) => x.id !== eh.id),
+                                              };
+                                            });
+                                            if (eh.affects_payroll) {
+                                              void loadReport({ silent: true });
+                                            }
+                                          } catch (err) {
+                                            setError(
+                                              err instanceof Error
+                                                ? err.message
+                                                : "Could not delete extra hours.",
+                                            );
+                                          } finally {
+                                            setExtraHoursBusyId(null);
+                                          }
+                                        }}
+                                        type="button"
+                                        variant="secondary"
+                                      >
+                                        Delete
+                                      </Button>
                                     </div>
+                                  );
+
+                                  return (
+                                    <>
+                                      <div
+                                        className="mt-4 border-t border-[var(--color-border-dark)] pt-3"
+                                        data-testid="payable-hours-adjustments-section"
+                                      >
+                                        <p className="timiq-caption mb-1 font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                                          Payable hours adjustments
+                                        </p>
+                                        <p className="mb-2 text-[11px] text-[var(--color-text-muted)]">
+                                          Clocked hours: {formatHoursFromSeconds(clockedSeconds)}
+                                          {" · "}
+                                          Payable extra hours: {formatExtraHoursDuration(payableMinutes)}
+                                          {" · "}
+                                          Total payable hours: {formatHoursFromSeconds(totalPayableSeconds)}.
+                                          After save, use Recalculate so payroll Hours and money update through the
+                                          payroll engine.
+                                        </p>
+                                        {extraRows === "loading" ? (
+                                          <p className="text-xs text-[var(--color-text-muted)]">
+                                            Loading extra hours...
+                                          </p>
+                                        ) : extraRows === "error" ? (
+                                          <div
+                                            className="flex flex-wrap items-center gap-2"
+                                            data-testid="extra-hours-load-error"
+                                          >
+                                            <p className="text-xs text-[var(--color-danger-700)]">
+                                              Could not load extra hours.
+                                            </p>
+                                            <Button
+                                              aria-label="Retry loading extra hours"
+                                              className="min-h-7 px-2 py-0.5 text-[11px]"
+                                              data-testid="extra-hours-retry-button"
+                                              onClick={() => void reloadExtraHoursForUser(row.user_id)}
+                                              size="sm"
+                                              type="button"
+                                              variant="secondary"
+                                            >
+                                              Retry
+                                            </Button>
+                                          </div>
+                                        ) : payableList.length === 0 ? (
+                                          <p className="text-xs text-[var(--color-text-muted)]">
+                                            No payable hours adjustments for this week.
+                                          </p>
+                                        ) : (
+                                          <div className="min-w-0 max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+                                            <table className="w-full min-w-[32rem] border-collapse text-left text-xs">
+                                              <thead>
+                                                <tr className="border-b border-[var(--color-border-dark)] text-[var(--color-text-soft)]">
+                                                  <th className="py-1 pr-2">Date</th>
+                                                  <th className="py-1 pr-2">Duration</th>
+                                                  <th className="py-1 pr-2">Reason</th>
+                                                  <th className="py-1 pr-2">Site</th>
+                                                  <th className="py-1 pr-2">Added by</th>
+                                                  <th className="py-1 pr-2">Payroll effect</th>
+                                                  <th className="py-1 pr-2">Action</th>
+                                                </tr>
+                                              </thead>
+                                              <tbody>
+                                                {payableList.map((eh) => (
+                                                  <tr
+                                                    key={eh.id}
+                                                    className="border-b border-[var(--color-border)]"
+                                                  >
+                                                    <td className="py-1 pr-2 tabular-nums">{eh.work_date}</td>
+                                                    <td className="py-1 pr-2 tabular-nums">
+                                                      {formatExtraHoursDuration(eh.duration_minutes)}
+                                                    </td>
+                                                    <td className="py-1 pr-2">{reasonLabel(eh.reason)}</td>
+                                                    <td className="py-1 pr-2 text-[var(--color-text-muted)]">
+                                                      {eh.location_name || "—"}
+                                                    </td>
+                                                    <td className="py-1 pr-2 text-[var(--color-text-muted)]">
+                                                      {eh.created_by_name || eh.created_by_email || "—"}
+                                                    </td>
+                                                    <td className="py-1 pr-2">
+                                                      <span className="inline-block rounded border border-[var(--color-success-700)]/40 bg-[var(--color-success-50)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-success-700)]">
+                                                        Payable
+                                                      </span>
+                                                    </td>
+                                                    <td className="py-1 pr-2">{renderExtraActions(eh)}</td>
+                                                  </tr>
+                                                ))}
+                                              </tbody>
+                                            </table>
+                                          </div>
+                                        )}
+                                      </div>
+                                      {nonPayrollList.length > 0 ? (
+                                        <div
+                                          className="mt-4 border-t border-[var(--color-border-dark)] pt-3"
+                                          data-testid="extra-hours-non-payroll-section"
+                                        >
+                                          <p className="timiq-caption mb-1 font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                                            Recorded hours - non-payroll
+                                          </p>
+                                          <p className="mb-2 text-[11px] text-[var(--color-text-muted)]">
+                                            Historical informational entries. They do not change payable hours or pay.
+                                          </p>
+                                          <ul className="space-y-1 text-xs">
+                                            {nonPayrollList.map((eh) => (
+                                              <li
+                                                className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1"
+                                                key={eh.id}
+                                              >
+                                                <span className="tabular-nums">{eh.work_date}</span>
+                                                <span className="tabular-nums">
+                                                  {formatExtraHoursDuration(eh.duration_minutes)}
+                                                </span>
+                                                <span>{reasonLabel(eh.reason)}</span>
+                                                <span className="inline-block rounded border border-[var(--color-border-dark)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                                                  Non-payroll
+                                                </span>
+                                                {canManageExtraHours ? renderExtraActions(eh) : null}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      ) : null}
+                                    </>
                                   );
                                 })()}
                                 {lateBlock && lateBlock.shifts.length > 0 ? (
@@ -3030,6 +3088,9 @@ export function PayrollReportClient() {
                 return { ...prev, [extraHoursModal.userId]: list };
               });
               setExtraHoursModal(null);
+              if (saved.affects_payroll) {
+                void loadReport({ silent: true });
+              }
             }}
             sites={locations
               .filter((location) => location.company_id === activeCompanyId)

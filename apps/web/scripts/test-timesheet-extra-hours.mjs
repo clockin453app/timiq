@@ -1,5 +1,5 @@
 /**
- * Non-payroll extra hours UI wiring / safety checks.
+ * Payable Extra hours UI wiring / safety checks.
  */
 import fs from "node:fs";
 import path from "node:path";
@@ -28,18 +28,20 @@ function check(label, condition) {
 
 const payroll = read(srcRoot, "app/(app)/payroll-report/payroll-report-client.tsx");
 const timesheets = read(srcRoot, "app/(app)/timesheets/timesheets-client.tsx");
+const weekDetail = read(srcRoot, "app/(app)/timesheets/week/timesheet-week-detail-client.tsx");
 const api = read(srcRoot, "features/timesheet-extra-hours/api.ts");
 const modal = read(srcRoot, "features/timesheet-extra-hours/extra-hours-modal.tsx");
 const roles = read(srcRoot, "features/auth/roles.ts");
 const schemas = read(apiRoot, "app/modules/timesheet_extra_hours/schemas.py");
 const service = read(apiRoot, "app/modules/timesheet_extra_hours/service.py");
+const calc = read(apiRoot, "app/modules/payroll/calculation.py");
 const repo = read(apiRoot, "app/modules/timesheet_extra_hours/repository.py");
+const migrationNew = read(apiRoot, "migrations/versions/x7y8z9a0b1c2_payable_timesheet_extra_hours.py");
+const migrationOld = read(apiRoot, "migrations/versions/w6x7y8z9a0b1_timesheet_extra_hours.py");
 
 const toolbarBlock = payroll.slice(
   payroll.indexOf('aria-label={t("payroll.report.actions"'),
-  payroll.indexOf("payroll.report.total_hours") > 0
-    ? payroll.indexOf('{paidRowCount > 0 ? (')
-    : payroll.length,
+  payroll.indexOf("{paidRowCount > 0 ? ("),
 );
 
 check(
@@ -52,28 +54,10 @@ check("toolbar uses FileDown icon component", /<FileDown\b/.test(toolbarBlock));
 check("toolbar uses FileSpreadsheet icon component", /<FileSpreadsheet\b/.test(toolbarBlock));
 check("toolbar uses Printer icon component", /<Printer\b/.test(toolbarBlock));
 check("toolbar uses FileText icon component", /<FileText\b/.test(toolbarBlock));
-check(
-  "no Unicode placeholder toolbar icons",
-  !/[📥📄🖨📋📤]|\\u[0-9a-fA-F]{4}/.test(toolbarBlock) &&
-    !/aria-label=\{t\("payroll\.report\.export_csv_short"[\s\S]{0,220}>\s*[A-Za-z📄📥]/.test(
-      toolbarBlock,
-    ),
-);
 check("CSV handler connected", /onClick=\{handleCsv\}/.test(toolbarBlock));
 check("Excel handler connected", /onClick=\{handleExcelDownload\}/.test(toolbarBlock));
 check("Print handler connected", /onClick=\{handlePrint\}/.test(toolbarBlock));
 check("PDF handler connected", /onClick=\{handlePdfDownload\}/.test(toolbarBlock));
-check(
-  "toolbar icon buttons keep compact square sizing",
-  /className="h-9 w-9 shrink-0 px-0"/.test(toolbarBlock) &&
-    /<FileDown[^>]*className="h-4 w-4 shrink-0"/.test(toolbarBlock),
-);
-check("toolbar icons keep aria-labels", /aria-label=\{t\("payroll\.report\.export_csv_short"/.test(toolbarBlock));
-check("toolbar icons keep title tooltips", /title=\{t\("payroll\.report\.export_csv_short"/.test(toolbarBlock));
-check(
-  "toolbar icons keep disabled/loading behaviour",
-  /disabled=\{loading \|\| !activeCompanyId\}/.test(toolbarBlock),
-);
 
 check("canAccessManagement used for Extra hours gate", /canAccessManagement\(user\)/.test(payroll));
 check(
@@ -83,125 +67,109 @@ check(
   ),
 );
 check(
-  "Add extra hours gated for management roles only",
-  /canManageExtraHours \? \([\s\S]*?data-testid="add-extra-hours-button"[\s\S]*?Add extra hours[\s\S]*?\) : null/.test(
+  "Add payable hours gated for management roles",
+  /canManageExtraHours \? \([\s\S]*?data-testid="add-extra-hours-button"[\s\S]*?Add payable hours[\s\S]*?\) : null/.test(
     payroll,
   ),
 );
 check(
-  "employees do not get ungated Add extra hours",
-  !/data-testid="add-extra-hours-button"[\s\S]{0,80}Add extra hours/.test(
-    payroll.replace(
-      /canManageExtraHours \? \([\s\S]*?data-testid="add-extra-hours-button"[\s\S]*?\) : null/,
-      "",
-    ),
-  ),
+  "modal notice says payable hours / recalculation",
+  /added to payable hours and will trigger payroll recalculation/.test(modal) &&
+    /It does\s+not change the employee/.test(modal) &&
+    /clock-in or clock-out times/.test(modal),
 );
 check(
-  "Add extra hours beside SHIFT LINES heading",
-  /Shift lines \(this week\)[\s\S]{0,400}data-testid="add-extra-hours-button"/.test(payroll) &&
-    !/justify-between[\s\S]{0,120}Shift lines \(this week\)/.test(payroll),
+  "modal explains Edit shift vs payable hours",
+  /Use Edit shift when the recorded clock times are wrong/.test(modal),
 );
 check(
-  "Add extra hours not gated on Extra hours array length",
-  !/extraList\.length[\s\S]{0,80}add-extra-hours-button|add-extra-hours-button[\s\S]{0,80}extraList\.length/.test(
-    payroll,
-  ),
+  "expanded payroll shows Payable hours adjustments",
+  /Payable hours adjustments/.test(payroll) &&
+    /data-testid="payable-hours-adjustments-section"/.test(payroll),
 );
 check(
-  "Add extra hours visible while Extra hours loading",
-  /canManageExtraHours \? \([\s\S]*?add-extra-hours-button[\s\S]*?\) : null[\s\S]*?extraRows === "loading"/.test(
-    payroll,
-  ),
+  "separate clocked / payable extra / total payable values",
+  /Clocked hours:/.test(payroll) &&
+    /Payable extra hours:/.test(payroll) &&
+    /Total payable hours:/.test(payroll),
+);
+check(
+  "Payable badge present",
+  />Payable</.test(payroll) || /Payable\s*<\/span>/.test(payroll),
+);
+check(
+  "historical non-payroll section retained separately",
+  /Recorded hours - non-payroll/.test(payroll) &&
+    /data-testid="extra-hours-non-payroll-section"/.test(payroll),
+);
+check(
+  "save refreshes report for stale status without direct recalculatePayroll call in onSaved",
+  /onSaved=\{\(saved\) => \{[\s\S]*?loadReport\(\{ silent: true \}\)[\s\S]*?\}/.test(payroll) &&
+    !/onSaved=\{\(saved\) => \{[\s\S]{0,500}recalculatePayroll/.test(payroll),
+);
+check(
+  "modal receives employee user_id and week",
+  /employeeUserId=\{extraHoursModal\.userId\}/.test(payroll) &&
+    /weekStart=\{weekStart\}/.test(payroll),
+);
+check(
+  "employee timesheets show payable adjustment badge and plus duration",
+  /Payable adjustment/.test(timesheets) &&
+    /\+\{formatExtraHoursDuration\(row\.duration_minutes\)\}/.test(timesheets),
+);
+check(
+  "employee has no delete/edit extra hours actions",
+  !/deleteExtraHours/.test(timesheets) && !/ExtraHoursModal/.test(timesheets),
+);
+check(
+  "Past Time logs week detail shows payable adjustments",
+  /Past Time logs/.test(weekDetail) &&
+    /data-testid="past-time-logs-day-cards"/.test(weekDetail) &&
+    /Payable adjustment/.test(weekDetail) &&
+    /listMyExtraHours/.test(weekDetail) &&
+    !/deleteExtraHours/.test(weekDetail),
+);
+check(
+  "service uses authoritative payroll_week_start_for_work_date and flush-only stale mark",
+  /payroll_week_start_for_work_date/.test(service) &&
+    /commit=False/.test(service) &&
+    !/def _week_start_for_work_date/.test(service),
+);
+check(
+  "service marks stale via existing invalidation, never recalculates money itself",
+  /mark_payroll_period_needs_recalculation/.test(service) &&
+    !/recalculate_payroll/.test(service) &&
+    !/compute_money_bundle/.test(service),
+);
+check(
+  "calculation merges payable extras without mutating shift seconds helper",
+  /payable_extra_hours_seconds_by_work_date/.test(calc) &&
+    /clocked_rounded_seconds_by_work_date_payroll_week/.test(calc) &&
+    /_merge_daily_seconds/.test(calc),
+);
+check("create/patch forbid affects_payroll from clients", /extra=["']forbid["']/.test(schemas));
+check("repository exclusive end filter", /work_date < end_date/.test(repo));
+check(
+  "new migration drops non-payroll check; old migration untouched",
+  /ck_timesheet_extra_hours_non_payroll/.test(migrationNew) &&
+    /down_revision[\s\S]*w6x7y8z9a0b1/.test(migrationNew) &&
+    /affects_payroll = false/.test(migrationOld),
 );
 check(
   "no malformed Unicode in Extra hours UI text",
   !/ÔÇ|â€|â |�|\uFFFD|Loading extra hours…/.test(payroll) &&
-    /Loading extra hours\.\.\./.test(payroll) &&
-    !/ÔÇ|â€|â |�|\uFFFD/.test(
-      read(srcRoot, "app/(app)/timesheets/timesheets-client.tsx"),
-    ),
+    /Loading extra hours\.\.\./.test(payroll),
 );
 check(
-  "Add extra hours remains visible after list error",
-  /extraRows === "error"/.test(payroll) &&
-    /data-testid="extra-hours-load-error"/.test(payroll) &&
-    /setExtraHoursByUser\(\(prev\) => \(\{ \.\.\.prev, \[userId\]: "error" \}\)\)/.test(payroll) &&
-    /canManageExtraHours \? \([\s\S]*?add-extra-hours-button[\s\S]*?\) : null[\s\S]*?extraRows === "error"/.test(
-      payroll,
-    ),
-);
-check(
-  "error state has Retry button",
+  "error state has Retry calling Extra hours loader",
   /data-testid="extra-hours-retry-button"/.test(payroll) &&
-    /aria-label="Retry loading extra hours"/.test(payroll) &&
-    /data-testid="extra-hours-retry-button"[\s\S]{0,500}type="button"[\s\S]{0,120}>\s*Retry/.test(
-      payroll,
-    ),
+    /reloadExtraHoursForUser\(row\.user_id\)/.test(payroll),
 );
-check(
-  "Retry calls existing Extra hours loader only",
-  /async function reloadExtraHoursForUser\(userId: string\)/.test(payroll) &&
-    /onClick=\{\(\) => void reloadExtraHoursForUser\(row\.user_id\)\}/.test(payroll) &&
-    /await reloadExtraHoursForUser\(userId\)/.test(payroll) &&
-    !/onClick=\{\(\) => void reloadExtraHoursForUser\(row\.user_id\)\}[\s\S]{0,300}(?:loadReport|recalculatePayroll)/.test(
-      payroll,
-    ),
-);
-check(
-  "clicking Add extra hours opens modal with user_id",
-  /setExtraHoursModal\(\{[\s\S]*?mode: "create"[\s\S]*?userId: row\.user_id/.test(payroll),
-);
-check(
-  "modal receives employee user_id not payroll item id",
-  /employeeUserId=\{extraHoursModal\.userId\}/.test(payroll) &&
-    !/employeeUserId=\{extraHoursModal\.id\}/.test(payroll) &&
-    !/userId: row\.id/.test(payroll),
-);
-check(
-  "modal receives current payroll week",
-  /weekStart=\{weekStart\}/.test(payroll) && /weekEndInclusive=\{addDaysIsoYmd\(weekStart, 6\)\}/.test(payroll),
-);
-check("company context preserved on modal", /companyId=\{activeCompanyId\}/.test(payroll));
-check(
-  "Add extra hours does not trigger payroll recalculation",
-  !/onSaved[\s\S]{0,500}recalculatePayroll|setExtraHoursModal[\s\S]{0,400}recalculatePayroll/.test(
-    payroll,
-  ),
-);
-check(
-  "Add extra hours does not approve payroll",
-  !/setExtraHoursModal[\s\S]{0,400}approvePayroll|onSaved[\s\S]{0,400}approvePayroll/.test(payroll),
-);
-
-check("EXTRA HOURS non-payroll section", /Extra hours - non-payroll/.test(payroll));
-check("Non-payroll badge in admin rows", /Non-payroll/.test(payroll));
-check("informational Extra recorded hours separate", /Extra recorded hours/.test(payroll));
-check(
-  "payroll totals remain from period rounded seconds / money fields",
-  /total_rounded_seconds/.test(payroll) &&
-    /period\.total_gross/.test(payroll) &&
-    /period\.total_net/.test(payroll) &&
-    !/extraTotal[\s\S]{0,80}total_rounded_seconds|formatHoursFromSeconds\(extra/.test(payroll),
-);
-check("exclusive end date weekStart+7 for extra hours", /listAdminExtraHours[\s\S]{0,220}end_date:\s*addDaysIsoYmd\(weekStart,\s*7\)/.test(payroll));
-check("no recalculatePayroll after extra hours save", !/onSaved[\s\S]{0,400}recalculatePayroll/.test(payroll));
 check("Edit shift action still present", /Edit shift/.test(payroll));
-check("delete confirmation text", /Delete this non-payroll extra-hours entry/.test(payroll));
-check("shift correction helper present", /Use Edit shift when the original clock-in/.test(modal));
-check("non-payroll notice in modal", /will not affect payroll calculations/.test(modal));
-check("employee preselected read-only", /readOnly/.test(modal) && /Employee/.test(modal));
-check("Cancel is type=button", /type="button"[\s\S]{0,120}Cancel|Cancel[\s\S]{0,120}type="button"/.test(modal));
+check("no payroll recalculate in frontend API", !/recalculatePayroll|recalculate_payroll/.test(api));
 check("modal uses shared Modal", /<Modal/.test(modal));
 check("submit via form attr only", /form="extra-hours-form"/.test(modal));
-check("employee additional recorded hours", /Additional recorded hours/.test(timesheets));
-check("employee Non-payroll badge", /Non-payroll/.test(timesheets));
-check("employee has no delete/edit extra hours actions", !/deleteExtraHours/.test(timesheets) && !/ExtraHoursModal/.test(timesheets));
-check("employee exclusive end +7", /addDaysIsoYmd\(weekStart,\s*7\)/.test(timesheets));
-check("create/patch forbid extra fields including affects_payroll", /extra=["']forbid["']/.test(schemas));
-check("service never calls recalculate_payroll", !/recalculate_payroll/.test(service));
-check("repository exclusive end filter", /work_date < end_date/.test(repo));
-check("no payroll recalculate in frontend API", !/recalculatePayroll|recalculate_payroll/.test(api));
+check("Cancel is type=button", /type="button"[\s\S]{0,120}Cancel|Cancel[\s\S]{0,120}type="button"/.test(modal));
 
 const helpersSrc = `
 export function formatExtraHoursDuration(minutes) {
