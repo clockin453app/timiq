@@ -100,7 +100,7 @@ check("drawer width is viewport safe", /w-\[min\(92vw,360px\)\]/.test(mobileHead
 check("drawer prevents horizontal scroll", /overflow-x-hidden overflow-y-auto/.test(mobileHeader));
 check("drawer has no fixed footer navigation", !/timiq-mobile-drawer-footer/.test(mobileHeader));
 check("drawer account actions scroll with the menu", /timiq-mobile-drawer-scroll[\s\S]*href="\/profile"/.test(mobileHeader));
-check("main mobile header uses the large approved lockup", /MOBILE_HEADER_LOGO_HEIGHT = 46/.test(mobileHeader) && /surface="onDark"/.test(mobileHeader));
+check("main mobile header uses the large approved lockup", /MOBILE_HEADER_LOGO_HEIGHT = 38/.test(mobileHeader) && /surface="onDark"/.test(mobileHeader));
 check("drawer header is account identity, not logo", /timiq-mobile-drawer-header/.test(mobileHeader) && (mobileHeader.match(/<TimIQBrandLockup/g) ?? []).length === 1);
 check("drawer does not use compact mark-only branding", !/variant="compact"/.test(mobileHeader));
 check("Logout uses menu row", /appearance="menuRow"/.test(mobileHeader));
@@ -130,6 +130,7 @@ for (const [name, source, expected] of wideAudits) {
 }
 
 const payrollReport = read("app/(app)/payroll-report/payroll-report-client.tsx");
+const timeRecordsFilters = read("app/(app)/time-records/time-records-client.tsx");
 const workProgress = read("app/(app)/work-progress-review/work-progress-review-client.tsx");
 const helpClient = read("app/(app)/help/help-client.tsx");
 check("CIS payroll row actions wrap", /flex flex-wrap gap-1/.test(payrollReport));
@@ -148,6 +149,14 @@ check("employee receives bottom-nav scroll padding", /scroll-pb-\[calc\(var\(--l
 const messages = read("app/(app)/messages/messages-client.tsx");
 check("messages desktop height switches at lg", /lg:h-\[calc\(var\(--layout-desktop-content-height\)/.test(messages));
 check("messages uses dynamic viewport height", /100dvh/.test(messages) && !/100vh/.test(messages));
+
+check("payroll report uses ResponsiveFilterGrid", /ResponsiveFilterGrid/.test(payrollReport));
+check("payroll report filter dates use DateRangeFields", /DateRangeFields/.test(payrollReport));
+check(
+  "payroll report filter has no fixed w-[10rem] date width",
+  !/(?:^|[\s"'`])w-\[10rem\]/.test(payrollReport),
+);
+check("time records uses ResponsiveFilterGrid", /ResponsiveFilterGrid/.test(timeRecordsFilters));
 
 check("persistent AppShell remains", /<AuthGuard>[\s\S]*<AppShell>\{children\}<\/AppShell>/.test(appLayout));
 check("public layout remains isolated", !/AppShell|AuthGuard/.test(publicLayout));

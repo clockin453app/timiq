@@ -46,9 +46,12 @@ const toolbarBlock = payroll.slice(
 
 check(
   "original lucide toolbar icon imports",
-  /import \{ Calendar, FileDown, FileSpreadsheet, FileText, Printer \} from "lucide-react"/.test(
-    payroll,
-  ),
+  /import \{ FileDown, FileSpreadsheet, FileText, Printer \} from "lucide-react"/.test(payroll),
+);
+check(
+  "readable date field still uses Calendar affordance",
+  /from "lucide-react"/.test(read(srcRoot, "components/ui/date-field.tsx")) &&
+    /Calendar/.test(read(srcRoot, "components/ui/date-field.tsx")),
 );
 check("toolbar uses FileDown icon component", /<FileDown\b/.test(toolbarBlock));
 check("toolbar uses FileSpreadsheet icon component", /<FileSpreadsheet\b/.test(toolbarBlock));

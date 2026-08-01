@@ -4,7 +4,10 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import {
   Button,
+  DateRangeFields,
+  FilterActionRow,
   PageHeader,
+  ResponsiveFilterGrid,
   Sheet,
   SheetBody,
   Table,
@@ -501,69 +504,70 @@ export function TimeRecordsClient() {
         ) : null}
 
         <form
-          className="space-y-2 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm"
+          className="space-y-3 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-3 text-sm"
           onSubmit={handleApplyFilters}
         >
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-            <label className="block min-w-0 flex-1 text-xs font-bold text-[var(--color-text)] sm:max-w-[12rem]">
-              {t("time_records.start_date", "Start date")}
-              <input
-                className="mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
-                onChange={(event) => setStartDate(event.target.value)}
-                type="date"
-                value={startDate}
+          <ResponsiveFilterGrid
+            actions={
+              <FilterActionRow
+                applyDisabled={isLoading}
+                applyLabel={
+                  isLoading ? t("common.loading", "Loading…") : t("time_records.apply_filters", "Apply filters")
+                }
+                applyType="submit"
               />
-            </label>
-            <label className="block min-w-0 flex-1 text-xs font-bold text-[var(--color-text)] sm:max-w-[12rem]">
-              {t("time_records.end_date_exclusive", "End date (exclusive)")}
-              <input
-                className="mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm text-[#111827]"
-                onChange={(event) => setEndDate(event.target.value)}
-                type="date"
-                value={endDate}
+            }
+            company={
+              adminMode && management && isAdministrator(user) && companyScope.companies.length > 0 ? (
+                <CompanySelector
+                  companies={companyScope.companies}
+                  label={t("common.company", "Company")}
+                  onChange={companyScope.setCompanyId}
+                  value={companyScope.companyId}
+                />
+              ) : undefined
+            }
+            dates={
+              <DateRangeFields
+                fromLabel={t("time_records.start_date", "Start date")}
+                fromValue={startDate}
+                onFromChange={(event) => setStartDate(event.target.value)}
+                onToChange={(event) => setEndDate(event.target.value)}
+                toLabel={t("time_records.end_date_exclusive", "End date (exclusive)")}
+                toValue={endDate}
               />
-            </label>
-          </div>
-
-          {adminMode && management ? (
-            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-              <label className="block min-w-0 w-full flex-1 text-xs font-bold text-[var(--color-text)] sm:min-w-[12rem]">
-                {t("common.employee", "Employee")}
-                <select
-                  className="timiq-select mt-1 h-9 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  onChange={(event) => setFilterUserId(event.target.value)}
-                  value={filterUserId}
-                >
-                  <option value="">{t("time_records.all_employees", "All visible employees")}</option>
-                  {employeeOptions.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.email}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {isAdministrator(user) && companyScope.companies.length > 0 ? (
-                <div className="flex min-w-0 flex-1 flex-col justify-end">
-                  <CompanySelector
-                    companies={companyScope.companies}
-                    label={t("common.company", "Company")}
-                    onChange={companyScope.setCompanyId}
-                    value={companyScope.companyId}
-                  />
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-          <Button type="submit">
-            {isLoading ? t("common.loading", "Loading…") : t("time_records.apply_filters", "Apply filters")}
-          </Button>
-          <p className="text-xs text-[var(--color-text-muted)]">
-            {t(
-              "time_records.filters_hint",
-              "Leaving dates blank loads the last 28 days (company timezone on the server).",
-            )}
-          </p>
+            }
+            employee={
+              adminMode && management ? (
+                <label className="flex w-full min-w-0 max-w-full flex-col gap-0.5" htmlFor="time-records-filter-employee">
+                  <span className="timiq-label text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                    {t("common.employee", "Employee")}
+                  </span>
+                  <select
+                    className="timiq-select h-11 w-full min-w-0 border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm md:h-9"
+                    id="time-records-filter-employee"
+                    onChange={(event) => setFilterUserId(event.target.value)}
+                    value={filterUserId}
+                  >
+                    <option value="">{t("time_records.all_employees", "All visible employees")}</option>
+                    {employeeOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.email}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : undefined
+            }
+            footer={
+              <p className="text-xs text-[var(--color-text-muted)]">
+                {t(
+                  "time_records.filters_hint",
+                  "Leaving dates blank loads the last 28 days (company timezone on the server).",
+                )}
+              </p>
+            }
+          />
         </form>
 
         {loadError ? (

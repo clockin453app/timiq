@@ -293,6 +293,21 @@ for (const [index, match] of datetimeInputs.entries()) {
   );
 }
 
+check("time-records filter uses DateRangeFields", /DateRangeFields/.test(timeRecords));
+check("time-records filter actions use FilterActionRow", /FilterActionRow/.test(timeRecords));
+check(
+  "company selector no longer caps mobile width at 10rem",
+  !/max-w-\[10rem\]/.test(read("features/companies/company-selector.tsx")),
+);
+check(
+  "date-field filter controls use min-h-11 on mobile",
+  /min-h-11/.test(read("components/ui/date-field.tsx")),
+);
+check(
+  "filter action row uses min-h-11 on mobile",
+  /min-h-11/.test(read("components/ui/filter-toolbar.tsx")),
+);
+
 /* ------------------------------------------------------------------ *
  * 7. Dialogs stay inside the viewport
  * ------------------------------------------------------------------ */

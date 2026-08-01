@@ -241,9 +241,10 @@ textarea.timiq-input {
   scroll-margin-block: var(--space-page-y) var(--layout-mobile-keyboard-pad);
 }
 
-/* CIS payroll toolbar date display + hidden native picker */
+/* Readable date display + calendar affordance (no fixed min-width — filters use fluid grids). */
 input.timiq-input.timiq-date-input {
-  min-width: 9.75rem;
+  min-width: 0;
+  max-width: 100%;
   padding-right: 3rem;
 }
 
