@@ -62,6 +62,14 @@ import {
   listAdminTimeRecords,
   type TimeRecordShiftRow,
 } from "@/features/time-records/api";
+import {
+  deleteExtraHours,
+  formatExtraHoursDuration,
+  listAdminExtraHours,
+  reasonLabel,
+  type TimesheetExtraHoursRow,
+} from "@/features/timesheet-extra-hours/api";
+import { ExtraHoursModal } from "@/features/timesheet-extra-hours/extra-hours-modal";
 import { leaveTypeLabel } from "@/features/leave/labels";
 import { FaceReferenceAvatar } from "@/features/face-check/face-reference-avatar";
 import {
@@ -649,6 +657,16 @@ export function PayrollReportClient() {
   const [shiftRowsByUser, setShiftRowsByUser] = useState<Record<string, TimeRecordShiftRow[] | "loading">>(
     {},
   );
+  const [extraHoursByUser, setExtraHoursByUser] = useState<
+    Record<string, TimesheetExtraHoursRow[] | "loading">
+  >({});
+  const [extraHoursModal, setExtraHoursModal] = useState<{
+    mode: "create" | "edit";
+    userId: string;
+    employeeLabel: string;
+    initial?: TimesheetExtraHoursRow | null;
+  } | null>(null);
+  const [extraHoursBusyId, setExtraHoursBusyId] = useState<string | null>(null);
   const [managedUsers, setManagedUsers] = useState<AuthUser[]>([]);
   const [undoPaidRow, setUndoPaidRow] = useState<PayrollUndoTarget | null>(null);
   const [undoPaidReason, setUndoPaidReason] = useState("");
@@ -1351,6 +1369,7 @@ export function PayrollReportClient() {
       return;
     }
     setShiftRowsByUser((prev) => ({ ...prev, [userId]: "loading" }));
+    setExtraHoursByUser((prev) => ({ ...prev, [userId]: "loading" }));
     try {
       const rows = await listAdminTimeRecords({
         company_id: isAdministrator(user) ? activeCompanyId : undefined,
@@ -1363,6 +1382,17 @@ export function PayrollReportClient() {
     } catch {
       setShiftRowsByUser((prev) => ({ ...prev, [userId]: [] }));
     }
+    try {
+      const extra = await listAdminExtraHours({
+        company_id: activeCompanyId,
+        user_id: userId,
+        start_date: weekStart,
+        end_date: addDaysIsoYmd(weekStart, 7),
+      });
+      setExtraHoursByUser((prev) => ({ ...prev, [userId]: extra }));
+    } catch {
+      setExtraHoursByUser((prev) => ({ ...prev, [userId]: [] }));
+    }
   }
 
   async function toggleExpandShifts(userId: string) {
@@ -1374,7 +1404,9 @@ export function PayrollReportClient() {
       return;
     }
     setExpandedUserId(userId);
-    if (shiftRowsByUser[userId] && shiftRowsByUser[userId] !== "loading") {
+    const shiftsReady = shiftRowsByUser[userId] && shiftRowsByUser[userId] !== "loading";
+    const extrasReady = extraHoursByUser[userId] && extraHoursByUser[userId] !== "loading";
+    if (shiftsReady && extrasReady) {
       return;
     }
     await reloadShiftRows(userId);
@@ -1980,9 +2012,30 @@ export function PayrollReportClient() {
                           {expandedUserId === row.user_id ? (
                             <TableRow>
                               <TableCell className="bg-[var(--color-header)]/60 py-3" colSpan={13}>
-                                <p className="timiq-caption mb-2 font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
-                                  Shift lines (this week)
-                                </p>
+                                <div className="mb-2 flex min-w-0 flex-wrap items-center justify-between gap-2">
+                                  <p className="timiq-caption font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                                    Shift lines (this week)
+                                  </p>
+                                  <Button
+                                    className="min-h-8 px-2.5 py-1 text-[11px]"
+                                    data-testid="add-extra-hours-button"
+                                    onClick={() =>
+                                      setExtraHoursModal({
+                                        mode: "create",
+                                        userId: row.user_id,
+                                        employeeLabel:
+                                          row.employee_name?.trim() ||
+                                          row.employee_email ||
+                                          row.user_id,
+                                        initial: null,
+                                      })
+                                    }
+                                    type="button"
+                                    variant="secondary"
+                                  >
+                                    Add extra hours
+                                  </Button>
+                                </div>
                                 <div className="mb-2">
                                   <PayrollEmployeeIdentity
                                     employee_email={row.employee_email}
@@ -2076,6 +2129,142 @@ export function PayrollReportClient() {
                                     </table>
                                   </div>
                                 )}
+                                {(() => {
+                                  const extraRows = extraHoursByUser[row.user_id];
+                                  const extraList =
+                                    extraRows && extraRows !== "loading" ? extraRows : [];
+                                  const extraTotal = extraList.reduce(
+                                    (sum, e) => sum + e.duration_minutes,
+                                    0,
+                                  );
+                                  return (
+                                    <div
+                                      className="mt-4 border-t border-[var(--color-border-dark)] pt-3"
+                                      data-testid="extra-hours-non-payroll-section"
+                                    >
+                                      <p className="timiq-caption mb-1 font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                                        Extra hours - non-payroll
+                                      </p>
+                                      <p className="mb-2 text-[11px] text-[var(--color-text-muted)]">
+                                        Non-payroll extra hours · informational only · does not change Total hours or
+                                        pay.
+                                        {extraTotal > 0
+                                          ? ` Extra recorded hours: ${formatExtraHoursDuration(extraTotal)}`
+                                          : ""}
+                                      </p>
+                                      {extraRows === "loading" ? (
+                                        <p className="text-xs text-[var(--color-text-muted)]">
+                                          Loading extra hours…
+                                        </p>
+                                      ) : extraList.length === 0 ? (
+                                        <p className="text-xs text-[var(--color-text-muted)]">
+                                          No extra hours recorded for this week.
+                                        </p>
+                                      ) : (
+                                        <div className="min-w-0 max-w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+                                          <table className="w-full min-w-[32rem] border-collapse text-left text-xs">
+                                            <thead>
+                                              <tr className="border-b border-[var(--color-border-dark)] text-[var(--color-text-soft)]">
+                                                <th className="py-1 pr-2">Date</th>
+                                                <th className="py-1 pr-2">Duration</th>
+                                                <th className="py-1 pr-2">Reason</th>
+                                                <th className="py-1 pr-2">Site</th>
+                                                <th className="py-1 pr-2">Added by</th>
+                                                <th className="py-1 pr-2">Action</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {extraList.map((eh) => (
+                                                <tr
+                                                  key={eh.id}
+                                                  className="border-b border-[var(--color-border)]"
+                                                >
+                                                  <td className="py-1 pr-2 tabular-nums">{eh.work_date}</td>
+                                                  <td className="py-1 pr-2 tabular-nums">
+                                                    {formatExtraHoursDuration(eh.duration_minutes)}
+                                                  </td>
+                                                  <td className="py-1 pr-2">
+                                                    {reasonLabel(eh.reason)}
+                                                    <span className="ml-1 inline-block rounded border border-[var(--color-border-dark)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                                                      Non-payroll
+                                                    </span>
+                                                  </td>
+                                                  <td className="py-1 pr-2 text-[var(--color-text-muted)]">
+                                                    {eh.location_name || "—"}
+                                                  </td>
+                                                  <td className="py-1 pr-2 text-[var(--color-text-muted)]">
+                                                    {eh.created_by_name || eh.created_by_email || "—"}
+                                                  </td>
+                                                  <td className="py-1 pr-2">
+                                                    <div className="flex flex-wrap gap-1">
+                                                      <Button
+                                                        className="min-h-7 px-2 py-0.5 text-[11px]"
+                                                        disabled={extraHoursBusyId === eh.id}
+                                                        onClick={() =>
+                                                          setExtraHoursModal({
+                                                            mode: "edit",
+                                                            userId: row.user_id,
+                                                            employeeLabel:
+                                                              row.employee_name?.trim() ||
+                                                              row.employee_email ||
+                                                              row.user_id,
+                                                            initial: eh,
+                                                          })
+                                                        }
+                                                        type="button"
+                                                        variant="secondary"
+                                                      >
+                                                        Edit
+                                                      </Button>
+                                                      <Button
+                                                        className="min-h-7 px-2 py-0.5 text-[11px]"
+                                                        disabled={extraHoursBusyId === eh.id}
+                                                        onClick={async () => {
+                                                          const ok = window.confirm(
+                                                            "Delete this non-payroll extra-hours entry? This will not change the employee’s clock records or payroll.",
+                                                          );
+                                                          if (!ok) {
+                                                            return;
+                                                          }
+                                                          setExtraHoursBusyId(eh.id);
+                                                          try {
+                                                            await deleteExtraHours(eh.id);
+                                                            setExtraHoursByUser((prev) => {
+                                                              const cur = prev[row.user_id];
+                                                              if (!cur || cur === "loading") {
+                                                                return prev;
+                                                              }
+                                                              return {
+                                                                ...prev,
+                                                                [row.user_id]: cur.filter((x) => x.id !== eh.id),
+                                                              };
+                                                            });
+                                                          } catch (err) {
+                                                            setError(
+                                                              err instanceof Error
+                                                                ? err.message
+                                                                : "Could not delete extra hours.",
+                                                            );
+                                                          } finally {
+                                                            setExtraHoursBusyId(null);
+                                                          }
+                                                        }}
+                                                        type="button"
+                                                        variant="secondary"
+                                                      >
+                                                        Delete
+                                                      </Button>
+                                                    </div>
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                                 {lateBlock && lateBlock.shifts.length > 0 ? (
                                   <div className="mt-4 border-t border-[var(--color-warning-700)]/25 pt-3">
                                     <p className="timiq-caption mb-2 font-semibold uppercase tracking-wide text-[var(--color-warning-700)]">
@@ -2777,6 +2966,42 @@ export function PayrollReportClient() {
               </div>
             </div>
           </div>
+        ) : null}
+        {extraHoursModal && activeCompanyId ? (
+          <ExtraHoursModal
+            companyId={activeCompanyId}
+            defaultWorkDate={
+              weekStart <= new Date().toISOString().slice(0, 10) &&
+              addDaysIsoYmd(weekStart, 6) >= new Date().toISOString().slice(0, 10)
+                ? new Date().toISOString().slice(0, 10)
+                : weekStart
+            }
+            employeeLabel={extraHoursModal.employeeLabel}
+            employeeUserId={extraHoursModal.userId}
+            initial={extraHoursModal.initial}
+            mode={extraHoursModal.mode}
+            onClose={() => setExtraHoursModal(null)}
+            onSaved={(saved) => {
+              setExtraHoursByUser((prev) => {
+                const cur = prev[extraHoursModal.userId];
+                const list = !cur || cur === "loading" ? [] : [...cur];
+                const idx = list.findIndex((x) => x.id === saved.id);
+                if (idx >= 0) {
+                  list[idx] = saved;
+                } else {
+                  list.push(saved);
+                  list.sort((a, b) => a.work_date.localeCompare(b.work_date));
+                }
+                return { ...prev, [extraHoursModal.userId]: list };
+              });
+              setExtraHoursModal(null);
+            }}
+            sites={locations
+              .filter((location) => location.company_id === activeCompanyId)
+              .map((location) => ({ id: location.id, name: location.name }))}
+            weekEndInclusive={addDaysIsoYmd(weekStart, 6)}
+            weekStart={weekStart}
+          />
         ) : null}
         <PayrollRowActionsPortal
           onClose={closeRowActionMenu}

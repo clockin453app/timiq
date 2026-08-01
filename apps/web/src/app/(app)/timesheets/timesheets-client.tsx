@@ -49,6 +49,14 @@ import {
 } from "@/features/timesheets/api";
 import { leaveTypeLabel } from "@/features/leave/labels";
 import {
+  formatExtraHoursDuration,
+  listAdminExtraHours,
+  listMyExtraHours,
+  reasonLabel,
+  type TimesheetExtraHoursRow,
+} from "@/features/timesheet-extra-hours/api";
+import {
+  addDaysIsoYmd,
   browserDefaultTimeZone,
   mondayWeekStartIso,
 } from "@/features/timesheets/week-utils";
@@ -244,6 +252,7 @@ export function TimesheetsClient() {
   const [exportBusy, setExportBusy] = useState(false);
   const [exportError, setExportError] = useState("");
   const [recentWeeks, setRecentWeeks] = useState<TimesheetWeekSummaryRow[]>([]);
+  const [extraHours, setExtraHours] = useState<TimesheetExtraHoursRow[]>([]);
 
   const activeCompanyId = useMemo(() => {
     if (isAdministrator(user)) {
@@ -402,6 +411,54 @@ export function TimesheetsClient() {
       cancelled = true;
     };
   }, [weekStart, adminMode, management, subjectUserId, activeCompanyId, user]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (viewingAllEmployees || loading) {
+        if (!cancelled) {
+          setExtraHours([]);
+        }
+        return;
+      }
+      try {
+        const end = addDaysIsoYmd(weekStart, 7);
+        let rows: TimesheetExtraHoursRow[] = [];
+        if (adminMode && management && subjectUserId.trim() && subjectUserId !== ALL_EMPLOYEES_VALUE) {
+          if (!activeCompanyId) {
+            rows = [];
+          } else {
+            rows = await listAdminExtraHours({
+              company_id: activeCompanyId,
+              user_id: subjectUserId.trim(),
+              start_date: weekStart,
+              end_date: end,
+            });
+          }
+        } else if (!adminMode || !management) {
+          rows = await listMyExtraHours({ start_date: weekStart, end_date: end });
+        }
+        if (!cancelled) {
+          setExtraHours(rows);
+        }
+      } catch {
+        if (!cancelled) {
+          setExtraHours([]);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    weekStart,
+    adminMode,
+    management,
+    subjectUserId,
+    activeCompanyId,
+    viewingAllEmployees,
+    loading,
+  ]);
 
   useEffect(() => {
     if (user.system_role !== "employee") {
@@ -978,6 +1035,56 @@ export function TimesheetsClient() {
             {sheet.shift_count !== completedCount ? ` · All shift records in week: ${sheet.shift_count}` : ""}.
             Locations (completed): {sheet.locations_worked.length > 0 ? sheet.locations_worked.join(", ") : "—"}.
           </p>
+        ) : null}
+
+        {!loading && !viewingAllEmployees && extraHours.length > 0 ? (
+          <div
+            className={`overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] ${employeeListMode ? "hidden" : ""}`}
+            data-testid="additional-recorded-hours"
+          >
+            <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+                Additional recorded hours
+              </p>
+              <p className="mt-1 text-[11px] text-[var(--color-text-muted)]">
+                Extra recorded hours - non-payroll:{" "}
+                <span className="font-semibold tabular-nums text-[var(--color-text)]">
+                  {formatExtraHoursDuration(
+                    extraHours.reduce((sum, row) => sum + row.duration_minutes, 0),
+                  )}
+                </span>
+                . Separate from clocked hours; not included in payroll totals.
+              </p>
+            </div>
+            <ul className="divide-y divide-[var(--color-border)] px-3 py-1">
+              {extraHours.map((row) => (
+                <li
+                  className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 py-2 text-sm"
+                  key={row.id}
+                >
+                  <span className="font-medium text-[var(--color-text)]">{formatDay(row.work_date)}</span>
+                  <span className="tabular-nums text-[var(--color-text)]">
+                    {formatExtraHoursDuration(row.duration_minutes)}
+                  </span>
+                  <span className="text-[var(--color-text-muted)]">{reasonLabel(row.reason)}</span>
+                  <span className="inline-block rounded border border-[var(--color-border-dark)] px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">
+                    Non-payroll
+                  </span>
+                  {row.location_name ? (
+                    <span className="text-xs text-[var(--color-text-muted)]">{row.location_name}</span>
+                  ) : null}
+                  {row.note ? (
+                    <span className="w-full text-xs text-[var(--color-text-muted)]">{row.note}</span>
+                  ) : null}
+                  {row.created_by_name || row.created_by_email ? (
+                    <span className="w-full text-[11px] text-[var(--color-text-muted)]">
+                      Added by {row.created_by_name || row.created_by_email}
+                    </span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
 
         {!loading && companySheet && viewingAllEmployees ? (
