@@ -1,6 +1,10 @@
-"""Business rules for non-payroll timesheet extra hours.
+"""Business rules for payable timesheet hours adjustments.
 
-This module must never call payroll recalculation or mutate clocked shifts.
+Payable create/update/delete mark the affected payroll week stale via the
+existing invalidation pathway. Money is never computed here — only through
+payroll recalculation.
+
+Mutation + audit + stale marker share one DB transaction (flush then audit commit).
 """
 
 from __future__ import annotations
@@ -16,6 +20,15 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_user_by_id
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
 from app.modules.locations.repository import get_location_by_id
+from app.modules.payroll.repository import (
+    get_period_by_company_week,
+    period_has_approved_item,
+    period_has_paid_item,
+)
+from app.modules.payroll.service import (
+    mark_payroll_period_needs_recalculation,
+    payroll_week_start_for_work_date,
+)
 from app.modules.timesheet_extra_hours import repository as repo
 from app.modules.timesheet_extra_hours.models import TimesheetExtraHours
 from app.modules.timesheet_extra_hours.schemas import (
@@ -69,7 +82,7 @@ def _to_response(
         reason=row.reason,  # type: ignore[arg-type]
         note=row.note,
         location_id=row.location_id,
-        affects_payroll=False,
+        affects_payroll=bool(row.affects_payroll),
         created_by_user_id=row.created_by_user_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -107,6 +120,44 @@ def _validate_location(
         raise ExtraHoursError("Site is not in this company.")
 
 
+def _assert_payroll_period_allows_payable_mutation(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_starts: set[date],
+) -> None:
+    """Block payable adjustments when the week is approved or paid (same as recalc locks)."""
+    for week_start in sorted(week_starts):
+        period = get_period_by_company_week(db_session, company_id, week_start)
+        if period is None:
+            continue
+        if period_has_paid_item(db_session, period.id):
+            raise ExtraHoursError(
+                "Cannot change payable hours: this period contains paid payroll items. "
+                "Undo paid / reopen before adjusting.",
+            )
+        if period_has_approved_item(db_session, period.id):
+            raise ExtraHoursError(
+                "Payroll is approved. Unlock it before changing payable hours adjustments.",
+            )
+
+
+def _mark_payable_weeks_stale(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    week_starts: set[date],
+) -> None:
+    """Flush-only invalidation so audit can commit mutation + stale marker together."""
+    for week_start in sorted(week_starts):
+        mark_payroll_period_needs_recalculation(
+            db_session,
+            company_id=company_id,
+            week_start=week_start,
+            commit=False,
+        )
+
+
 def create_extra_hours(
     db_session: Session,
     actor: User,
@@ -126,6 +177,13 @@ def create_extra_hours(
     _validate_subject(db_session, company_id, body.user_id)
     _validate_location(db_session, company_id, body.location_id)
 
+    week_start = payroll_week_start_for_work_date(body.work_date)
+    _assert_payroll_period_allows_payable_mutation(
+        db_session,
+        company_id=company_id,
+        week_starts={week_start},
+    )
+
     row = TimesheetExtraHours(
         company_id=company_id,
         user_id=body.user_id,
@@ -134,11 +192,16 @@ def create_extra_hours(
         reason=body.reason,
         note=body.note,
         location_id=body.location_id,
-        affects_payroll=False,
+        affects_payroll=True,
         created_by_user_id=actor.id,
     )
     try:
         row = repo.add(db_session, row)
+        _mark_payable_weeks_stale(
+            db_session,
+            company_id=company_id,
+            week_starts={week_start},
+        )
         create_internal_audit_event(
             db_session=db_session,
             actor=actor,
@@ -153,7 +216,8 @@ def create_extra_hours(
                 "duration_minutes": body.duration_minutes,
                 "reason": body.reason,
                 "actor_user_id": str(actor.id),
-                "affects_payroll": False,
+                "affects_payroll": True,
+                "payroll_week_start": str(week_start),
             },
         )
         return _to_response(db_session, row)
@@ -188,6 +252,11 @@ def patch_extra_hours(
         raise ExtraHoursError("Invalid reason.")
     if "location_id" in data:
         _validate_location(db_session, company_id, data["location_id"])
+
+    original_work_date = row.work_date
+    old_week = payroll_week_start_for_work_date(original_work_date)
+    old_affects = bool(row.affects_payroll)
+
     if "work_date" in data and data["work_date"] is not None:
         row.work_date = data["work_date"]
     if "duration_minutes" in data and data["duration_minutes"] is not None:
@@ -199,9 +268,32 @@ def patch_extra_hours(
     if "location_id" in data:
         row.location_id = data["location_id"]
 
-    row.affects_payroll = False
+    new_week = payroll_week_start_for_work_date(row.work_date)
+    weeks_to_check: set[date] = set()
+    if old_affects:
+        weeks_to_check.add(old_week)
+    if bool(row.affects_payroll):
+        weeks_to_check.add(new_week)
+    if weeks_to_check:
+        _assert_payroll_period_allows_payable_mutation(
+            db_session,
+            company_id=company_id,
+            week_starts=weeks_to_check,
+        )
+
     try:
         row = repo.save(db_session, row)
+        weeks_to_invalidate: set[date] = set()
+        if old_affects:
+            weeks_to_invalidate.add(old_week)
+        if bool(row.affects_payroll):
+            weeks_to_invalidate.add(new_week)
+        if weeks_to_invalidate:
+            _mark_payable_weeks_stale(
+                db_session,
+                company_id=company_id,
+                week_starts=weeks_to_invalidate,
+            )
         create_internal_audit_event(
             db_session=db_session,
             actor=actor,
@@ -213,11 +305,13 @@ def patch_extra_hours(
                 "company_id": str(company_id),
                 "user_id": str(row.user_id),
                 "work_date": str(row.work_date),
+                "original_work_date": str(original_work_date),
                 "duration_minutes": row.duration_minutes,
                 "reason": row.reason,
                 "changed_fields": sorted(data.keys()),
                 "actor_user_id": str(actor.id),
-                "affects_payroll": False,
+                "affects_payroll": bool(row.affects_payroll),
+                "payroll_week_starts": sorted(str(w) for w in weeks_to_invalidate),
             },
         )
         return _to_response(db_session, row)
@@ -242,6 +336,15 @@ def delete_extra_hours(
     if row.company_id != company_id:
         raise ExtraHoursPermissionError("You cannot access another company's data.")
 
+    week_start = payroll_week_start_for_work_date(row.work_date)
+    affects = bool(row.affects_payroll)
+    if affects:
+        _assert_payroll_period_allows_payable_mutation(
+            db_session,
+            company_id=company_id,
+            week_starts={week_start},
+        )
+
     snapshot = {
         "company_id": str(company_id),
         "user_id": str(row.user_id),
@@ -249,10 +352,17 @@ def delete_extra_hours(
         "duration_minutes": row.duration_minutes,
         "reason": row.reason,
         "actor_user_id": str(actor.id),
-        "affects_payroll": False,
+        "affects_payroll": affects,
+        "payroll_week_start": str(week_start),
     }
     try:
         repo.soft_delete(db_session, row)
+        if affects:
+            _mark_payable_weeks_stale(
+                db_session,
+                company_id=company_id,
+                week_starts={week_start},
+            )
         create_internal_audit_event(
             db_session=db_session,
             actor=actor,
@@ -313,5 +423,5 @@ def list_extra_hours_for_me(
 
 
 def informational_total_minutes(rows: list[TimesheetExtraHours]) -> int:
-    """Separate informational total — never used for payroll."""
+    """Sum duration for display — callers must filter payable vs non-payroll as needed."""
     return repo.sum_duration_minutes(rows)

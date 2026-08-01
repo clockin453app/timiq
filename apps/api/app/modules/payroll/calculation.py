@@ -58,7 +58,7 @@ def _shift_rounded_seconds(
     return int(metrics.rounded_seconds or 0)
 
 
-def rounded_seconds_by_work_date_payroll_week(
+def clocked_rounded_seconds_by_work_date_payroll_week(
     db_session: Session,
     *,
     company_id: uuid.UUID,
@@ -66,6 +66,7 @@ def rounded_seconds_by_work_date_payroll_week(
     week_start: date,
     policy: CompanyTimePolicy,
 ) -> dict[date, int]:
+    """Clocked/rounded shift seconds only — never includes Extra hours adjustments."""
     week_start_utc, week_end_utc = week_bounds_utc(policy, week_start)
     rows = list_time_shifts_for_payroll_week(
         db_session,
@@ -80,6 +81,57 @@ def rounded_seconds_by_work_date_payroll_week(
         work_date = work_date_in_policy(shift.clock_in_at, policy)
         by_day[work_date] = by_day.get(work_date, 0) + rs
     return by_day
+
+
+def payable_extra_hours_seconds_by_work_date(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    week_start: date,
+) -> dict[date, int]:
+    """Payable Extra hours adjustment seconds by work_date (affects_payroll=true only)."""
+    from app.modules.timesheet_extra_hours.repository import sum_payable_seconds_by_work_date
+
+    return sum_payable_seconds_by_work_date(
+        db_session,
+        company_id=company_id,
+        user_id=user_id,
+        week_start=week_start,
+    )
+
+
+def _merge_daily_seconds(*maps: dict[date, int]) -> dict[date, int]:
+    merged: dict[date, int] = {}
+    for mapping in maps:
+        for work_date, seconds in mapping.items():
+            merged[work_date] = merged.get(work_date, 0) + max(0, int(seconds))
+    return merged
+
+
+def rounded_seconds_by_work_date_payroll_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    week_start: date,
+    policy: CompanyTimePolicy,
+) -> dict[date, int]:
+    """Total payable seconds by day: clocked rounded + payable Extra hours adjustments."""
+    clocked = clocked_rounded_seconds_by_work_date_payroll_week(
+        db_session,
+        company_id=company_id,
+        user_id=user_id,
+        week_start=week_start,
+        policy=policy,
+    )
+    adjustments = payable_extra_hours_seconds_by_work_date(
+        db_session,
+        company_id=company_id,
+        user_id=user_id,
+        week_start=week_start,
+    )
+    return _merge_daily_seconds(clocked, adjustments)
 
 
 def sum_rounded_seconds_payroll_week(
@@ -97,6 +149,25 @@ def sum_rounded_seconds_payroll_week(
         week_start=week_start,
         policy=policy,
     ).values())
+
+
+def sum_clocked_rounded_seconds_payroll_week(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    week_start: date,
+    policy: CompanyTimePolicy,
+) -> int:
+    return sum(
+        clocked_rounded_seconds_by_work_date_payroll_week(
+            db_session,
+            company_id=company_id,
+            user_id=user_id,
+            week_start=week_start,
+            policy=policy,
+        ).values()
+    )
 
 
 def split_regular_overtime_daily(

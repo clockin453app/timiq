@@ -45,7 +45,7 @@ def _saved_row(*, company_id, user_id, admin_id, minutes=60, reason="saturday_bo
         reason=reason,
         note=None,
         location_id=None,
-        affects_payroll=False,
+        affects_payroll=True,
         created_by_user_id=admin_id,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
@@ -53,8 +53,8 @@ def _saved_row(*, company_id, user_id, admin_id, minutes=60, reason="saturday_bo
     )
 
 
-def test_create_update_delete_do_not_call_payroll_mutators() -> None:
-    """Secondary guard: Extra hours service never invokes payroll mutators."""
+def test_create_update_delete_mark_stale_without_recalculate_or_approve() -> None:
+    """Payable Extra hours invalidate via mark_stale only — never recalculate or approve."""
     db = MagicMock()
     company_id = uuid.uuid4()
     admin = _user(SystemRole.ADMIN, company_id)
@@ -76,6 +76,8 @@ def test_create_update_delete_do_not_call_payroll_mutators() -> None:
         patch("app.modules.timesheet_extra_hours.service.repo.soft_delete", return_value=saved),
         patch("app.modules.timesheet_extra_hours.service.create_internal_audit_event"),
         patch("app.modules.timesheet_extra_hours.service.get_employee_profile_by_user_id", return_value=None),
+        patch("app.modules.timesheet_extra_hours.service.get_period_by_company_week", return_value=None),
+        patch("app.modules.timesheet_extra_hours.service.mark_payroll_period_needs_recalculation") as mark,
         patch("app.modules.payroll.service.recalculate_payroll") as recalc,
         patch("app.modules.payroll.service.approve_item") as approve,
         patch("app.modules.payroll.service.approve_all_pending") as approve_all,
@@ -83,6 +85,7 @@ def test_create_update_delete_do_not_call_payroll_mutators() -> None:
         create_extra_hours(db, admin, body)
         patch_extra_hours(db, admin, saved.id, TimesheetExtraHoursPatch(duration_minutes=90))
         delete_extra_hours(db, admin, saved.id)
+        assert mark.call_count >= 3
         recalc.assert_not_called()
         approve.assert_not_called()
         approve_all.assert_not_called()

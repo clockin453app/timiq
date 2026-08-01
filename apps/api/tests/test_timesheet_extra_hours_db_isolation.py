@@ -259,7 +259,7 @@ def _capture_authoritative_state(session: Session, *, company_id: uuid.UUID, wee
     }
 
 
-def test_extra_hours_create_update_delete_leave_payroll_and_shifts_unchanged(db_session: Session) -> None:
+def test_extra_hours_create_marks_stale_without_mutating_shift_or_item_money(db_session: Session) -> None:
     world = _seed_payroll_world(db_session)
     before = _capture_authoritative_state(
         db_session,
@@ -269,9 +269,7 @@ def test_extra_hours_create_update_delete_leave_payroll_and_shifts_unchanged(db_
     )
     assert before["total_rounded_seconds"] == 8 * 3600
     assert before["clocked_seconds"] == 8 * 3600
-    assert before["total_gross"] == "100.0000"
-    assert before["total_tax"] == "20.0000"
-    assert before["total_net"] == "80.0000"
+    assert before["period_calculated_at"] is not None
 
     created = create_extra_hours(
         db_session,
@@ -284,13 +282,18 @@ def test_extra_hours_create_update_delete_leave_payroll_and_shifts_unchanged(db_
             reason="saturday_bonus_hour",
         ),
     )
+    assert created.affects_payroll is True
     after_create = _capture_authoritative_state(
         db_session,
         company_id=world["company"].id,
         week_start=world["week_start"],
         actor=world["admin"],
     )
-    assert after_create == before
+    assert after_create["shift_rows"] == before["shift_rows"]
+    assert after_create["clocked_seconds"] == before["clocked_seconds"]
+    assert after_create["item_rows"] == before["item_rows"]
+    assert after_create["period_calculated_at"] is None
+    assert after_create["payroll_needs_recalculation"] is True
 
     patch_extra_hours(
         db_session,
@@ -304,7 +307,9 @@ def test_extra_hours_create_update_delete_leave_payroll_and_shifts_unchanged(db_
         week_start=world["week_start"],
         actor=world["admin"],
     )
-    assert after_update == before
+    assert after_update["shift_rows"] == before["shift_rows"]
+    assert after_update["item_rows"] == before["item_rows"]
+    assert after_update["period_calculated_at"] is None
 
     delete_extra_hours(db_session, world["admin"], created.id)
     after_delete = _capture_authoritative_state(
@@ -313,7 +318,8 @@ def test_extra_hours_create_update_delete_leave_payroll_and_shifts_unchanged(db_
         week_start=world["week_start"],
         actor=world["admin"],
     )
-    assert after_delete == before
+    assert after_delete["shift_rows"] == before["shift_rows"]
+    assert after_delete["item_rows"] == before["item_rows"]
 
     # Soft-deleted entry excluded from normal lists / still present with deleted_at
     row = db_session.get(TimesheetExtraHours, created.id)

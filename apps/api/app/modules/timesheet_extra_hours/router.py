@@ -1,4 +1,4 @@
-"""HTTP API for non-payroll timesheet extra hours."""
+"""HTTP API for payable timesheet hours adjustments."""
 
 from __future__ import annotations
 

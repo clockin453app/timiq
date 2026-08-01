@@ -1,4 +1,4 @@
-"""Schemas for non-payroll timesheet extra hours."""
+"""Schemas for payable timesheet hours adjustments."""
 
 from __future__ import annotations
 
@@ -28,6 +28,8 @@ EXTRA_HOURS_REASONS: tuple[str, ...] = (
 
 
 class TimesheetExtraHoursCreate(BaseModel):
+    """Create body. Clients cannot set affects_payroll; service forces payable=true."""
+
     model_config = ConfigDict(extra="forbid")
 
     company_id: uuid.UUID | None = None
@@ -48,6 +50,8 @@ class TimesheetExtraHoursCreate(BaseModel):
 
 
 class TimesheetExtraHoursPatch(BaseModel):
+    """Patch body. Clients cannot set affects_payroll or money fields."""
+
     model_config = ConfigDict(extra="forbid")
 
     work_date: date | None = None
@@ -76,7 +80,7 @@ class TimesheetExtraHoursResponse(BaseModel):
     reason: ExtraHoursReason
     note: str | None
     location_id: uuid.UUID | None
-    affects_payroll: bool = False
+    affects_payroll: bool = True
     created_by_user_id: uuid.UUID | None
     created_at: datetime
     updated_at: datetime

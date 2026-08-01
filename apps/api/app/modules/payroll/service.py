@@ -275,7 +275,18 @@ def _date_range_bounds_utc(timezone_name: str, date_from: date, date_to: date) -
 
 def _payroll_week_start_for_dt(dt_utc: datetime, timezone_name: str) -> date:
     local_date = dt_utc.astimezone(_policy_zone_name(timezone_name)).date()
-    return local_date - timedelta(days=local_date.weekday())
+    return payroll_week_start_for_work_date(local_date)
+
+
+def payroll_week_start_for_work_date(work_date: date) -> date:
+    """Authoritative CIS payroll week start for a company-local work_date.
+
+    TimIQ weekly CIS payroll periods are Monday-start weeks in the company
+    time-policy calendar — the same boundary used by ``recalculate_payroll``,
+    Payroll Report, and shift week attribution. ``CompanyTimePolicy`` does not
+    configure an alternate week-start weekday.
+    """
+    return work_date - timedelta(days=work_date.weekday())
 
 
 def mark_payroll_period_needs_recalculation(
@@ -283,12 +294,14 @@ def mark_payroll_period_needs_recalculation(
     *,
     company_id: uuid.UUID,
     week_start: date,
+    commit: bool = True,
 ) -> bool:
     """Invalidate an existing payroll period without changing item money/status values."""
     return invalidate_period_calculation_for_company_week(
         db_session,
         company_id=company_id,
         week_start=week_start,
+        commit=commit,
     )
 
 

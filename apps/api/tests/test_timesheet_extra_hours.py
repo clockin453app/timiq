@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -109,7 +108,7 @@ def test_admin_can_create(monkeypatch: pytest.MonkeyPatch) -> None:
         reason=body.reason,
         note=None,
         location_id=None,
-        affects_payroll=False,
+        affects_payroll=True,
         created_by_user_id=admin.id,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
@@ -121,16 +120,18 @@ def test_admin_can_create(monkeypatch: pytest.MonkeyPatch) -> None:
         patch("app.modules.timesheet_extra_hours.service.repo.add", return_value=saved) as add_mock,
         patch("app.modules.timesheet_extra_hours.service.create_internal_audit_event") as audit_mock,
         patch("app.modules.timesheet_extra_hours.service.get_employee_profile_by_user_id", return_value=None),
+        patch("app.modules.timesheet_extra_hours.service.get_period_by_company_week", return_value=None),
+        patch("app.modules.timesheet_extra_hours.service.mark_payroll_period_needs_recalculation"),
     ):
         result = create_extra_hours(db, admin, body)
 
     assert result.duration_minutes == 60
-    assert result.affects_payroll is False
+    assert result.affects_payroll is True
     assert result.reason == "saturday_bonus_hour"
     add_mock.assert_called_once()
     audit_mock.assert_called_once()
     assert audit_mock.call_args.kwargs["action"] == "timesheet_extra_hours.created"
-    assert audit_mock.call_args.kwargs["details"]["affects_payroll"] is False
+    assert audit_mock.call_args.kwargs["details"]["affects_payroll"] is True
 
 
 def test_company_isolation_for_admin() -> None:
@@ -185,18 +186,14 @@ def test_sum_duration_minutes_multiple_entries() -> None:
     assert sum_duration_minutes(rows) == 150
 
 
-def test_service_source_has_no_payroll_coupling() -> None:
+def test_service_marks_stale_without_recalculating_or_writing_money() -> None:
     service_path = Path(__file__).resolve().parents[1] / "app" / "modules" / "timesheet_extra_hours" / "service.py"
     source = service_path.read_text(encoding="utf-8")
     assert "recalculate_payroll" not in source
-    assert "payroll.service" not in source
-    assert "admin_manual_service" not in source
-    assert "TimeShift" not in source
     assert "compute_money_bundle" not in source
-
-    import app.modules.timesheet_extra_hours.service as svc
-
-    assert "recalculate_payroll" not in inspect.getsource(svc)
+    assert "TimeShift" not in source
+    assert "admin_manual_service" not in source
+    assert "mark_payroll_period_needs_recalculation" in source
 
 
 def test_create_does_not_call_recalculate_payroll() -> None:
@@ -220,7 +217,7 @@ def test_create_does_not_call_recalculate_payroll() -> None:
         reason=body.reason,
         note=None,
         location_id=None,
-        affects_payroll=False,
+        affects_payroll=True,
         created_by_user_id=admin.id,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
@@ -231,13 +228,16 @@ def test_create_does_not_call_recalculate_payroll() -> None:
         patch("app.modules.timesheet_extra_hours.service.repo.add", return_value=saved),
         patch("app.modules.timesheet_extra_hours.service.create_internal_audit_event"),
         patch("app.modules.timesheet_extra_hours.service.get_employee_profile_by_user_id", return_value=None),
+        patch("app.modules.timesheet_extra_hours.service.get_period_by_company_week", return_value=None),
+        patch("app.modules.timesheet_extra_hours.service.mark_payroll_period_needs_recalculation") as mark,
         patch("app.modules.payroll.service.recalculate_payroll") as recalc,
     ):
         create_extra_hours(db, admin, body)
         recalc.assert_not_called()
+        mark.assert_called_once()
 
 
-def test_delete_soft_deletes_without_payroll() -> None:
+def test_delete_soft_deletes_and_marks_stale_for_payable() -> None:
     db = MagicMock()
     company_id = uuid.uuid4()
     admin = _user(SystemRole.ADMIN, company_id)
@@ -251,7 +251,7 @@ def test_delete_soft_deletes_without_payroll() -> None:
         reason="training",
         note=None,
         location_id=None,
-        affects_payroll=False,
+        affects_payroll=True,
         created_by_user_id=admin.id,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
@@ -261,14 +261,17 @@ def test_delete_soft_deletes_without_payroll() -> None:
         patch("app.modules.timesheet_extra_hours.service.resolve_operational_company_id", return_value=company_id),
         patch("app.modules.timesheet_extra_hours.service.repo.soft_delete", return_value=row) as soft,
         patch("app.modules.timesheet_extra_hours.service.create_internal_audit_event"),
+        patch("app.modules.timesheet_extra_hours.service.get_period_by_company_week", return_value=None),
+        patch("app.modules.timesheet_extra_hours.service.mark_payroll_period_needs_recalculation") as mark,
         patch("app.modules.payroll.service.recalculate_payroll") as recalc,
     ):
         delete_extra_hours(db, admin, entry_id)
         soft.assert_called_once()
         recalc.assert_not_called()
+        mark.assert_called_once()
 
 
-def test_affects_payroll_always_false_on_create_row() -> None:
+def test_affects_payroll_true_on_create_row() -> None:
     db = MagicMock()
     company_id = uuid.uuid4()
     admin = _user(SystemRole.ADMIN, company_id)
@@ -296,6 +299,8 @@ def test_affects_payroll_always_false_on_create_row() -> None:
         patch("app.modules.timesheet_extra_hours.service.repo.add", side_effect=_add),
         patch("app.modules.timesheet_extra_hours.service.create_internal_audit_event"),
         patch("app.modules.timesheet_extra_hours.service.get_employee_profile_by_user_id", return_value=None),
+        patch("app.modules.timesheet_extra_hours.service.get_period_by_company_week", return_value=None),
+        patch("app.modules.timesheet_extra_hours.service.mark_payroll_period_needs_recalculation"),
     ):
         create_extra_hours(db, admin, body)
-    assert captured["affects_payroll"] is False
+    assert captured["affects_payroll"] is True

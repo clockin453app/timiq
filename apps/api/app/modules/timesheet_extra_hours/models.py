@@ -1,4 +1,4 @@
-"""Non-payroll timesheet extra hours — isolated from payroll calculation."""
+"""Payable timesheet hours adjustments (and legacy non-payroll rows)."""
 
 from __future__ import annotations
 
@@ -13,12 +13,11 @@ from app.db.base import Base
 
 
 class TimesheetExtraHours(Base):
-    """Additional recorded hours shown on timesheets; never fed into payroll."""
+    """Hours adjustment rows. Payable rows feed payroll; non-payroll rows do not."""
 
     __tablename__ = "timesheet_extra_hours"
     __table_args__ = (
         CheckConstraint("duration_minutes > 0", name="ck_timesheet_extra_hours_duration_positive"),
-        CheckConstraint("affects_payroll = false", name="ck_timesheet_extra_hours_non_payroll"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -44,7 +43,7 @@ class TimesheetExtraHours(Base):
         nullable=True,
         index=True,
     )
-    affects_payroll: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    affects_payroll: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_by_user_id = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="SET NULL"),
