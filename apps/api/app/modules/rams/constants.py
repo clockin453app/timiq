@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 ASSESSMENT_STATUSES = frozenset({"draft", "published", "reviewed", "archived"})
+RAMS_SOURCE_TYPES = frozenset({"template", "uploaded_pdf"})
 RISK_LEVELS = frozenset({"low", "medium", "high", "critical"})
 ACK_STATUSES = frozenset({"pending", "acknowledged", "declined"})
+
+MAX_UPLOADED_RAMS_PDF_BYTES = 25 * 1024 * 1024
 
 HAZARD_EXAMPLE_PRESETS: list[str] = [
     "Working at height",

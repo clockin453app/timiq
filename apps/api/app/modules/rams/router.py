@@ -10,7 +10,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Upload
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
-from app.core.storage.file_response import content_disposition_attachment, protected_file_response
+from app.core.storage.file_response import (
+    content_disposition_attachment,
+    content_disposition_inline,
+    protected_file_response,
+)
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import (
     get_current_user,
@@ -45,12 +49,14 @@ from app.modules.rams.service import (
     archive_assessment,
     create_assessment,
     create_assessment_from_preset,
+    create_assessment_from_uploaded_pdf,
     create_hazard,
     decline_assessment,
     delete_assessment_hard,
     delete_hazard,
     delete_rams_attachment_service,
     download_rams_attachment_file,
+    download_uploaded_rams_pdf,
     export_assessment_pdf_bytes,
     export_csv_bytes,
     get_assessment_detail,
@@ -65,6 +71,7 @@ from app.modules.rams.service import (
     patch_hazard,
     publish_assessment,
     render_print_html,
+    replace_draft_uploaded_pdf,
     review_assessment,
     upload_rams_attachment_service,
 )
@@ -148,6 +155,105 @@ def post_rams_from_preset(
         return create_assessment_from_preset(db_session, current_user, body)
     except RamsError as exc:
         _raise_http(exc)
+
+
+@router.post("/upload-pdf", response_model=RamsAssessmentDetailResponse, status_code=status.HTTP_201_CREATED)
+async def post_rams_upload_pdf(
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    company_id: uuid.UUID | None = Form(default=None),
+    location_id: uuid.UUID | None = Form(default=None),
+    description: str | None = Form(default=None),
+    work_activity: str | None = Form(default=None),
+    risk_level: str = Form(default="medium"),
+    review_due_date: date | None = Form(default=None),
+    produced_by_name: str | None = Form(default=None),
+    notes: str | None = Form(default=None),
+) -> RamsAssessmentDetailResponse:
+    raw = await file.read()
+    try:
+        return create_assessment_from_uploaded_pdf(
+            db_session,
+            current_user,
+            file_bytes=raw,
+            filename=file.filename,
+            content_type=file.content_type,
+            title=title,
+            company_id=company_id,
+            location_id=location_id,
+            description=description,
+            work_activity=work_activity,
+            risk_level=risk_level,
+            review_due_date=review_due_date,
+            produced_by_name=produced_by_name,
+            notes=notes,
+        )
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.post("/{assessment_id}/uploaded-pdf", response_model=RamsAssessmentDetailResponse)
+async def post_rams_replace_uploaded_pdf(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+    file: UploadFile = File(...),
+) -> RamsAssessmentDetailResponse:
+    raw = await file.read()
+    try:
+        return replace_draft_uploaded_pdf(
+            db_session,
+            current_user,
+            assessment_id,
+            file_bytes=raw,
+            filename=file.filename,
+            content_type=file.content_type,
+        )
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.get("/{assessment_id}/uploaded-pdf")
+def get_rams_uploaded_pdf_download(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        raw, filename = download_uploaded_rams_pdf(
+            db_session,
+            current_user,
+            assessment_id,
+            disposition="attachment",
+        )
+    except RamsError as exc:
+        _raise_http(exc)
+    return protected_file_response(body=raw, download_filename=filename, media_type="application/pdf")
+
+
+@router.get("/{assessment_id}/uploaded-pdf/view")
+def get_rams_uploaded_pdf_view(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    try:
+        raw, filename = download_uploaded_rams_pdf(
+            db_session,
+            current_user,
+            assessment_id,
+            disposition="inline",
+        )
+    except RamsError as exc:
+        _raise_http(exc)
+    headers = {
+        "Content-Disposition": content_disposition_inline(filename),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    return Response(content=raw, media_type="application/pdf", headers=headers)
 
 
 @router.get("/{assessment_id}/attachments", response_model=list[RamsAttachmentResponse])

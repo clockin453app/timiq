@@ -249,6 +249,19 @@ class RamsAssessmentListItem(BaseModel):
     reviewed_at: datetime | None
     updated_at: datetime
     my_ack_status: str | None = None
+    source_type: str = "template"
+
+
+class RamsUploadedPdfInfo(BaseModel):
+    original_filename: str
+    content_type: str
+    file_size_bytes: int
+    checksum_sha256: str | None = None
+    version: int = 1
+    uploaded_at: datetime | None = None
+    uploaded_by_user_id: uuid.UUID | None = None
+    download_href: str
+    view_href: str
 
 
 class RamsAssessmentDetailResponse(BaseModel):
@@ -273,6 +286,8 @@ class RamsAssessmentDetailResponse(BaseModel):
     published_at: datetime | None
     reviewed_at: datetime | None
     archived_at: datetime | None
+    source_type: str = "template"
+    uploaded_pdf: RamsUploadedPdfInfo | None = None
     project_name: str | None = None
     client_name: str | None = None
     principal_contractor: str | None = None
@@ -303,7 +318,7 @@ class RamsAssessmentDetailResponse(BaseModel):
     glove_requirements: list[str] | None = None
     method_statement_sections: list[dict[str, object]] | None = None
     document_sections: list[RamsDocumentSection] | None = None
-    hazards: list[RamsHazardResponse]
-    acknowledgements: list[RamsAcknowledgementResponse]
+    hazards: list[RamsHazardResponse] = Field(default_factory=list)
+    acknowledgements: list[RamsAcknowledgementResponse] = Field(default_factory=list)
     attachments: list[RamsAttachmentResponse] = Field(default_factory=list)
     signoff_progress: RamsSignoffProgress | None = None

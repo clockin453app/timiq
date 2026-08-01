@@ -29,6 +29,11 @@ from app.modules.rams.constants import (
 )
 from app.modules.rams.document_presets import RAMS_DOCUMENT_PRESETS, document_preset_public, get_document_preset_by_id
 from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard
+from app.modules.rams.pdf_upload import (
+    UploadedRamsPdfValidationError,
+    build_uploaded_rams_storage_key,
+    validate_uploaded_rams_pdf,
+)
 from app.modules.rams.print_service import build_professional_rams_print_html
 from app.modules.rams.schemas import (
     RamsAcknowledgementResponse,
@@ -48,6 +53,7 @@ from app.modules.rams.schemas import (
     RamsManualSignRequest,
     RamsPresetsResponse,
     RamsSignoffProgress,
+    RamsUploadedPdfInfo,
 )
 from app.modules.site_access.repository import list_site_access_for_location_ids
 from app.modules.work_progress.image_processing import detect_magic_file_kind, process_site_progress_photo
@@ -322,6 +328,20 @@ def _build_detail(
     ):
         signoff = _signoff_progress_rows(raw_ack)
     attachments = _attachments_public(db, row.id)
+    uploaded_pdf: RamsUploadedPdfInfo | None = None
+    source_type = getattr(row, "source_type", None) or "template"
+    if source_type == "uploaded_pdf" and row.uploaded_pdf_storage_path and row.uploaded_pdf_original_filename:
+        uploaded_pdf = RamsUploadedPdfInfo(
+            original_filename=row.uploaded_pdf_original_filename,
+            content_type=row.uploaded_pdf_content_type or "application/pdf",
+            file_size_bytes=int(row.uploaded_pdf_file_size_bytes or 0),
+            checksum_sha256=row.uploaded_pdf_checksum_sha256,
+            version=int(row.uploaded_pdf_version or 1),
+            uploaded_at=row.uploaded_pdf_uploaded_at,
+            uploaded_by_user_id=row.uploaded_pdf_uploaded_by_user_id,
+            download_href=f"/api/rams/{row.id}/uploaded-pdf",
+            view_href=f"/api/rams/{row.id}/uploaded-pdf/view",
+        )
     return RamsAssessmentDetailResponse(
         id=row.id,
         company_id=row.company_id,
@@ -342,6 +362,8 @@ def _build_detail(
         published_at=row.published_at,
         reviewed_at=row.reviewed_at,
         archived_at=row.archived_at,
+        source_type=source_type,
+        uploaded_pdf=uploaded_pdf,
         project_name=getattr(row, "project_name", None),
         client_name=getattr(row, "client_name", None),
         principal_contractor=getattr(row, "principal_contractor", None),
@@ -371,10 +393,10 @@ def _build_detail(
         coshh_items=_coerce_str_list(getattr(row, "coshh_items", None)),
         glove_requirements=_coerce_str_list(getattr(row, "glove_requirements", None)),
         method_statement_sections=_coerce_obj_list(getattr(row, "method_statement_sections", None)),
-        document_sections=document_sections,
-        hazards=hazards,
+        document_sections=document_sections if source_type != "uploaded_pdf" else None,
+        hazards=hazards if source_type != "uploaded_pdf" else [],
         acknowledgements=acks,
-        attachments=attachments,
+        attachments=attachments if source_type != "uploaded_pdf" else [],
         signoff_progress=signoff,
     )
 
@@ -464,6 +486,7 @@ def create_assessment_from_preset(
         published_at=None,
         reviewed_at=None,
         archived_at=None,
+        source_type="template",
         project_name=_strip_opt(body.project_name),
         client_name=_strip_opt(body.client_name),
         principal_contractor=_strip_opt(body.principal_contractor),
@@ -543,6 +566,7 @@ def list_me(db: Session, actor: User) -> list[RamsAssessmentListItem]:
                 reviewed_at=a.reviewed_at,
                 updated_at=a.updated_at,
                 my_ack_status=ack.status,
+                source_type=getattr(a, "source_type", None) or "template",
             )
         )
     return out
@@ -594,6 +618,7 @@ def list_assessments_admin(
             reviewed_at=r.reviewed_at,
             updated_at=r.updated_at,
             my_ack_status=None,
+            source_type=getattr(r, "source_type", None) or "template",
         )
         for r in rows
     ]
@@ -648,6 +673,7 @@ def create_assessment(db: Session, actor: User, body: RamsAssessmentCreateReques
         published_at=None,
         reviewed_at=None,
         archived_at=None,
+        source_type="template",
         document_sections=_document_sections_to_plain(
             [s.model_dump(mode="json") for s in body.document_sections] if body.document_sections is not None else None,
         ),
@@ -857,11 +883,16 @@ def publish_assessment(db: Session, actor: User, assessment_id: uuid.UUID) -> Ra
         raise RamsNotFoundError()
     if row.status != "draft":
         raise RamsValidationError("Only draft assessments can be published.")
-    if rams_repo.count_hazards(db, row.id) < 1:
-        raise RamsValidationError("Publish requires at least one hazard.")
-    ppe = _normalize_ppe(list(row.ppe_json) if isinstance(row.ppe_json, list) else [])
-    if len(ppe) < 1 and not row.no_special_ppe:
-        raise RamsValidationError("Add PPE items or mark no special PPE required before publishing.")
+    source_type = getattr(row, "source_type", None) or "template"
+    if source_type == "uploaded_pdf":
+        if not row.uploaded_pdf_storage_path:
+            raise RamsValidationError("Upload a RAMS PDF before publishing.")
+    else:
+        if rams_repo.count_hazards(db, row.id) < 1:
+            raise RamsValidationError("Publish requires at least one hazard.")
+        ppe = _normalize_ppe(list(row.ppe_json) if isinstance(row.ppe_json, list) else [])
+        if len(ppe) < 1 and not row.no_special_ppe:
+            raise RamsValidationError("Add PPE items or mark no special PPE required before publishing.")
     now = _utc_now()
     row.status = "published"
     row.published_at = now
@@ -882,6 +913,9 @@ def publish_assessment(db: Session, actor: User, assessment_id: uuid.UUID) -> Ra
             "status": row.status,
             "risk_level": row.risk_level,
             "location_id": str(row.location_id) if row.location_id else None,
+            "source_type": source_type,
+            "uploaded_pdf_version": getattr(row, "uploaded_pdf_version", None),
+            "uploaded_pdf_checksum_sha256": getattr(row, "uploaded_pdf_checksum_sha256", None),
         },
     )
     return _build_detail(db, row, actor)
@@ -964,6 +998,8 @@ def create_hazard(db: Session, actor: User, assessment_id: uuid.UUID, body: Rams
         raise RamsNotFoundError()
     if not _can_admin_manage_company(actor, row_a.company_id):
         raise RamsNotFoundError()
+    if (getattr(row_a, "source_type", None) or "template") == "uploaded_pdf":
+        raise RamsValidationError("Uploaded PDF RAMS do not use structured hazard rows.")
     if row_a.status == "archived":
         raise RamsValidationError("Cannot add hazards to an archived assessment.")
     now = _utc_now()
@@ -1208,6 +1244,9 @@ def acknowledge_assessment(db: Session, actor: User, assessment_id: uuid.UUID, b
             "assessment_id": str(row.id),
             "actor_user_id": str(actor.id),
             "status": att.status,
+            "source_type": getattr(row, "source_type", None) or "template",
+            "uploaded_pdf_version": getattr(row, "uploaded_pdf_version", None),
+            "uploaded_pdf_checksum_sha256": getattr(row, "uploaded_pdf_checksum_sha256", None),
         },
     )
     return _build_detail(db, row, actor)
@@ -1339,6 +1378,8 @@ def upload_rams_attachment_service(
         raise RamsNotFoundError()
     if not _can_admin_manage_company(actor, row.company_id):
         raise RamsNotFoundError()
+    if (getattr(row, "source_type", None) or "template") == "uploaded_pdf":
+        raise RamsValidationError("Uploaded PDF RAMS do not use photo attachments. Replace the PDF instead.")
     if row.status == "archived":
         raise RamsValidationError("Archived assessments cannot be edited.")
     sk = section_key.strip()
@@ -1515,7 +1556,18 @@ def delete_assessment_hard(db: Session, actor: User, assessment_id: uuid.UUID) -
             get_storage_backend().delete_file(att.storage_path)
         except Exception:
             pass
+    uploaded_path = getattr(row, "uploaded_pdf_storage_path", None)
+    if uploaded_path:
+        try:
+            get_storage_backend().delete_file(uploaded_path)
+        except Exception:
+            pass
     cid = row.company_id
+    title = row.title
+    source_type = getattr(row, "source_type", None) or "template"
+    filename = getattr(row, "uploaded_pdf_original_filename", None)
+    file_size = getattr(row, "uploaded_pdf_file_size_bytes", None)
+    checksum = getattr(row, "uploaded_pdf_checksum_sha256", None)
     rams_repo.delete_assessment_row(db, row)
     create_internal_audit_event(
         db_session=db,
@@ -1524,12 +1576,290 @@ def delete_assessment_hard(db: Session, actor: User, assessment_id: uuid.UUID) -
         entity_type="rams_assessment",
         entity_id=str(assessment_id),
         company_id=cid,
-        details={"assessment_id": str(assessment_id), "actor_user_id": str(actor.id), "company_id": str(cid)},
+        details={
+            "assessment_id": str(assessment_id),
+            "actor_user_id": str(actor.id),
+            "company_id": str(cid),
+            "title": title,
+            "source_type": source_type,
+            "filename": filename,
+            "file_size_bytes": file_size,
+            "checksum_sha256": checksum,
+        },
     )
 
 
+def _resolve_upload_company_id(actor: User, company_id: uuid.UUID | None) -> uuid.UUID:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    if actor.system_role == SystemRole.ADMIN:
+        if actor.company_id is None:
+            raise RamsValidationError("Your account is not linked to a company.")
+        if company_id is not None and company_id != actor.company_id:
+            raise RamsPermissionError()
+        return actor.company_id
+    if actor.system_role == SystemRole.ADMINISTRATOR:
+        if company_id is None:
+            raise RamsValidationError("company_id is required.")
+        return company_id
+    raise RamsPermissionError()
+
+
+def create_assessment_from_uploaded_pdf(
+    db: Session,
+    actor: User,
+    *,
+    file_bytes: bytes,
+    filename: str | None,
+    content_type: str | None,
+    title: str,
+    company_id: uuid.UUID | None = None,
+    location_id: uuid.UUID | None = None,
+    description: str | None = None,
+    work_activity: str | None = None,
+    risk_level: str = "medium",
+    review_due_date: date | None = None,
+    produced_by_name: str | None = None,
+    notes: str | None = None,
+) -> RamsAssessmentDetailResponse:
+    resolved_company = _resolve_upload_company_id(actor, company_id)
+    title_clean = (title or "").strip()
+    if not title_clean:
+        raise RamsValidationError("Title is required.")
+    rl = (risk_level or "medium").strip().lower()
+    if rl not in RISK_LEVELS:
+        raise RamsValidationError("Invalid risk_level.")
+    _assert_location_for_company(db, resolved_company, location_id)
+    try:
+        safe_name, media, digest = validate_uploaded_rams_pdf(
+            filename=filename,
+            content_type=content_type,
+            file_bytes=file_bytes,
+        )
+    except UploadedRamsPdfValidationError as exc:
+        raise RamsValidationError(str(exc)) from exc
+
+    assessment_id = uuid.uuid4()
+    version = 1
+    storage_key = build_uploaded_rams_storage_key(
+        company_id=resolved_company,
+        assessment_id=assessment_id,
+        version=version,
+    )
+    activity = (work_activity or "").strip() or "Uploaded RAMS PDF"
+    desc_parts = [p for p in [(description or "").strip(), (notes or "").strip()] if p]
+    description_final = "\n\n".join(desc_parts) or None
+    now = _utc_now()
+    storage = get_storage_backend()
+    storage.write_bytes(storage_key, file_bytes)
+    try:
+        row = RamsAssessment(
+            id=assessment_id,
+            company_id=resolved_company,
+            location_id=location_id,
+            title=title_clean[:300],
+            reference=None,
+            work_activity=activity[:2000],
+            description=description_final,
+            status="draft",
+            risk_level=rl,
+            review_due_date=review_due_date,
+            ppe_json=[],
+            no_special_ppe=True,
+            created_by_user_id=actor.id,
+            reviewed_by_user_id=None,
+            created_at=now,
+            updated_at=now,
+            published_at=None,
+            reviewed_at=None,
+            archived_at=None,
+            source_type="uploaded_pdf",
+            produced_by_name=(produced_by_name or "").strip() or None,
+            revision="01",
+            uploaded_pdf_original_filename=safe_name,
+            uploaded_pdf_storage_path=storage_key,
+            uploaded_pdf_content_type=media,
+            uploaded_pdf_file_size_bytes=len(file_bytes),
+            uploaded_pdf_checksum_sha256=digest,
+            uploaded_pdf_version=version,
+            uploaded_pdf_uploaded_by_user_id=actor.id,
+            uploaded_pdf_uploaded_at=now,
+        )
+        rams_repo.save_assessment(db, row)
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="rams.pdf_uploaded",
+            entity_type="rams_assessment",
+            entity_id=str(row.id),
+            company_id=row.company_id,
+            details={
+                "assessment_id": str(row.id),
+                "company_id": str(row.company_id),
+                "location_id": str(row.location_id) if row.location_id else None,
+                "title": row.title,
+                "source_type": "uploaded_pdf",
+                "filename": safe_name,
+                "file_size_bytes": len(file_bytes),
+                "checksum_sha256": digest,
+                "version": version,
+                "actor_user_id": str(actor.id),
+            },
+        )
+    except Exception:
+        try:
+            storage.delete_file(storage_key)
+        except Exception:
+            pass
+        raise
+    return _build_detail(db, row, actor)
+
+
+def replace_draft_uploaded_pdf(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+    *,
+    file_bytes: bytes,
+    filename: str | None,
+    content_type: str | None,
+) -> RamsAssessmentDetailResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_admin_manage_company(actor, row.company_id):
+        raise RamsNotFoundError()
+    if (getattr(row, "source_type", None) or "template") != "uploaded_pdf":
+        raise RamsValidationError("Only uploaded RAMS PDFs can be replaced.")
+    if row.status != "draft":
+        raise RamsValidationError("The PDF can only be replaced while the RAMS is still a draft.")
+    for a in rams_repo.list_acknowledgements_for_assessment(db, assessment_id):
+        if a.status != "pending" or a.signature_image_path or a.acknowledgement_name:
+            raise RamsValidationError(
+                "This RAMS already has acknowledgement evidence. Create a new RAMS instead of replacing the PDF.",
+            )
+    try:
+        safe_name, media, digest = validate_uploaded_rams_pdf(
+            filename=filename,
+            content_type=content_type,
+            file_bytes=file_bytes,
+        )
+    except UploadedRamsPdfValidationError as exc:
+        raise RamsValidationError(str(exc)) from exc
+
+    old_path = row.uploaded_pdf_storage_path
+    next_version = int(row.uploaded_pdf_version or 1) + 1
+    storage_key = build_uploaded_rams_storage_key(
+        company_id=row.company_id,
+        assessment_id=row.id,
+        version=next_version,
+    )
+    storage = get_storage_backend()
+    storage.write_bytes(storage_key, file_bytes)
+    now = _utc_now()
+    try:
+        row.uploaded_pdf_original_filename = safe_name
+        row.uploaded_pdf_storage_path = storage_key
+        row.uploaded_pdf_content_type = media
+        row.uploaded_pdf_file_size_bytes = len(file_bytes)
+        row.uploaded_pdf_checksum_sha256 = digest
+        row.uploaded_pdf_version = next_version
+        row.uploaded_pdf_uploaded_by_user_id = actor.id
+        row.uploaded_pdf_uploaded_at = now
+        row.updated_at = now
+        rams_repo.save_assessment(db, row)
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="rams.pdf_replaced",
+            entity_type="rams_assessment",
+            entity_id=str(row.id),
+            company_id=row.company_id,
+            details={
+                "assessment_id": str(row.id),
+                "company_id": str(row.company_id),
+                "title": row.title,
+                "source_type": "uploaded_pdf",
+                "filename": safe_name,
+                "file_size_bytes": len(file_bytes),
+                "checksum_sha256": digest,
+                "version": next_version,
+                "actor_user_id": str(actor.id),
+            },
+        )
+    except Exception:
+        try:
+            storage.delete_file(storage_key)
+        except Exception:
+            pass
+        raise
+    if old_path and old_path != storage_key:
+        try:
+            storage.delete_file(old_path)
+        except Exception:
+            pass
+    return _build_detail(db, row, actor)
+
+
+def download_uploaded_rams_pdf(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+    *,
+    disposition: str = "attachment",
+) -> tuple[bytes, str]:
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_view_assessment(db, actor, row):
+        raise RamsNotFoundError()
+    if (getattr(row, "source_type", None) or "template") != "uploaded_pdf":
+        raise RamsNotFoundError()
+    path = row.uploaded_pdf_storage_path
+    if not path:
+        raise RamsNotFoundError()
+    storage = get_storage_backend()
+    if not storage.exists(path):
+        raise RamsNotFoundError()
+    try:
+        body = storage.read_bytes(path)
+    except Exception as exc:
+        raise RamsNotFoundError() from exc
+    fname = row.uploaded_pdf_original_filename or f"rams-{assessment_id}.pdf"
+    create_internal_audit_event(
+        db_session=db,
+        actor=actor,
+        action="rams.pdf_downloaded" if disposition == "attachment" else "rams.pdf_viewed",
+        entity_type="rams_assessment",
+        entity_id=str(assessment_id),
+        company_id=row.company_id,
+        details={
+            "assessment_id": str(assessment_id),
+            "actor_user_id": str(actor.id),
+            "source_type": "uploaded_pdf",
+            "filename": fname,
+            "file_size_bytes": row.uploaded_pdf_file_size_bytes,
+            "checksum_sha256": row.uploaded_pdf_checksum_sha256,
+            "version": row.uploaded_pdf_version,
+            "disposition": disposition,
+        },
+    )
+    return body, fname
+
+
 def export_assessment_pdf_bytes(db: Session, actor: User, assessment_id: uuid.UUID) -> tuple[bytes, str]:
-    detail = get_assessment_detail(db, actor, assessment_id)
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_view_assessment(db, actor, row):
+        raise RamsNotFoundError()
+    source_type = getattr(row, "source_type", None) or "template"
+    if source_type == "uploaded_pdf":
+        return download_uploaded_rams_pdf(db, actor, assessment_id, disposition="attachment")
+
+    detail = _build_detail(db, row, actor)
     from app.modules.rams.pdf_export import build_rams_assessment_pdf
 
     pdf = build_rams_assessment_pdf(detail)
