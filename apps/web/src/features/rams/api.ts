@@ -116,6 +116,19 @@ export type RamsAssessmentListItem = {
   reviewed_at: string | null;
   updated_at: string;
   my_ack_status: string | null;
+  source_type?: string;
+};
+
+export type RamsUploadedPdfInfo = {
+  original_filename: string;
+  content_type: string;
+  file_size_bytes: number;
+  checksum_sha256: string | null;
+  version: number;
+  uploaded_at: string | null;
+  uploaded_by_user_id: string | null;
+  download_href: string;
+  view_href: string;
 };
 
 export type RamsHazard = {
@@ -171,6 +184,8 @@ export type RamsAssessmentDetail = {
   published_at: string | null;
   reviewed_at: string | null;
   archived_at: string | null;
+  source_type?: string;
+  uploaded_pdf?: RamsUploadedPdfInfo | null;
   project_name?: string | null;
   client_name?: string | null;
   principal_contractor?: string | null;
@@ -373,6 +388,101 @@ export async function createRamsFromPreset(body: RamsFromPresetBody): Promise<Ra
     throw new Error(await parseErrorMessage(response, "Could not create RAMS from preset."));
   }
   return response.json() as Promise<RamsAssessmentDetail>;
+}
+
+export type UploadRamsPdfFields = {
+  title: string;
+  company_id?: string | null;
+  location_id?: string | null;
+  description?: string | null;
+  work_activity?: string | null;
+  risk_level?: string;
+  review_due_date?: string | null;
+  produced_by_name?: string | null;
+  notes?: string | null;
+};
+
+export async function uploadRamsPdf(file: File, fields: UploadRamsPdfFields): Promise<RamsAssessmentDetail> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("title", fields.title);
+  if (fields.company_id) form.append("company_id", fields.company_id);
+  if (fields.location_id) form.append("location_id", fields.location_id);
+  if (fields.description) form.append("description", fields.description);
+  if (fields.work_activity) form.append("work_activity", fields.work_activity);
+  if (fields.risk_level) form.append("risk_level", fields.risk_level);
+  if (fields.review_due_date) form.append("review_due_date", fields.review_due_date);
+  if (fields.produced_by_name) form.append("produced_by_name", fields.produced_by_name);
+  if (fields.notes) form.append("notes", fields.notes);
+  const response = await fetch(`${API_URL}/api/rams/upload-pdf`, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not upload RAMS PDF."));
+  }
+  return response.json() as Promise<RamsAssessmentDetail>;
+}
+
+export async function replaceUploadedRamsPdf(assessmentId: string, file: File): Promise<RamsAssessmentDetail> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/uploaded-pdf`, {
+    method: "POST",
+    credentials: "include",
+    body: form,
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not replace RAMS PDF."));
+  }
+  return response.json() as Promise<RamsAssessmentDetail>;
+}
+
+/** Absolute API view URL — do not use as iframe src across origins (cookies may not be sent). */
+export function ramsUploadedPdfViewUrl(assessmentId: string): string {
+  return `${API_URL}/api/rams/${assessmentId}/uploaded-pdf/view`;
+}
+
+/** Authenticated PDF bytes for inline preview / new-tab open (session cookie via credentials). */
+export async function fetchUploadedRamsPdfBlob(assessmentId: string): Promise<Blob> {
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/uploaded-pdf/view`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not load uploaded RAMS PDF preview."));
+  }
+  return response.blob();
+}
+
+/** Open authenticated preview in a new tab using a temporary object URL (revoked after a delay). */
+export async function openUploadedRamsPdfInNewTab(assessmentId: string): Promise<void> {
+  const blob = await fetchUploadedRamsPdfBlob(assessmentId);
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank", "noopener,noreferrer");
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+export async function downloadUploadedRamsPdf(assessmentId: string, filenameHint?: string): Promise<void> {
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/uploaded-pdf`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not download uploaded RAMS PDF."));
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const safe = (filenameHint || `rams-${assessmentId}.pdf`).replace(/[^\w.-]+/g, "_").slice(0, 120);
+  a.download = safe.endsWith(".pdf") ? safe : `${safe}.pdf`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function createRams(body: RamsCreateBody): Promise<RamsAssessmentDetail> {

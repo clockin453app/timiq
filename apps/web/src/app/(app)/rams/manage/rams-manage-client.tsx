@@ -102,9 +102,20 @@ export function RamsManageClient() {
               {t("common.refresh", "Refresh")}
             </Button>
           </div>
-          <Link className="inline-flex h-9 items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-4 text-sm font-medium text-[var(--color-btn-primary-text)]" href="/rams/manage/new">
-            Create RAMS
-          </Link>
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:justify-end">
+            <Link
+              className="inline-flex h-9 w-full items-center justify-center rounded border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-4 text-sm font-medium text-[var(--color-text)] sm:w-auto"
+              href="/rams/manage/upload"
+            >
+              Upload RAMS
+            </Link>
+            <Link
+              className="inline-flex h-9 w-full items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-4 text-sm font-medium text-[var(--color-btn-primary-text)] sm:w-auto"
+              href="/rams/manage/new"
+            >
+              Create RAMS
+            </Link>
+          </div>
         </div>
 
         {loading ? (
@@ -112,6 +123,20 @@ export function RamsManageClient() {
         ) : items.length === 0 ? (
           <div className="rounded border border-dashed border-[var(--color-border)] bg-[var(--color-cell)] px-4 py-10 text-center">
             <p className="text-sm font-medium text-[var(--color-text)]">No RAMS records match the current filters.</p>
+            <div className="mt-4 flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:items-center">
+              <Link
+                className="inline-flex h-9 items-center justify-center rounded border border-[var(--color-border-dark)] px-4 text-sm font-medium"
+                href="/rams/manage/upload"
+              >
+                Upload RAMS
+              </Link>
+              <Link
+                className="inline-flex h-9 items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-4 text-sm font-medium text-[var(--color-btn-primary-text)]"
+                href="/rams/manage/new"
+              >
+                Create RAMS
+              </Link>
+            </div>
           </div>
         ) : (
           <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
@@ -120,6 +145,7 @@ export function RamsManageClient() {
                 <TableRow>
                   <TableHead>{t("rams.col_title", "Title")}</TableHead>
                   <TableHead>{t("rams.col_site", "Site")}</TableHead>
+                  <TableHead>Source</TableHead>
                   <TableHead>{t("rams.col_risk", "Risk")}</TableHead>
                   <TableHead>{t("rams.review_due", "Review due")}</TableHead>
                   <TableHead>{t("rams.col_status", "Status")}</TableHead>
@@ -131,6 +157,9 @@ export function RamsManageClient() {
                   <TableRow key={row.id}>
                     <TableCell className="font-medium">{row.title}</TableCell>
                     <TableCell>{locationName(row.location_id)}</TableCell>
+                    <TableCell className="text-sm">
+                      {row.source_type === "uploaded_pdf" ? "Uploaded PDF" : "Template RAMS"}
+                    </TableCell>
                     <TableCell className="capitalize">{row.risk_level}</TableCell>
                     <TableCell>{formatDate(row.review_due_date)}</TableCell>
                     <TableCell className="capitalize">{row.status}</TableCell>

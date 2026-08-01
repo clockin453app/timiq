@@ -14,14 +14,17 @@ import { isEmployee, useCurrentUser } from "@/features/auth";
 import {
   declineRams,
   downloadRamsPdf,
+  downloadUploadedRamsPdf,
   getRams,
   listMyRams,
   acknowledgeRams,
   openRamsPrint,
+  openUploadedRamsPdfInNewTab,
   ramsAttachmentUrl,
   type RamsAssessmentDetail,
   type RamsAssessmentListItem,
 } from "@/features/rams/api";
+import { UploadedRamsPdfPreview } from "@/features/rams/uploaded-pdf-preview";
 import { listLocations, type Location } from "@/features/locations/api";
 import { useT } from "@/lib/i18n";
 
@@ -302,22 +305,59 @@ export function RamsClient() {
           {detail && selectedId === detail.id ? (
             <div className="space-y-4 text-sm">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-semibold text-[var(--color-text)]">{detail.title}</h2>
+                <div className="min-w-0 space-y-1">
+                  {detail.source_type === "uploaded_pdf" ? (
+                    <span className="inline-flex rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
+                      Uploaded document
+                    </span>
+                  ) : null}
+                  <h2 className="text-lg font-semibold text-[var(--color-text)]">{detail.title}</h2>
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() =>
-                      void downloadRamsPdf(detail.id, detail.reference ?? detail.id).catch((e) =>
-                        setError(e instanceof Error ? e.message : t("rams.error_pdf", "Could not download PDF.")),
-                      )
-                    }
-                  >
-                    {t("rams.download_rams_pdf", "Download RAMS PDF")}
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => openRamsPrint(detail.id)}>
-                    {t("rams.open_print_pack", "Print view")}
-                  </Button>
+                  {detail.source_type === "uploaded_pdf" ? (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        onClick={() =>
+                          void openUploadedRamsPdfInNewTab(detail.id).catch((e) =>
+                            setError(e instanceof Error ? e.message : t("rams.error_pdf", "Could not open PDF.")),
+                          )
+                        }
+                      >
+                        View PDF
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() =>
+                          void downloadUploadedRamsPdf(detail.id, detail.uploaded_pdf?.original_filename).catch((e) =>
+                            setError(e instanceof Error ? e.message : t("rams.error_pdf", "Could not download PDF.")),
+                          )
+                        }
+                      >
+                        {t("rams.download_rams_pdf", "Download RAMS PDF")}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() =>
+                          void downloadRamsPdf(detail.id, detail.reference ?? detail.id).catch((e) =>
+                            setError(e instanceof Error ? e.message : t("rams.error_pdf", "Could not download PDF.")),
+                          )
+                        }
+                      >
+                        {t("rams.download_rams_pdf", "Download RAMS PDF")}
+                      </Button>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => openRamsPrint(detail.id)}>
+                        {t("rams.open_print_pack", "Print view")}
+                      </Button>
+                    </>
+                  )}
                   <Button type="button" variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
                     {t("rams.close_detail", "Close")}
                   </Button>
@@ -330,13 +370,28 @@ export function RamsClient() {
                 <p><span className="font-medium">{t("rams.col_your_status", "Your status")}:</span> {myRow?.status ?? "pending"}</p>
               </div>
               <div className="space-y-5">
-                {(detail.document_sections ?? []).filter((section) => section.visible_in_pdf).map((section) => (
-                  <section className="rounded border border-[var(--color-border)] bg-white p-4" key={section.id}>
-                    <h3 className="border-b border-[var(--color-border)] pb-2 text-base font-semibold text-[var(--color-text)]">{section.title}</h3>
-                    {section.not_applicable ? <p className="mt-3 text-[var(--color-text-soft)]">Not applicable.</p> : null}
-                    <div className="mt-3 space-y-3">{section.blocks.map((block) => <div key={block.id}>{renderDocumentBlock(detail, block)}</div>)}</div>
+                {detail.source_type === "uploaded_pdf" ? (
+                  <section className="space-y-2 rounded border border-[var(--color-border)] bg-white p-4">
+                    <h3 className="text-base font-semibold text-[var(--color-text)]">Uploaded RAMS PDF</h3>
+                    <p className="text-xs text-[var(--color-text-soft)]">
+                      Please open and read the PDF before signing. {detail.uploaded_pdf?.original_filename}
+                    </p>
+                    <UploadedRamsPdfPreview
+                      assessmentId={detail.id}
+                      filenameHint={detail.uploaded_pdf?.original_filename}
+                      iframeClassName="h-[24rem] w-full min-w-0 rounded border border-[var(--color-border)]"
+                      reloadKey={`${detail.uploaded_pdf?.version ?? 1}-${detail.uploaded_pdf?.checksum_sha256 ?? ""}`}
+                    />
                   </section>
-                ))}
+                ) : (
+                  (detail.document_sections ?? []).filter((section) => section.visible_in_pdf).map((section) => (
+                    <section className="rounded border border-[var(--color-border)] bg-white p-4" key={section.id}>
+                      <h3 className="border-b border-[var(--color-border)] pb-2 text-base font-semibold text-[var(--color-text)]">{section.title}</h3>
+                      {section.not_applicable ? <p className="mt-3 text-[var(--color-text-soft)]">Not applicable.</p> : null}
+                      <div className="mt-3 space-y-3">{section.blocks.map((block) => <div key={block.id}>{renderDocumentBlock(detail, block)}</div>)}</div>
+                    </section>
+                  ))
+                )}
               </div>
               <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
                 <h3 className="text-base font-semibold text-[var(--color-text)]">Final acknowledgement</h3>

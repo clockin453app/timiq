@@ -11,15 +11,19 @@ import {
   archiveRams,
   deleteRams,
   downloadRamsPdf,
+  downloadUploadedRamsPdf,
   getRams,
   manualSignRamsAcknowledgement,
   openRamsPrint,
+  openUploadedRamsPdfInNewTab,
   publishRams,
   ramsAttachmentUrl,
+  replaceUploadedRamsPdf,
   reviewRams,
   type RamsAcknowledgement,
   type RamsAssessmentDetail,
 } from "@/features/rams/api";
+import { UploadedRamsPdfPreview } from "@/features/rams/uploaded-pdf-preview";
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return "—";
@@ -68,6 +72,7 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [replaceBusy, setReplaceBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +96,7 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
   const scopedUsers = useMemo(() => users.filter((u) => !detail?.company_id || u.company_id === detail.company_id), [detail?.company_id, users]);
   const employeeUsers = scopedUsers.filter((u) => u.system_role === "employee");
   const locationName = detail?.location_id ? (locations.find((l) => l.id === detail.location_id)?.name ?? "—") : "—";
+  const isUploaded = detail?.source_type === "uploaded_pdf";
 
   async function action(fn: () => Promise<RamsAssessmentDetail>, message: string) {
     setBusy(true);
@@ -140,18 +146,47 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
           <>
             <section className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">{detail.status}</p>
-                  <h1 className="mt-1 text-2xl font-bold text-[var(--color-text)]">{detail.title}</h1>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">{detail.status}</p>
+                    {isUploaded ? (
+                      <span className="inline-flex rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">Uploaded RAMS</span>
+                    ) : (
+                      <span className="inline-flex rounded border border-[var(--color-border)] bg-[var(--color-header)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-muted)]">Template RAMS</span>
+                    )}
+                  </div>
+                  <h1 className="mt-1 break-words text-2xl font-bold text-[var(--color-text)]">{detail.title}</h1>
                   <p className="mt-1 text-sm text-[var(--color-text-soft)]">{detail.work_activity}</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Link className="inline-flex h-9 items-center rounded border border-[var(--color-border-dark)] px-3 text-sm font-semibold" href={`/rams/manage/${detail.id}/edit`}>Edit</Link>
+                <div className="flex w-full min-w-0 flex-wrap gap-2 sm:w-auto sm:justify-end">
+                  {!isUploaded ? (
+                    <Link className="inline-flex h-9 items-center rounded border border-[var(--color-border-dark)] px-3 text-sm font-semibold" href={`/rams/manage/${detail.id}/edit`}>Edit</Link>
+                  ) : null}
                   {detail.status === "draft" ? <Button disabled={busy} onClick={() => void action(() => publishRams(detail.id), "RAMS published.")} type="button">Publish</Button> : null}
                   {detail.status === "published" ? <Button disabled={busy} onClick={() => void action(() => reviewRams(detail.id), "RAMS marked reviewed.")} type="button" variant="secondary">Mark complete</Button> : null}
                   {detail.status !== "draft" && detail.status !== "archived" ? <Button disabled={busy} onClick={() => void action(() => archiveRams(detail.id), "RAMS archived.")} type="button" variant="secondary">Archive</Button> : null}
-                  <Button disabled={busy} onClick={() => void downloadRamsPdf(detail.id, detail.reference ?? detail.id).catch((err) => setError(err instanceof Error ? err.message : "PDF download failed."))} type="button" variant="secondary">Download PDF</Button>
-                  <Button disabled={busy} onClick={() => openRamsPrint(detail.id)} type="button" variant="secondary">Print</Button>
+                  {isUploaded ? (
+                    <>
+                      <Button
+                        disabled={busy}
+                        onClick={() =>
+                          void openUploadedRamsPdfInNewTab(detail.id).catch((err) =>
+                            setError(err instanceof Error ? err.message : "PDF preview failed."),
+                          )
+                        }
+                        type="button"
+                        variant="secondary"
+                      >
+                        View PDF
+                      </Button>
+                      <Button disabled={busy} onClick={() => void downloadUploadedRamsPdf(detail.id, detail.uploaded_pdf?.original_filename).catch((err) => setError(err instanceof Error ? err.message : "PDF download failed."))} type="button" variant="secondary">Download PDF</Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button disabled={busy} onClick={() => void downloadRamsPdf(detail.id, detail.reference ?? detail.id).catch((err) => setError(err instanceof Error ? err.message : "PDF download failed."))} type="button" variant="secondary">Download PDF</Button>
+                      <Button disabled={busy} onClick={() => openRamsPrint(detail.id)} type="button" variant="secondary">Print</Button>
+                    </>
+                  )}
                   {detail.status === "draft" ? (
                     <Button
                       disabled={busy || detail.acknowledgements.some((a) => a.status !== "pending")}
@@ -177,37 +212,82 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
                 <div><dt className="font-semibold">Prepared by</dt><dd>{detail.produced_by_name ?? "—"}</dd></div>
                 <div><dt className="font-semibold">Competent review</dt><dd>{detail.checked_by_name ?? detail.approved_by_name ?? "—"}</dd></div>
               </dl>
-              <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
-                Professional template based on UK construction safety practice. A competent person must review and adapt it to the actual site and task.
-              </p>
+              {isUploaded && detail.uploaded_pdf ? (
+                <div className="mt-4 space-y-2 rounded border border-sky-200 bg-sky-50 px-3 py-3 text-sm text-sky-950">
+                  <p className="font-semibold">Uploaded document</p>
+                  <p className="break-all">File: {detail.uploaded_pdf.original_filename}</p>
+                  <p>Size: {Math.round(detail.uploaded_pdf.file_size_bytes / 1024)} KB · Version {detail.uploaded_pdf.version} · Uploaded {formatDate(detail.uploaded_pdf.uploaded_at)}</p>
+                  {detail.status === "draft" ? (
+                    <label className="block text-xs font-semibold">
+                      Replace PDF (draft only)
+                      <input
+                        accept="application/pdf,.pdf"
+                        className="mt-1 block w-full text-sm"
+                        disabled={replaceBusy || busy}
+                        onChange={(e) => {
+                          const next = e.target.files?.[0];
+                          if (!next) return;
+                          setReplaceBusy(true);
+                          setError("");
+                          void replaceUploadedRamsPdf(detail.id, next)
+                            .then((row) => {
+                              setDetail(row);
+                              setNotice("PDF replaced.");
+                            })
+                            .catch((err) => setError(err instanceof Error ? err.message : "Could not replace PDF."))
+                            .finally(() => setReplaceBusy(false));
+                        }}
+                        type="file"
+                      />
+                    </label>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="mt-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  Professional template based on UK construction safety practice. A competent person must review and adapt it to the actual site and task.
+                </p>
+              )}
             </section>
 
-            <section className="space-y-4 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-              <h2 className="text-sm font-bold">RAMS document preview</h2>
-              {(detail.document_sections ?? []).filter((section) => section.visible_in_pdf).map((section) => (
-                <article className="rounded border border-[var(--color-border)] bg-white p-4" key={section.id}>
-                  <h3 className="border-b border-[var(--color-border)] pb-2 font-semibold">{section.title}</h3>
-                  {section.not_applicable ? <p className="mt-2 text-sm text-[var(--color-text-soft)]">Not applicable.</p> : null}
-                  <div className="mt-3 space-y-3">{section.blocks.map((block) => <div key={block.id}>{renderAdminDocumentBlock(detail, block)}</div>)}</div>
-                </article>
-              ))}
-            </section>
-
-            <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-              <h2 className="text-sm font-bold">Hazards and controls</h2>
-              <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
-                <Table><TableHeader><TableRow><TableHead>Hazard</TableHead><TableHead>Who may be harmed</TableHead><TableHead>Before</TableHead><TableHead>Controls</TableHead><TableHead>After</TableHead></TableRow></TableHeader>
-                  <TableBody>{detail.hazards.map((h) => <TableRow key={h.id}><TableCell>{h.hazard}</TableCell><TableCell>{h.who_might_be_harmed ?? "—"}</TableCell><TableCell>{h.initial_risk_score} ({h.initial_risk_band})</TableCell><TableCell>{h.control_measures}</TableCell><TableCell>{h.residual_risk_score} ({h.residual_risk_band})</TableCell></TableRow>)}</TableBody>
-                </Table>
-              </div>
-            </section>
-
-            {(detail.attachments ?? []).length ? (
-              <section className="space-y-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                <h2 className="text-sm font-bold">Attachments</h2>
-                {(detail.attachments ?? []).map((a) => <a className="block text-sm font-semibold underline" href={ramsAttachmentUrl(a)} key={a.id} rel="noopener noreferrer" target="_blank">{a.original_filename} <span className="font-normal text-[var(--color-text-soft)]">({a.section_key})</span></a>)}
+            {isUploaded ? (
+              <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                <h2 className="text-sm font-bold">Uploaded PDF preview</h2>
+                <UploadedRamsPdfPreview
+                  assessmentId={detail.id}
+                  filenameHint={detail.uploaded_pdf?.original_filename}
+                  reloadKey={`${detail.uploaded_pdf?.version ?? 1}-${detail.uploaded_pdf?.checksum_sha256 ?? ""}`}
+                />
               </section>
-            ) : null}
+            ) : (
+              <>
+                <section className="space-y-4 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                  <h2 className="text-sm font-bold">RAMS document preview</h2>
+                  {(detail.document_sections ?? []).filter((section) => section.visible_in_pdf).map((section) => (
+                    <article className="rounded border border-[var(--color-border)] bg-white p-4" key={section.id}>
+                      <h3 className="border-b border-[var(--color-border)] pb-2 font-semibold">{section.title}</h3>
+                      {section.not_applicable ? <p className="mt-2 text-sm text-[var(--color-text-soft)]">Not applicable.</p> : null}
+                      <div className="mt-3 space-y-3">{section.blocks.map((block) => <div key={block.id}>{renderAdminDocumentBlock(detail, block)}</div>)}</div>
+                    </article>
+                  ))}
+                </section>
+
+                <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                  <h2 className="text-sm font-bold">Hazards and controls</h2>
+                  <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
+                    <Table><TableHeader><TableRow><TableHead>Hazard</TableHead><TableHead>Who may be harmed</TableHead><TableHead>Before</TableHead><TableHead>Controls</TableHead><TableHead>After</TableHead></TableRow></TableHeader>
+                      <TableBody>{detail.hazards.map((h) => <TableRow key={h.id}><TableCell>{h.hazard}</TableCell><TableCell>{h.who_might_be_harmed ?? "—"}</TableCell><TableCell>{h.initial_risk_score} ({h.initial_risk_band})</TableCell><TableCell>{h.control_measures}</TableCell><TableCell>{h.residual_risk_score} ({h.residual_risk_band})</TableCell></TableRow>)}</TableBody>
+                    </Table>
+                  </div>
+                </section>
+
+                {(detail.attachments ?? []).length ? (
+                  <section className="space-y-2 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
+                    <h2 className="text-sm font-bold">Attachments</h2>
+                    {(detail.attachments ?? []).map((a) => <a className="block text-sm font-semibold underline" href={ramsAttachmentUrl(a)} key={a.id} rel="noopener noreferrer" target="_blank">{a.original_filename} <span className="font-normal text-[var(--color-text-soft)]">({a.section_key})</span></a>)}
+                  </section>
+                ) : null}
+              </>
+            )}
 
             <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
               <h2 className="text-sm font-bold">Employee sign-off register</h2>
