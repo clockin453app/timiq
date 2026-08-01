@@ -31,6 +31,9 @@ from app.modules.rams.schemas import (
     RamsAssessmentListItem,
     RamsAssessmentPatchRequest,
     RamsAttachmentResponse,
+    RamsBulkAcknowledgementsRequest,
+    RamsBulkAcknowledgementsResponse,
+    RamsBulkPreviewResponse,
     RamsDeclineRequest,
     RamsFromPresetRequest,
     RamsHazardCreateRequest,
@@ -47,6 +50,7 @@ from app.modules.rams.service import (
     acknowledge_assessment,
     add_acknowledgements,
     archive_assessment,
+    bulk_add_acknowledgements,
     create_assessment,
     create_assessment_from_preset,
     create_assessment_from_uploaded_pdf,
@@ -69,6 +73,7 @@ from app.modules.rams.service import (
     manual_sign_acknowledgement,
     patch_assessment,
     patch_hazard,
+    preview_bulk_acknowledgements,
     publish_assessment,
     render_print_html,
     replace_draft_uploaded_pdf,
@@ -406,6 +411,38 @@ def post_rams_acknowledgements(
 ) -> RamsAssessmentDetailResponse:
     try:
         return add_acknowledgements(db_session, current_user, assessment_id, body)
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.get(
+    "/{assessment_id}/acknowledgements/bulk-preview",
+    response_model=RamsBulkPreviewResponse,
+)
+def get_rams_acknowledgements_bulk_preview(
+    assessment_id: uuid.UUID,
+    scope: str = Query(..., description='Either "company" or "site".'),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> RamsBulkPreviewResponse:
+    try:
+        return preview_bulk_acknowledgements(db_session, current_user, assessment_id, scope=scope)
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.post(
+    "/{assessment_id}/acknowledgements/bulk",
+    response_model=RamsBulkAcknowledgementsResponse,
+)
+def post_rams_acknowledgements_bulk(
+    assessment_id: uuid.UUID,
+    body: RamsBulkAcknowledgementsRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> RamsBulkAcknowledgementsResponse:
+    try:
+        return bulk_add_acknowledgements(db_session, current_user, assessment_id, body)
     except RamsError as exc:
         _raise_http(exc)
 

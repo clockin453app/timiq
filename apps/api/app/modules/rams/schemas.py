@@ -201,6 +201,28 @@ class RamsAcknowledgementsAddRequest(BaseModel):
     all_site_users: bool = False
 
 
+class RamsBulkAcknowledgementsRequest(BaseModel):
+    scope: str = Field(description='Either "company" or "site".')
+
+
+class RamsBulkAcknowledgementsResponse(BaseModel):
+    scope: str
+    total_eligible: int
+    added: int
+    skipped_already_assigned: int
+    ineligible: int = 0
+    site_id: uuid.UUID | None = None
+
+
+class RamsBulkPreviewResponse(BaseModel):
+    scope: str
+    total_eligible: int
+    already_assigned: int
+    will_add: int
+    ineligible: int = 0
+    site_id: uuid.UUID | None = None
+
+
 class RamsAcknowledgeRequest(BaseModel):
     read_understood_ack: bool = False
     acknowledgement_name: str = Field(min_length=1, max_length=200)

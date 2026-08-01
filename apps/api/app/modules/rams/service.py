@@ -44,6 +44,9 @@ from app.modules.rams.schemas import (
     RamsAssessmentListItem,
     RamsAssessmentPatchRequest,
     RamsAttachmentResponse,
+    RamsBulkAcknowledgementsRequest,
+    RamsBulkAcknowledgementsResponse,
+    RamsBulkPreviewResponse,
     RamsDeclineRequest,
     RamsDocumentPresetPublic,
     RamsFromPresetRequest,
@@ -78,6 +81,8 @@ class RamsValidationError(RamsError):
 _MAX_RAMS_ORIGINAL_BYTES = 25 * 1024 * 1024
 _MAX_RAMS_STORED_BYTES = 10 * 1024 * 1024
 _MAX_RAMS_ATTACHMENTS = 36
+_ASSIGNABLE_ACK_STATUSES = frozenset({"draft", "published"})
+_LOCKED_ACK_ASSIGNMENT_STATUSES = frozenset({"reviewed", "archived"})
 _RAMS_SECTION_KEYS = frozenset(
     {
         "cover_image",
@@ -204,6 +209,88 @@ def _assert_location_for_company(db: Session, company_id: uuid.UUID, location_id
     loc = get_location_by_id(db, location_id)
     if loc is None or loc.company_id != company_id:
         raise RamsValidationError("Location is not valid for this company.")
+
+
+def _is_eligible_employee(user: User | None, company_id: uuid.UUID) -> bool:
+    if user is None:
+        return False
+    if user.company_id != company_id:
+        return False
+    if not user.is_active:
+        return False
+    if user.system_role != SystemRole.EMPLOYEE:
+        return False
+    return True
+
+
+def _assert_assessment_allows_ack_assignment(row: RamsAssessment) -> None:
+    if row.status in _LOCKED_ACK_ASSIGNMENT_STATUSES:
+        raise RamsValidationError(
+            f"Cannot modify acknowledgements on a {row.status} assessment.",
+        )
+    if row.status not in _ASSIGNABLE_ACK_STATUSES:
+        raise RamsValidationError(
+            "Acknowledgements can only be assigned on draft or published assessments.",
+        )
+
+
+def _resolve_bulk_eligible_ids(
+    db: Session,
+    assessment: RamsAssessment,
+    *,
+    scope: str,
+) -> tuple[list[uuid.UUID], int, uuid.UUID | None]:
+    """Return (eligible_user_ids, ineligible_count, site_id)."""
+    scope_norm = (scope or "").strip().lower()
+    if scope_norm not in ("company", "site"):
+        raise RamsValidationError('scope must be "company" or "site".')
+
+    if scope_norm == "company":
+        candidates = rams_repo.list_active_employees_for_company(db, assessment.company_id)
+        eligible = [u.id for u in candidates if _is_eligible_employee(u, assessment.company_id)]
+        return eligible, 0, None
+
+    if assessment.location_id is None:
+        raise RamsValidationError(
+            "Site scope requires the assessment to have a location. Assign a site first.",
+        )
+    site_id = assessment.location_id
+    _assert_location_for_company(db, assessment.company_id, site_id)
+    access_rows = list_site_access_for_location_ids(db, [site_id])
+    eligible: list[uuid.UUID] = []
+    ineligible = 0
+    seen: set[uuid.UUID] = set()
+    for access in access_rows:
+        if access.user_id in seen:
+            continue
+        seen.add(access.user_id)
+        user = get_user_by_id(db, access.user_id)
+        if _is_eligible_employee(user, assessment.company_id):
+            eligible.append(access.user_id)
+        else:
+            ineligible += 1
+    return eligible, ineligible, site_id
+
+
+def _bulk_preview_counts(
+    db: Session,
+    assessment: RamsAssessment,
+    *,
+    scope: str,
+) -> RamsBulkPreviewResponse:
+    eligible_ids, ineligible, site_id = _resolve_bulk_eligible_ids(db, assessment, scope=scope)
+    assigned = rams_repo.list_assigned_user_ids_for_assessment(db, assessment.id)
+    eligible_set = set(eligible_ids)
+    already = len(eligible_set & assigned)
+    will_add = len(eligible_set - assigned)
+    return RamsBulkPreviewResponse(
+        scope=scope.strip().lower(),
+        total_eligible=len(eligible_set),
+        already_assigned=already,
+        will_add=will_add,
+        ineligible=ineligible,
+        site_id=site_id,
+    )
 
 
 def _display_name(db: Session, user_id: uuid.UUID) -> str | None:
@@ -739,7 +826,7 @@ def patch_assessment(
         if nd != row.description:
             changed.append("description")
         row.description = nd
-    if body.location_id is not None:
+    if "location_id" in body.model_fields_set:
         if body.location_id != row.location_id:
             changed.append("location_id")
         row.location_id = body.location_id
@@ -1132,22 +1219,18 @@ def add_acknowledgements(
         raise RamsNotFoundError()
     if not _can_admin_manage_company(actor, talk.company_id):
         raise RamsNotFoundError()
-    if talk.status == "archived":
-        raise RamsValidationError("Cannot modify acknowledgements on an archived assessment.")
+    _assert_assessment_allows_ack_assignment(talk)
     user_ids: set[uuid.UUID] = set(body.user_ids)
     if body.all_site_users:
         if talk.location_id is None:
             raise RamsValidationError("all_site_users requires the assessment to have a location.")
-        rows = list_site_access_for_location_ids(db, [talk.location_id])
-        for r in rows:
-            u = get_user_by_id(db, r.user_id)
-            if u is not None and u.company_id == talk.company_id:
-                user_ids.add(r.user_id)
+        eligible_ids, _ineligible, _site = _resolve_bulk_eligible_ids(db, talk, scope="site")
+        user_ids.update(eligible_ids)
     now = _utc_now()
     added = 0
     for uid in user_ids:
         target = get_user_by_id(db, uid)
-        if target is None or target.company_id != talk.company_id:
+        if not _is_eligible_employee(target, talk.company_id):
             continue
         if rams_repo.get_acknowledgement(db, assessment_id, uid) is not None:
             continue
@@ -1189,6 +1272,107 @@ def add_acknowledgements(
         },
     )
     return _build_detail(db, talk, actor)
+
+
+def preview_bulk_acknowledgements(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+    *,
+    scope: str,
+) -> RamsBulkPreviewResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None:
+        raise RamsNotFoundError()
+    if not _can_admin_manage_company(actor, row.company_id):
+        raise RamsNotFoundError()
+    _assert_assessment_allows_ack_assignment(row)
+    return _bulk_preview_counts(db, row, scope=scope)
+
+
+def bulk_add_acknowledgements(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+    body: RamsBulkAcknowledgementsRequest,
+) -> RamsBulkAcknowledgementsResponse:
+    if actor.system_role == SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    talk = rams_repo.get_assessment(db, assessment_id)
+    if talk is None:
+        raise RamsNotFoundError()
+    if not _can_admin_manage_company(actor, talk.company_id):
+        raise RamsNotFoundError()
+    _assert_assessment_allows_ack_assignment(talk)
+
+    scope = (body.scope or "").strip().lower()
+    eligible_ids, ineligible, site_id = _resolve_bulk_eligible_ids(db, talk, scope=scope)
+    assigned = rams_repo.list_assigned_user_ids_for_assessment(db, talk.id)
+    eligible_set = set(eligible_ids)
+    skipped = len(eligible_set & assigned)
+    to_add = sorted(eligible_set - assigned, key=lambda x: str(x))
+
+    now = _utc_now()
+    added = 0
+    try:
+        for uid in to_add:
+            ack = RamsAcknowledgement(
+                assessment_id=assessment_id,
+                company_id=talk.company_id,
+                user_id=uid,
+                status="pending",
+                acknowledgement_name=None,
+                acknowledged_at=None,
+                declined_reason=None,
+                signature_method=None,
+                manual_signature_note=None,
+                signature_image_path=None,
+                created_at=now,
+                updated_at=now,
+            )
+            rams_repo.flush_acknowledgement(db, ack)
+            if talk.status == "published":
+                record_rams_ack_required(
+                    db,
+                    company_id=talk.company_id,
+                    assessment_id=talk.id,
+                    recipient_user_id=uid,
+                )
+            added += 1
+
+        create_internal_audit_event(
+            db_session=db,
+            actor=actor,
+            action="rams.acknowledgements_bulk_added",
+            entity_type="rams_assessment",
+            entity_id=str(talk.id),
+            company_id=talk.company_id,
+            details={
+                "assessment_id": str(talk.id),
+                "company_id": str(talk.company_id),
+                "scope": scope,
+                "site_id": str(site_id) if site_id else None,
+                "total_eligible": len(eligible_set),
+                "added": added,
+                "skipped_already_assigned": skipped,
+                "ineligible": ineligible,
+                "actor_user_id": str(actor.id),
+            },
+        )
+    except Exception:
+        db.rollback()
+        raise
+
+    return RamsBulkAcknowledgementsResponse(
+        scope=scope,
+        total_eligible=len(eligible_set),
+        added=added,
+        skipped_already_assigned=skipped,
+        ineligible=ineligible,
+        site_id=site_id,
+    )
 
 
 def acknowledge_assessment(db: Session, actor: User, assessment_id: uuid.UUID, body: RamsAcknowledgeRequest) -> RamsAssessmentDetailResponse:

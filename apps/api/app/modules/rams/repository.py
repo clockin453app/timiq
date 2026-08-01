@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timezone
 from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
+from app.modules.auth.models import SystemRole, User
 from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard
 
 
@@ -123,6 +124,29 @@ def count_acknowledgements(db: Session, assessment_id: uuid.UUID) -> int:
         RamsAcknowledgement.assessment_id == assessment_id
     )
     return int(db.scalar(stmt) or 0)
+
+
+def list_assigned_user_ids_for_assessment(db: Session, assessment_id: uuid.UUID) -> set[uuid.UUID]:
+    stmt = select(RamsAcknowledgement.user_id).where(RamsAcknowledgement.assessment_id == assessment_id)
+    return set(db.scalars(stmt).all())
+
+
+def list_active_employees_for_company(db: Session, company_id: uuid.UUID) -> list[User]:
+    stmt = (
+        select(User)
+        .where(User.company_id == company_id)
+        .where(User.system_role == SystemRole.EMPLOYEE)
+        .where(User.is_active.is_(True))
+        .order_by(User.created_at.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def flush_acknowledgement(db: Session, row: RamsAcknowledgement) -> RamsAcknowledgement:
+    """Flush acknowledgement; caller owns the commit (with audit)."""
+    db.add(row)
+    db.flush()
+    return row
 
 
 def count_pending_acknowledgements_for_user(db: Session, user_id: uuid.UUID) -> int:
