@@ -220,3 +220,51 @@ class RamsAcknowledgement(Base):
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
+
+class RamsReadingProgress(Base):
+    """Employee progress through an exact uploaded RAMS PDF version."""
+
+    __tablename__ = "rams_reading_progress"
+    __table_args__ = (
+        UniqueConstraint(
+            "assessment_id",
+            "user_id",
+            "document_version",
+            "document_sha256",
+            name="uq_rams_reading_progress_doc",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    assessment_id = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("rams_assessments.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    user_id = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    document_source_type = mapped_column(String(32), nullable=False, default="uploaded_pdf")
+    document_version = mapped_column(Integer, nullable=False)
+    document_sha256 = mapped_column(String(64), nullable=False)
+    total_pages = mapped_column(Integer, nullable=True)
+    viewed_pages = mapped_column(JSONB, nullable=False, default=list)
+    highest_page_reached = mapped_column(Integer, nullable=False, default=0)
+    started_at = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at = mapped_column(DateTime(timezone=True), nullable=True)
+    last_new_page_at = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )

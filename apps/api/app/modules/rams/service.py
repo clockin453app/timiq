@@ -28,7 +28,8 @@ from app.modules.rams.constants import (
     risk_score,
 )
 from app.modules.rams.document_presets import RAMS_DOCUMENT_PRESETS, document_preset_public, get_document_preset_by_id
-from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard
+from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard, RamsReadingProgress
+from app.modules.rams.pdf_pages import RamsPdfPageCountError, count_pdf_pages, sha256_hex
 from app.modules.rams.pdf_upload import (
     UploadedRamsPdfValidationError,
     build_uploaded_rams_storage_key,
@@ -55,6 +56,8 @@ from app.modules.rams.schemas import (
     RamsHazardResponse,
     RamsManualSignRequest,
     RamsPresetsResponse,
+    RamsReadingPageRequest,
+    RamsReadingProgressResponse,
     RamsSignoffProgress,
     RamsUploadedPdfInfo,
 )
@@ -293,6 +296,154 @@ def _bulk_preview_counts(
     )
 
 
+_MAX_READING_PAGES = 500
+_MIN_NEW_PAGE_INTERVAL_SECONDS = 0.15
+
+
+def _current_document_identity(row: RamsAssessment) -> tuple[str, int, str] | None:
+    source_type = getattr(row, "source_type", None) or "template"
+    if source_type != "uploaded_pdf":
+        return None
+    checksum = (getattr(row, "uploaded_pdf_checksum_sha256", None) or "").strip()
+    if not checksum:
+        return None
+    version = int(getattr(row, "uploaded_pdf_version", None) or 1)
+    return source_type, version, checksum
+
+
+def _authoritative_pdf_page_count(row: RamsAssessment) -> tuple[int, str, int]:
+    """Return (total_pages, checksum, version) from storage + RAMS record.
+
+    Never trusts client-supplied page counts.
+    """
+    identity = _current_document_identity(row)
+    if identity is None:
+        raise RamsValidationError("Reading progress is only available for uploaded RAMS PDFs.")
+    _source, version, expected_checksum = identity
+    path = (getattr(row, "uploaded_pdf_storage_path", None) or "").strip()
+    if not path:
+        raise RamsValidationError("The RAMS PDF is missing from storage.")
+    backend = get_storage_backend()
+    try:
+        if not backend.exists(path):
+            raise RamsValidationError("The RAMS PDF is missing from storage.")
+        file_bytes = backend.read_bytes(path)
+    except RamsValidationError:
+        raise
+    except Exception as exc:
+        raise RamsValidationError("The RAMS PDF cannot be read from storage.") from exc
+
+    actual_checksum = sha256_hex(file_bytes)
+    if actual_checksum.lower() != expected_checksum.lower():
+        raise RamsValidationError(
+            "The RAMS PDF has changed unexpectedly. Re-open the document.",
+        )
+    try:
+        total_pages = count_pdf_pages(file_bytes)
+    except RamsPdfPageCountError as exc:
+        raise RamsValidationError(str(exc)) from exc
+    if total_pages > _MAX_READING_PAGES:
+        raise RamsValidationError("This RAMS PDF exceeds the maximum supported page count.")
+    return total_pages, expected_checksum, version
+
+
+def _normalize_viewed_pages(raw: object) -> list[int]:
+    if not isinstance(raw, list):
+        return []
+    out: set[int] = set()
+    for item in raw:
+        try:
+            page = int(item)
+        except (TypeError, ValueError):
+            continue
+        if page >= 1:
+            out.add(page)
+    return sorted(out)
+
+
+def _first_unread_page(total_pages: int | None, viewed: list[int]) -> int | None:
+    if not total_pages or total_pages < 1:
+        return None
+    viewed_set = set(viewed)
+    for page in range(1, total_pages + 1):
+        if page not in viewed_set:
+            return page
+    return None
+
+
+def _reading_status(progress: RamsReadingProgress | None) -> str:
+    if progress is None or progress.started_at is None:
+        return "not_started"
+    if progress.completed_at is not None:
+        return "completed"
+    return "in_progress"
+
+
+def _reading_progress_to_response(
+    assessment_id: uuid.UUID,
+    *,
+    source_type: str,
+    version: int,
+    checksum: str,
+    progress: RamsReadingProgress | None,
+) -> RamsReadingProgressResponse:
+    viewed = _normalize_viewed_pages(progress.viewed_pages if progress else [])
+    total = int(progress.total_pages) if progress and progress.total_pages else None
+    return RamsReadingProgressResponse(
+        assessment_id=assessment_id,
+        document_source_type=source_type,
+        document_version=version,
+        document_sha256=checksum,
+        total_pages=total,
+        viewed_pages=viewed,
+        viewed_count=len(viewed),
+        highest_page_reached=int(progress.highest_page_reached) if progress else 0,
+        status=_reading_status(progress),
+        started_at=progress.started_at if progress else None,
+        completed_at=progress.completed_at if progress else None,
+        first_unread_page=_first_unread_page(total, viewed),
+    )
+
+
+def _assert_employee_assigned(db: Session, assessment_id: uuid.UUID, user_id: uuid.UUID) -> RamsAcknowledgement:
+    att = rams_repo.get_acknowledgement(db, assessment_id, user_id)
+    if att is None:
+        raise RamsNotFoundError()
+    return att
+
+
+def _reading_complete_for_current_doc(db: Session, row: RamsAssessment, user_id: uuid.UUID) -> bool:
+    identity = _current_document_identity(row)
+    if identity is None:
+        return False
+    _source, version, checksum = identity
+    try:
+        authoritative_pages, auth_checksum, auth_version = _authoritative_pdf_page_count(row)
+    except RamsValidationError:
+        return False
+    if auth_version != version or auth_checksum.lower() != checksum.lower():
+        return False
+    progress = rams_repo.get_reading_progress(
+        db,
+        assessment_id=row.id,
+        user_id=user_id,
+        document_version=version,
+        document_sha256=checksum,
+    )
+    if progress is None or progress.completed_at is None or not progress.total_pages:
+        return False
+    if int(progress.total_pages) != authoritative_pages:
+        return False
+    if int(progress.document_version) != version:
+        return False
+    if (progress.document_sha256 or "").lower() != checksum.lower():
+        return False
+    viewed = set(_normalize_viewed_pages(progress.viewed_pages))
+    needed = set(range(1, authoritative_pages + 1))
+    return needed.issubset(viewed) and progress.completed_at is not None
+
+
+
 def _display_name(db: Session, user_id: uuid.UUID) -> str | None:
     profile = get_employee_profile_by_user_id(db, user_id)
     if profile is None:
@@ -429,7 +580,7 @@ def _build_detail(
             download_href=f"/api/rams/{row.id}/uploaded-pdf",
             view_href=f"/api/rams/{row.id}/uploaded-pdf/view",
         )
-    return RamsAssessmentDetailResponse(
+    detail = RamsAssessmentDetailResponse(
         id=row.id,
         company_id=row.company_id,
         location_id=row.location_id,
@@ -485,7 +636,30 @@ def _build_detail(
         acknowledgements=acks,
         attachments=attachments if source_type != "uploaded_pdf" else [],
         signoff_progress=signoff,
+        reading_progress=None,
+        reading_required=False,
     )
+    identity = _current_document_identity(row)
+    if identity is not None:
+        source, version, checksum = identity
+        progress_row = None
+        if viewer.system_role == SystemRole.EMPLOYEE:
+            progress_row = rams_repo.get_reading_progress(
+                db,
+                assessment_id=row.id,
+                user_id=viewer.id,
+                document_version=version,
+                document_sha256=checksum,
+            )
+        detail.reading_required = True
+        detail.reading_progress = _reading_progress_to_response(
+            row.id,
+            source_type=source,
+            version=version,
+            checksum=checksum,
+            progress=progress_row,
+        )
+    return detail
 
 
 def _can_view_assessment(db: Session, actor: User, row: RamsAssessment) -> bool:
@@ -1395,6 +1569,12 @@ def acknowledge_assessment(db: Session, actor: User, assessment_id: uuid.UUID, b
         raise RamsValidationError("You have already acknowledged this assessment.")
     if att.status != "pending":
         raise RamsValidationError("You cannot acknowledge in the current state.")
+
+    identity = _current_document_identity(row)
+    if identity is not None:
+        if not _reading_complete_for_current_doc(db, row, actor.id):
+            raise RamsValidationError("Open the RAMS and view all pages before acknowledging.")
+
     name = body.acknowledgement_name.strip()
     try:
         png = decode_png_data_url(body.signature_image_data)
@@ -1417,6 +1597,26 @@ def acknowledge_assessment(db: Session, actor: User, assessment_id: uuid.UUID, b
     att.declined_reason = None
     att.updated_at = _utc_now()
     rams_repo.save_acknowledgement(db, att)
+
+    reading_completed_at = None
+    doc_version = getattr(row, "uploaded_pdf_version", None)
+    doc_checksum = getattr(row, "uploaded_pdf_checksum_sha256", None)
+    total_pages = None
+    if identity is not None:
+        _src, version, checksum = identity
+        progress = rams_repo.get_reading_progress(
+            db,
+            assessment_id=row.id,
+            user_id=actor.id,
+            document_version=version,
+            document_sha256=checksum,
+        )
+        if progress is not None:
+            reading_completed_at = progress.completed_at
+            total_pages = progress.total_pages
+            doc_version = version
+            doc_checksum = checksum
+
     create_internal_audit_event(
         db_session=db,
         actor=actor,
@@ -1428,12 +1628,302 @@ def acknowledge_assessment(db: Session, actor: User, assessment_id: uuid.UUID, b
             "assessment_id": str(row.id),
             "actor_user_id": str(actor.id),
             "status": att.status,
+            "signature_method": att.signature_method,
             "source_type": getattr(row, "source_type", None) or "template",
-            "uploaded_pdf_version": getattr(row, "uploaded_pdf_version", None),
-            "uploaded_pdf_checksum_sha256": getattr(row, "uploaded_pdf_checksum_sha256", None),
+            "uploaded_pdf_version": doc_version,
+            "uploaded_pdf_checksum_sha256": doc_checksum,
+            "total_pages": total_pages,
+            "reading_completed_at": reading_completed_at.isoformat() if reading_completed_at else None,
+            "acknowledged_at": att.acknowledged_at.isoformat() if att.acknowledged_at else None,
         },
     )
     return _build_detail(db, row, actor)
+
+
+def get_reading_progress_for_employee(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+) -> RamsReadingProgressResponse:
+    if actor.system_role != SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    company_id = _ensure_company_user(actor)
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None or row.company_id != company_id:
+        raise RamsNotFoundError()
+    _assert_employee_assigned(db, assessment_id, actor.id)
+    identity = _current_document_identity(row)
+    if identity is None:
+        raise RamsValidationError("Reading progress is only available for uploaded RAMS PDFs.")
+    source, version, checksum = identity
+    progress = rams_repo.get_reading_progress(
+        db,
+        assessment_id=row.id,
+        user_id=actor.id,
+        document_version=version,
+        document_sha256=checksum,
+    )
+    return _reading_progress_to_response(
+        row.id,
+        source_type=source,
+        version=version,
+        checksum=checksum,
+        progress=progress,
+    )
+
+
+def start_reading_progress(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+) -> RamsReadingProgressResponse:
+    if actor.system_role != SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    company_id = _ensure_company_user(actor)
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None or row.company_id != company_id:
+        raise RamsNotFoundError()
+    if row.status not in ("published", "reviewed", "archived"):
+        raise RamsValidationError("This assessment is not available for reading.")
+    _assert_employee_assigned(db, assessment_id, actor.id)
+    identity = _current_document_identity(row)
+    if identity is None:
+        raise RamsValidationError("Reading progress is only available for uploaded RAMS PDFs.")
+    source, version, checksum = identity
+    total_pages, checksum, version = _authoritative_pdf_page_count(row)
+
+    progress = rams_repo.get_reading_progress(
+        db,
+        assessment_id=row.id,
+        user_id=actor.id,
+        document_version=version,
+        document_sha256=checksum,
+        for_update=True,
+    )
+    now = _utc_now()
+    first_start = False
+    if progress is None:
+        first_start = True
+        progress = RamsReadingProgress(
+            company_id=row.company_id,
+            assessment_id=row.id,
+            user_id=actor.id,
+            document_source_type=source,
+            document_version=version,
+            document_sha256=checksum,
+            total_pages=total_pages,
+            viewed_pages=[],
+            highest_page_reached=0,
+            started_at=now,
+            completed_at=None,
+            last_new_page_at=None,
+            updated_at=now,
+        )
+    else:
+        # Authoritative recount wins; trim viewed pages if the stored PDF page count changed.
+        if progress.total_pages != total_pages:
+            viewed = [p for p in _normalize_viewed_pages(progress.viewed_pages) if p <= total_pages]
+            progress.viewed_pages = viewed
+            progress.highest_page_reached = max(viewed) if viewed else 0
+            progress.completed_at = None
+        progress.total_pages = total_pages
+        progress.document_version = version
+        progress.document_sha256 = checksum
+        if progress.started_at is None:
+            first_start = True
+            progress.started_at = now
+        progress.updated_at = now
+        # Recompute completion from authoritative pages only.
+        viewed_set = set(_normalize_viewed_pages(progress.viewed_pages))
+        if set(range(1, total_pages + 1)).issubset(viewed_set):
+            if progress.completed_at is None:
+                progress.completed_at = now
+        else:
+            progress.completed_at = None
+
+    try:
+        rams_repo.flush_reading_progress(db, progress)
+        if first_start:
+            create_internal_audit_event(
+                db_session=db,
+                actor=actor,
+                action="rams.reading_started",
+                entity_type="rams_assessment",
+                entity_id=str(row.id),
+                company_id=row.company_id,
+                details={
+                    "assessment_id": str(row.id),
+                    "actor_user_id": str(actor.id),
+                    "document_version": version,
+                    "document_sha256": checksum,
+                    "total_pages": total_pages,
+                },
+            )
+        else:
+            db.commit()
+            db.refresh(progress)
+    except Exception:
+        db.rollback()
+        raise
+
+    return _reading_progress_to_response(
+        row.id,
+        source_type=source,
+        version=version,
+        checksum=checksum,
+        progress=progress,
+    )
+
+
+def record_reading_page(
+    db: Session,
+    actor: User,
+    assessment_id: uuid.UUID,
+    body: RamsReadingPageRequest,
+) -> RamsReadingProgressResponse:
+    if actor.system_role != SystemRole.EMPLOYEE:
+        raise RamsPermissionError()
+    company_id = _ensure_company_user(actor)
+    row = rams_repo.get_assessment(db, assessment_id)
+    if row is None or row.company_id != company_id:
+        raise RamsNotFoundError()
+    _assert_employee_assigned(db, assessment_id, actor.id)
+    identity = _current_document_identity(row)
+    if identity is None:
+        raise RamsValidationError("Reading progress is only available for uploaded RAMS PDFs.")
+    source, version, checksum = identity
+    total_pages, checksum, version = _authoritative_pdf_page_count(row)
+
+    try:
+        page_number = int(body.page_number)
+    except (TypeError, ValueError) as exc:
+        raise RamsValidationError("Invalid page number.") from exc
+    if page_number < 1 or page_number > total_pages:
+        raise RamsValidationError(
+            f"Page number must be between 1 and {total_pages}.",
+        )
+
+    progress = rams_repo.get_reading_progress(
+        db,
+        assessment_id=row.id,
+        user_id=actor.id,
+        document_version=version,
+        document_sha256=checksum,
+        for_update=True,
+    )
+    now = _utc_now()
+    create_started = False
+    if progress is None:
+        create_started = True
+        progress = RamsReadingProgress(
+            company_id=row.company_id,
+            assessment_id=row.id,
+            user_id=actor.id,
+            document_source_type=source,
+            document_version=version,
+            document_sha256=checksum,
+            total_pages=total_pages,
+            viewed_pages=[],
+            highest_page_reached=0,
+            started_at=now,
+            completed_at=None,
+            last_new_page_at=None,
+            updated_at=now,
+        )
+    else:
+        if progress.started_at is None:
+            create_started = True
+            progress.started_at = now
+        progress.total_pages = total_pages
+        progress.document_version = version
+        progress.document_sha256 = checksum
+
+    viewed = set(_normalize_viewed_pages(progress.viewed_pages))
+    is_new = page_number not in viewed
+    if not is_new and not create_started:
+        # Idempotent duplicate: do not mutate timestamps or completion.
+        return _reading_progress_to_response(
+            row.id,
+            source_type=source,
+            version=version,
+            checksum=checksum,
+            progress=progress,
+        )
+
+    if is_new:
+        last_at = getattr(progress, "last_new_page_at", None)
+        if last_at is not None:
+            elapsed = (now - last_at).total_seconds()
+            if elapsed < _MIN_NEW_PAGE_INTERVAL_SECONDS:
+                raise RamsValidationError(
+                    "Reading progress is updating too quickly. View each page briefly before continuing.",
+                )
+        viewed.add(page_number)
+        progress.last_new_page_at = now
+
+    progress.viewed_pages = sorted(viewed)
+    progress.highest_page_reached = max(viewed) if viewed else 0
+    progress.updated_at = now
+
+    newly_complete = False
+    needed = set(range(1, total_pages + 1))
+    if needed.issubset(viewed):
+        if progress.completed_at is None:
+            newly_complete = True
+            progress.completed_at = now
+    else:
+        # Never trust a client completion flag; clear if pages are incomplete.
+        progress.completed_at = None
+
+    try:
+        rams_repo.flush_reading_progress(db, progress)
+        if create_started:
+            create_internal_audit_event(
+                db_session=db,
+                actor=actor,
+                action="rams.reading_started",
+                entity_type="rams_assessment",
+                entity_id=str(row.id),
+                company_id=row.company_id,
+                details={
+                    "assessment_id": str(row.id),
+                    "actor_user_id": str(actor.id),
+                    "document_version": version,
+                    "document_sha256": checksum,
+                    "total_pages": total_pages,
+                },
+            )
+        if newly_complete:
+            create_internal_audit_event(
+                db_session=db,
+                actor=actor,
+                action="rams.reading_completed",
+                entity_type="rams_assessment",
+                entity_id=str(row.id),
+                company_id=row.company_id,
+                details={
+                    "assessment_id": str(row.id),
+                    "actor_user_id": str(actor.id),
+                    "document_version": version,
+                    "document_sha256": checksum,
+                    "total_pages": total_pages,
+                    "viewed_count": len(viewed),
+                },
+            )
+        if not create_started and not newly_complete:
+            db.commit()
+            db.refresh(progress)
+    except Exception:
+        db.rollback()
+        raise
+
+    return _reading_progress_to_response(
+        row.id,
+        source_type=source,
+        version=version,
+        checksum=checksum,
+        progress=progress,
+    )
 
 
 def decline_assessment(db: Session, actor: User, assessment_id: uuid.UUID, body: RamsDeclineRequest) -> RamsAssessmentDetailResponse:

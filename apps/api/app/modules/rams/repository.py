@@ -7,7 +7,13 @@ from sqlalchemy import Select, and_, func, select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
-from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard
+from app.modules.rams.models import (
+    RamsAcknowledgement,
+    RamsAssessment,
+    RamsAttachment,
+    RamsHazard,
+    RamsReadingProgress,
+)
 
 
 def get_assessment(db: Session, assessment_id: uuid.UUID) -> RamsAssessment | None:
@@ -242,3 +248,37 @@ def delete_attachment(db: Session, row: RamsAttachment) -> None:
 def delete_assessment_row(db: Session, row: RamsAssessment) -> None:
     db.delete(row)
     db.commit()
+
+
+def get_reading_progress(
+    db: Session,
+    *,
+    assessment_id: uuid.UUID,
+    user_id: uuid.UUID,
+    document_version: int,
+    document_sha256: str,
+    for_update: bool = False,
+) -> RamsReadingProgress | None:
+    stmt = (
+        select(RamsReadingProgress)
+        .where(RamsReadingProgress.assessment_id == assessment_id)
+        .where(RamsReadingProgress.user_id == user_id)
+        .where(RamsReadingProgress.document_version == document_version)
+        .where(RamsReadingProgress.document_sha256 == document_sha256)
+    )
+    if for_update:
+        stmt = stmt.with_for_update()
+    return db.scalar(stmt)
+
+
+def save_reading_progress(db: Session, row: RamsReadingProgress) -> RamsReadingProgress:
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def flush_reading_progress(db: Session, row: RamsReadingProgress) -> RamsReadingProgress:
+    db.add(row)
+    db.flush()
+    return row

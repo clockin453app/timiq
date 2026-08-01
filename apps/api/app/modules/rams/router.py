@@ -41,6 +41,8 @@ from app.modules.rams.schemas import (
     RamsHazardResponse,
     RamsManualSignRequest,
     RamsPresetsResponse,
+    RamsReadingPageRequest,
+    RamsReadingProgressResponse,
 )
 from app.modules.rams.service import (
     RamsError,
@@ -65,6 +67,7 @@ from app.modules.rams.service import (
     export_csv_bytes,
     get_assessment_detail,
     get_presets,
+    get_reading_progress_for_employee,
     list_acknowledgements_admin,
     list_assessments_admin,
     list_hazards,
@@ -75,9 +78,11 @@ from app.modules.rams.service import (
     patch_hazard,
     preview_bulk_acknowledgements,
     publish_assessment,
+    record_reading_page,
     render_print_html,
     replace_draft_uploaded_pdf,
     review_assessment,
+    start_reading_progress,
     upload_rams_attachment_service,
 )
 
@@ -456,6 +461,43 @@ def post_rams_acknowledge(
 ) -> RamsAssessmentDetailResponse:
     try:
         return acknowledge_assessment(db_session, current_user, assessment_id, body)
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.get("/{assessment_id}/reading-progress", response_model=RamsReadingProgressResponse)
+def get_rams_reading_progress(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_roles(SystemRole.EMPLOYEE)),
+) -> RamsReadingProgressResponse:
+    try:
+        return get_reading_progress_for_employee(db_session, current_user, assessment_id)
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.post("/{assessment_id}/reading-progress/start", response_model=RamsReadingProgressResponse)
+def post_rams_reading_progress_start(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_roles(SystemRole.EMPLOYEE)),
+) -> RamsReadingProgressResponse:
+    try:
+        return start_reading_progress(db_session, current_user, assessment_id)
+    except RamsError as exc:
+        _raise_http(exc)
+
+
+@router.post("/{assessment_id}/reading-progress/pages", response_model=RamsReadingProgressResponse)
+def post_rams_reading_progress_pages(
+    assessment_id: uuid.UUID,
+    body: RamsReadingPageRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_roles(SystemRole.EMPLOYEE)),
+) -> RamsReadingProgressResponse:
+    try:
+        return record_reading_page(db_session, current_user, assessment_id, body)
     except RamsError as exc:
         _raise_http(exc)
 

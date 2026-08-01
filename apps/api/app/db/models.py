@@ -37,7 +37,13 @@ from app.modules.privacy.models import PrivacyPolicyAcknowledgement, PrivacyRequ
 from app.modules.presence.models import UserPresenceSession
 from app.modules.settings.models import CompanyAppSettings, UserPreference
 from app.modules.smart_forms.models import SmartFormSubmission, SmartFormTemplate
-from app.modules.rams.models import RamsAcknowledgement, RamsAssessment, RamsAttachment, RamsHazard
+from app.modules.rams.models import (
+    RamsAcknowledgement,
+    RamsAssessment,
+    RamsAttachment,
+    RamsHazard,
+    RamsReadingProgress,
+)
 from app.modules.toolbox_talks.models import ToolboxTalk, ToolboxTalkAttendee
 from app.modules.workplaces.models import Workplace
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry

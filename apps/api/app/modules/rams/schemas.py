@@ -286,6 +286,29 @@ class RamsUploadedPdfInfo(BaseModel):
     view_href: str
 
 
+class RamsReadingProgressResponse(BaseModel):
+    assessment_id: uuid.UUID
+    document_source_type: str
+    document_version: int
+    document_sha256: str
+    total_pages: int | None = None
+    viewed_pages: list[int] = Field(default_factory=list)
+    viewed_count: int = 0
+    highest_page_reached: int = 0
+    status: str  # not_started | in_progress | completed
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    first_unread_page: int | None = None
+
+
+class RamsReadingStartRequest(BaseModel):
+    """Empty body — total pages are derived server-side from the stored PDF."""
+
+
+class RamsReadingPageRequest(BaseModel):
+    page_number: int = Field(ge=1, le=500)
+
+
 class RamsAssessmentDetailResponse(BaseModel):
     model_config = ConfigDict(from_attributes=False)
 
@@ -344,3 +367,5 @@ class RamsAssessmentDetailResponse(BaseModel):
     acknowledgements: list[RamsAcknowledgementResponse] = Field(default_factory=list)
     attachments: list[RamsAttachmentResponse] = Field(default_factory=list)
     signoff_progress: RamsSignoffProgress | None = None
+    reading_progress: RamsReadingProgressResponse | None = None
+    reading_required: bool = False
