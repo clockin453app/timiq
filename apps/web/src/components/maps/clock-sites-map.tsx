@@ -7,9 +7,7 @@ import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useRef, 
 import type { ClockAssignedSite } from "../../features/time-clock/api";
 import { nearestSiteId } from "../../lib/geo";
 import { OSM_TILE_ATTRIBUTION, OSM_TILE_LAYER_URL } from "./leaflet-default-tiles";
-
-export const CLOCK_MAP_FALLBACK_MESSAGE =
-  "Map temporarily unavailable. GPS validation is still active.";
+import { CLOCK_MAP_FALLBACK_MESSAGE } from "./map-messages";
 
 function siteMarkerIcon(isNearest: boolean) {
   const cls = isNearest
