@@ -23,6 +23,7 @@ import {
   archiveRams,
   bulkAssignRamsAcknowledgements,
   deleteRams,
+  downloadRamsAcknowledgementRegisterPdf,
   downloadRamsCsv,
   downloadRamsPdf,
   downloadRamsSignedRecord,
@@ -291,6 +292,7 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
                   ) : null}
                   {isUploaded ? (
                     <Button
+                      className="w-full min-w-0 sm:w-auto"
                       disabled={busy}
                       onClick={() =>
                         void downloadUploadedRamsPdf(detail.id, detail.uploaded_pdf?.original_filename).catch((err) =>
@@ -304,23 +306,25 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
                     </Button>
                   ) : (
                     <>
-                      <Button disabled={busy} onClick={() => void downloadRamsPdf(detail.id, detail.reference ?? detail.id).catch((err) => setError(err instanceof Error ? err.message : "PDF download failed."))} type="button" variant="secondary">Download PDF</Button>
-                      <Button disabled={busy} onClick={() => openRamsPrint(detail.id)} type="button" variant="secondary">Print</Button>
+                      <Button className="w-full min-w-0 sm:w-auto" disabled={busy} onClick={() => void downloadRamsPdf(detail.id, detail.reference ?? detail.id).catch((err) => setError(err instanceof Error ? err.message : "PDF download failed."))} type="button" variant="secondary">Download original RAMS</Button>
+                      <Button className="w-full min-w-0 sm:w-auto" disabled={busy} onClick={() => openRamsPrint(detail.id)} type="button" variant="secondary">Print</Button>
                     </>
                   )}
                   <Button
+                    className="w-full min-w-0 sm:w-auto"
                     disabled={busy}
                     onClick={() =>
-                      void downloadRamsCsv(detail.id).catch((err) =>
-                        setError(err instanceof Error ? err.message : "Register download failed."),
+                      void downloadRamsAcknowledgementRegisterPdf(detail.id, detail.reference ?? detail.id).catch((err) =>
+                        setError(err instanceof Error ? err.message : "Acknowledgement register PDF download failed."),
                       )
                     }
                     type="button"
                     variant="secondary"
                   >
-                    Download acknowledgement register
+                    Download acknowledgement register PDF
                   </Button>
                   <Button
+                    className="w-full min-w-0 sm:w-auto"
                     disabled={busy}
                     onClick={() =>
                       void downloadRamsSignedRecord(detail.id, detail.reference ?? detail.id).catch((err) =>
@@ -331,6 +335,19 @@ export function RamsDetailClient({ ramsId }: { ramsId: string }) {
                     variant="secondary"
                   >
                     Download complete signed record
+                  </Button>
+                  <Button
+                    className="w-full min-w-0 sm:w-auto"
+                    disabled={busy}
+                    onClick={() =>
+                      void downloadRamsCsv(detail.id).catch((err) =>
+                        setError(err instanceof Error ? err.message : "CSV export failed."),
+                      )
+                    }
+                    type="button"
+                    variant="secondary"
+                  >
+                    Export register CSV
                   </Button>
                   {detail.status === "draft" ? (
                     <Button

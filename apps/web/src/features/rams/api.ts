@@ -842,6 +842,30 @@ export function ramsSignatureImageUrl(href: string | null | undefined): string |
   return `${API_URL}${href.startsWith("/") ? href : `/${href}`}`;
 }
 
+export async function downloadRamsAcknowledgementRegisterPdf(
+  assessmentId: string,
+  referenceOrId?: string,
+): Promise<void> {
+  const response = await fetch(`${API_URL}/api/rams/${assessmentId}/acknowledgement-register.pdf`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not download acknowledgement register PDF."));
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const safe = (referenceOrId ?? assessmentId).replace(/[^\w.-]+/g, "_").slice(0, 80);
+  a.download = `rams-acknowledgement-register-${safe || assessmentId}.pdf`;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function downloadRamsSignedRecord(assessmentId: string, referenceOrId?: string): Promise<void> {
   const response = await fetch(`${API_URL}/api/rams/${assessmentId}/signed-record.pdf`, {
     method: "GET",
