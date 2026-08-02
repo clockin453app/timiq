@@ -245,6 +245,40 @@ check("collapse preference", /localStorage\.getItem\(SIDEBAR_COLLAPSED_KEY\)/.te
 check("sidebar uses NavTree", /<NavTree/.test(sidebar));
 check("collapsed section expands", /setCollapsed\(false\)/.test(sidebar) && /forceOpenIds/.test(sidebar));
 check("collapsed does not auto-navigate section", /onCollapsedSectionClick/.test(sidebar) && !/href=\{node\.href\}/.test(sidebar.split("collapsed")[1] ?? ""));
+{
+  const footerStart = sidebar.indexOf('data-testid="desktop-sidebar-account-footer"');
+  const footer = footerStart >= 0 ? sidebar.slice(footerStart) : "";
+  const scrollStart = sidebar.indexOf('data-testid="desktop-sidebar-nav-scroll"');
+  const scroll = scrollStart >= 0 ? sidebar.slice(scrollStart, Math.min(sidebar.length, scrollStart + 4500)) : "";
+  check("Profile is inside scrollable navigation (tree or account nav)",
+    leafHrefs(employee).includes("/profile") && leafHrefs(admin).includes("/profile"));
+  check("Settings is inside scrollable navigation tree",
+    leafHrefs(employee).includes("/settings") && leafHrefs(admin).includes("/settings"));
+  check("Help centre is inside scrollable navigation tree",
+    leafHrefs(employee).includes("/help") && leafHrefs(admin).includes("/help"));
+  check("collapsed rail keeps account links in scroll area",
+    /data-testid="desktop-sidebar-account-nav"/.test(sidebar) && /href=\{link\.href\}/.test(sidebar));
+  check("fixed footer does not duplicate Profile/Settings/Help links",
+    !/href="\/profile"/.test(footer) && !/href="\/settings"/.test(footer) && !/href="\/help"/.test(footer));
+  check("fixed footer contains account identity and Log out only",
+    /formatAuthUserDisplayName/.test(sidebar) &&
+      /displayName/.test(footer) &&
+      /LogoutButton/.test(footer) &&
+      !/signed_in_as/.test(footer) &&
+      !/nav\.profile/.test(footer));
+  check("name appears before Log out in expanded footer",
+    /\{displayName\}[\s\S]*?<LogoutButton[\s\S]*?showIcon/.test(footer));
+  check("email is de-emphasized via title/tooltip or secondary line",
+    /title=\{user\.email\}/.test(footer));
+  check("no SIGNED IN AS label in footer", !/Signed in as/.test(footer) && !/signed_in_as/.test(footer));
+  check("footer uses compact padding", /space-y-1 px-2\.5 py-1\.5/.test(footer) || /py-1\.5/.test(footer));
+  check("navigation keeps bottom clearance (pb on scroll)",
+    /desktop-sidebar-nav-scroll[\s\S]*pb-4/.test(sidebar) || /pb-4 \[-webkit-overflow-scrolling:touch\]/.test(scroll) || /pb-3/.test(scroll));
+  check("footer is compact (no max-h 50% nested scroll)",
+    !/max-h-\[50%\]/.test(sidebar) && /desktop-sidebar-account-footer/.test(sidebar) && /shrink-0 border-t border-white\/15/.test(sidebar));
+}
+check("role permissions and routes unchanged for limited profile-only",
+  leafHrefs(limited).includes("/profile") && !leafHrefs(limited).includes("/settings") && !leafHrefs(limited).includes("/help"));
 check("multi expand persistence", /timiq-nav-tree:v1:/.test(navTree));
 check("prunes invalid expanded ids", /validFolderIds/.test(navTree));
 check("aria-expanded folders", /aria-expanded=\{open\}/.test(navTree));

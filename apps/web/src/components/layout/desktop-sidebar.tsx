@@ -10,7 +10,7 @@ import {
 } from "../../config/navigation";
 import type { NotificationSummary } from "../../features/notifications/api";
 import { navBadgesFromSummary } from "../../features/notifications/nav-badges";
-import { LogoutButton, useCurrentUser } from "../../features/auth";
+import { LogoutButton, formatAuthUserDisplayName, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { useT } from "../../lib/i18n";
 
@@ -29,6 +29,12 @@ function rootSectionIconKey(node: NavigationNode): string {
   return node.id;
 }
 
+type AccountNavLink = {
+  href: "/profile" | "/settings" | "/help";
+  labelKey: "nav.profile" | "nav.settings" | "nav.help";
+  fallback: string;
+};
+
 export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProps) {
   const user = useCurrentUser();
   const t = useT();
@@ -43,6 +49,19 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
   );
   const [forceOpenIds, setForceOpenIds] = useState<string[]>([]);
   const [navBadges, setNavBadges] = useState<Record<string, number>>({});
+
+  const accountNavLinks = useMemo((): AccountNavLink[] => {
+    const links: AccountNavLink[] = [
+      { href: "/profile", labelKey: "nav.profile", fallback: "Profile" },
+    ];
+    if (!limited) {
+      links.push(
+        { href: "/settings", labelKey: "nav.settings", fallback: "Settings" },
+        { href: "/help", labelKey: "nav.help", fallback: "Help centre" },
+      );
+    }
+    return links;
+  }, [limited]);
 
   useEffect(() => {
     const onSummary = (event: Event) => {
@@ -76,15 +95,20 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
     setCollapsed(false);
   };
 
+  const displayName = useMemo(() => formatAuthUserDisplayName(user), [user]);
+  const showEmailSecondary = displayName !== user.email;
+
   return (
     <aside
       className="timiq-print-hide-chrome timiq-desktop-sidebar hidden min-h-0 shrink-0 flex-col overflow-hidden border-r border-[var(--color-sidebar-border)] bg-[var(--color-sidebar-bg)] text-[var(--color-sidebar-fg)] transition-[width] duration-200 ease-out motion-reduce:transition-none lg:flex"
+      data-testid="desktop-sidebar"
       style={{ width: resolvedWidth }}
     >
       {collapsed ? (
         <nav
           aria-label={t("shell.sidebar_section", "Navigation")}
-          className="timiq-sidebar-scrollbar flex min-h-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden overscroll-y-contain py-1 [-webkit-overflow-scrolling:touch]"
+          className="timiq-sidebar-scrollbar flex min-h-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden overscroll-y-contain py-1 pb-3 [-webkit-overflow-scrolling:touch]"
+          data-testid="desktop-sidebar-nav-scroll"
         >
           {tree.map((node) => {
             const label = t(node.labelKey, node.label);
@@ -130,11 +154,33 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
               </button>
             );
           })}
+          <div
+            aria-label={t("shell.account_links", "Account")}
+            className="mt-1 flex w-full flex-col items-center border-t border-white/10 pt-1"
+            data-testid="desktop-sidebar-account-nav"
+          >
+            {accountNavLinks.map((link) => {
+              const label = t(link.labelKey, link.fallback);
+              const active = activeHref === link.href || activeHref.startsWith(`${link.href}/`);
+              return (
+                <Link
+                  className={`${railLink} ${active ? "border-l-white/80 bg-[var(--color-sidebar-active)] text-white" : ""}`}
+                  href={link.href}
+                  key={link.href}
+                  title={label}
+                >
+                  <NavItemIcon aria-hidden className="h-3.5 w-3.5" labelKey={link.labelKey} surface="navy" />
+                  <span className="sr-only">{label}</span>
+                </Link>
+              );
+            })}
+          </div>
         </nav>
       ) : (
         <nav
           aria-label={t("shell.sidebar_section", "Navigation")}
-          className="timiq-sidebar-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain py-1 [-webkit-overflow-scrolling:touch]"
+          className="timiq-sidebar-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-y-contain py-1 pb-4 [-webkit-overflow-scrolling:touch]"
+          data-testid="desktop-sidebar-nav-scroll"
         >
           <NavTree
             activeHref={activeHref}
@@ -149,84 +195,40 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
         </nav>
       )}
 
-      <div className="timiq-sidebar-scrollbar max-h-[50%] shrink-0 overflow-y-auto overscroll-contain border-t border-white/15 bg-[#142950]">
+      <div
+        className="shrink-0 border-t border-white/15 bg-[#142950]"
+        data-testid="desktop-sidebar-account-footer"
+      >
         {collapsed ? (
-          <div className="flex flex-col items-center py-1.5">
-            <Link className={railLink} href="/profile" title={t("nav.profile", "Profile")}>
-              <NavItemIcon aria-hidden className="h-3.5 w-3.5" labelKey="nav.profile" surface="navy" />
-              <span className="sr-only">{t("nav.profile", "Profile")}</span>
-            </Link>
-            {!limited ? (
-              <>
-                <Link className={railLink} href="/settings" title={t("nav.settings", "Settings")}>
-                  <NavItemIcon aria-hidden className="h-3.5 w-3.5" labelKey="nav.settings" surface="navy" />
-                  <span className="sr-only">{t("nav.settings", "Settings")}</span>
-                </Link>
-                <Link className={railLink} href="/help" title={t("nav.help", "Help centre")}>
-                  <NavItemIcon aria-hidden className="h-3.5 w-3.5" labelKey="nav.help" surface="navy" />
-                  <span className="sr-only">{t("nav.help", "Help centre")}</span>
-                </Link>
-              </>
-            ) : null}
-            <span className="block w-full [&_button]:!h-9 [&_button]:!w-full [&_button]:!rounded-none [&_button]:!border-0 [&_button]:!border-l-2 [&_button]:!border-l-transparent [&_button]:!bg-transparent [&_button]:!p-0 [&_button]:!text-white/80 [&_button]:!shadow-none [&_button:hover]:!bg-[var(--color-sidebar-active)] [&_button:hover]:!text-white [&_svg]:!h-3.5 [&_svg]:!w-3.5 [&_svg]:!text-[#e6a0a0]">
+          <div className="flex flex-col items-center py-1">
+            <span
+              className="block w-full [&_button]:!h-8 [&_button]:!w-full [&_button]:!rounded-none [&_button]:!border-0 [&_button]:!border-l-2 [&_button]:!border-l-transparent [&_button]:!bg-transparent [&_button]:!p-0 [&_button]:!text-white/80 [&_button]:!shadow-none [&_button:hover]:!bg-[var(--color-sidebar-active)] [&_button:hover]:!text-white [&_svg]:!h-3.5 [&_svg]:!w-3.5 [&_svg]:!text-[#e6a0a0]"
+              title={displayName}
+            >
               <LogoutButton iconOnly />
             </span>
           </div>
         ) : (
-          <div className="text-xs">
-            <div className="border-b border-white/10 px-3 py-1.5">
-              <p className="truncate font-medium text-white" title={user.email}>
-                {user.email}
+          <div className="space-y-1 px-2.5 py-1.5 text-xs leading-tight">
+            <div className="min-w-0">
+              <p
+                className="truncate text-[12px] font-semibold leading-tight text-white"
+                title={user.email}
+              >
+                {displayName}
               </p>
-              <p className="mt-0.5 text-[10px] uppercase tracking-wide text-white/60">
+              {showEmailSecondary ? (
+                <p className="mt-px truncate text-[10px] leading-tight text-white/45" title={user.email}>
+                  {user.email}
+                </p>
+              ) : null}
+              <p className="mt-px text-[9px] font-medium uppercase tracking-wide text-white/50">
                 {user.system_role}
               </p>
             </div>
-            <div className="py-1">
-              <Link
-                className="flex min-h-[var(--layout-sidebar-row-height)] w-full items-center gap-2 px-3 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
-                href="/profile"
-              >
-                <NavItemIcon
-                  aria-hidden
-                  className="h-3.5 w-3.5 shrink-0"
-                  labelKey="nav.profile"
-                  surface="navy"
-                />
-                {t("nav.profile", "Profile")}
-              </Link>
-              {!limited ? (
-                <>
-                  <Link
-                    className="flex min-h-[var(--layout-sidebar-row-height)] w-full items-center gap-2 px-3 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
-                    href="/settings"
-                  >
-                    <NavItemIcon
-                      aria-hidden
-                      className="h-3.5 w-3.5 shrink-0"
-                      labelKey="nav.settings"
-                      surface="navy"
-                    />
-                    {t("nav.settings", "Settings")}
-                  </Link>
-                  <Link
-                    className="flex min-h-[var(--layout-sidebar-row-height)] w-full items-center gap-2 px-3 text-white/80 hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80"
-                    href="/help"
-                  >
-                    <NavItemIcon
-                      aria-hidden
-                      className="h-3.5 w-3.5 shrink-0"
-                      labelKey="nav.help"
-                      surface="navy"
-                    />
-                    {t("nav.help", "Help centre")}
-                  </Link>
-                </>
-              ) : null}
-              <span className="block [&_button]:!h-[var(--layout-sidebar-row-height)] [&_button]:!w-full [&_button]:!justify-start [&_button]:!gap-2 [&_button]:!rounded-none [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!px-3 [&_button]:!text-xs [&_button]:!font-medium [&_button]:!text-white/80 [&_button]:!shadow-none [&_button:hover]:!bg-white/10 [&_button:hover]:!text-white [&_svg]:!h-3.5 [&_svg]:!w-3.5 [&_svg]:!text-[#e6a0a0]">
-                <LogoutButton showIcon />
-              </span>
-            </div>
+            <span className="block [&_button]:!h-8 [&_button]:!min-h-8 [&_button]:!w-full [&_button]:!justify-start [&_button]:!gap-1.5 [&_button]:!rounded-none [&_button]:!border-0 [&_button]:!bg-transparent [&_button]:!px-0 [&_button]:!py-0 [&_button]:!text-[11px] [&_button]:!font-medium [&_button]:!leading-tight [&_button]:!text-white/80 [&_button]:!shadow-none [&_button:hover]:!bg-transparent [&_button:hover]:!text-white [&_svg]:!h-3.5 [&_svg]:!w-3.5 [&_svg]:!text-[#e6a0a0]">
+              <LogoutButton showIcon />
+            </span>
           </div>
         )}
       </div>
