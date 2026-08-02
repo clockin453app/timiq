@@ -1,4 +1,3 @@
 export type { ClockAssignedSite } from "../../features/time-clock/api";
-export { ClockSitesMap } from "./clock-sites-map-lazy";
-export { LocationGeofenceMap } from "./location-geofence-map-lazy";
+/** Safe without Leaflet — do not re-export map components from this barrel (SSR risk). */
 export { CLOCK_MAP_FALLBACK_MESSAGE } from "./map-messages";

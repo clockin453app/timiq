@@ -1,6 +1,7 @@
 "use client";
 
 import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { useEffect, useRef } from "react";
 
 import { OSM_TILE_ATTRIBUTION, OSM_TILE_LAYER_URL } from "./leaflet-default-tiles";
@@ -108,7 +109,7 @@ export function LocationGeofenceMap({
 
   return (
     <div
-      className="timiq-leaflet-shell overflow-hidden rounded border border-[var(--color-border-dark)]"
+      className="timiq-leaflet-shell h-[220px] min-h-[220px] w-full overflow-hidden rounded border border-[var(--color-border-dark)]"
       ref={containerRef}
       style={{ height: "220px", width: "100%" }}
     />

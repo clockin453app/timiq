@@ -2,7 +2,8 @@
 
 import { useEffect, useId, useState } from "react";
 
-import { CLOCK_MAP_FALLBACK_MESSAGE, ClockSitesMap } from "../../components/maps";
+import { ClockSitesMap } from "../../components/maps/clock-sites-map-lazy";
+import { CLOCK_MAP_FALLBACK_MESSAGE } from "../../components/maps/map-messages";
 import { Button } from "../../components/ui";
 import { cn } from "../../lib/cn";
 import type { GpsCapture } from "./gps";

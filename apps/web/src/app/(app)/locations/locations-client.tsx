@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
-import { LocationGeofenceMap } from "@/components/maps";
+import { LocationGeofenceMap } from "@/components/maps/location-geofence-map-lazy";
 import {
   Badge,
   Button,
