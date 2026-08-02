@@ -1,10 +1,12 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 import {
   Button,
+  FilterSearch,
+  FilterToolbar,
   PageHeader,
   Sheet,
   SheetBody,
@@ -42,7 +44,6 @@ function formatEmployeeDisplayName(user: AuthUser): string {
   return "—";
 }
 
-
 function getRoleOptions(currentUser: AuthUser): SystemRole[] {
   if (isAdministrator(currentUser)) {
     return ["employee", "admin", "administrator"];
@@ -50,6 +51,10 @@ function getRoleOptions(currentUser: AuthUser): SystemRole[] {
 
   return ["employee"];
 }
+
+const fieldLabelClass = "block text-xs font-semibold text-[var(--color-text)]";
+const fieldInputClass =
+  "mt-1 h-11 w-full min-w-0 rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm";
 
 export function EmployeesClient() {
   const t = useT();
@@ -85,12 +90,6 @@ export function EmployeesClient() {
   const companyScope = useAdministratorCompanyScope(currentUser, companies);
   const showCompanySelector =
     isAdministrator(currentUser) && systemRole !== "administrator";
-
-  const formGridClassName = useMemo(() => {
-    return showCompanySelector
-      ? "grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
-      : "grid grid-cols-1 gap-3 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1.2fr)_minmax(0,1fr)_auto]";
-  }, [showCompanySelector]);
 
   const panelUser = useMemo(() => {
     if (!panelUserId) {
@@ -200,9 +199,12 @@ export function EmployeesClient() {
       setInviteFirstName("");
       setInviteLastName("");
       setInvitePersonalMessage("");
+
       await loadUsers(adminView ? companyScope.companyId : null);
     } catch (error) {
-      setInviteError(error instanceof Error ? error.message : t("employees.invite_error", "Could not send invite."));
+      setInviteError(
+        error instanceof Error ? error.message : t("employees.invite_error", "Could not send invite."),
+      );
     } finally {
       setIsInviting(false);
     }
@@ -268,7 +270,7 @@ export function EmployeesClient() {
         )}
       />
 
-      <SheetBody className="min-w-0">
+      <SheetBody className="min-w-0 max-w-full space-y-4 pb-[max(1rem,calc(var(--layout-mobile-bottom-nav-height)+0.75rem))] md:pb-2">
         <RoleGuard
           allowedRoles={["administrator", "admin"]}
           fallback={
@@ -278,7 +280,7 @@ export function EmployeesClient() {
           }
         >
           {adminView && companyScope.companies.length > 0 ? (
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <CompanySelector
                 companies={companyScope.companies}
                 onChange={companyScope.setCompanyId}
@@ -289,287 +291,311 @@ export function EmployeesClient() {
               ) : null}
             </div>
           ) : (
-            <div className="mb-3 border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
+            <div className="border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2 text-sm">
               {t("employees.scope_company", "You can create Employee accounts for your company only.")}
             </div>
           )}
 
           {adminView && companyScope.needsCompanySelection ? (
-            <div className="mb-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
+            <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-6 text-center text-sm text-[var(--color-text-muted)]">
               Select a company to view its people.
             </div>
           ) : null}
 
-          <form
-            className="mb-4 w-full max-w-[min(48rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
-            onSubmit={handleCreateUser}
+          <section
+            className="w-full min-w-0 max-w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)]"
+            data-testid="employees-account-panels"
           >
-            <div className={formGridClassName}>
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                {t("employees.email", "Email")}
-                <input
-                  autoComplete="email"
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="email"
-                  onChange={(event) => setEmail(event.target.value)}
-                  required
-                  type="email"
-                  value={email}
-                />
-              </label>
+            <div className="grid w-full min-w-0 grid-cols-1 gap-0 lg:grid-cols-2 lg:divide-x lg:divide-[var(--color-border)]">
+              <form
+                className="flex min-w-0 flex-col gap-3 p-3 sm:p-4"
+                data-testid="employees-create-panel"
+                onSubmit={handleCreateUser}
+              >
+                <div>
+                  <h2 className="text-sm font-semibold text-[var(--color-text)]">
+                    {t("employees.create_section", "Create employee account")}
+                  </h2>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    {t(
+                      "employees.create_help",
+                      "Creates an active account with a temporary password the employee can change later.",
+                    )}
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className={fieldLabelClass}>
+                    {t("employees.email", "Email")}
+                    <input
+                      autoComplete="email"
+                      className={fieldInputClass}
+                      name="email"
+                      onChange={(event) => setEmail(event.target.value)}
+                      required
+                      type="email"
+                      value={email}
+                    />
+                  </label>
 
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                {t("employees.temp_password", "Temporary password")}
-                <input
-                  autoComplete="new-password"
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="password"
-                  onChange={(event) => setPassword(event.target.value)}
-                  required
-                  type="text"
-                  value={password}
-                />
-              </label>
+                  <label className={fieldLabelClass}>
+                    {t("employees.temp_password", "Temporary password")}
+                    <input
+                      autoComplete="new-password"
+                      className={fieldInputClass}
+                      name="password"
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                      type="text"
+                      value={password}
+                    />
+                  </label>
 
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                {t("employees.role", "Role")}
-                <select
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  onChange={(event) => setSystemRole(event.target.value as SystemRole)}
-                  value={systemRole}
-                >
-                  {roleOptions.map((role) => (
-                    <option key={role} value={role}>
-                      {employeeRoleLabel(t, role)}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {showCompanySelector ? (
-                <label className="block text-xs font-bold text-[var(--color-text)]">
-                  {t("employees.company", "Company")}
-                  <select
-                    className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                    onChange={(event) => setCompanyId(event.target.value)}
-                    required
-                    value={companyId}
-                  >
-                    {companies
-                      .filter((company) => company.is_active)
-                      .map((company) => (
-                        <option key={company.id} value={company.id}>
-                          {company.name}
+                  <label className={fieldLabelClass}>
+                    {t("employees.role", "Role")}
+                    <select
+                      className={fieldInputClass}
+                      onChange={(event) => setSystemRole(event.target.value as SystemRole)}
+                      value={systemRole}
+                    >
+                      {roleOptions.map((role) => (
+                        <option key={role} value={role}>
+                          {employeeRoleLabel(t, role)}
                         </option>
                       ))}
-                  </select>
-                </label>
-              ) : null}
+                    </select>
+                  </label>
 
-              <div className="flex flex-col">
-                <span className="mb-1 text-xs font-bold opacity-0">Action</span>
-                <Button className="h-10" disabled={isCreating} type="submit">
-                  {isCreating
-                    ? t("employees.creating", "Creating…")
-                    : t("employees.create_user", "Create user")}
-                </Button>
-              </div>
-            </div>
-          </form>
+                  {showCompanySelector ? (
+                    <label className={fieldLabelClass}>
+                      {t("employees.company", "Company")}
+                      <select
+                        className={fieldInputClass}
+                        onChange={(event) => setCompanyId(event.target.value)}
+                        required
+                        value={companyId}
+                      >
+                        {companies
+                          .filter((company) => company.is_active)
+                          .map((company) => (
+                            <option key={company.id} value={company.id}>
+                              {company.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                  ) : null}
+                </div>
+                <div className="mt-auto flex justify-start pt-1">
+                  <Button className="min-h-11" disabled={isCreating} type="submit">
+                    {isCreating
+                      ? t("employees.creating", "Creating…")
+                      : t("employees.create_user", "Create user")}
+                  </Button>
+                </div>
+              </form>
 
-          <form
-            className="mb-4 w-full max-w-[min(48rem,calc(100vw-2rem))] border border-[var(--color-border)] bg-[var(--color-cell)] p-3"
-            onSubmit={handleInviteUser}
-          >
-            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-              {t("employees.invite_section", "Invite by email")}
-            </p>
-            <p className="mb-3 text-sm text-[var(--color-text-muted)]">
-              {t(
-                "employees.invite_help",
-                "Sends an invitation link. The person sets their own password to activate the account. In local development without SMTP, an invite link is shown below after you submit.",
-              )}
-            </p>
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                {t("employees.email", "Email")}
-                <input
-                  autoComplete="email"
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="invite_email"
-                  onChange={(event) => setInviteEmail(event.target.value)}
-                  required
-                  type="email"
-                  value={inviteEmail}
-                />
-              </label>
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                {t("employees.first_name_optional", "First name (optional)")}
-                <input
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="invite_fn"
-                  onChange={(event) => setInviteFirstName(event.target.value)}
-                  type="text"
-                  value={inviteFirstName}
-                />
-              </label>
-              <label className="block text-xs font-bold text-[var(--color-text)]">
-                {t("employees.last_name_optional", "Last name (optional)")}
-                <input
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="invite_ln"
-                  onChange={(event) => setInviteLastName(event.target.value)}
-                  type="text"
-                  value={inviteLastName}
-                />
-              </label>
-              <label className="block text-xs font-bold text-[var(--color-text)] md:col-span-2">
-                {t("employees.invite_message_long", "Personal message (optional, included in invite email)")}
-                <input
-                  className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                  name="invite_pm"
-                  onChange={(event) => setInvitePersonalMessage(event.target.value)}
-                  type="text"
-                  value={invitePersonalMessage}
-                />
-              </label>
-            </div>
-            <p className="mt-2 text-xs text-[var(--color-text-muted)]">
-              {t("employees.invite_same_selection", "Uses the same role and company selection as \"Create user\" above.")}
-            </p>
-            <div className="mt-3">
-              <Button disabled={isInviting} type="submit">
-                {isInviting
-                  ? t("employees.sending_invite", "Sending invite…")
-                  : t("employees.send_invitation", "Send invitation")}
-              </Button>
-            </div>
-            {inviteError ? (
-              <div className="mt-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
-                {inviteError}
-              </div>
-            ) : null}
-            {inviteSuccess ? (
-              <div className="mt-3 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
-                {inviteSuccess}
-              </div>
-            ) : null}
-            {inviteDevLink ? (
-              <div className="mt-3 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-xs">
-                <p className="font-bold text-[var(--color-text)]">
-                  {t("employees.dev_invite_link", "Development invite link")}
+              <form
+                className="flex min-w-0 flex-col gap-3 border-t border-[var(--color-border)] p-3 sm:p-4 lg:border-t-0"
+                data-testid="employees-invite-panel"
+                onSubmit={handleInviteUser}
+              >
+                <div>
+                  <h2 className="text-sm font-semibold text-[var(--color-text)]">
+                    {t("employees.invite_section", "Invite employee by email")}
+                  </h2>
+                  <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                    {t(
+                      "employees.invite_help",
+                      "Sends an invitation link. The person sets their own password to activate the account. In local development without SMTP, an invite link is shown below after you submit.",
+                    )}
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className={fieldLabelClass}>
+                    {t("employees.email", "Email")}
+                    <input
+                      autoComplete="email"
+                      className={fieldInputClass}
+                      name="invite_email"
+                      onChange={(event) => setInviteEmail(event.target.value)}
+                      required
+                      type="email"
+                      value={inviteEmail}
+                    />
+                  </label>
+                  <label className={fieldLabelClass}>
+                    {t("employees.first_name_optional", "First name (optional)")}
+                    <input
+                      className={fieldInputClass}
+                      name="invite_fn"
+                      onChange={(event) => setInviteFirstName(event.target.value)}
+                      type="text"
+                      value={inviteFirstName}
+                    />
+                  </label>
+                  <label className={fieldLabelClass}>
+                    {t("employees.last_name_optional", "Last name (optional)")}
+                    <input
+                      className={fieldInputClass}
+                      name="invite_ln"
+                      onChange={(event) => setInviteLastName(event.target.value)}
+                      type="text"
+                      value={inviteLastName}
+                    />
+                  </label>
+                  <label className={`${fieldLabelClass} sm:col-span-2`}>
+                    {t("employees.invite_message_long", "Personal message (optional, included in invite email)")}
+                    <input
+                      className={fieldInputClass}
+                      name="invite_pm"
+                      onChange={(event) => setInvitePersonalMessage(event.target.value)}
+                      type="text"
+                      value={invitePersonalMessage}
+                    />
+                  </label>
+                </div>
+                <p className="text-xs text-[var(--color-text-muted)]">
+                  {t(
+                    "employees.invite_same_selection",
+                    'Uses the same role and company selection as "Create user" above.',
+                  )}
                 </p>
-                <p className="mt-1 break-all text-[var(--color-text-muted)]">{inviteDevLink}</p>
-              </div>
-            ) : null}
-          </form>
-
-          <label className="mb-3 block text-xs font-bold text-[var(--color-text)]">
-            {t("employees.search", "Search employees")}
-            <input
-              className="mt-1 h-10 w-full border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm md:max-w-md"
-              onChange={(event) => setEmployeeSearch(event.target.value)}
-              placeholder={t("employees.search_filter_placeholder", "Filter by name or email")}
-              type="search"
-              value={employeeSearch}
-            />
-          </label>
+                <div className="mt-auto flex justify-start pt-1">
+                  <Button className="min-h-11" disabled={isInviting} type="submit">
+                    {isInviting
+                      ? t("employees.sending_invite", "Sending invite…")
+                      : t("employees.send_invitation", "Send invitation")}
+                  </Button>
+                </div>
+                {inviteError ? (
+                  <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
+                    {inviteError}
+                  </div>
+                ) : null}
+                {inviteSuccess ? (
+                  <div className="border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
+                    {inviteSuccess}
+                  </div>
+                ) : null}
+                {inviteDevLink ? (
+                  <div className="border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-xs">
+                    <p className="font-bold text-[var(--color-text)]">
+                      {t("employees.dev_invite_link", "Development invite link")}
+                    </p>
+                    <p className="mt-1 break-all text-[var(--color-text-muted)]">{inviteDevLink}</p>
+                  </div>
+                ) : null}
+              </form>
+            </div>
+          </section>
 
           {errorMessage ? (
-            <div className="mb-3 border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
+            <div className="border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
               {errorMessage}
             </div>
           ) : null}
 
           {successMessage ? (
-            <div className="mb-3 border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
+            <div className="border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
               {successMessage}
             </div>
           ) : null}
 
+          <FilterToolbar aria-label={t("employees.search", "Search employees")}>
+            <FilterSearch
+              label={t("employees.search", "Search employees")}
+              onChange={setEmployeeSearch}
+              placeholder={t(
+                "employees.search_name_email_placeholder",
+                "Search employees by name or email",
+              )}
+              value={employeeSearch}
+            />
+          </FilterToolbar>
+
           <div className="w-full min-w-0 max-w-full overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>{t("employees.col_name", "Name")}</TableHead>
-                <TableHead className="w-[min(11rem,28vw)] max-w-[11rem]">
-                  {t("employees.col_email", "Email")}
-                </TableHead>
-                <TableHead className="w-[min(9rem,24vw)]">{t("employees.col_job_title", "Job title")}</TableHead>
-                <TableHead>{t("employees.col_role", "Role")}</TableHead>
-                <TableHead>{t("employees.col_status", "Status")}</TableHead>
-                <TableHead>{t("employees.col_company", "Company")}</TableHead>
-                <TableHead>{t("employees.col_created", "Created")}</TableHead>
-                <TableHead>{t("employees.col_actions", "Actions")}</TableHead>
-              </TableRow>
-            </TableHeader>
-
-            <TableBody>
-              {isLoading ? (
+            <Table>
+              <TableHeader>
                 <TableRow>
-                  <TableCell colSpan={8}>{t("employees.loading_users", "Loading users…")}</TableCell>
+                  <TableHead>{t("employees.col_name", "Name")}</TableHead>
+                  <TableHead className="w-[min(11rem,28vw)] max-w-[11rem]">
+                    {t("employees.col_email", "Email")}
+                  </TableHead>
+                  <TableHead className="w-[min(9rem,24vw)]">{t("employees.col_job_title", "Job title")}</TableHead>
+                  <TableHead>{t("employees.col_role", "Role")}</TableHead>
+                  <TableHead>{t("employees.col_status", "Status")}</TableHead>
+                  <TableHead>{t("employees.col_company", "Company")}</TableHead>
+                  <TableHead>{t("employees.col_created", "Created")}</TableHead>
+                  <TableHead>{t("employees.col_actions", "Actions")}</TableHead>
                 </TableRow>
-              ) : null}
+              </TableHeader>
 
-              {!isLoading && users.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8}>{t("employees.no_users", "No users found.")}</TableCell>
-                </TableRow>
-              ) : null}
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8}>{t("employees.loading_users", "Loading users…")}</TableCell>
+                  </TableRow>
+                ) : null}
 
-              {!isLoading && users.length > 0 && filteredUsers.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8}>{t("employees.no_filter_match", "No users match this filter.")}</TableCell>
-                </TableRow>
-              ) : null}
+                {!isLoading && users.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8}>{t("employees.no_users", "No users found.")}</TableCell>
+                  </TableRow>
+                ) : null}
 
-              {!isLoading
-                ? filteredUsers.map((userItem) => {
-                    const company = companies.find((item) => item.id === userItem.company_id);
+                {!isLoading && users.length > 0 && filteredUsers.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8}>{t("employees.no_filter_match", "No users match this filter.")}</TableCell>
+                  </TableRow>
+                ) : null}
 
-                    return (
-                      <TableRow key={userItem.id}>
-                        <TableCell>{formatEmployeeDisplayName(userItem)}</TableCell>
-                        <TableCell className="max-w-[11rem] break-all text-[13px] leading-snug">
-                          {userItem.email}
-                        </TableCell>
-                        <TableCell className="max-w-[10rem] truncate text-sm text-[var(--color-text)]">
-                          {(userItem.profile_job_title ?? "").trim() || "—"}
-                        </TableCell>
-                        <TableCell>{employeeRoleLabel(t, userItem.system_role)}</TableCell>
-                        <TableCell>
-                          {userItem.is_active
-                            ? genericStatusLabel(t, "active")
-                            : genericStatusLabel(t, "inactive")}
-                        </TableCell>
-                        <TableCell>
-                          {company?.name ??
-                            (userItem.company_id
-                              ? t("employees.assigned_company", "Assigned company")
-                              : t("employees.global_scope", "Global"))}
-                        </TableCell>
-                        <TableCell>
-                          {new Date(userItem.created_at).toLocaleDateString()}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            disabled={userItem.id === currentUser.id}
-                            onClick={() => {
-                              setPanelUserId(userItem.id);
-                              setErrorMessage("");
-                              setSuccessMessage("");
-                            }}
-                            type="button"
-                          >
-                            {t("employees.edit", "Edit")}
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                : null}
-            </TableBody>
-          </Table>
+                {!isLoading
+                  ? filteredUsers.map((userItem) => {
+                      const company = companies.find((item) => item.id === userItem.company_id);
+
+                      return (
+                        <TableRow key={userItem.id}>
+                          <TableCell>{formatEmployeeDisplayName(userItem)}</TableCell>
+                          <TableCell className="max-w-[11rem] break-all text-[13px] leading-snug">
+                            {userItem.email}
+                          </TableCell>
+                          <TableCell className="max-w-[10rem] truncate text-sm text-[var(--color-text)]">
+                            {(userItem.profile_job_title ?? "").trim() || "—"}
+                          </TableCell>
+                          <TableCell>{employeeRoleLabel(t, userItem.system_role)}</TableCell>
+                          <TableCell>
+                            {userItem.is_active
+                              ? genericStatusLabel(t, "active")
+                              : genericStatusLabel(t, "inactive")}
+                          </TableCell>
+                          <TableCell>
+                            {company?.name ??
+                              (userItem.company_id
+                                ? t("employees.assigned_company", "Assigned company")
+                                : t("employees.global_scope", "Global"))}
+                          </TableCell>
+                          <TableCell>
+                            {new Date(userItem.created_at).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              disabled={userItem.id === currentUser.id}
+                              onClick={() => {
+                                setPanelUserId(userItem.id);
+                                setErrorMessage("");
+                                setSuccessMessage("");
+                              }}
+                              type="button"
+                            >
+                              {t("employees.edit", "Edit")}
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  : null}
+              </TableBody>
+            </Table>
           </div>
 
           {panelUser ? (
