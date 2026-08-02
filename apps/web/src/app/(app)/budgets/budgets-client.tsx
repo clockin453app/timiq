@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { PageHeader, Sheet, SheetBody } from "@/components/ui";
 import { useT } from "@/lib/i18n";
-import { segmentBtnClass } from "./budget-ui";
+import { budgetUnderlineTabClass } from "./budget-ui";
 import { BudgetQuickCalculatorTab } from "./budgets-calculator-tab";
 import { BudgetsSavedTab } from "./budgets-saved-tab";
 
@@ -18,16 +18,16 @@ export function BudgetsClient() {
     <Sheet>
       <PageHeader description={t("budgets.page_description")} title={t("budgets.page_title")} />
       <SheetBody className="min-w-0 space-y-4 md:p-5">
-        <div className="flex flex-wrap gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-1">
+        <div className="timiq-scroll-x -mx-1 flex w-full min-w-0 max-w-full gap-1 overflow-x-auto border-b border-[var(--color-border)] px-1">
           <button
-            className={segmentBtnClass(tab === "saved")}
+            className={budgetUnderlineTabClass(tab === "saved")}
             type="button"
             onClick={() => setTab("saved")}
           >
             {t("budgets.tab_saved")}
           </button>
           <button
-            className={segmentBtnClass(tab === "calculator")}
+            className={budgetUnderlineTabClass(tab === "calculator")}
             type="button"
             onClick={() => setTab("calculator")}
           >

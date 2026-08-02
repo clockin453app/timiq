@@ -29,14 +29,15 @@ import { formatHoursFromSeconds } from "@/features/payroll/format";
 import { listLocations, type Location } from "@/features/locations/api";
 import { listWorkplaces, type Workplace } from "@/features/workplaces/api";
 import {
-  BudgetCompactStat,
-  BudgetHealthBar,
+  BudgetCategoryBreakdown,
+  BudgetFinancialSummary,
+  BudgetOperationalMetrics,
   budgetStatusBadgeTone,
+  budgetUnderlineTabClass,
   expenseCategoryLabel,
   isoTodayYmd,
   moneyDisplay,
   percentDisplay,
-  segmentBtnClass,
 } from "./budget-ui";
 
 const BUDGET_STATUSES = ["draft", "active", "completed", "archived"] as const;
@@ -388,6 +389,8 @@ export function BudgetsSavedTab() {
   const [expenseSaving, setExpenseSaving] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
   const [showZeroCategories, setShowZeroCategories] = useState(false);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const [labourHelpOpen, setLabourHelpOpen] = useState(false);
 
   useEffect(() => {
     setShowZeroCategories(false);
@@ -725,50 +728,24 @@ export function BudgetsSavedTab() {
       dateRangeLabel = `Until ${dateEnd}`;
     }
 
-    const siteParts: string[] = [];
-    if (b?.location_name) {
-      siteParts.push(`Operational site: ${b.location_name}`);
-    }
-    if (b?.workplace_name) {
-      siteParts.push(`CIS workplace: ${b.workplace_name}`);
-    }
-    const siteLine =
-      siteParts.length > 0 ? siteParts.join(" · ") : "No operational site selected — labour not filtered by site";
     const hasOperationalSite = Boolean(b?.location_id);
 
     return (
-      <div className="min-w-0 space-y-5">
-        <div className="flex flex-wrap gap-2 border-b border-[var(--color-border-dark)] pb-3">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => {
-              setSelectedId(null);
-              setDetailError("");
-              setActionError("");
-              setExpenseSuccess("");
-              setShowExpenseModal(false);
-            }}
-          >
-            Back
-          </Button>
-          {detail && detail.budget.status !== "archived" ? (
-            <>
-              <Button type="button" variant="secondary" onClick={() => void handleExportCsv()}>
-                Export CSV
-              </Button>
-              <Button type="button" variant="secondary" onClick={handlePrint}>
-                Print report
-              </Button>
-              <Button type="button" variant="secondary" onClick={openEditFromDetail}>
-                Edit
-              </Button>
-              <Button type="button" variant="danger" onClick={() => void handleArchive()}>
-                Archive
-              </Button>
-            </>
-          ) : null}
-        </div>
+      <div className="min-w-0 max-w-full space-y-4 pb-[max(1rem,calc(var(--layout-mobile-bottom-nav-height)+0.75rem))] md:pb-2">
+        <button
+          className="inline-flex min-h-[44px] items-center text-sm font-semibold text-[var(--color-link)] underline"
+          type="button"
+          onClick={() => {
+            setSelectedId(null);
+            setDetailError("");
+            setActionError("");
+            setExpenseSuccess("");
+            setShowExpenseModal(false);
+            setMobileActionsOpen(false);
+          }}
+        >
+          ← Saved budgets
+        </button>
 
         {detailLoading ? <p className="text-sm text-[var(--color-text-muted)]">Loading…</p> : null}
         {detailError ? (
@@ -789,26 +766,90 @@ export function BudgetsSavedTab() {
 
         {detail && totals && b ? (
           <>
-            <header className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-4 py-4">
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-xl font-semibold tracking-tight text-[var(--color-text)]">{b.name}</h2>
-                    <Badge tone={budgetStatusBadgeTone(b.status)}>{b.status}</Badge>
-                  </div>
-                  {b.client_name ? <p className="text-sm text-[var(--color-text)]">{b.client_name}</p> : null}
-                  <p className="text-sm text-[var(--color-text-muted)]">{siteLine}</p>
-                  <p className="text-xs text-[var(--color-text-soft)]">{dateRangeLabel}</p>
-                  {b.reference_code ? (
-                    <p className="text-xs text-[var(--color-text-muted)]">
-                      Reference: <span className="font-mono text-[var(--color-text)]">{b.reference_code}</span>
-                    </p>
-                  ) : null}
+            <header className="flex flex-col gap-4 border-b border-[var(--color-border)] pb-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="min-w-0 space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-2xl font-semibold tracking-tight text-[var(--color-text)]">{b.name}</h2>
+                  <Badge tone={budgetStatusBadgeTone(b.status)}>{b.status}</Badge>
                 </div>
+                {b.client_name ? <p className="text-sm text-[var(--color-text)]">{b.client_name}</p> : null}
+                <dl className="space-y-1 text-sm text-[var(--color-text-muted)]">
+                  <div>
+                    <dt className="inline font-medium text-[var(--color-text)]">Operational site: </dt>
+                    <dd className="inline">{b.location_name ?? "Not selected"}</dd>
+                  </div>
+                  {b.workplace_name ? (
+                    <div>
+                      <dt className="inline font-medium text-[var(--color-text)]">CIS workplace: </dt>
+                      <dd className="inline">{b.workplace_name}</dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt className="inline font-medium text-[var(--color-text)]">Date range: </dt>
+                    <dd className="inline">{dateRangeLabel}</dd>
+                  </div>
+                  {b.reference_code ? (
+                    <div>
+                      <dt className="inline font-medium text-[var(--color-text)]">Reference: </dt>
+                      <dd className="inline font-mono text-[var(--color-text)]">{b.reference_code}</dd>
+                    </div>
+                  ) : null}
+                </dl>
               </div>
+
+              {b.status !== "archived" ? (
+                <div className="w-full min-w-0 shrink-0 lg:w-auto">
+                  <div className="hidden flex-wrap justify-end gap-2 lg:flex">
+                    <Button type="button" variant="secondary" onClick={openEditFromDetail}>
+                      Edit
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={handlePrint}>
+                      Print report
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={() => void handleExportCsv()}>
+                      Export CSV
+                    </Button>
+                    <Button type="button" variant="danger" onClick={() => void handleArchive()}>
+                      Archive
+                    </Button>
+                  </div>
+                  <div className="lg:hidden">
+                    <Button
+                      aria-expanded={mobileActionsOpen}
+                      className="min-h-[44px] w-full"
+                      type="button"
+                      variant="secondary"
+                      onClick={() => setMobileActionsOpen((v) => !v)}
+                    >
+                      {mobileActionsOpen ? "Hide actions" : "More actions"}
+                    </Button>
+                    {mobileActionsOpen ? (
+                      <div className="mt-2 flex w-full min-w-0 flex-col gap-2">
+                        <Button className="min-h-[44px] w-full" type="button" variant="secondary" onClick={openEditFromDetail}>
+                          Edit
+                        </Button>
+                        <Button className="min-h-[44px] w-full" type="button" variant="secondary" onClick={handlePrint}>
+                          Print report
+                        </Button>
+                        <Button
+                          className="min-h-[44px] w-full"
+                          type="button"
+                          variant="secondary"
+                          onClick={() => void handleExportCsv()}
+                        >
+                          Export CSV
+                        </Button>
+                        <Button className="min-h-[44px] w-full" type="button" variant="danger" onClick={() => void handleArchive()}>
+                          Archive
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
             </header>
 
-            <div className="flex flex-wrap gap-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-1">
+            <div className="timiq-scroll-x flex w-full min-w-0 max-w-full gap-1 overflow-x-auto border-b border-[var(--color-border)]">
               {(
                 [
                   ["overview", "Overview"],
@@ -819,7 +860,7 @@ export function BudgetsSavedTab() {
               ).map(([id, label]) => (
                 <button
                   key={id}
-                  className={segmentBtnClass(detailTab === id)}
+                  className={budgetUnderlineTabClass(detailTab === id)}
                   type="button"
                   onClick={() => setDetailTab(id)}
                 >
@@ -829,8 +870,8 @@ export function BudgetsSavedTab() {
             </div>
 
             {detailTab === "overview" ? (
-              <div className="space-y-5">
-                <BudgetHealthBar
+              <div className="min-w-0 space-y-1">
+                <BudgetFinancialSummary
                   isOverBudget={isOver}
                   percentUsedDisplay={percentDisplay(totals.budget_used_percent)}
                   percentUsedNumeric={pctBar}
@@ -841,69 +882,43 @@ export function BudgetsSavedTab() {
                   spentDisplay={moneyDisplay(totals.total_spent)}
                 />
 
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  <BudgetCompactStat label="Planned budget" value={moneyDisplay(totals.planned_budget_amount)} />
-                  <BudgetCompactStat label="Total spent" value={moneyDisplay(totals.total_spent)} />
-                  <BudgetCompactStat
-                    emphasis={isOver ? "danger" : "default"}
-                    label={isOver ? "Over budget" : "Remaining"}
-                    value={isOver ? moneyDisplay(totals.over_budget_amount) : moneyDisplay(totals.remaining_budget)}
-                  />
-                  <BudgetCompactStat label="Budget used" value={percentDisplay(totals.budget_used_percent)} />
-                </div>
-
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  <BudgetCompactStat label="Finalized labour" value={moneyDisplay(totals.finalized_labour_cost)} />
-                  <BudgetCompactStat label="Estimated labour" value={moneyDisplay(totals.estimated_labour_cost)} />
-                  <BudgetCompactStat label="Purchases / expenses" value={moneyDisplay(totals.total_expenses)} />
-                  <BudgetCompactStat
-                    hint={
-                      totals.missing_rate_count > 0
-                        ? `${totals.missing_rate_count} employee(s) missing hourly rate`
-                        : undefined
-                    }
-                    label="Open shifts / rates"
-                    value={`${totals.open_shift_count} open · ${totals.missing_rate_count} missing rate`}
-                  />
-                </div>
+                <BudgetOperationalMetrics
+                  estimatedLabour={moneyDisplay(totals.estimated_labour_cost)}
+                  finalizedLabour={moneyDisplay(totals.finalized_labour_cost)}
+                  openShiftsHint={
+                    totals.missing_rate_count > 0
+                      ? `${totals.missing_rate_count} employee(s) missing hourly rate`
+                      : undefined
+                  }
+                  openShiftsLabel={`${totals.open_shift_count} open · ${totals.missing_rate_count} missing rate`}
+                  purchases={moneyDisplay(totals.total_expenses)}
+                />
 
                 {cats ? (
-                  <section>
-                    <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-[var(--color-text)]">Expense categories</h3>
-                      {categoryRows.zeros.length > 0 ? (
+                  <BudgetCategoryBreakdown
+                    rows={
+                      showZeroCategories
+                        ? [...categoryRows.nonZero, ...categoryRows.zeros]
+                        : categoryRows.nonZero.length > 0
+                          ? categoryRows.nonZero
+                          : categoryRows.zeros
+                    }
+                    showZeroToggle={
+                      categoryRows.zeros.length > 0 ? (
                         <button
-                          className="text-xs font-semibold text-[var(--color-text-muted)] underline decoration-dotted hover:text-[var(--color-text)]"
+                          className="min-h-[44px] text-xs font-medium text-[var(--color-text-muted)] underline decoration-dotted hover:text-[var(--color-text)]"
                           type="button"
                           onClick={() => setShowZeroCategories((v) => !v)}
                         >
                           {showZeroCategories ? "Hide zero categories" : "Show zero categories"}
                         </button>
-                      ) : null}
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
-                      {(showZeroCategories ? [...categoryRows.nonZero, ...categoryRows.zeros] : categoryRows.nonZero.length > 0
-                        ? categoryRows.nonZero
-                        : categoryRows.zeros
-                      ).map(({ key, amount }) => (
-                        <div
-                          key={key}
-                          className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] px-2.5 py-2"
-                        >
-                          <p className="text-[10px] font-bold uppercase tracking-wide text-[var(--color-text-soft)]">
-                            {expenseCategoryLabel(key)}
-                          </p>
-                          <p className="mt-0.5 text-sm font-semibold tabular-nums text-[var(--color-text)]">
-                            {moneyDisplay(amount)}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
+                      ) : null
+                    }
+                  />
                 ) : null}
 
                 {!hasOperationalSite ? (
-                  <div className="flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="mt-3 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
                     <p className="text-sm text-[var(--color-warning-700)]">
                       Select an operational site to calculate labour accurately.
                     </p>
@@ -914,22 +929,37 @@ export function BudgetsSavedTab() {
                     ) : null}
                   </div>
                 ) : (
-                  <p className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-sm text-[var(--color-text-muted)]">
+                  <p className="mt-3 text-sm text-[var(--color-text-muted)]">
                     Labour totals are filtered by the selected operational site.
                   </p>
                 )}
 
                 {totals.warnings.length > 0 ? (
-                  <ul className="list-inside list-disc rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-2 text-sm text-[var(--color-warning-700)]">
-                    {totals.warnings.map((w) => (
-                      <li key={w}>{w}</li>
-                    ))}
-                  </ul>
+                  <div className="mt-3 rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-2.5 text-sm text-[var(--color-warning-700)]">
+                    <ul className="list-inside list-disc space-y-1">
+                      {totals.warnings.map((w) => (
+                        <li key={w}>{w}</li>
+                      ))}
+                    </ul>
+                  </div>
                 ) : null}
 
-                <p className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-cell)] px-3 py-2 text-xs text-[var(--color-text-muted)]">
-                  {totals.estimate_note}
-                </p>
+                {totals.estimate_note ? (
+                  <div className="mt-3 border-t border-[var(--color-border)] pt-3">
+                    <button
+                      aria-expanded={labourHelpOpen}
+                      className="flex min-h-[44px] w-full items-center justify-between gap-3 text-left text-sm font-medium text-[var(--color-text)]"
+                      type="button"
+                      onClick={() => setLabourHelpOpen((v) => !v)}
+                    >
+                      <span>How labour is calculated</span>
+                      <span className="text-[var(--color-text-muted)]">{labourHelpOpen ? "−" : "+"}</span>
+                    </button>
+                    {labourHelpOpen ? (
+                      <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">{totals.estimate_note}</p>
+                    ) : null}
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
