@@ -4,7 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 
 import {
   Button,
+  FilterButton,
+  FilterClearAction,
+  FilterPopover,
+  FilterSearch,
+  FilterToolbar,
   Input,
+  MobileFilterSheet,
   PageHeader,
   Sheet,
   SheetBody,
@@ -15,6 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui";
+import { MapPin } from "lucide-react";
 import { isAdministrator, RoleGuard, useCurrentUser } from "@/features/auth";
 import { listCompanies, type Company } from "@/features/companies/api";
 import { listLocations, type Location } from "@/features/locations/api";
@@ -209,6 +216,9 @@ function WorkProgressPicturesBody() {
   const [deleteTarget, setDeleteTarget] = useState<WorkProgressReviewListItem | null>(null);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [deleteError, setDeleteError] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [isDesktopFilters, setIsDesktopFilters] = useState(false);
+  const filterButtonRef = useRef<HTMLButtonElement | null>(null);
   const deleteOpenerRef = useRef<HTMLButtonElement | null>(null);
   const deleteDialogRef = useRef<HTMLDivElement | null>(null);
   const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
@@ -247,6 +257,17 @@ function WorkProgressPicturesBody() {
     if (!administrator) return;
     void listCompanies().then(setCompanies).catch(() => setCompanies([]));
   }, [administrator]);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 768px)");
+    const sync = () => {
+      setIsDesktopFilters(mq.matches);
+      setFiltersOpen(false);
+    };
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   useEffect(() => {
     if (administrator && !companyId) {
@@ -404,6 +425,139 @@ function WorkProgressPicturesBody() {
     clearForFilterChange();
     update();
   }
+
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (employeeId) count += 1;
+    if (locationId) count += 1;
+    if (dateFrom) count += 1;
+    if (dateTo) count += 1;
+    if (titleSearch.trim()) count += 1;
+    if (includeArchived) count += 1;
+    return count;
+  }, [dateFrom, dateTo, employeeId, includeArchived, locationId, titleSearch]);
+
+  function clearFilters() {
+    clearForFilterChange();
+    setEmployeeId("");
+    setEmployeeSearch("");
+    setLocationId("");
+    setDateFrom("");
+    setDateTo("");
+    setTitleSearch("");
+    setIncludeArchived(false);
+  }
+
+  const selectClass =
+    "h-11 w-full min-w-0 max-w-full truncate rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] py-2 pl-3 pr-10 text-sm";
+
+  const selectedEmployee = useMemo(
+    () => filteredEmployees.find((item) => item.user_id === employeeId) ?? employees.find((item) => item.user_id === employeeId),
+    [employeeId, employees, filteredEmployees],
+  );
+  const selectedEmployeeTitle = selectedEmployee
+    ? `${employeeLabel(selectedEmployee)} — ${selectedEmployee.email}`
+    : undefined;
+
+  const secondaryFilters = (
+    <>
+      {administrator ? (
+        <label className="block text-xs font-semibold text-[var(--color-text)]">
+          Company
+          <select
+            className={`mt-1 ${selectClass}`}
+            onChange={(event) =>
+              updateFilter(() => {
+                setCompanyId(event.target.value);
+                setEmployeeId("");
+                setLocationId("");
+              })
+            }
+            value={companyId}
+          >
+            <option value="">All companies</option>
+            {companies.map((company) => (
+              <option key={company.id} value={company.id}>
+                {company.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+      <label className="block text-xs font-semibold text-[var(--color-text)]">
+        Search employees
+        <Input
+          className="mt-1 min-h-11"
+          onChange={(event) => setEmployeeSearch(event.target.value)}
+          placeholder="Search by name or email"
+          value={employeeSearch}
+        />
+      </label>
+      <label className="block text-xs font-semibold text-[var(--color-text)]">
+        Employee
+        <select
+          className={`mt-1 ${selectClass}`}
+          disabled={administrator && !companyId}
+          onChange={(event) => updateFilter(() => setEmployeeId(event.target.value))}
+          title={selectedEmployeeTitle}
+          value={employeeId}
+        >
+          <option value="">All employees</option>
+          {filteredEmployees.map((employee) => (
+            <option key={employee.user_id} title={`${employeeLabel(employee)} — ${employee.email}`} value={employee.user_id}>
+              {employeeLabel(employee)} — {employee.email}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <label className="block text-xs font-semibold text-[var(--color-text)]">
+          Date from
+          <Input
+            className="mt-1 min-h-11"
+            onChange={(event) => updateFilter(() => setDateFrom(event.target.value))}
+            type="date"
+            value={dateFrom}
+          />
+        </label>
+        <label className="block text-xs font-semibold text-[var(--color-text)]">
+          Date to
+          <Input
+            className="mt-1 min-h-11"
+            onChange={(event) => updateFilter(() => setDateTo(event.target.value))}
+            type="date"
+            value={dateTo}
+          />
+        </label>
+      </div>
+      <label className="flex min-h-11 items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
+        <input
+          checked={includeArchived}
+          className="h-4 w-4 shrink-0"
+          onChange={(event) => updateFilter(() => setIncludeArchived(event.target.checked))}
+          type="checkbox"
+        />
+        Include archived submissions
+      </label>
+    </>
+  );
+
+  const filterPanelFooter = (
+    <>
+      <Button
+        className="min-h-11 w-full sm:w-auto"
+        disabled={activeFilterCount === 0}
+        onClick={clearFilters}
+        type="button"
+        variant="secondary"
+      >
+        Reset
+      </Button>
+      <Button className="min-h-11 w-full sm:w-auto" onClick={() => setFiltersOpen(false)} type="button">
+        Done
+      </Button>
+    </>
+  );
 
   function togglePicture(id: string) {
     setSelectedIds((current) => {
@@ -588,77 +742,79 @@ function WorkProgressPicturesBody() {
   const pictureEnd = pictureOffset + pictures.length;
 
   return (
-    <div className="space-y-4">
-      <section className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
-        <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">Filters</p>
-        <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-          {administrator ? (
-            <label className="text-xs font-bold">
-              Company
+    <div className="min-w-0 max-w-full space-y-4 pb-[max(1rem,calc(var(--layout-mobile-bottom-nav-height)+0.75rem))] md:pb-2">
+      <FilterToolbar>
+        <div
+          className="flex w-full min-w-0 max-w-full flex-col gap-2 md:flex-row md:flex-nowrap md:items-center md:gap-2"
+          data-testid="work-progress-filter-row"
+        >
+          <FilterSearch
+            className="min-w-0 flex-1 md:min-w-[12rem]"
+            label="Search title or type"
+            onChange={(value) => updateFilter(() => setTitleSearch(value))}
+            placeholder="Search title/type…"
+            value={titleSearch}
+          />
+          <div className="flex w-full min-w-0 items-center gap-2 md:w-auto md:shrink-0">
+            <div className="relative min-w-0 flex-1 md:w-[15rem] md:max-w-[17.5rem] md:flex-none">
+              <MapPin
+                aria-hidden
+                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]"
+              />
+              <label className="sr-only" htmlFor="work-progress-site-filter">
+                Site
+              </label>
               <select
-                className="mt-1 h-9 w-full rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-                onChange={(event) => updateFilter(() => {
-                  setCompanyId(event.target.value);
-                  setEmployeeId("");
-                  setLocationId("");
-                })}
-                value={companyId}
+                className="h-11 w-full min-w-0 max-w-full truncate rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] py-2 pl-9 pr-10 text-sm"
+                disabled={administrator && !companyId}
+                id="work-progress-site-filter"
+                onChange={(event) => updateFilter(() => setLocationId(event.target.value))}
+                value={locationId}
               >
-                <option value="">All companies</option>
-                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+                <option value="">All sites</option>
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name}
+                  </option>
+                ))}
               </select>
-            </label>
-          ) : null}
-          <label className="text-xs font-bold sm:col-span-2">
-            Employee
-            <Input
-              className="mt-1"
-              onChange={(event) => setEmployeeSearch(event.target.value)}
-              placeholder="Search employees by name or email"
-              value={employeeSearch}
-            />
-            <select
-              className="mt-1 h-9 w-full rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-              disabled={administrator && !companyId}
-              onChange={(event) => updateFilter(() => setEmployeeId(event.target.value))}
-              value={employeeId}
-            >
-              <option value="">All employees</option>
-              {filteredEmployees.map((employee) => (
-                <option key={employee.user_id} value={employee.user_id}>{employeeLabel(employee)} — {employee.email}</option>
-              ))}
-            </select>
-          </label>
-          <label className="text-xs font-bold">
-            Site
-            <select
-              className="mt-1 h-9 w-full rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2 text-sm"
-              disabled={administrator && !companyId}
-              onChange={(event) => updateFilter(() => setLocationId(event.target.value))}
-              value={locationId}
-            >
-              <option value="">All sites</option>
-              {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
-            </select>
-          </label>
-          <label className="text-xs font-bold">
-            Date from
-            <Input className="mt-1" onChange={(event) => updateFilter(() => setDateFrom(event.target.value))} type="date" value={dateFrom} />
-          </label>
-          <label className="text-xs font-bold">
-            Date to
-            <Input className="mt-1" onChange={(event) => updateFilter(() => setDateTo(event.target.value))} type="date" value={dateTo} />
-          </label>
-          <label className="text-xs font-bold sm:col-span-2">
-            Title / type
-            <Input className="mt-1" onChange={(event) => updateFilter(() => setTitleSearch(event.target.value))} placeholder="Search submission title" value={titleSearch} />
-          </label>
-          <label className="flex items-center gap-2 self-end py-2 text-sm font-semibold">
-            <input checked={includeArchived} onChange={(event) => updateFilter(() => setIncludeArchived(event.target.checked))} type="checkbox" />
-            Include archived submissions
-          </label>
+            </div>
+            <div className="relative flex shrink-0 items-center gap-1.5">
+              <FilterButton
+                activeCount={activeFilterCount}
+                onClick={() => setFiltersOpen((open) => !open)}
+                open={filtersOpen}
+                ref={filterButtonRef}
+              />
+              {activeFilterCount > 0 ? <FilterClearAction onClick={clearFilters} /> : null}
+            </div>
+          </div>
         </div>
-      </section>
+      </FilterToolbar>
+
+      {isDesktopFilters ? (
+        <FilterPopover
+          activeCount={activeFilterCount}
+          anchorRef={filterButtonRef}
+          footer={filterPanelFooter}
+          onClose={() => setFiltersOpen(false)}
+          open={filtersOpen}
+          title="Filters"
+        >
+          {secondaryFilters}
+        </FilterPopover>
+      ) : (
+        <MobileFilterSheet
+          activeCount={activeFilterCount}
+          footer={filterPanelFooter}
+          onClose={() => setFiltersOpen(false)}
+          open={filtersOpen}
+          returnFocusRef={filterButtonRef}
+          title="Filters"
+        >
+          {secondaryFilters}
+        </MobileFilterSheet>
+      )}
 
       <section className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
         <header className="flex items-center justify-between border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
