@@ -210,6 +210,8 @@ class RamsAcknowledgement(Base):
     signature_method = mapped_column(String(32), nullable=True)
     manual_signature_note = mapped_column(String(500), nullable=True)
     signature_image_path = mapped_column(String(512), nullable=True)
+    # Immutable job title snapshot taken at acknowledgement / manual sign-off.
+    job_role_at_signing = mapped_column(String(120), nullable=True)
     created_at = mapped_column(
         DateTime(timezone=True),
         nullable=False,

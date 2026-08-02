@@ -64,6 +64,7 @@ from app.modules.rams.service import (
     download_acknowledgement_signature_png,
     download_rams_attachment_file,
     download_uploaded_rams_pdf,
+    export_acknowledgement_register_pdf_bytes,
     export_assessment_pdf_bytes,
     export_csv_bytes,
     export_signed_record_pdf_bytes,
@@ -592,6 +593,22 @@ def get_rams_export_csv(
         _raise_http(exc)
     headers = {"Content-Disposition": content_disposition_attachment(filename)}
     return Response(content=raw, media_type="text/csv; charset=utf-8", headers=headers)
+
+
+@router.get("/{assessment_id}/acknowledgement-register.pdf")
+def get_rams_acknowledgement_register(
+    assessment_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    try:
+        raw, filename = export_acknowledgement_register_pdf_bytes(
+            db_session, current_user, assessment_id,
+        )
+    except RamsError as exc:
+        _raise_http(exc)
+    headers = {"Content-Disposition": content_disposition_attachment(filename)}
+    return Response(content=raw, media_type="application/pdf", headers=headers)
 
 
 @router.get("/{assessment_id}/pdf")
