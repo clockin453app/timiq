@@ -241,7 +241,7 @@ const widePages = [
   ["Monthly PAYE", "app/(app)/monthly-paye/monthly-paye-client.tsx"],
   ["Pay History", "app/(app)/pay-history/pay-history-client.tsx"],
   ["Forms", "app/(app)/forms/forms-client.tsx"],
-  ["RAMS", "app/(app)/rams/rams-client.tsx"],
+  ["RAMS", "app/(app)/rams/[assessmentId]/employee-rams-detail-client.tsx"],
   ["Privacy Requests", "app/(app)/privacy/requests/privacy-requests-client.tsx"],
 ];
 

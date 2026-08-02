@@ -8,8 +8,8 @@ import ts from "typescript";
 const read = (p) => fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
 const root = new URL("../src/", import.meta.url);
 
-const card = read(new URL("../src/features/rams/uploaded-rams-document-card.tsx", import.meta.url));
-const employeeRams = read(new URL("../src/app/(app)/rams/rams-client.tsx", import.meta.url));
+const employee = read(new URL("../src/app/(app)/rams/rams-client.tsx", import.meta.url));
+const employeeDetail = read(new URL("../src/app/(app)/rams/[assessmentId]/employee-rams-detail-client.tsx", import.meta.url));
 const reader = read(new URL("../src/features/rams/rams-reader-client.tsx", import.meta.url));
 const ramsManage = read(new URL("../src/app/(app)/rams/manage/rams-manage-client.tsx", import.meta.url));
 const ramsDetail = read(new URL("../src/app/(app)/rams/manage/rams-detail-client.tsx", import.meta.url));
@@ -44,32 +44,32 @@ function check(name, cond) {
   passed += 1;
 }
 
-// Open RAMS button fix
-check("Open RAMS text present on card", /Open RAMS/.test(card));
-check("Open RAMS uses btn-primary-bg", /bg-\[var\(--color-btn-primary-bg\)\]/.test(card));
-check("Open RAMS uses btn-primary-fg", /text-\[var\(--color-btn-primary-fg\)\]/.test(card));
-check("Open RAMS not white-on-white primary", !/bg-\[var\(--color-primary\)\][\s\S]{0,120}text-white/.test(card));
-check("Open RAMS min touch height", /min-h-\[44px\]/.test(card));
-check("Open RAMS reader href", /\/rams\/\$\{assessmentId\}\/read/.test(card));
-check("ack gate Open RAMS also uses primary tokens", /bg-\[var\(--color-btn-primary-bg\)\]/.test(employeeRams));
+// Employee Open RAMS now lives on dedicated detail (not list text cue)
+check("Open RAMS text present on detail", /Open RAMS/.test(employeeDetail));
+check("Open RAMS uses btn-primary-bg", /bg-\[var\(--color-btn-primary-bg\)\]/.test(employeeDetail));
+check("Open RAMS uses btn-primary-fg", /text-\[var\(--color-btn-primary-fg\)\]/.test(employeeDetail));
+check("Open RAMS not white-on-white primary", !/bg-\[var\(--color-primary\)\][\s\S]{0,120}text-white/.test(employeeDetail));
+check("Open RAMS min touch height", /min-h-\[52px\]/.test(employeeDetail) || /min-h-\[44px\]/.test(employeeDetail));
+check("Open RAMS reader href", /\/rams\/\$\{detail\.id\}\/read/.test(employeeDetail));
+check("ack gate Continue reading uses primary tokens", /bg-\[var\(--color-btn-primary-bg\)\]/.test(employeeDetail));
 check("Return to acknowledgement uses primary tokens", /Return to acknowledgement/.test(reader) && /btn-primary-bg/.test(reader));
 
 // Navigation labels + routes
 const admin = getDesktopSidebarNavigationTree("admin");
-const employee = getDesktopSidebarNavigationTree("employee");
+const employeeNav = getDesktopSidebarNavigationTree("employee");
 const mobileAdmin = getMobileDrawerNavigationTree("admin");
 const mobileEmployee = getMobileDrawerNavigationTree("employee");
 const adminLeaves = leafLabels(admin);
-const empLeaves = leafLabels(employee);
+const empLeaves = leafLabels(employeeNav);
 
 check("admin has Manage RAMS route", leafHrefs(admin).includes("/rams/manage"));
 check("admin has Manage Toolbox Talks route", leafHrefs(admin).includes("/toolbox-talks/manage"));
 check("admin has My RAMS route", leafHrefs(admin).includes("/rams"));
 check("admin has My Toolbox Talks route", leafHrefs(admin).includes("/toolbox-talks"));
-check("employee has My RAMS route", leafHrefs(employee).includes("/rams"));
-check("employee has My Toolbox Talks route", leafHrefs(employee).includes("/toolbox-talks"));
-check("employee lacks manage RAMS", !leafHrefs(employee).includes("/rams/manage"));
-check("employee lacks manage toolbox", !leafHrefs(employee).includes("/toolbox-talks/manage"));
+check("employee has My RAMS route", leafHrefs(employeeNav).includes("/rams"));
+check("employee has My Toolbox Talks route", leafHrefs(employeeNav).includes("/toolbox-talks"));
+check("employee lacks manage RAMS", !leafHrefs(employeeNav).includes("/rams/manage"));
+check("employee lacks manage toolbox", !leafHrefs(employeeNav).includes("/toolbox-talks/manage"));
 check("mobile admin mirrors manage routes", leafHrefs(mobileAdmin).includes("/rams/manage") && leafHrefs(mobileAdmin).includes("/toolbox-talks/manage"));
 check("mobile employee lacks manage routes", !leafHrefs(mobileEmployee).includes("/rams/manage") && !leafHrefs(mobileEmployee).includes("/toolbox-talks/manage"));
 check("en Manage Toolbox Talks label", /"nav\.toolbox_talks_manage": "Manage Toolbox Talks"/.test(en));
@@ -89,7 +89,7 @@ check("RAMS Create/Upload labels", /Create RAMS/.test(ramsManage) && /Upload RAM
 check("RAMS Continue Draft / Open record", /Continue Draft/.test(ramsManage) && /Open record/.test(ramsManage));
 check("Talks Create Toolbox Talk", /Create Toolbox Talk/.test(ttManage));
 check("Talks Continue Draft / Open record", /Continue Draft/.test(ttManage) && /Open record/.test(ttManage));
-check("employee Open RAMS list cue", /Open RAMS/.test(employeeRams));
+check("employee list status actions", /Review RAMS/.test(employee) && /View RAMS record/.test(employee));
 check("employee Open Toolbox Talk", /Open Toolbox Talk/.test(ttEmployee));
 check("employee Sign Toolbox Talk", /Sign Toolbox Talk/.test(ttEmployee));
 
@@ -124,7 +124,7 @@ check("RAMS assignment draft or published", /status === "draft" \|\| detail\.sta
 // Mobile wrap safety on changed action groups
 check("RAMS manage actions wrap", /flex-col gap-2 sm:w-auto sm:flex-row|flex-wrap/.test(ramsManage));
 check("Talks editor actions stack", /flex-col gap-2 sm:flex-row/.test(ttEditor));
-check("Open RAMS full width mobile", /w-full[\s\S]*Open RAMS|Open RAMS[\s\S]*w-full/.test(card));
+check("Open RAMS full width mobile", /w-full[\s\S]*Open RAMS|Open RAMS[\s\S]*w-full|min-h-\[52px\][\s\S]*w-full/.test(employeeDetail));
 
 // Dead nav file note: layouts/navigation-items.ts is unused by sidebar/drawer — not modified.
 

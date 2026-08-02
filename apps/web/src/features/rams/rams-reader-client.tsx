@@ -381,10 +381,10 @@ export function RamsReaderClient({ assessmentId }: Props) {
           </Button>
           <Link
             className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-border-dark)] px-3 text-sm font-semibold"
-            href="/rams"
+            href={`/rams/${assessmentId}`}
             onClick={() => {
               try {
-                sessionStorage.setItem("timiq_rams_resume", assessmentId);
+                sessionStorage.setItem("timiq_rams_focus_ack", assessmentId);
               } catch {
                 // ignore
               }
@@ -546,10 +546,10 @@ export function RamsReaderClient({ assessmentId }: Props) {
           {complete ? (
             <Link
               className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-3 text-sm font-semibold text-[var(--color-btn-primary-fg)] hover:border-[var(--color-btn-primary-hover-bg)] hover:bg-[var(--color-btn-primary-hover-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-btn-primary-border)]"
-              href="/rams"
+              href={`/rams/${assessmentId}#rams-acknowledgement`}
               onClick={() => {
                 try {
-                  sessionStorage.setItem("timiq_rams_resume", assessmentId);
+                  sessionStorage.setItem("timiq_rams_focus_ack", assessmentId);
                 } catch {
                   // ignore
                 }

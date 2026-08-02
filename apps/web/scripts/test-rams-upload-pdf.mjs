@@ -8,6 +8,7 @@ const upload = read(new URL("../src/app/(app)/rams/manage/rams-upload-client.tsx
 const uploadPage = read(new URL("../src/app/(app)/rams/manage/upload/page.tsx", import.meta.url));
 const detail = read(new URL("../src/app/(app)/rams/manage/rams-detail-client.tsx", import.meta.url));
 const employee = read(new URL("../src/app/(app)/rams/rams-client.tsx", import.meta.url));
+const employeeDetail = read(new URL("../src/app/(app)/rams/[assessmentId]/employee-rams-detail-client.tsx", import.meta.url));
 const api = read(new URL("../src/features/rams/api.ts", import.meta.url));
 const preview = read(new URL("../src/features/rams/uploaded-pdf-preview.tsx", import.meta.url));
 const editor = read(new URL("../src/app/(app)/rams/manage/rams-editor-client.tsx", import.meta.url));
@@ -47,13 +48,13 @@ check("object URL revoked on cleanup", /URL\.revokeObjectURL/.test(preview) && /
 check("preview failure fallback", /PDF unavailable|PDF preview unavailable/.test(preview) && /Download PDF/.test(preview));
 check("detail uses UploadedRamsPdfPreview", /UploadedRamsPdfPreview/.test(detail) && !/<iframe[\s\S]*ramsUploadedPdfViewUrl/.test(detail));
 check("preview Open PDF uses authenticated open", /openUploadedRamsPdfInNewTab/.test(preview) && /Open PDF/.test(preview));
-check("employee uses compact document card", /UploadedRamsDocumentCard/.test(employee));
-check("employee Open RAMS reader link", /\/rams\/\$\{.*\}\/read|Open RAMS/.test(employee) || /UploadedRamsDocumentCard/.test(employee));
+check("employee list is hierarchy cards", /Needs action/.test(employee) && /href=\{`\/rams\/\$\{row\.id\}`\}/.test(employee));
+check("employee detail opens reader", /\/rams\/\$\{detail\.id\}\/read/.test(employeeDetail));
 check("detail uploaded badge", /Uploaded RAMS/.test(detail));
 check("detail has single PDF action surface", /UploadedRamsPdfPreview/.test(detail) && !/Open full PDF/.test(detail));
 check("template sections hidden for uploaded", /isUploaded \? \(/.test(detail) && /Uploaded RAMS PDF|Uploaded PDF preview/.test(detail));
-check("employee uploaded flow", /Uploaded document/.test(employee));
-check("mobile open PDF / Open RAMS actions", /Open RAMS/.test(employee) && /Open PDF/.test(preview));
+check("employee uploaded document action", /Document/.test(employeeDetail) && /Open RAMS|Continue reading RAMS|Review RAMS again/.test(employeeDetail));
+check("mobile open PDF / Open RAMS actions", /Open RAMS/.test(employeeDetail) && /Open PDF/.test(preview));
 check("no Add all site users label", !/Add all site users/.test(detail));
 check("bulk active and site employees", /Add all active employees/.test(detail) && /Add all site employees/.test(detail));
 check("template creator unchanged path", /Choose a professional construction activity template/.test(editor) || /document_presets/.test(editor) || /from-preset/.test(editor) || /Create RAMS/.test(editor) || /preset/.test(editor));

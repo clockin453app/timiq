@@ -1,41 +1,18 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import {
-  Button,
-  Input,
-  PageHeader,
-  Sheet,
-  SheetBody,
-} from "@/components/ui";
-import { SignaturePad } from "@/components/signature/signature-pad";
+import { PageHeader } from "@/components/ui";
 import { isEmployee, useCurrentUser } from "@/features/auth";
-import {
-  declineRams,
-  downloadRamsPdf,
-  getRams,
-  listMyRams,
-  acknowledgeRams,
-  openRamsPrint,
-  ramsAttachmentUrl,
-  ramsSignatureImageUrl,
-  type RamsAssessmentDetail,
-  type RamsAssessmentListItem,
-} from "@/features/rams/api";
-import { UploadedRamsDocumentCard } from "@/features/rams/uploaded-rams-document-card";
+import { listMyRams, type RamsAssessmentListItem } from "@/features/rams/api";
 import { listLocations, type Location } from "@/features/locations/api";
 import { useT } from "@/lib/i18n";
-import Link from "next/link";
 
 function formatDate(iso: string | null | undefined) {
-  if (!iso) {
-    return "—";
-  }
+  if (!iso) return "—";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) {
-    return iso;
-  }
+  if (Number.isNaN(d.getTime())) return iso;
   return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
@@ -54,38 +31,137 @@ function riskChipClass(level: string): string {
   }
 }
 
-function renderDocumentBlock(detail: RamsAssessmentDetail, block: NonNullable<RamsAssessmentDetail["document_sections"]>[number]["blocks"][number]) {
-  if (block.type === "text" && block.text) {
-    return <p className="whitespace-pre-wrap text-[var(--color-text)]">{block.text}</p>;
+export type RamsListActionKind = "review" | "continue" | "sign" | "view";
+
+export function employeeRamsListAction(row: RamsAssessmentListItem): RamsListActionKind {
+  if (row.my_ack_status === "acknowledged") return "view";
+  if (row.reading_required) {
+    if (row.reading_status === "completed") return "sign";
+    if (row.reading_status === "in_progress") return "continue";
+    return "review";
   }
-  if (block.type === "list" && block.items?.length) {
-    return <ul className="list-disc space-y-1 pl-5">{block.items.map((item, idx) => <li key={`${block.id}-${idx}`}>{item}</li>)}</ul>;
+  return "sign";
+}
+
+export function employeeRamsListActionLabel(kind: RamsListActionKind): string {
+  switch (kind) {
+    case "continue":
+      return "Continue reading";
+    case "sign":
+      return "Sign RAMS";
+    case "view":
+      return "View RAMS record";
+    default:
+      return "Review RAMS";
   }
-  if (block.type === "table" && block.rows?.length) {
-    const columns = block.columns?.length ? block.columns : Object.keys(block.rows[0] ?? {});
-    return (
-      <div className="timiq-scroll-x w-full min-w-0 max-w-full overflow-x-auto rounded border border-[var(--color-border)]">
-        <table className="min-w-full text-left text-xs">
-          <thead className="bg-[var(--color-header)]"><tr>{columns.map((col) => <th className="px-3 py-2 font-semibold" key={col}>{col}</th>)}</tr></thead>
-          <tbody>{block.rows.map((row, idx) => <tr className="border-t border-[var(--color-border)]" key={`${block.id}-row-${idx}`}>{columns.map((col) => <td className="px-3 py-2 align-top" key={col}>{String(row[col] ?? "")}</td>)}</tr>)}</tbody>
-        </table>
+}
+
+function employeeStatusLabel(row: RamsAssessmentListItem): string {
+  if (row.my_ack_status === "acknowledged") return "Acknowledged";
+  if (row.my_ack_status === "declined") return "Declined";
+  if (row.reading_required) {
+    if (row.reading_status === "completed") return "Ready to sign";
+    if (row.reading_status === "in_progress") return "In progress";
+    return "Needs review";
+  }
+  return "Needs acknowledgement";
+}
+
+type ListBucket = "needs_action" | "in_progress" | "acknowledged";
+
+function bucketFor(row: RamsAssessmentListItem): ListBucket {
+  if (row.my_ack_status === "acknowledged") return "acknowledged";
+  if (row.reading_required && (row.reading_status === "in_progress" || row.reading_status === "completed")) {
+    return "in_progress";
+  }
+  return "needs_action";
+}
+
+const PRIMARY_ACTION_CLASS =
+  "mt-3 inline-flex min-h-[52px] w-full items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-3 text-sm font-semibold text-[var(--color-btn-primary-fg)] hover:border-[var(--color-btn-primary-hover-bg)] hover:bg-[var(--color-btn-primary-hover-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-btn-primary-border)] active:translate-y-[0.5px]";
+
+function RamsListCardSkeleton() {
+  return (
+    <div
+      aria-hidden
+      className="animate-pulse rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3"
+    >
+      <div className="h-4 w-3/5 rounded bg-[var(--color-border)]" />
+      <div className="mt-3 h-3 w-2/5 rounded bg-[var(--color-border)]" />
+      <div className="mt-2 h-3 w-1/2 rounded bg-[var(--color-border)]" />
+      <div className="mt-3 h-[52px] w-full rounded bg-[var(--color-border)]" />
+    </div>
+  );
+}
+
+function RamsListCard({
+  row,
+  siteName,
+}: {
+  row: RamsAssessmentListItem;
+  siteName: string;
+}) {
+  const action = employeeRamsListAction(row);
+  const progressText =
+    row.reading_required &&
+    row.reading_total_pages != null &&
+    row.reading_status &&
+    row.reading_status !== "not_started"
+      ? `${row.reading_viewed_count ?? 0} of ${row.reading_total_pages} pages viewed`
+      : null;
+
+  return (
+    <Link
+      className="block w-full min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3 text-left shadow-sm transition hover:border-[var(--color-text-soft)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-btn-primary-border)]"
+      href={`/rams/${row.id}`}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <h3 className="min-w-0 break-words text-base font-semibold text-[var(--color-text)]">{row.title}</h3>
+        <span className={`shrink-0 rounded border px-2 py-0.5 text-xs capitalize ${riskChipClass(row.risk_level)}`}>
+          {row.risk_level}
+        </span>
       </div>
-    );
-  }
-  if (block.type === "photo") {
-    const attachment = (detail.attachments ?? []).find((a) => a.section_key === block.section_key);
-    if (attachment && attachment.content_type.startsWith("image/")) {
-      return <figure className="rounded border border-[var(--color-border)] p-2"><img alt={block.caption ?? attachment.original_filename} className="max-h-80 w-full object-contain" src={ramsAttachmentUrl(attachment)} /><figcaption className="mt-1 text-xs text-[var(--color-text-soft)]">{block.caption ?? attachment.original_filename}</figcaption></figure>;
-    }
-    return block.caption ? <p className="text-xs text-[var(--color-text-soft)]">Photo: {block.caption}</p> : null;
-  }
-  if (block.type === "hazard_table") {
-    return <div className="space-y-2">{detail.hazards.map((h) => <div className="rounded border border-[var(--color-border)] p-3" key={h.id}><p className="font-medium">{h.hazard}</p><p className="text-xs text-[var(--color-text-soft)]">Initial {h.initial_risk_score} ({h.initial_risk_band}) · Residual {h.residual_risk_score} ({h.residual_risk_band})</p><p className="mt-2 whitespace-pre-wrap">{h.control_measures}</p></div>)}</div>;
-  }
-  if (block.type === "risk_matrix") {
-    return <p className="text-[var(--color-text-soft)]">Risk score is likelihood x severity using a 1-5 scale: low 1-5, medium 6-10, high 11-15, critical 16-25.</p>;
-  }
-  return null;
+      <dl className="mt-2 space-y-1 text-xs text-[var(--color-text-soft)]">
+        <div>
+          <dt className="inline font-medium text-[var(--color-text)]">Site: </dt>
+          <dd className="inline">{siteName}</dd>
+        </div>
+        <div>
+          <dt className="inline font-medium text-[var(--color-text)]">Review date: </dt>
+          <dd className="inline">{formatDate(row.review_due_date)}</dd>
+        </div>
+        <div>
+          <dt className="inline font-medium text-[var(--color-text)]">Status: </dt>
+          <dd className="inline">{employeeStatusLabel(row)}</dd>
+        </div>
+        {progressText ? (
+          <div>
+            <dt className="inline font-medium text-[var(--color-text)]">Reading: </dt>
+            <dd className="inline">{progressText}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <span className={PRIMARY_ACTION_CLASS}>{employeeRamsListActionLabel(action)}</span>
+    </Link>
+  );
+}
+
+function Section({
+  title,
+  children,
+  empty,
+}: {
+  title: string;
+  children: ReactNode;
+  empty: boolean;
+}) {
+  if (empty) return null;
+  return (
+    <section className="space-y-2">
+      <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--color-text-soft)]">{title}</h2>
+      <div className="grid gap-3 sm:grid-cols-2">{children}</div>
+    </section>
+  );
 }
 
 export function RamsClient() {
@@ -93,34 +169,10 @@ export function RamsClient() {
   const currentUser = useCurrentUser();
   const [items, setItems] = useState<RamsAssessmentListItem[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
-  const [detail, setDetail] = useState<RamsAssessmentDetail | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
-  const [ackName, setAckName] = useState("");
-  const [signaturePng, setSignaturePng] = useState<string | null>(null);
-  const [readAck, setReadAck] = useState(false);
-  const [declineReason, setDeclineReason] = useState("");
-  const [actionBusy, setActionBusy] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [navigatorOffline, setNavigatorOffline] = useState(false);
 
   const employee = Boolean(currentUser && isEmployee(currentUser));
-
-  useEffect(() => {
-    setMounted(true);
-    const sync = () => setNavigatorOffline(typeof navigator !== "undefined" && !navigator.onLine);
-    sync();
-    window.addEventListener("online", sync);
-    window.addEventListener("offline", sync);
-    return () => {
-      window.removeEventListener("online", sync);
-      window.removeEventListener("offline", sync);
-    };
-  }, []);
-
-  const offlineBlock = mounted && navigatorOffline;
 
   const loadList = useCallback(async () => {
     if (!employee) {
@@ -148,122 +200,32 @@ export function RamsClient() {
 
   const locationName = useCallback(
     (id: string | null) => {
-      if (!id) {
-        return "—";
-      }
+      if (!id) return "—";
       return locations.find((l) => l.id === id)?.name ?? "—";
     },
     [locations],
   );
 
-  const sorted = useMemo(() => {
-    const score = (s: RamsAssessmentListItem) => {
-      if (s.my_ack_status === "pending" && (s.status === "published" || s.status === "reviewed")) {
-        return 0;
-      }
-      return 1;
-    };
-    return [...items].sort((a, b) => score(a) - score(b) || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+  const buckets = useMemo(() => {
+    const needs_action: RamsAssessmentListItem[] = [];
+    const in_progress: RamsAssessmentListItem[] = [];
+    const acknowledged: RamsAssessmentListItem[] = [];
+    for (const row of items) {
+      const b = bucketFor(row);
+      if (b === "acknowledged") acknowledged.push(row);
+      else if (b === "in_progress") in_progress.push(row);
+      else needs_action.push(row);
+    }
+    const byUpdated = (a: RamsAssessmentListItem, b: RamsAssessmentListItem) =>
+      new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    needs_action.sort(byUpdated);
+    in_progress.sort(byUpdated);
+    acknowledged.sort(byUpdated);
+    return { needs_action, in_progress, acknowledged };
   }, [items]);
 
-  const openDetail = async (id: string) => {
-    setSelectedId(id);
-    setDetailLoading(true);
-    setError("");
-    setAckName("");
-    setSignaturePng(null);
-    setReadAck(false);
-    setDeclineReason("");
-    try {
-      const d = await getRams(id);
-      setDetail(d);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("rams.error_load", "Could not load RAMS."));
-      setDetail(null);
-    } finally {
-      setDetailLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    try {
-      const resume = sessionStorage.getItem("timiq_rams_resume");
-      if (resume && employee) {
-        sessionStorage.removeItem("timiq_rams_resume");
-        void openDetail(resume);
-      }
-    } catch {
-      // ignore
-    }
-    // Resume once after returning from the full-screen reader.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [employee]);
-
-  const myRow = useMemo(() => {
-    if (!detail || !currentUser) {
-      return null;
-    }
-    return detail.acknowledgements.find((a) => a.user_id === currentUser.id) ?? null;
-  }, [detail, currentUser]);
-
-  const readingComplete =
-    !detail?.reading_required || detail.reading_progress?.status === "completed";
-  const canAcknowledge =
-    isEmployee(currentUser) &&
-    myRow?.status === "pending" &&
-    (detail?.status === "published" || detail?.status === "reviewed");
-  const ackControlsEnabled = Boolean(canAcknowledge && readingComplete && !offlineBlock);
-
-  const submitAck = async (ev: FormEvent) => {
-    ev.preventDefault();
-    if (!detail || !selectedId) {
-      return;
-    }
-    if (offlineBlock) {
-      setError(t("rams.offline_ack", "Acknowledgement requires connection."));
-      return;
-    }
-    setActionBusy(true);
-    setError("");
-    try {
-      const d = await acknowledgeRams(selectedId, {
-        read_understood_ack: readAck,
-        acknowledgement_name: ackName.trim(),
-        signature_image_data: signaturePng ?? "",
-      });
-      setDetail(d);
-      await loadList();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("rams.error_ack", "Could not acknowledge."));
-    } finally {
-      setActionBusy(false);
-    }
-  };
-
-  const submitDecline = async (ev: FormEvent) => {
-    ev.preventDefault();
-    if (!detail || !selectedId) {
-      return;
-    }
-    if (offlineBlock) {
-      setError(t("rams.offline_ack", "Acknowledgement requires connection."));
-      return;
-    }
-    setActionBusy(true);
-    setError("");
-    try {
-      const d = await declineRams(selectedId, declineReason);
-      setDetail(d);
-      await loadList();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t("rams.error_decline", "Could not decline."));
-    } finally {
-      setActionBusy(false);
-    }
-  };
-
   return (
-    <div className="space-y-6">
+    <div className="w-full min-w-0 max-w-full space-y-5 pb-[max(1rem,calc(var(--layout-mobile-bottom-nav-height)+0.75rem))] md:pb-4">
       <PageHeader
         title={t("rams.title", "My RAMS")}
         description={t("rams.employee_intro", "Review assigned risk assessments and acknowledge.")}
@@ -280,219 +242,34 @@ export function RamsClient() {
         </p>
       ) : null}
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
-      {offlineBlock ? (
-        <p className="text-sm text-[var(--color-text-soft)]">{t("rams.offline_ack", "Acknowledgement requires connection.")}</p>
-      ) : null}
       {loading ? (
-        <p className="text-sm text-[var(--color-text-soft)]">{t("rams.loading", "Loading…")}</p>
-      ) : employee ? (
-        <div className="grid gap-3 sm:grid-cols-2">
-          {sorted.length === 0 ? (
-            <p className="text-sm text-[var(--color-text-soft)] sm:col-span-2">{t("rams.empty", "No RAMS assigned yet.")}</p>
-          ) : (
-            sorted.map((row) => (
-              <button
-                key={row.id}
-                type="button"
-                className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-4 text-left shadow-sm transition hover:border-[var(--color-text-soft)]"
-                onClick={() => void openDetail(row.id)}
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <span className="font-semibold text-[var(--color-text)]">{row.title}</span>
-                  <span className={`shrink-0 rounded border px-2 py-0.5 text-xs capitalize ${riskChipClass(row.risk_level)}`}>
-                    {row.risk_level}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs text-[var(--color-text-soft)]">
-                  {t("rams.col_site", "Site")}: {locationName(row.location_id)}
-                </p>
-                <p className="mt-1 text-xs text-[var(--color-text-soft)]">
-                  {t("rams.review_due", "Review due")}: {formatDate(row.review_due_date)}
-                </p>
-                <p className="mt-1 text-xs text-[var(--color-text-soft)]">
-                  {t("rams.col_your_status", "Your status")}: {row.my_ack_status ?? "—"}
-                </p>
-                <p className="mt-3 text-xs font-medium text-[var(--color-link)]">Open RAMS</p>
-              </button>
-            ))
-          )}
+        <div className="grid gap-3 sm:grid-cols-2" aria-busy="true" aria-label={t("rams.loading", "Loading…")}>
+          <RamsListCardSkeleton />
+          <RamsListCardSkeleton />
         </div>
+      ) : employee ? (
+        items.length === 0 ? (
+          <p className="text-sm text-[var(--color-text-soft)]">{t("rams.empty", "No RAMS assigned yet.")}</p>
+        ) : (
+          <div className="space-y-6">
+            <Section title="Needs action" empty={buckets.needs_action.length === 0}>
+              {buckets.needs_action.map((row) => (
+                <RamsListCard key={row.id} row={row} siteName={locationName(row.location_id)} />
+              ))}
+            </Section>
+            <Section title="In progress" empty={buckets.in_progress.length === 0}>
+              {buckets.in_progress.map((row) => (
+                <RamsListCard key={row.id} row={row} siteName={locationName(row.location_id)} />
+              ))}
+            </Section>
+            <Section title="Acknowledged" empty={buckets.acknowledged.length === 0}>
+              {buckets.acknowledged.map((row) => (
+                <RamsListCard key={row.id} row={row} siteName={locationName(row.location_id)} />
+              ))}
+            </Section>
+          </div>
+        )
       ) : null}
-
-      <Sheet>
-        <SheetBody className="min-w-0 space-y-4 pb-[max(1.5rem,calc(var(--layout-mobile-bottom-nav-height)+var(--layout-mobile-keyboard-pad)))] md:pb-5">
-          {detailLoading && selectedId ? (
-            <p className="text-sm text-[var(--color-text-soft)]">{t("rams.loading", "Loading…")}</p>
-          ) : null}
-          {detail && selectedId === detail.id ? (
-            <div className="space-y-4 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0 space-y-1">
-                  {detail.source_type === "uploaded_pdf" ? (
-                    <span className="inline-flex rounded border border-sky-300 bg-sky-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-sky-900">
-                      Uploaded document
-                    </span>
-                  ) : null}
-                  <h2 className="text-lg font-semibold text-[var(--color-text)]">{detail.title}</h2>
-                  <p className="text-xs capitalize text-[var(--color-text-soft)]">{detail.status}</p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {detail.source_type !== "uploaded_pdf" ? (
-                    <>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() =>
-                          void downloadRamsPdf(detail.id, detail.reference ?? detail.id).catch((e) =>
-                            setError(e instanceof Error ? e.message : t("rams.error_pdf", "Could not download PDF.")),
-                          )
-                        }
-                      >
-                        Download PDF
-                      </Button>
-                      <Button type="button" variant="secondary" size="sm" onClick={() => openRamsPrint(detail.id)}>
-                        Print
-                      </Button>
-                    </>
-                  ) : null}
-                  <Button type="button" variant="secondary" size="sm" onClick={() => setSelectedId(null)}>
-                    {t("rams.close_detail", "Close")}
-                  </Button>
-                </div>
-              </div>
-              <div className="grid gap-2 rounded border border-[var(--color-border)] bg-[var(--color-cell)] p-3 text-xs sm:grid-cols-2">
-                <p><span className="font-medium">{t("rams.col_site", "Site")}:</span> {locationName(detail.location_id)}</p>
-                <p><span className="font-medium">{t("rams.review_due", "Review due")}:</span> {formatDate(detail.review_due_date)}</p>
-                <p><span className="font-medium">{t("rams.col_risk", "Risk")}:</span> <span className={`inline-block rounded border px-2 py-0.5 text-xs capitalize ${riskChipClass(detail.risk_level)}`}>{detail.risk_level}</span></p>
-                <p><span className="font-medium">{t("rams.col_your_status", "Your status")}:</span> {myRow?.status ?? "pending"}</p>
-              </div>
-              <div className="space-y-5">
-                {detail.source_type === "uploaded_pdf" ? (
-                  <UploadedRamsDocumentCard
-                    assessmentId={detail.id}
-                    fileSizeBytes={detail.uploaded_pdf?.file_size_bytes}
-                    filename={detail.uploaded_pdf?.original_filename}
-                    readingProgress={detail.reading_progress}
-                    version={detail.uploaded_pdf?.version}
-                  />
-                ) : (
-                  (detail.document_sections ?? []).filter((section) => section.visible_in_pdf).map((section) => (
-                    <section className="rounded border border-[var(--color-border)] bg-white p-4" key={section.id}>
-                      <h3 className="border-b border-[var(--color-border)] pb-2 text-base font-semibold text-[var(--color-text)]">{section.title}</h3>
-                      {section.not_applicable ? <p className="mt-3 text-[var(--color-text-soft)]">Not applicable.</p> : null}
-                      <div className="mt-3 space-y-3">{section.blocks.map((block) => <div key={block.id}>{renderDocumentBlock(detail, block)}</div>)}</div>
-                    </section>
-                  ))
-                )}
-              </div>
-              <section className="space-y-3 rounded border border-[var(--color-border)] bg-[var(--color-surface)] p-4">
-                <h3 className="text-base font-semibold text-[var(--color-text)]">Final acknowledgement</h3>
-                {canAcknowledge ? (
-                  <>
-                    {detail.reading_required && !readingComplete ? (
-                      <div className="space-y-2 rounded border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-950">
-                        <p>You must open the RAMS and view all pages before acknowledging.</p>
-                        <Link
-                          className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-3 text-sm font-semibold text-[var(--color-btn-primary-fg)] hover:border-[var(--color-btn-primary-hover-bg)] hover:bg-[var(--color-btn-primary-hover-bg)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-btn-primary-border)]"
-                          href={`/rams/${detail.id}/read`}
-                        >
-                          Open RAMS
-                        </Link>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-emerald-900">
-                        {detail.reading_required
-                          ? "All pages viewed. You can now acknowledge this RAMS."
-                          : null}
-                      </p>
-                    )}
-                    <form className="space-y-3" onSubmit={submitAck}>
-                      <label className="flex items-start gap-2">
-                        <input
-                          type="checkbox"
-                          checked={readAck}
-                          disabled={!ackControlsEnabled}
-                          onChange={(e) => setReadAck(e.target.checked)}
-                          className="mt-1"
-                        />
-                        <span>
-                          I confirm that I have been given access to this RAMS, have progressed through all pages, and
-                          understand that I must follow the controls and method described.
-                        </span>
-                      </label>
-                      <p className="text-xs text-[var(--color-text-soft)]">
-                        Ask your supervisor before acknowledging if anything is unclear. TimIQ records that pages were
-                        presented; it does not prove every word was carefully read.
-                      </p>
-                      <Input
-                        disabled={!ackControlsEnabled}
-                        label={t("signature.printed_name_label", "Printed name")}
-                        value={ackName}
-                        onChange={(e) => setAckName(e.target.value)}
-                      />
-                      <SignaturePad disabled={!ackControlsEnabled || actionBusy} value={signaturePng} onChange={setSignaturePng} />
-                      <Button
-                        type="submit"
-                        disabled={
-                          !ackControlsEnabled ||
-                          actionBusy ||
-                          !readAck ||
-                          !ackName.trim() ||
-                          !signaturePng
-                        }
-                      >
-                        {t("rams.acknowledge", "Sign RAMS")}
-                      </Button>
-                    </form>
-                    <form className="space-y-2 border-t border-[var(--color-border)] pt-3" onSubmit={submitDecline}>
-                      <Input label={t("rams.decline_reason", "Decline reason")} value={declineReason} onChange={(e) => setDeclineReason(e.target.value)} />
-                      <Button type="submit" variant="secondary" disabled={actionBusy || offlineBlock}>{t("rams.decline", "Decline")}</Button>
-                    </form>
-                  </>
-                ) : (
-                  <div className="space-y-2 text-[var(--color-text-soft)]">
-                    {myRow?.status === "acknowledged" ? (
-                      <>
-                        <p>{t("rams.already_ack", "You have already acknowledged this RAMS.")}</p>
-                        {myRow.acknowledgement_name ? (
-                          <p className="text-xs">Printed name: {myRow.acknowledgement_name}</p>
-                        ) : null}
-                        {myRow.acknowledged_at ? (
-                          <p className="text-xs">Signed: {formatDate(myRow.acknowledged_at)}</p>
-                        ) : null}
-                        {detail.uploaded_pdf?.version != null ? (
-                          <p className="text-xs">Document version {detail.uploaded_pdf.version}</p>
-                        ) : null}
-                        {myRow.signature_image_href ? (
-                          <div className="rounded border border-[var(--color-border)] bg-white p-2">
-                            <p className="mb-1 text-xs font-medium text-[var(--color-text)]">Your signature</p>
-                            {/* eslint-disable-next-line @next/next/no-img-element -- authenticated same-origin PNG */}
-                            <img
-                              alt="Your RAMS signature"
-                              className="h-16 max-w-full object-contain object-left"
-                              src={ramsSignatureImageUrl(myRow.signature_image_href) ?? undefined}
-                            />
-                          </div>
-                        ) : null}
-                        {detail.source_type === "uploaded_pdf" ? (
-                          <Link
-                            className="inline-flex min-h-[44px] items-center justify-center rounded border border-[var(--color-btn-primary-border)] bg-[var(--color-btn-primary-bg)] px-3 text-sm font-semibold text-[var(--color-btn-primary-fg)]"
-                            href={`/rams/${detail.id}/read`}
-                          >
-                            Open RAMS
-                          </Link>
-                        ) : null}
-                      </>
-                    ) : (
-                      <p>{t("rams.signoff_unavailable", "Sign-off is not required or is not available for this RAMS.")}</p>
-                    )}
-                  </div>
-                )}
-              </section>
-            </div>
-          ) : null}
-        </SheetBody>
-      </Sheet>
     </div>
   );
 }

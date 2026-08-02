@@ -5,6 +5,7 @@ const read = (p) => fs.readFileSync(p, "utf8").replace(/\r\n/g, "\n");
 
 const detail = read(new URL("../src/app/(app)/rams/manage/rams-detail-client.tsx", import.meta.url));
 const employee = read(new URL("../src/app/(app)/rams/rams-client.tsx", import.meta.url));
+const employeeDetail = read(new URL("../src/app/(app)/rams/[assessmentId]/employee-rams-detail-client.tsx", import.meta.url));
 const api = read(new URL("../src/features/rams/api.ts", import.meta.url));
 const preview = read(new URL("../src/features/rams/uploaded-pdf-preview.tsx", import.meta.url));
 
@@ -21,11 +22,12 @@ check("object URLs revoked on unmount", /URL\.revokeObjectURL/.test(preview) && 
 check("open tab revokes object URL", /openUploadedRamsPdfInNewTab[\s\S]*revokeObjectURL/.test(api));
 check("mobile skips embed by default", /matchMedia\("\(min-width: 768px\)"\)/.test(preview) && /embedDesktop/.test(preview));
 check("PDF failure fallback keeps actions", /PDF unavailable/.test(preview) && /Download PDF/.test(preview));
-check("employee uses document card", /UploadedRamsDocumentCard/.test(employee));
-check("employee bottom nav clearance", /layout-mobile-bottom-nav-height/.test(employee));
-check("employee acknowledgement section remains", /Final acknowledgement/.test(employee) && /Sign RAMS/.test(employee));
+check("employee list has no empty Sheet expand", !/\bSheet\b/.test(employee));
+check("employee detail document actions", /Document/.test(employeeDetail) && /Acknowledge RAMS|Continue reading RAMS/.test(employeeDetail));
+check("employee bottom nav clearance", /layout-mobile-bottom-nav-height/.test(employeeDetail));
+check("employee acknowledgement section remains", /Final acknowledgement/.test(employeeDetail) && /Acknowledge RAMS/.test(employeeDetail));
 check("no public token URL", !/access_token=/.test(preview) && !/token=/.test(api));
-check("320px-safe button stack", /w-full min-w-0 flex-col gap-2 sm:flex-row/.test(preview) || /w-full min-w-0 flex-col gap-2 sm:flex-row/.test(employee));
+check("320px-safe button stack", /w-full min-w-0 flex-col gap-2/.test(preview) || /min-h-\[52px\] w-full/.test(employeeDetail));
 
 check("Add all active employees appears", /Add all active employees/.test(detail));
 check("Add all site employees appears", /Add all site employees/.test(detail));

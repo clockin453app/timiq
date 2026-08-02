@@ -117,6 +117,10 @@ export type RamsAssessmentListItem = {
   updated_at: string;
   my_ack_status: string | null;
   source_type?: string;
+  reading_required?: boolean;
+  reading_status?: string | null;
+  reading_viewed_count?: number | null;
+  reading_total_pages?: number | null;
 };
 
 export type RamsUploadedPdfInfo = {
