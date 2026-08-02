@@ -13,6 +13,12 @@ export {
 export {
   FilterActionRow,
   ResponsiveFilterGrid,
+  FilterToolbar,
+  FilterSearch,
+  FilterButton,
+  FilterClearAction,
+  FilterPopover,
+  MobileFilterSheet,
   type FilterActionRowProps,
   type ResponsiveFilterGridProps,
 } from "./filter-toolbar";
