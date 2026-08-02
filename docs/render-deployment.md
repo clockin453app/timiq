@@ -55,21 +55,34 @@ A Blueprint file pins service names, regions, and env wiring and goes stale quic
 ## 3. Create frontend (Next.js) Web Service
 
 1. **New** → **Web Service** (SSR) — not Static Site, unless you move to fully static export (not current TimIQ default).
-2. **Build command:**
+2. **Root Directory:** prefer `apps/web` so Render’s install/build uses `apps/web/package.json` and `apps/web/package-lock.json` only. There is **no** repository-root npm package for the web app (not an npm workspace). If Root Directory is left as the monorepo root, the build/start commands below must `cd apps/web` explicitly — never run a root-level `npm ci`.
+3. **Build command** (when Root Directory is repo root):
 
    ```bash
    cd apps/web && npm ci && npm run build
    ```
 
+   When Root Directory is already `apps/web`:
+
+   ```bash
+   npm ci && npm run build
+   ```
+
    (`npm install` is acceptable if you do not commit a lockfile strategy.)
 
-3. **Start command:**
+4. **Start command** (when Root Directory is repo root):
 
    ```bash
    cd apps/web && npm run start -- -p $PORT
    ```
 
-4. **Environment (recommended — same-origin API, reliable mobile login):**
+   When Root Directory is already `apps/web`:
+
+   ```bash
+   npm run start -- -p $PORT
+   ```
+
+5. **Environment (recommended — same-origin API, reliable mobile login):**
 
    - **`API_PROXY_URL`**: server-only, set to your API public origin, e.g. `https://timiq-api.onrender.com` (no trailing slash). Next.js **rewrites** proxy browser requests from `https://timiq-web.onrender.com/api/...` to the API. **Redeploy the web service** after changing this (rewrites are applied at build).
    - **`NEXT_PUBLIC_API_URL`**: leave **empty** or unset so the browser uses relative `/api/...` on the web origin (session cookie is first-party).
@@ -79,7 +92,7 @@ A Blueprint file pins service names, regions, and env wiring and goes stale quic
 
    See `apps/web/.env.example`.
 
-5. **Rewrites:** `apps/web/next.config.ts` proxies `/api/:path*` and `/health` to `API_PROXY_URL` (or `NEXT_PUBLIC_API_URL`, or `http://127.0.0.1:8000` for local) in **all** environments so production matches dev.
+6. **Rewrites:** `apps/web/next.config.ts` proxies `/api/:path*` and `/health` to `API_PROXY_URL` (or `NEXT_PUBLIC_API_URL`, or `http://127.0.0.1:8000` for local) in **all** environments so production matches dev.
 
 ---
 
