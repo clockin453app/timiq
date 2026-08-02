@@ -841,6 +841,31 @@ def list_me(db: Session, actor: User) -> list[RamsAssessmentListItem]:
     rows_sorted = sorted(rows, key=sort_key)
     out: list[RamsAssessmentListItem] = []
     for a, ack in rows_sorted:
+        reading_required = False
+        reading_status: str | None = None
+        reading_viewed_count: int | None = None
+        reading_total_pages: int | None = None
+        identity = _current_document_identity(a)
+        if identity is not None:
+            source, version, checksum = identity
+            reading_required = True
+            progress_row = rams_repo.get_reading_progress(
+                db,
+                assessment_id=a.id,
+                user_id=actor.id,
+                document_version=version,
+                document_sha256=checksum,
+            )
+            progress = _reading_progress_to_response(
+                a.id,
+                source_type=source,
+                version=version,
+                checksum=checksum,
+                progress=progress_row,
+            )
+            reading_status = progress.status
+            reading_viewed_count = progress.viewed_count
+            reading_total_pages = progress.total_pages
         out.append(
             RamsAssessmentListItem(
                 id=a.id,
@@ -857,6 +882,10 @@ def list_me(db: Session, actor: User) -> list[RamsAssessmentListItem]:
                 updated_at=a.updated_at,
                 my_ack_status=ack.status,
                 source_type=getattr(a, "source_type", None) or "template",
+                reading_required=reading_required,
+                reading_status=reading_status,
+                reading_viewed_count=reading_viewed_count,
+                reading_total_pages=reading_total_pages,
             )
         )
     return out

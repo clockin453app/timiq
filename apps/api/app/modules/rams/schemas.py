@@ -274,6 +274,10 @@ class RamsAssessmentListItem(BaseModel):
     updated_at: datetime
     my_ack_status: str | None = None
     source_type: str = "template"
+    reading_required: bool = False
+    reading_status: str | None = None
+    reading_viewed_count: int | None = None
+    reading_total_pages: int | None = None
 
 
 class RamsUploadedPdfInfo(BaseModel):
