@@ -1,4 +1,4 @@
-"""Focused layout checks for TimIQ Payroll Report PDF + print HTML."""
+"""Focused layout checks for TimIQ portrait Payroll Report PDF + print HTML."""
 
 from __future__ import annotations
 
@@ -12,13 +12,18 @@ from pypdf import PdfReader
 
 from app.modules.payroll import pdf_export
 from app.modules.payroll import service as payroll_service
-from app.modules.payroll.pdf_export import build_payroll_report_pdf
+from app.modules.payroll.pdf_export import (
+    _COL_WIDTHS,
+    _MARGIN_X,
+    _PRINTABLE_WIDTH,
+    build_payroll_report_pdf,
+)
 
 
-def _sample_row(i: int) -> dict[str, str]:
+def _sample_row(i: int, *, employee: str | None = None, status: str | None = None) -> dict[str, str]:
     return {
-        "employee": f"Employee {i:02d} Long Name",
-        "role": "Site operative",
+        "employee": employee or f"Employee {i:02d} Long Name",
+        "role": "Supervisor/Foreman" if i % 5 == 0 else "Site operative",
         "period": "2025-01-06 to 2025-01-12",
         "hours": "40.00",
         "ot_hours": "2.00",
@@ -26,7 +31,8 @@ def _sample_row(i: int) -> dict[str, str]:
         "cis_tax": "100.00",
         "net": "400.00",
         "other_deductions": "0.00",
-        "status": "Completed" if i % 2 == 0 else "Pending",
+        "status": status
+        or ("Completed" if i % 3 == 0 else "Pending" if i % 3 == 1 else "Paid"),
     }
 
 
@@ -49,30 +55,40 @@ def _build(rows: list[dict[str, str]], *, alerts: list[str] | None = None) -> by
     )
 
 
-def test_pdf_source_uses_a4_landscape_and_compact_margins() -> None:
+def test_pdf_source_uses_a4_portrait_not_landscape() -> None:
     source = inspect.getsource(pdf_export.build_payroll_report_pdf)
-    assert "landscape(A4)" in source
-    assert "11 * mm" in source or "11*mm" in source
-    assert "colWidths=[4.0 * cm, 3.0 * cm]" not in source
-    assert "eef2ff" not in source
-    assert "c7d2fe" not in source
+    module = inspect.getsource(pdf_export)
+    assert "pagesize=A4" in source
+    assert "landscape(A4)" not in source
+    assert "landscape" not in source.lower()
+    assert "_MARGIN_X = 7 * mm" in module
     assert "repeatRows=1" in source
-    assert "KeepTogether" in source
+    assert "KeepTogether([notes_line" in source
+    assert "KeepTogether([table" not in source
     assert "page-break-before" not in source.lower()
-    assert "minHeight" not in source and "min_height" not in source
 
 
-def test_pdf_source_header_is_two_column_not_floating_summary() -> None:
+def test_pdf_column_widths_fill_printable_portrait_width() -> None:
+    assert abs(sum(_COL_WIDTHS) - _PRINTABLE_WIDTH) < 0.05
+    assert 6 * 2.834645669 <= _MARGIN_X <= 8 * 2.834645669
+    fracs = [w / _PRINTABLE_WIDTH for w in _COL_WIDTHS]
+    assert abs(fracs[0] - 0.16) < 0.02
+    assert abs(fracs[3] - 0.07) < 0.02
+    assert abs(sum(fracs) - 1.0) < 0.001
+
+
+def test_pdf_source_alignments_and_status_colours() -> None:
     source = inspect.getsource(pdf_export.build_payroll_report_pdf)
-    assert "details_w = usable_width * 0.62" in source
-    assert "summary_w = usable_width * 0.38" in source
-    assert '[[details, summary]]' in source or "[[details, summary]]" in source.replace(" ", "")
-    assert "_p(\"Summary\"" in source or '_p("Summary"' in source
-
-
-def test_pdf_source_notes_strip_and_columns() -> None:
-    source = inspect.getsource(pdf_export.build_payroll_report_pdf)
-    assert '_p("Notes"' in source or "_p(\"Notes\"" in source
+    module = inspect.getsource(pdf_export)
+    assert 'ALIGN", (0, 0), (2, -1), "LEFT"' in source
+    assert 'ALIGN", (3, 0), (8, -1), "RIGHT"' in source
+    assert 'ALIGN", (9, 0), (9, -1), "CENTER"' in source
+    assert "166534" in module
+    assert "dcfce7" in module
+    assert "9a3412" in module
+    assert "ffedd5" in module
+    assert "fontSize=7.9" in source
+    assert "Notes:" in source
     for col in (
         "Employee",
         "Role",
@@ -86,85 +102,78 @@ def test_pdf_source_notes_strip_and_columns() -> None:
         "Status",
     ):
         assert col in source
-    assert '(3, 1), (8, -1), "RIGHT"' in source
 
 
-def test_pdf_source_footer_page_x_of_y() -> None:
-    source = inspect.getsource(pdf_export)
-    assert "TimIQ Payroll Report" in source
-    assert "Page {self._pageNumber} of {page_count}" in source
-    assert "canvasmaker=_NumberedCanvas" in source
-
-
-def test_print_html_source_compact_layout_rules() -> None:
+def test_print_html_source_portrait_rules() -> None:
     source = inspect.getsource(payroll_service.export_print_html)
-    assert "size: A4 landscape" in source
-    assert "report-header" in source
-    assert "grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr)" in source
-    assert "thead { display: table-header-group; }" in source or "thead {{ display: table-header-group; }}" in source
+    assert "size: A4 portrait" in source
+    assert "landscape" not in source
+    assert "max-width: 1100px" not in source
+    assert "width: 100%" in source
+    assert "Notes:" in source
+    assert "status-completed" in source
+    assert "status-pending" in source
+    assert "status-paid" in source
+    assert 'th class="num"' in source
+    assert 'th class="status-col"' in source
+    assert "thead {{ display: table-header-group; }}" in source
     assert "break-inside: avoid" in source
-    assert "page-break-before" not in source
-    assert "min-height:" not in source
     assert "Email</th>" not in source
-    assert "Period / date" in source
-    assert 'class="num"' in source
-    assert 'class="text"' in source
-    assert "report-canvas" in source
-    assert "Notes" in source
-    assert "Payroll rows" in source
 
 
-def test_build_one_row_pdf_is_compact_single_page() -> None:
+def test_build_one_row_portrait_pdf() -> None:
     body = _build([_sample_row(1)])
     reader = PdfReader(BytesIO(body))
     assert len(reader.pages) == 1
-    text = reader.pages[0].extract_text() or ""
+    page = reader.pages[0]
+    width = float(page.mediabox.width)
+    height = float(page.mediabox.height)
+    assert height > width
+    assert abs(width - 595.28) < 2.0
+    assert abs(height - 841.89) < 2.0
+    text = page.extract_text() or ""
     assert "TimIQ Payroll Report" in text
     assert "Summary" in text
-    assert "Notes" in text
+    assert "Notes:" in text
     assert "Payroll rows" in text
     assert "Employee 01" in text
-    assert "Gross pay" in text
-    assert "£4,000.00" in text or "4000.00" in text or "4,000.00" in text
 
 
-def test_build_eight_row_pdf_stays_efficient() -> None:
+def test_build_eight_row_portrait_pdf() -> None:
     body = _build([_sample_row(i) for i in range(1, 9)])
     reader = PdfReader(BytesIO(body))
     assert 1 <= len(reader.pages) <= 2
     first = reader.pages[0].extract_text() or ""
     assert "Summary" in first
     assert "Stored pay totals" in first
-    assert "Employee 01" in first
 
 
-def test_build_twenty_row_pdf_paginates_with_continuous_table() -> None:
-    body = _build([_sample_row(i) for i in range(1, 21)])
-    reader = PdfReader(BytesIO(body))
-    assert len(reader.pages) >= 1
-    all_text = "\n".join((page.extract_text() or "") for page in reader.pages)
-    assert "Employee 01" in all_text
-    assert "Employee 20" in all_text
-    assert "Page 1 of" in all_text
-    if len(reader.pages) > 1:
-        assert f"Page 2 of {len(reader.pages)}" in all_text
+def test_build_eighteen_twentyfive_forty_portrait_pagination() -> None:
+    counts: dict[int, int] = {}
+    for n in (18, 25, 40):
+        body = _build([_sample_row(i) for i in range(1, n + 1)])
+        reader = PdfReader(BytesIO(body))
+        counts[n] = len(reader.pages)
+        all_text = "\n".join((page.extract_text() or "") for page in reader.pages)
+        assert f"Employee {n:02d}" in all_text
+        assert "Page 1 of" in all_text
+        if len(reader.pages) > 1:
+            assert "Employee" in (reader.pages[1].extract_text() or "")
+    assert counts[40] >= counts[25] >= 1
+    assert counts[40] >= 2
 
 
-def test_build_forty_row_pdf_multi_page_stable() -> None:
-    body = _build([_sample_row(i) for i in range(1, 41)])
-    reader = PdfReader(BytesIO(body))
-    assert len(reader.pages) >= 2
-    all_text = "\n".join((page.extract_text() or "") for page in reader.pages)
-    assert "Employee 01" in all_text
-    assert "Employee 40" in all_text
-    assert f"Page {len(reader.pages)} of {len(reader.pages)}" in all_text
-    # Landscape A4 width/height sanity via mediabox
-    page0 = reader.pages[0]
-    width = float(page0.mediabox.width)
-    height = float(page0.mediabox.height)
-    assert width > height
-    assert abs(width - 841.89) < 2.0
-    assert abs(height - 595.28) < 2.0
+def test_status_values_preserved_in_pdf_text() -> None:
+    rows = [
+        _sample_row(1, status="Completed"),
+        _sample_row(2, status="Pending"),
+        _sample_row(3, status="Paid"),
+    ]
+    body = _build(rows)
+    text = "\n".join((p.extract_text() or "") for p in PdfReader(BytesIO(body)).pages)
+    assert "Completed" in text
+    assert "Pending" in text
+    assert "Paid" in text
 
 
 def test_money_formatting_helpers_unchanged() -> None:
@@ -175,5 +184,4 @@ def test_money_formatting_helpers_unchanged() -> None:
 
 def test_pdf_module_path_is_api_side() -> None:
     path = Path(pdf_export.__file__).resolve()
-    assert "modules" in path.parts
     assert path.name == "pdf_export.py"

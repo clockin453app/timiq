@@ -3415,7 +3415,9 @@ def export_print_html(
     )
     gen = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     alert_lines = _payroll_report_alert_lines(report.alerts)
-    notes_text = " · ".join(alert_lines) if alert_lines else "No additional notes for this report."
+    notes_text = (
+        "Notes: " + (" · ".join(alert_lines) if alert_lines else "No additional notes for this report.")
+    )
 
     by_id: dict[uuid.UUID, PayrollItem] = {}
     if report.items:
@@ -3430,6 +3432,7 @@ def export_print_html(
     employee_ids: set[uuid.UUID] = set()
     rows_html: list[str] = []
     period_cell = html.escape(f"{week_start.isoformat()} to {week_end.isoformat()}")
+    prev_emp: str | None = None
     for row in report.items:
         item = by_id.get(row.id)
         eff_cis = _effective_tax_amount_for_item(item) if item is not None else None
@@ -3450,9 +3453,17 @@ def export_print_html(
             has_net = True
         cis_txt = "—" if eff_cis is None else f"{eff_cis:.2f}"
         net_txt = "—" if eff_net is None else f"{eff_net:.2f}"
-        status = html.escape(row.status)
+        status_raw = (row.status or "").strip()
+        status_key = status_raw.lower()
+        status_cls = (
+            f"status status-{status_key}"
+            if status_key in {"completed", "pending", "paid"}
+            else "status"
+        )
+        group_cls = " emp-group" if prev_emp is not None and prev_emp != emp_label else ""
+        prev_emp = emp_label
         rows_html.append(
-            "<tr>"
+            f'<tr class="{group_cls.strip()}">'
             f'<td class="text">{html.escape(emp_label)}</td>'
             f'<td class="text">{html.escape(jt)}</td>'
             f'<td class="text">{period_cell}</td>'
@@ -3462,7 +3473,7 @@ def export_print_html(
             f'<td class="num">{cis_txt}</td>'
             f'<td class="num">{net_txt}</td>'
             f'<td class="num">{html.escape(str(row.other_deductions_amount))}</td>'
-            f'<td class="text"><span class="status">{status}</span></td>'
+            f'<td class="status-cell"><span class="{status_cls}">{html.escape(status_raw)}</span></td>'
             "</tr>",
         )
     if not rows_html:
@@ -3486,90 +3497,94 @@ def export_print_html(
   * {{ box-sizing: border-box; }}
   body {{
     margin: 0;
-    padding: 16px;
+    padding: 20px 12px;
     color: #111827;
     background: #e5e7eb;
     font-family: system-ui, -apple-system, Segoe UI, sans-serif;
   }}
   .report-canvas {{
     margin: 0 auto;
-    max-width: 1100px;
+    width: min(210mm, 100%);
+    max-width: 210mm;
+    min-height: 297mm;
     background: #fff;
     border: 1px solid #d1d5db;
-    padding: 14px 16px 18px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+    padding: 10mm 7mm 12mm;
   }}
-  .report-header {{
-    display: grid;
-    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
-    gap: 10px;
-    align-items: stretch;
-  }}
-  .details, .summary, .notes {{
-    background: #f9fafb;
-    border: 1px solid #d1d5db;
-    padding: 8px 10px;
-  }}
-  .summary {{ background: #f3f4f6; }}
   .details h1 {{
     margin: 0 0 6px;
-    font-size: 20px;
+    font-size: 18px;
     line-height: 1.2;
     font-weight: 700;
+    color: #111827;
   }}
   .kv {{
     display: grid;
-    grid-template-columns: 7.5rem minmax(0, 1fr);
+    grid-template-columns: 6.5rem minmax(0, 1fr) 6.5rem minmax(0, 1fr);
     gap: 2px 8px;
-    font-size: 12px;
-    line-height: 1.35;
+    font-size: 11px;
+    line-height: 1.3;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #e5e7eb;
   }}
+  .kv .period {{ grid-column: 2 / -1; }}
   .kv dt {{
     margin: 0;
     color: #4b5563;
-    font-weight: 600;
+    font-weight: 500;
   }}
   .kv dd {{
     margin: 0;
     color: #111827;
     font-weight: 600;
   }}
+  .summary {{
+    margin-top: 8px;
+  }}
   .summary h2 {{
-    margin: 0 0 6px;
-    font-size: 12px;
-    font-weight: 700;
+    margin: 0 0 4px;
+    font-size: 11px;
+    font-weight: 600;
     color: #4b5563;
   }}
   .metrics {{
     display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 3px 10px;
-    font-size: 12px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    background: #fafafa;
+    border-top: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
   }}
-  .metrics .label {{ color: #4b5563; font-weight: 600; }}
-  .metrics .value {{
-    text-align: right;
+  .metric {{
+    padding: 4px 6px;
+    border-right: 1px solid #e5e7eb;
+  }}
+  .metric:nth-child(3n) {{ border-right: 0; }}
+  .metric .label {{
+    display: block;
+    font-size: 10px;
+    color: #4b5563;
+    font-weight: 500;
+  }}
+  .metric .value {{
+    display: block;
+    font-size: 13px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
+    color: #111827;
   }}
   .notes {{
-    margin-top: 10px;
-    padding: 6px 10px;
-  }}
-  .notes h2 {{
-    margin: 0 0 2px;
-    font-size: 12px;
-    font-weight: 700;
-    color: #4b5563;
-  }}
-  .notes p {{
-    margin: 0;
-    font-size: 12px;
-    line-height: 1.35;
+    margin: 6px 0 0;
+    padding: 3px 0;
+    border-bottom: 1px solid #e5e7eb;
+    font-size: 10px;
+    line-height: 1.3;
     color: #374151;
   }}
   .rows-heading {{
-    margin: 10px 0 4px;
-    font-size: 14px;
+    margin: 6px 0 3px;
+    font-size: 12px;
     font-weight: 600;
   }}
   table.payroll {{
@@ -3579,25 +3594,36 @@ def export_print_html(
   }}
   table.payroll thead {{ display: table-header-group; }}
   table.payroll th, table.payroll td {{
-    border-bottom: 1px solid #d1d5db;
-    padding: 6px 5px;
-    font-size: 11px;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 3px 3.5px;
+    font-size: 9.5px;
     vertical-align: middle;
     word-wrap: break-word;
   }}
   table.payroll th {{
-    background: #111827;
+    background: #1f2937;
     color: #fff;
     font-weight: 700;
-    text-align: left;
+    font-size: 9px;
   }}
-  table.payroll tbody tr:nth-child(even) td {{ background: #f9fafb; }}
-  table.payroll td.text {{ text-align: left; color: #111827; }}
-  table.payroll td.num {{
+  table.payroll th.text, table.payroll td.text {{ text-align: left; }}
+  table.payroll th.num, table.payroll td.num {{
     text-align: right;
     font-variant-numeric: tabular-nums;
-    color: #111827;
   }}
+  table.payroll th.status-col, table.payroll td.status-cell {{ text-align: center; }}
+  table.payroll col.c-emp {{ width: 16%; }}
+  table.payroll col.c-role {{ width: 12%; }}
+  table.payroll col.c-period {{ width: 15%; }}
+  table.payroll col.c-hours {{ width: 7%; }}
+  table.payroll col.c-ot {{ width: 6%; }}
+  table.payroll col.c-gross {{ width: 9%; }}
+  table.payroll col.c-cis {{ width: 8%; }}
+  table.payroll col.c-net {{ width: 9%; }}
+  table.payroll col.c-other {{ width: 9%; }}
+  table.payroll col.c-status {{ width: 9%; }}
+  table.payroll tbody tr:nth-child(even) td {{ background: #f9fafb; }}
+  table.payroll tbody tr.emp-group td {{ border-top: 1.2px solid #9ca3af; }}
   table.payroll td.empty {{ text-align: center; color: #4b5563; }}
   .status {{
     display: inline-block;
@@ -3605,22 +3631,34 @@ def export_print_html(
     background: #f3f4f6;
     color: #111827;
     font-weight: 600;
-    font-size: 10px;
+    font-size: 8.5px;
     line-height: 1.2;
-    padding: 2px 5px;
+    padding: 1px 4px;
+  }}
+  .status-completed, .status-paid {{
+    color: #166534;
+    background: #dcfce7;
+    border-color: #86efac;
+  }}
+  .status-pending {{
+    color: #9a3412;
+    background: #ffedd5;
+    border-color: #fdba74;
   }}
   .hint {{
     margin-top: 12px;
     font-size: 11px;
     color: #6b7280;
   }}
-  @media (max-width: 800px) {{
-    .report-header {{ grid-template-columns: 1fr; }}
-    .report-canvas {{ overflow-x: auto; }}
+  @media (max-width: 720px) {{
+    body {{ padding: 8px; }}
+    .report-canvas {{ width: 100%; max-width: none; min-height: 0; overflow-x: auto; }}
+    .kv {{ grid-template-columns: 6rem minmax(0, 1fr); }}
+    .kv .period {{ grid-column: 2; }}
   }}
   @page {{
-    size: A4 landscape;
-    margin: 11mm;
+    size: A4 portrait;
+    margin: 9mm 7mm 10mm 7mm;
   }}
   @media print {{
     body {{
@@ -3629,12 +3667,14 @@ def export_print_html(
       margin: 0;
     }}
     .report-canvas {{
+      width: 100%;
       max-width: none;
+      min-height: 0;
       margin: 0;
       border: 0;
+      box-shadow: none;
       padding: 0;
     }}
-    .report-header {{ grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }}
     .hint {{ display: none; }}
     table.payroll {{ break-inside: auto; page-break-inside: auto; }}
     table.payroll tr {{ break-inside: avoid; page-break-inside: avoid; }}
@@ -3646,46 +3686,46 @@ def export_print_html(
 </head>
 <body>
   <main class="report-canvas">
-    <header class="report-header">
-      <section class="details" aria-labelledby="report-title">
-        <h1 id="report-title">TimIQ Payroll Report</h1>
-        <dl class="kv">
-          <dt>Company</dt><dd>{html.escape(company_name)}</dd>
-          <dt>Period</dt><dd>{html.escape(period_label)}</dd>
-          <dt>Employee filter</dt><dd>{html.escape(filter_label)}</dd>
-          <dt>Timezone</dt><dd>{html.escape(tz_name or "—")}</dd>
-          <dt>Generated</dt><dd>{html.escape(gen)}</dd>
-        </dl>
-      </section>
-      <section class="summary" aria-labelledby="summary-title">
-        <h2 id="summary-title">Summary</h2>
-        <div class="metrics">
-          <span class="label">Total hours</span><span class="value">{hours_txt}</span>
-          <span class="label">Employees</span><span class="value">{emp_count_txt}</span>
-          <span class="label">Gross pay</span><span class="value">{_money_html(gross_sum if has_gross else None, has_gross)}</span>
-          <span class="label">CIS tax</span><span class="value">{_money_html(cis_sum if has_cis else None, has_cis)}</span>
-          <span class="label">Net pay</span><span class="value">{_money_html(net_sum if has_net else None, has_net)}</span>
-        </div>
-      </section>
+    <header class="details" aria-labelledby="report-title">
+      <h1 id="report-title">TimIQ Payroll Report</h1>
+      <dl class="kv">
+        <dt>Company</dt><dd>{html.escape(company_name)}</dd>
+        <dt>Employee filter</dt><dd>{html.escape(filter_label)}</dd>
+        <dt>Period</dt><dd class="period">{html.escape(period_label)}</dd>
+        <dt>Timezone</dt><dd>{html.escape(tz_name or "—")}</dd>
+        <dt>Generated</dt><dd>{html.escape(gen)}</dd>
+      </dl>
     </header>
-    <section class="notes" aria-labelledby="notes-title">
-      <h2 id="notes-title">Notes</h2>
-      <p>{notes_esc}</p>
+    <section class="summary" aria-labelledby="summary-title">
+      <h2 id="summary-title">Summary</h2>
+      <div class="metrics">
+        <div class="metric"><span class="label">Total hours</span><span class="value">{hours_txt}</span></div>
+        <div class="metric"><span class="label">Employees</span><span class="value">{emp_count_txt}</span></div>
+        <div class="metric"><span class="label">Gross pay</span><span class="value">{_money_html(gross_sum if has_gross else None, has_gross)}</span></div>
+        <div class="metric"><span class="label">CIS tax</span><span class="value">{_money_html(cis_sum if has_cis else None, has_cis)}</span></div>
+        <div class="metric"><span class="label">Net pay</span><span class="value">{_money_html(net_sum if has_net else None, has_net)}</span></div>
+      </div>
     </section>
+    <p class="notes" id="notes-title">{notes_esc}</p>
     <h2 class="rows-heading">Payroll rows</h2>
     <table class="payroll">
+      <colgroup>
+        <col class="c-emp"/><col class="c-role"/><col class="c-period"/>
+        <col class="c-hours"/><col class="c-ot"/><col class="c-gross"/>
+        <col class="c-cis"/><col class="c-net"/><col class="c-other"/><col class="c-status"/>
+      </colgroup>
       <thead>
         <tr>
-          <th scope="col">Employee</th>
-          <th scope="col">Role</th>
-          <th scope="col">Period / date</th>
-          <th scope="col">Hours</th>
-          <th scope="col">OT h</th>
-          <th scope="col">Gross</th>
-          <th scope="col">CIS tax</th>
-          <th scope="col">Net</th>
-          <th scope="col">Other ded.</th>
-          <th scope="col">Status</th>
+          <th class="text" scope="col">Employee</th>
+          <th class="text" scope="col">Role</th>
+          <th class="text" scope="col">Period / date</th>
+          <th class="num" scope="col">Hours</th>
+          <th class="num" scope="col">OT h</th>
+          <th class="num" scope="col">Gross</th>
+          <th class="num" scope="col">CIS tax</th>
+          <th class="num" scope="col">Net</th>
+          <th class="num" scope="col">Other ded.</th>
+          <th class="status-col" scope="col">Status</th>
         </tr>
       </thead>
       <tbody>
