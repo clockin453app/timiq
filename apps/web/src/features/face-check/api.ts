@@ -53,9 +53,14 @@ export async function fetchFaceReviewImage(shiftId: string, kind: FaceReviewImag
   return response.blob();
 }
 
-export async function fetchFaceReferenceImage(userId: string): Promise<Blob> {
+export async function fetchFaceReferenceImage(
+  userId: string,
+  options?: { variant?: "full" | "thumb" },
+): Promise<Blob> {
+  const variant = options?.variant ?? "full";
+  const qs = variant === "full" ? "" : `?variant=${encodeURIComponent(variant)}`;
   const response = await fetch(
-    `${API_URL}/api/employee-profiles/users/${encodeURIComponent(userId)}/face-reference-image`,
+    `${API_URL}/api/employee-profiles/users/${encodeURIComponent(userId)}/face-reference-image${qs}`,
     {
       credentials: "include",
     },

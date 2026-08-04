@@ -16,6 +16,8 @@ export type AuthUser = {
   profile_first_name?: string | null;
   profile_last_name?: string | null;
   profile_job_title?: string | null;
+  payroll_type?: string | null;
+  face_reference_configured?: boolean;
 };
 
 export type LoginResponse = {

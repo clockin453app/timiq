@@ -31,17 +31,19 @@ import { CompanySelector } from "@/features/companies/company-selector";
 import { listCompanies, type Company } from "@/features/companies/api";
 import { useAdministratorCompanyScope } from "@/features/companies/selected-company";
 
+import { EmployeePhotoButton } from "@/features/employees/employee-photo-button";
+import { EmployeePhotoViewer } from "@/features/employees/employee-photo-viewer";
+import {
+  employeeDisplayName,
+  resolvePayrollTypeDisplay,
+} from "@/features/employees/employee-identity";
+import { PayrollTypeBadge } from "@/features/employees/payroll-type-badge";
 import { employeeRoleLabel, genericStatusLabel } from "@/lib/i18n/display-labels";
 import { useT } from "@/lib/i18n";
 import { EmployeeDetailPanel } from "./employee-detail-panel";
 
 function formatEmployeeDisplayName(user: AuthUser): string {
-  const first = user.profile_first_name?.trim();
-  const last = user.profile_last_name?.trim();
-  if (first || last) {
-    return [first, last].filter(Boolean).join(" ");
-  }
-  return "—";
+  return employeeDisplayName(user);
 }
 
 function getRoleOptions(currentUser: AuthUser): SystemRole[] {
@@ -69,6 +71,8 @@ export function EmployeesClient() {
   const [systemRole, setSystemRole] = useState<SystemRole>("employee");
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [panelUserId, setPanelUserId] = useState<string | null>(null);
+  const [viewerUserId, setViewerUserId] = useState<string | null>(null);
+  const [viewerReturnFocus, setViewerReturnFocus] = useState<HTMLElement | null>(null);
 
   const [errorMessage, setErrorMessage] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -97,6 +101,13 @@ export function EmployeesClient() {
     }
     return users.find((item) => item.id === panelUserId) ?? null;
   }, [panelUserId, users]);
+
+  const viewerUser = useMemo(() => {
+    if (!viewerUserId) {
+      return null;
+    }
+    return users.find((item) => item.id === viewerUserId) ?? null;
+  }, [viewerUserId, users]);
 
   useEffect(() => {
     const requestedUserId = (searchParams.get("employeeId") ?? "").trim();
@@ -517,12 +528,10 @@ export function EmployeesClient() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>{t("employees.col_name", "Name")}</TableHead>
-                  <TableHead className="w-[min(11rem,28vw)] max-w-[11rem]">
-                    {t("employees.col_email", "Email")}
-                  </TableHead>
+                  <TableHead>{t("employees.col_employee", "Employee")}</TableHead>
                   <TableHead className="w-[min(9rem,24vw)]">{t("employees.col_job_title", "Job title")}</TableHead>
                   <TableHead>{t("employees.col_role", "Role")}</TableHead>
+                  <TableHead>{t("employees.col_payroll_type", "Payroll type")}</TableHead>
                   <TableHead>{t("employees.col_status", "Status")}</TableHead>
                   <TableHead>{t("employees.col_company", "Company")}</TableHead>
                   <TableHead>{t("employees.col_created", "Created")}</TableHead>
@@ -552,17 +561,38 @@ export function EmployeesClient() {
                 {!isLoading
                   ? filteredUsers.map((userItem) => {
                       const company = companies.find((item) => item.id === userItem.company_id);
+                      const displayName = formatEmployeeDisplayName(userItem);
+                      const payrollKind = resolvePayrollTypeDisplay(userItem.payroll_type);
 
                       return (
                         <TableRow key={userItem.id}>
-                          <TableCell>{formatEmployeeDisplayName(userItem)}</TableCell>
-                          <TableCell className="max-w-[11rem] break-all text-[13px] leading-snug">
-                            {userItem.email}
+                          <TableCell>
+                            <div className="flex min-w-0 items-center gap-3 py-0.5">
+                              <EmployeePhotoButton
+                                sizeClassName="h-11 w-11"
+                                user={userItem}
+                                onOpen={() => {
+                                  setViewerUserId(userItem.id);
+                                  setViewerReturnFocus(document.activeElement as HTMLElement | null);
+                                }}
+                              />
+                              <div className="min-w-0">
+                                <div className="truncate text-sm font-semibold text-[var(--color-text)]">
+                                  {displayName}
+                                </div>
+                                <div className="truncate text-xs text-[var(--color-text-muted)]">
+                                  {userItem.email}
+                                </div>
+                              </div>
+                            </div>
                           </TableCell>
                           <TableCell className="max-w-[10rem] truncate text-sm text-[var(--color-text)]">
                             {(userItem.profile_job_title ?? "").trim() || "—"}
                           </TableCell>
                           <TableCell>{employeeRoleLabel(t, userItem.system_role)}</TableCell>
+                          <TableCell>
+                            <PayrollTypeBadge kind={payrollKind} />
+                          </TableCell>
                           <TableCell>
                             {userItem.is_active
                               ? genericStatusLabel(t, "active")
@@ -607,6 +637,16 @@ export function EmployeesClient() {
               user={panelUser}
             />
           ) : null}
+
+          <EmployeePhotoViewer
+            open={Boolean(viewerUser)}
+            user={viewerUser}
+            onClose={() => {
+              setViewerUserId(null);
+              window.setTimeout(() => viewerReturnFocus?.focus(), 0);
+              setViewerReturnFocus(null);
+            }}
+          />
         </RoleGuard>
       </SheetBody>
     </Sheet>
