@@ -129,7 +129,7 @@ check("guide colour is neutral grey", /--color-sidebar-guide: #c7cbd1/.test(toke
 check("hover is lighter than active", /--color-sidebar-page-hover: #f3f4f6/.test(tokens) && /--color-sidebar-page-active-bg: #e5e7eb/.test(tokens));
 check("active route scrolls into view on desktop", /scrollIntoView/.test(navTree) && /scrollActiveIntoView/.test(navTree));
 check("mobile drawer skips auto-reveal scroll", /scrollActiveIntoView=\{false\}/.test(mobile));
-check("child-aware tree branches", /childIsFolder/.test(navTree) && /folderPadX\(depth \+ 1\)/.test(navTree));
+check("child-aware tree branches", /childIsFolder/.test(navTree) && /folderPadX\(depth \+ 1, isDrawer\)/.test(navTree));
 check("ancestors stay open on desktop when autoExpandActive", /autoExpandActive && ancestorIds\.includes\(id\)/.test(navTree));
 check("desktop sidebar usable", /<NavTree/.test(sidebar));
 check("mobile drawer usable", /variant="drawer"/.test(mobile) && /min-h-11/.test(navTree));

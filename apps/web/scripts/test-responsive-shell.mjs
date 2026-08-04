@@ -106,7 +106,7 @@ check("drawer does not use compact mark-only branding", !/variant="compact"/.tes
 check("Logout confirm remains available", /LogoutConfirmDialog/.test(mobileHeader));
 check("drawer keeps account leaves in the tree", !/omitMobileDrawerFooterLeaves/.test(mobileHeader));
 check("top header keeps utilities without account avatar menu", !/UserAvatar[\s\S]*menuButtonRef|menuButtonRef[\s\S]*UserAvatar/.test(mobileHeader.split("menuOpen")[0] ?? ""));
-check("drawer is left aligned with backdrop on the right", /fixed bottom-0 left-0 top-0/.test(mobileHeader));
+check("drawer is right aligned with backdrop on the left", /fixed bottom-0 right-0 top-0/.test(mobileHeader));
 
 check("shared Table contains width", /max-w-full min-w-0 w-full overflow-x-auto/.test(table));
 check(

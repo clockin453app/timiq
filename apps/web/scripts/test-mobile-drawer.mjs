@@ -220,7 +220,7 @@ check("employee drawer uses section accordion", /section-accordion/.test(header)
 check("mobile expansion is not persisted", /persist: false/.test(header) && /autoExpandActive: false/.test(header));
 check("account leaves remain in the NavTree", !/omitMobileDrawerFooterLeaves/.test(header));
 check("drawer width is min(300px, calc(100vw - 32px))", /w-\[min\(300px,calc\(100vw-32px\)\)\]/.test(header));
-check("drawer is left-aligned", /fixed bottom-0 left-0 top-0/.test(header));
+check("drawer is right-aligned", /fixed bottom-0 right-0 top-0/.test(header));
 check("drawer avoids forced 300px min-width overflow", !/min-w-\[min\(100%,300px\)\]/.test(header));
 check("close control has a large touch target", /h-11 w-11/.test(header));
 check("backdrop has test id", /data-testid="timiq-mobile-drawer-backdrop"/.test(header));

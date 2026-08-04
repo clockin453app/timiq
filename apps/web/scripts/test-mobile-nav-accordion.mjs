@@ -93,8 +93,11 @@ check(
 
 check(
   "12-16. Closing drawer unmounts NavTree (resets expansion; reopen collapsed)",
-  /\{menuOpen \? \(/.test(mobile) &&
-    /<NavTree[\s\S]*persist: false[\s\S]*autoExpandActive: false/.test(mobile) &&
+  /drawerMounted/.test(mobile) &&
+    /setNavTreeKey/.test(mobile) &&
+    /key=\{navTreeKey\}/.test(mobile) &&
+    /persist: false/.test(mobile) &&
+    /autoExpandActive: false/.test(mobile) &&
     /onNavigate=\{\(\) => closeMenu\(false\)\}/.test(mobile) &&
     /event\.key === "Escape"/.test(mobile) &&
     /data-testid="timiq-mobile-drawer-backdrop"/.test(mobile),

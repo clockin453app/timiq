@@ -33,6 +33,9 @@ const MOBILE_ACCOUNT_SECTION_IDS = ["emp-account", "limited-profile", "mgmt-work
 
 /** max 300px, always leave ~32px backdrop: min(300px, calc(100vw - 32px)) */
 const MOBILE_DRAWER_WIDTH_CLASS = "w-[min(300px,calc(100vw-32px))] max-w-[min(300px,calc(100vw-32px))]";
+/** Matches nav-tree DRAWER_PAGE_PAD_X (section pad + icon + gap). */
+const MOBILE_DRAWER_CHILD_PAD_X = 45;
+const MOBILE_DRAWER_TRANSITION_MS = 220;
 
 export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const user = useCurrentUser();
@@ -47,6 +50,9 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const logoutOpenerRef = useRef<HTMLButtonElement | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [drawerMounted, setDrawerMounted] = useState(false);
+  const [drawerEntered, setDrawerEntered] = useState(false);
+  const [navTreeKey, setNavTreeKey] = useState(0);
 
   const limited = userHasLimitedAccess(user);
 
@@ -69,6 +75,22 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   useEffect(() => {
     dispatch({ type: "route", href: activeHref });
   }, [activeHref]);
+
+  useEffect(() => {
+    if (menuOpen) {
+      setDrawerMounted(true);
+      const frame = window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => setDrawerEntered(true));
+      });
+      return () => window.cancelAnimationFrame(frame);
+    }
+    setDrawerEntered(false);
+    const timer = window.setTimeout(() => {
+      setDrawerMounted(false);
+      setNavTreeKey((key) => key + 1);
+    }, MOBILE_DRAWER_TRANSITION_MS);
+    return () => window.clearTimeout(timer);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -171,7 +193,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
       )}
       data-testid="timiq-mobile-drawer-logout"
       disabled={isLoggingOut}
-      style={{ paddingLeft: 68, fontSize: 14 }}
+      style={{ paddingLeft: MOBILE_DRAWER_CHILD_PAD_X, fontSize: 14 }}
       type="button"
       onClick={openLogoutConfirm}
     >
@@ -234,19 +256,24 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
         </div>
       </div>
 
-      {menuOpen ? (
+      {drawerMounted ? (
         <>
           <button
             aria-label={t("nav.close_menu", "Close menu")}
-            className="fixed inset-0 z-50 bg-black/40"
+            className={cn(
+              "fixed inset-0 z-50 bg-black/40 transition-opacity duration-200 ease-out motion-reduce:transition-none",
+              drawerEntered ? "opacity-100" : "opacity-0",
+            )}
             data-testid="timiq-mobile-drawer-backdrop"
             type="button"
             onClick={() => closeMenu()}
           />
           <div
             className={cn(
-              "fixed bottom-0 left-0 top-0 z-[60] flex flex-col overflow-hidden overscroll-contain border-r border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
+              "fixed bottom-0 right-0 top-0 z-[60] flex flex-col overflow-hidden overscroll-contain border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
               MOBILE_DRAWER_WIDTH_CLASS,
+              "transform-gpu transition-transform duration-200 ease-out motion-reduce:transition-none",
+              drawerEntered ? "translate-x-0" : "translate-x-full",
             )}
             id="timiq-mobile-menu"
             role="dialog"
@@ -287,6 +314,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             >
               {drawerTree.length > 0 ? (
                 <NavTree
+                  key={navTreeKey}
                   accountSectionExtras={accountSectionId ? logoutRow : undefined}
                   accountSectionIds={accountSectionId ? [accountSectionId] : MOBILE_ACCOUNT_SECTION_IDS}
                   activeHref={activeHref}

@@ -37,14 +37,22 @@ const FOLDER_GOLD = "var(--color-sidebar-folder-gold)";
 
 export type NavTreeVariant = "sidebar" | "drawer";
 
+const CHEVRON_BOX_PX = 20;
+const ICON_BOX_PX = 20;
+
 /** Main section left padding (px). */
 const SIDEBAR_SECTION_PAD_X = 15;
-/** Second-level folder content left position (px). */
+/** Second-level folder content left position (px) — desktop. */
 const SIDEBAR_FOLDER_PAD_X = 32;
-/** Vertical tree line X under expanded folders (px). */
+/** Vertical tree line X under expanded folders (px) — desktop. */
 const SIDEBAR_TREE_GUIDE_X = 46;
-/** Final page content (icon) left position (px). */
+/** Final page content (icon) left position (px) — desktop. */
 const SIDEBAR_PAGE_PAD_X = 68;
+/**
+ * Mobile drawer: child icon aligns under the first letter of the parent title.
+ * Section pad (15) + icon box (20) + gap-2.5 (10) = 45.
+ */
+const DRAWER_PAGE_PAD_X = SIDEBAR_SECTION_PAD_X + ICON_BOX_PX + 10;
 /** Nesting step for deeper levels (px). */
 const SIDEBAR_NEST_STEP = 10;
 
@@ -53,25 +61,32 @@ const SIDEBAR_SECTION_FONT_PX = 15.5;
 const SIDEBAR_FOLDER_FONT_PX = 14.5;
 const SIDEBAR_PAGE_FONT_PX = 14;
 
-const CHEVRON_BOX_PX = 20;
-const ICON_BOX_PX = 20;
-
-function folderPadX(depth: number): number {
+function folderPadX(depth: number, isDrawer = false): number {
   if (depth <= 0) {
     return SIDEBAR_SECTION_PAD_X;
+  }
+  if (isDrawer) {
+    return DRAWER_PAGE_PAD_X + Math.max(0, depth - 1) * SIDEBAR_NEST_STEP;
   }
   return SIDEBAR_FOLDER_PAD_X + Math.max(0, depth - 1) * SIDEBAR_NEST_STEP;
 }
 
-function pagePadX(depth: number): number {
+function pagePadX(depth: number, isDrawer = false): number {
   if (depth <= 0) {
     return SIDEBAR_SECTION_PAD_X;
+  }
+  if (isDrawer) {
+    return DRAWER_PAGE_PAD_X + Math.max(0, depth - 1) * SIDEBAR_NEST_STEP;
   }
   return SIDEBAR_PAGE_PAD_X + Math.max(0, depth - 1) * SIDEBAR_NEST_STEP;
 }
 
 /** Vertical guide X for children of a folder/section at `parentDepth`. */
-function treeGuideX(parentDepth: number): number {
+function treeGuideX(parentDepth: number, isDrawer = false): number {
+  if (isDrawer) {
+    // Under the section/folder icon (chevron is on the far right on mobile).
+    return SIDEBAR_SECTION_PAD_X + Math.floor(ICON_BOX_PX / 2) + Math.max(0, parentDepth) * SIDEBAR_NEST_STEP;
+  }
   if (parentDepth <= 0) {
     return SIDEBAR_SECTION_PAD_X + Math.floor(CHEVRON_BOX_PX / 2);
   }
@@ -397,8 +412,8 @@ function TreeRow({
   const badgeCount = badgeHref ? (badgeByHref[badgeHref] ?? 0) : 0;
   const isSectionFolder = depth === 0;
   const isDrawer = variant === "drawer";
-  const folderPad = folderPadX(depth);
-  const pagePad = pagePadX(depth);
+  const folderPad = folderPadX(depth, isDrawer);
+  const pagePad = pagePadX(depth, isDrawer);
   const touchMin = isDrawer ? "min-h-11" : undefined;
 
   const onFolderKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -425,7 +440,7 @@ function TreeRow({
   if (isFolder) {
     const panelId = `nav-tree-${node.id}`;
     const FolderIcon = open ? FolderOpen : Folder;
-    const guideLeft = treeGuideX(depth);
+    const guideLeft = treeGuideX(depth, isDrawer);
 
     return (
       <div
@@ -523,7 +538,9 @@ function TreeRow({
                 index === (node.children?.length ?? 0) - 1 &&
                 !(accountSectionExtras && accountSectionIds.includes(node.id));
               const childIsFolder = Boolean(child.children?.length && !child.href);
-              const childPad = childIsFolder ? folderPadX(depth + 1) : pagePadX(depth + 1);
+              const childPad = childIsFolder
+                ? folderPadX(depth + 1, isDrawer)
+                : pagePadX(depth + 1, isDrawer);
               const branchWidth = Math.max(10, childPad - guideLeft - 6);
               return (
                 <div className="relative" data-sidebar-tree-child={isLast ? "last" : "item"} key={child.id}>
