@@ -96,12 +96,12 @@ check(
 check("drawer locks body scroll", /document\.body\.style\.overflow = "hidden"/.test(mobileHeader));
 check("drawer has focus trap", /event\.key !== "Tab"/.test(mobileHeader));
 check("drawer closes on Escape", /event\.key === "Escape"/.test(mobileHeader));
-check("drawer width is viewport safe", /w-\[min\(92vw,360px\)\]/.test(mobileHeader));
+check("drawer width is viewport safe", /w-\[min\(100vw-1\.25rem,360px\)\]/.test(mobileHeader));
 check("drawer prevents horizontal scroll", /overflow-x-hidden overflow-y-auto/.test(mobileHeader));
-check("drawer has no fixed footer navigation", !/timiq-mobile-drawer-footer/.test(mobileHeader));
-check("drawer account actions scroll with the menu", /timiq-mobile-drawer-scroll[\s\S]*href="\/profile"/.test(mobileHeader));
-check("main mobile header uses the large approved lockup", /MOBILE_HEADER_LOGO_HEIGHT = 38/.test(mobileHeader) && /surface="onDark"/.test(mobileHeader));
-check("drawer header is account identity, not logo", /timiq-mobile-drawer-header/.test(mobileHeader) && (mobileHeader.match(/<TimIQBrandLockup/g) ?? []).length === 1);
+check("drawer has sticky footer navigation", /timiq-mobile-drawer-footer/.test(mobileHeader));
+check("drawer account actions live in the sticky footer", /timiq-mobile-drawer-footer[\s\S]*href="\/profile"/.test(mobileHeader));
+check("main mobile header uses the large approved lockup", /MOBILE_HEADER_LOGO_HEIGHT = 46/.test(mobileHeader) && /surface="onDark"/.test(mobileHeader));
+check("drawer header hosts TimIQ logo plus close", /timiq-mobile-drawer-header[\s\S]*TimIQBrandLockup/.test(mobileHeader) && (mobileHeader.match(/<TimIQBrandLockup/g) ?? []).length === 2);
 check("drawer does not use compact mark-only branding", !/variant="compact"/.test(mobileHeader));
 check("Logout uses menu row", /appearance="menuRow"/.test(mobileHeader));
 check("drawer omits account leaves from tree", /omitMobileDrawerFooterLeaves/.test(mobileHeader));
@@ -119,7 +119,7 @@ const wideAudits = [
   ["accounting", read("app/(app)/accounting/accounting-client.tsx"), /w-full min-w-0 max-w-full overflow-x-auto/],
   ["employees", read("app/(app)/employees/employees-client.tsx"), /w-full min-w-0 max-w-full overflow-x-auto/],
   ["week report", read("app/(app)/week-report/week-report-client.tsx"), /w-full min-w-0 max-w-full space-y-2 overflow-x-auto/],
-  ["work progress", read("app/(app)/work-progress-review/work-progress-review-client.tsx"), /w-full min-w-0 max-w-full overflow-x-auto/],
+  ["work progress", read("app/(app)/work-progress-review/work-progress-review-client.tsx"), /w-full min-w-0 max-w-full overflow-auto/],
   ["pay history", read("app/(app)/pay-history/pay-history-client.tsx"), /w-full min-w-0 max-w-full overflow-x-auto/],
   ["privacy", read("app/(app)/privacy/privacy-client.tsx"), /w-full min-w-0 max-w-full overflow-x-auto/],
   ["budgets calculator", read("app/(app)/budgets/budgets-calculator-tab.tsx"), /w-full min-w-0 max-w-full overflow-x-auto/],

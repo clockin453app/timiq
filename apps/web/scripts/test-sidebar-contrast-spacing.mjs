@@ -38,20 +38,20 @@ check(
 );
 check(
   "6. hover state keeps black text",
-  /hover:bg-\[var\(--color-sidebar-child-hover\)\] hover:text-black/.test(navTree),
+  /hover:bg-\[var\(--color-sidebar-page-hover\)\] hover:text-black/.test(navTree),
 );
 check(
   "7. indentation increases consistently by hierarchy level",
-  /SIDEBAR_SECTION_PAD_X = 12/.test(navTree) &&
+  /SIDEBAR_SECTION_PAD_X = 15/.test(navTree) &&
     /SIDEBAR_FOLDER_PAD_X = 32/.test(navTree) &&
     /SIDEBAR_PAGE_PAD_X = 68/.test(navTree) &&
     /SIDEBAR_TREE_GUIDE_X = 46/.test(navTree),
 );
 check(
   "8. row heights and icon alignment are consistent",
-  /--layout-sidebar-row-height: 2\.5625rem/.test(tokens) &&
-    /--layout-sidebar-folder-row-height: 2\.4375rem/.test(tokens) &&
-    /--layout-sidebar-page-row-height: 2\.3125rem/.test(tokens) &&
+  /--layout-sidebar-row-height: 2\.625rem/.test(tokens) &&
+    /--layout-sidebar-folder-row-height: 2\.5rem/.test(tokens) &&
+    /--layout-sidebar-page-row-height: 2\.375rem/.test(tokens) &&
     /CHEVRON_BOX_PX = 20/.test(navTree),
 );
 check("9. desktop sidebar remains usable", /<NavTree/.test(sidebar));

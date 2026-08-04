@@ -1,23 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
 import { Menu, X } from "lucide-react";
 
 import { TimIQBrandLockup } from "../brand";
-import { UserAvatar } from "../user-avatar";
 import {
   getMobileDrawerNavigationTree,
   omitMobileDrawerFooterLeaves,
 } from "../../config/navigation";
 import { LogoutButton, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
-import { employeeRoleLabel } from "../../lib/i18n/display-labels";
 import { useT } from "../../lib/i18n";
 
 import { cn } from "../../lib/cn";
 import { uiClasses } from "../../lib/ui-classes";
-import { authUserAvatarName, formatAuthUserDisplayName } from "../../lib/user-display";
 
 import { MessagesHeaderButton } from "./messages-header-button";
 import { createMobileDrawerState, mobileDrawerReducer } from "./mobile-drawer-state";
@@ -31,6 +28,8 @@ type MobileHeaderProps = {
 
 /** ~104px wide at approved aspect (95–115 target). */
 const MOBILE_HEADER_LOGO_HEIGHT = 46;
+/** Compact lockup for the fixed drawer chrome. */
+const MOBILE_DRAWER_LOGO_HEIGHT = 36;
 
 function mobileDrawerLinkClass(active: boolean): string {
   return cn(
@@ -39,7 +38,7 @@ function mobileDrawerLinkClass(active: boolean): string {
     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/35",
     active
       ? "border-l-black bg-[var(--color-sidebar-page-active-bg)] font-semibold text-black"
-      : "border-l-transparent bg-white font-normal text-black hover:bg-[var(--color-sidebar-child-hover)] hover:text-black",
+      : "border-l-transparent bg-white font-normal text-black hover:bg-[var(--color-sidebar-page-hover)] hover:text-black",
   );
 }
 
@@ -51,6 +50,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+  const scrollRef = useRef<HTMLElement | null>(null);
 
   const limited = userHasLimitedAccess(user);
   const showAccountExtras = !limited;
@@ -131,10 +131,15 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     };
   }, [menuOpen, closeMenu]);
 
+  useLayoutEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    const active = scrollRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
+    active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [menuOpen, activeHref]);
+
   const menuLabel = menuOpen ? t("nav.close_menu", "Close menu") : t("nav.menu", "Menu");
-  const roleLabel = employeeRoleLabel(t, user.system_role);
-  const avatarName = authUserAvatarName(user);
-  const displayName = formatAuthUserDisplayName(user);
 
   return (
     <header
@@ -205,31 +210,15 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             data-testid="timiq-mobile-drawer"
             ref={drawerRef}
           >
-            {/* Fixed account header only — no logo */}
+            {/* A. Fixed drawer header: logo + close */}
             <div className="timiq-mobile-drawer-header shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sheet)] pt-[env(safe-area-inset-top,0px)]">
               <div className="flex min-h-14 items-center gap-2 px-3 py-2">
-                <UserAvatar
-                  email={user.email}
-                  name={avatarName}
-                  sizeClassName="h-9 w-9"
-                  userId={user.id}
-                />
                 <div className="min-w-0 flex-1 overflow-hidden">
-                  <p
-                    className="truncate text-[14px] font-semibold leading-tight text-black"
-                    title={displayName}
-                  >
-                    {displayName}
-                  </p>
-                  <p
-                    className="truncate text-[12px] font-normal leading-tight text-black/70"
-                    title={user.email}
-                  >
-                    {user.email}
-                  </p>
-                  <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-black/55">
-                    {roleLabel}
-                  </p>
+                  <TimIQBrandLockup
+                    className="max-w-[min(100%,112px)]"
+                    markSize={MOBILE_DRAWER_LOGO_HEIGHT}
+                    variant="full"
+                  />
                 </div>
                 <button
                   aria-label={t("nav.close_menu", "Close menu")}
@@ -248,10 +237,11 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
               </div>
             </div>
 
-            {/* Single scrollable menu: nav tree + account actions */}
+            {/* B. Scrollable navigation only */}
             <nav
               aria-label={t("shell.drawer_nav", "More navigation")}
-              className="timiq-mobile-drawer-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-1.5 py-1 [-webkit-overflow-scrolling:touch] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
+              className="timiq-mobile-drawer-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-1.5 py-1 [-webkit-overflow-scrolling:touch]"
+              ref={scrollRef}
             >
               {drawerTree.length > 0 ? (
                 <NavTree
@@ -267,39 +257,44 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                   {t("nav.drawer_hint_primary", "All primary pages are on the bottom bar.")}
                 </p>
               )}
+            </nav>
 
-              <div className="mt-1 border-t border-[var(--color-border)] pt-1" role="group" aria-label={t("nav.group.account", "Account")}>
+            {/* C. Sticky account footer */}
+            <div
+              className="timiq-mobile-drawer-footer shrink-0 border-t border-[var(--color-border)] bg-[var(--color-sheet)] px-1.5 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-1"
+              role="group"
+              aria-label={t("nav.group.account", "Account")}
+            >
+              <Link
+                className={mobileDrawerLinkClass(activeHref === "/profile")}
+                href="/profile"
+                onClick={() => closeMenu(false)}
+              >
+                <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.profile" surface="light" />
+                <span className="min-w-0 flex-1 truncate">{t("nav.profile", "Profile")}</span>
+              </Link>
+              {showAccountExtras ? (
                 <Link
-                  className={mobileDrawerLinkClass(activeHref === "/profile")}
-                  href="/profile"
+                  className={mobileDrawerLinkClass(activeHref === "/settings")}
+                  href="/settings"
                   onClick={() => closeMenu(false)}
                 >
-                  <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.profile" surface="light" />
-                  <span className="min-w-0 flex-1 truncate">{t("nav.profile", "Profile")}</span>
+                  <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.settings" surface="light" />
+                  <span className="min-w-0 flex-1 truncate">{t("nav.settings", "Settings")}</span>
                 </Link>
-                {showAccountExtras ? (
-                  <Link
-                    className={mobileDrawerLinkClass(activeHref === "/settings")}
-                    href="/settings"
-                    onClick={() => closeMenu(false)}
-                  >
-                    <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.settings" surface="light" />
-                    <span className="min-w-0 flex-1 truncate">{t("nav.settings", "Settings")}</span>
-                  </Link>
-                ) : null}
-                {showAccountExtras ? (
-                  <Link
-                    className={mobileDrawerLinkClass(activeHref === "/help")}
-                    href="/help"
-                    onClick={() => closeMenu(false)}
-                  >
-                    <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.help" surface="light" />
-                    <span className="min-w-0 flex-1 truncate">{t("nav.help", "Help centre")}</span>
-                  </Link>
-                ) : null}
-                <LogoutButton appearance="menuRow" className="min-h-11" />
-              </div>
-            </nav>
+              ) : null}
+              {showAccountExtras ? (
+                <Link
+                  className={mobileDrawerLinkClass(activeHref === "/help")}
+                  href="/help"
+                  onClick={() => closeMenu(false)}
+                >
+                  <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.help" surface="light" />
+                  <span className="min-w-0 flex-1 truncate">{t("nav.help", "Help centre")}</span>
+                </Link>
+              ) : null}
+              <LogoutButton appearance="menuRow" className="min-h-11" />
+            </div>
           </div>
         </>
       ) : null}

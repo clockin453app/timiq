@@ -4,7 +4,9 @@ import Link from "next/link";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type ReactNode,
@@ -36,7 +38,7 @@ const FOLDER_GOLD = "var(--color-sidebar-folder-gold)";
 export type NavTreeVariant = "sidebar" | "drawer";
 
 /** Main section left padding (px). */
-const SIDEBAR_SECTION_PAD_X = 12;
+const SIDEBAR_SECTION_PAD_X = 15;
 /** Second-level folder content left position (px). */
 const SIDEBAR_FOLDER_PAD_X = 32;
 /** Vertical tree line X under expanded folders (px). */
@@ -350,8 +352,6 @@ function TreeRow({
     const panelId = `nav-tree-${node.id}`;
     const FolderIcon = open ? FolderOpen : Folder;
     const guideLeft = treeGuideX(depth);
-    const childPad = pagePadX(depth + 1);
-    const branchWidth = Math.max(10, childPad - guideLeft - 6);
 
     return (
       <div
@@ -435,6 +435,9 @@ function TreeRow({
           >
             {node.children?.map((child, index) => {
               const isLast = index === (node.children?.length ?? 0) - 1;
+              const childIsFolder = Boolean(child.children?.length && !child.href);
+              const childPad = childIsFolder ? folderPadX(depth + 1) : pagePadX(depth + 1);
+              const branchWidth = Math.max(10, childPad - guideLeft - 6);
               return (
                 <div className="relative" data-sidebar-tree-child={isLast ? "last" : "item"} key={child.id}>
                   {showGuides ? (
@@ -496,10 +499,11 @@ function TreeRow({
               "focus-visible:ring-black/35",
               activeLeaf
                 ? "border-l-black bg-[var(--color-sidebar-page-active-bg)] font-semibold text-black"
-                : "hover:bg-[var(--color-sidebar-child-hover)] hover:text-black",
+                : "hover:bg-[var(--color-sidebar-page-hover)] hover:text-black",
             ),
       )}
       data-sidebar-level={isRootLeaf ? "section-leaf" : "page"}
+      data-sidebar-page-active={activeLeaf ? "true" : undefined}
       href={node.href}
       style={{
         paddingLeft: pagePad,
@@ -541,7 +545,8 @@ export function NavTree({
   onNavigate,
   forceOpenIds = [],
 }: NavTreeProps) {
-  const { isExpanded, toggleExpanded } = useNavTreeExpansion(
+  const treeRootRef = useRef<HTMLDivElement | null>(null);
+  const { isExpanded, toggleExpanded, expandedIds } = useNavTreeExpansion(
     nodes,
     activeHref,
     storageScope,
@@ -549,12 +554,21 @@ export function NavTree({
     forceOpenIds,
   );
 
+  useLayoutEffect(() => {
+    const root = treeRootRef.current;
+    if (!root) {
+      return;
+    }
+    const active = root.querySelector<HTMLElement>('[aria-current="page"]');
+    active?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [activeHref, expandedIds, variant]);
+
   if (nodes.length === 0) {
     return null;
   }
 
   return (
-    <div className="space-y-0" data-nav-tree={variant}>
+    <div className="space-y-0" data-nav-tree={variant} ref={treeRootRef}>
       {nodes.map((node) => (
         <div
           className={

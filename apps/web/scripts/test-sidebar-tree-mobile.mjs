@@ -107,11 +107,11 @@ check(
     /document\.body\.style\.overflow = previousOverflow/.test(mobile),
 );
 check(
-  "17. Navigation and footer remain independently reachable",
+  "17. Navigation scrolls; sticky footer stays reachable",
   /timiq-mobile-drawer-scroll[\s\S]*min-h-0 flex-1 overflow-x-hidden overflow-y-auto/.test(mobile) &&
+    /timiq-mobile-drawer-footer/.test(mobile) &&
     /appearance="menuRow"/.test(mobile) &&
-    /href="\/profile"/.test(mobile) &&
-    !/timiq-mobile-drawer-footer/.test(mobile),
+    /href="\/profile"/.test(mobile),
 );
 check(
   "18. No horizontal overflow occurs at 320 px",
@@ -125,12 +125,18 @@ check(
 );
 
 check("tree geometry", folderPad >= 30 && folderPad <= 34 && guideX >= 44 && guideX <= 48 && pagePad >= 66 && pagePad <= 70);
-check("section pad", sectionPad === 12);
+check("section pad", sectionPad >= 14 && sectionPad <= 16);
+check("guide colour is neutral grey", /--color-sidebar-guide: #c7cbd1/.test(tokens));
+check("hover is lighter than active", /--color-sidebar-page-hover: #f3f4f6/.test(tokens) && /--color-sidebar-page-active-bg: #e5e7eb/.test(tokens));
+check("child-aware tree branches", /childIsFolder/.test(navTree) && /folderPadX\(depth \+ 1\)/.test(navTree));
+check("active route scrolls into view", /scrollIntoView/.test(navTree) && /scrollIntoView/.test(mobile));
+check("ancestors stay open", /!open && ancestorIds\.includes\(id\)/.test(navTree));
 check("desktop sidebar usable", /<NavTree/.test(sidebar));
 check("mobile drawer usable", /variant="drawer"/.test(mobile) && /min-h-11/.test(navTree));
 check("icons navy white / light black", /navy: "text-white", light: "text-black"/.test(navIcons));
 check("Enter Space keyboard on folders", /event\.key === "Enter" \|\| event\.key === " "/.test(navTree));
 check("aria-expanded preserved", /aria-expanded=\{open\}/.test(navTree));
 check("tree guides always rendered", /showGuides\s+showIcons=\{showIcons\}/.test(navTree));
+check("drawer header hosts logo + close", /timiq-mobile-drawer-header[\s\S]*TimIQBrandLockup/.test(mobile) && /MOBILE_DRAWER_LOGO_HEIGHT/.test(mobile));
 
 console.log(`${passed} sidebar tree/contrast/mobile checks passed`);
