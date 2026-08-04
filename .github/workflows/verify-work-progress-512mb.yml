@@ -65,9 +65,24 @@ jobs:
         run: python -m alembic upgrade head
 
       - name: Linux RSS measurement
-        run: python scripts/measure_work_progress_rss.py
+        run: |
+          set +e
+          python scripts/measure_work_progress_rss.py | tee /tmp/rss_output.txt
+          rc=${PIPESTATUS[0]}
+          echo "rss_exit_code=$rc" >> "$GITHUB_ENV"
+          {
+            echo "## Linux RSS output"
+            echo '```'
+            cat /tmp/rss_output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 0
 
       - name: Focused work progress safety tests
         run: |
           python -m pytest tests/test_work_progress_production_safety.py tests/test_work_progress_safe_upload.py tests/test_work_progress_migration_client_upload.py tests/test_work_progress_simplification.py tests/test_work_progress_gallery_safety.py -q
+
+      - name: Enforce RSS pass criteria
+        run: |
+          test "${rss_exit_code:-1}" -eq 0
 
