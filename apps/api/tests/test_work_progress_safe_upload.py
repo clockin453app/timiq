@@ -20,6 +20,7 @@ from app.modules.work_progress.image_processing import (
 )
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
 from app.modules.work_progress.service import (
+    MAX_ATTACHMENTS_PER_ENTRY,
     WorkProgressValidationError,
     _validate_and_process_new_progress_photo,
     upload_my_entry_file,
@@ -216,6 +217,34 @@ def test_idempotent_retry_returns_existing_without_second_storage_write() -> Non
         )
     process.assert_not_called()
     backend.write_bytes.assert_not_called()
+
+
+def test_max_attachments_per_entry_is_thirty() -> None:
+    assert MAX_ATTACHMENTS_PER_ENTRY == 30
+
+
+def test_upload_rejects_when_entry_already_at_thirty_attachments() -> None:
+    company_id = uuid.uuid4()
+    user = _user(role=SystemRole.EMPLOYEE, company_id=company_id)
+    entry_id = uuid.uuid4()
+    entry = SimpleNamespace(id=entry_id, user_id=user.id, company_id=company_id)
+    db = MagicMock()
+    with (
+        patch("app.modules.work_progress.service.get_entry_by_id", return_value=entry),
+        patch("app.modules.work_progress.service.get_attachment_by_client_upload_id", return_value=None),
+        patch("app.modules.work_progress.service.count_attachments_for_entry", return_value=30),
+        patch("app.modules.work_progress.service._validate_and_process_new_progress_photo") as process,
+    ):
+        with pytest.raises(WorkProgressValidationError, match="Maximum number of photos reached.*30"):
+            upload_my_entry_file(
+                db,
+                user,
+                entry_id,
+                original_filename="extra.jpg",
+                content_type="image/jpeg",
+                file_bytes=b"ignored",
+            )
+    process.assert_not_called()
 
 
 @pytest.mark.skipif(

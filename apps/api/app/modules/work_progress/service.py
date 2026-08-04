@@ -66,7 +66,7 @@ from app.modules.work_progress.schemas import (
 MAX_ORIGINAL_PHOTO_BYTES = 25 * 1024 * 1024
 # Safety ceiling for processed JPEG output (long edge 1600, q≈82 — normally far smaller).
 MAX_STORED_JPEG_BYTES = 10 * 1024 * 1024
-MAX_ATTACHMENTS_PER_ENTRY = 20
+MAX_ATTACHMENTS_PER_ENTRY = 30
 MAX_ZIP_ATTACHMENT_IDS = 48
 MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024
 MAX_BULK_ATTACHMENT_IDS = 200
