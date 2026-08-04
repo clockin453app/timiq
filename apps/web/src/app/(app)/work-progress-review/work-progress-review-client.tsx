@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui";
-import { MapPin } from "lucide-react";
+import { ChevronDown, MapPin } from "lucide-react";
 import { isAdministrator, RoleGuard, useCurrentUser } from "@/features/auth";
 import { listCompanies, type Company } from "@/features/companies/api";
 import { listLocations, type Location } from "@/features/locations/api";
@@ -218,10 +218,13 @@ function WorkProgressPicturesBody() {
   const [deleteError, setDeleteError] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [isDesktopFilters, setIsDesktopFilters] = useState(false);
+  const [submissionsExpanded, setSubmissionsExpanded] = useState(false);
   const filterButtonRef = useRef<HTMLButtonElement | null>(null);
   const deleteOpenerRef = useRef<HTMLButtonElement | null>(null);
   const deleteDialogRef = useRef<HTMLDivElement | null>(null);
   const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
+  const galleryHeadingRef = useRef<HTMLParagraphElement | null>(null);
+  const submissionsPanelId = "work-progress-submissions-panel";
 
   const [viewerItems, setViewerItems] = useState<ViewerItem[]>([]);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
@@ -741,210 +744,307 @@ function WorkProgressPicturesBody() {
   const pictureStart = pictureTotal === 0 ? 0 : pictureOffset + 1;
   const pictureEnd = pictureOffset + pictures.length;
 
+  function toggleSubmissionsExpanded() {
+    setSubmissionsExpanded((open) => {
+      const next = !open;
+      if (!next) {
+        setFiltersOpen(false);
+      }
+      return next;
+    });
+  }
+
+  function showPicturesFromSubmission(row: WorkProgressReviewListItem) {
+    setShownSubmission(row);
+    setPictureOffset(0);
+    setSelectedIds(new Set());
+    setSubmissionsExpanded(false);
+    setFiltersOpen(false);
+    requestAnimationFrame(() => {
+      galleryHeadingRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }
+
   return (
     <div className="min-w-0 max-w-full space-y-4 pb-[max(1rem,calc(var(--layout-mobile-bottom-nav-height)+0.75rem))] md:pb-2">
-      <FilterToolbar>
-        <div
-          className="flex w-full min-w-0 max-w-full flex-col gap-2 md:flex-row md:flex-nowrap md:items-center md:gap-2"
-          data-testid="work-progress-filter-row"
-        >
-          <FilterSearch
-            className="min-w-0 flex-1 md:min-w-[12rem]"
-            label="Search title or type"
-            onChange={(value) => updateFilter(() => setTitleSearch(value))}
-            placeholder="Search title/type…"
-            value={titleSearch}
-          />
-          <div className="flex w-full min-w-0 items-center gap-2 md:w-auto md:shrink-0">
-            <div className="relative min-w-0 flex-1 md:w-[15rem] md:max-w-[17.5rem] md:flex-none">
-              <MapPin
-                aria-hidden
-                className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]"
-              />
-              <label className="sr-only" htmlFor="work-progress-site-filter">
-                Site
-              </label>
-              <select
-                className="h-11 w-full min-w-0 max-w-full truncate rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] py-2 pl-9 pr-10 text-sm"
-                disabled={administrator && !companyId}
-                id="work-progress-site-filter"
-                onChange={(event) => updateFilter(() => setLocationId(event.target.value))}
-                value={locationId}
-              >
-                <option value="">All sites</option>
-                {locations.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="relative flex shrink-0 items-center gap-1.5">
-              <FilterButton
-                activeCount={activeFilterCount}
-                onClick={() => setFiltersOpen((open) => !open)}
-                open={filtersOpen}
-                ref={filterButtonRef}
-              />
-              {activeFilterCount > 0 ? <FilterClearAction onClick={clearFilters} /> : null}
-            </div>
+      <section
+        className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]"
+        data-testid="work-progress-submissions-section"
+      >
+        <header className="flex min-h-10 items-center justify-between gap-2 bg-[var(--color-header)] px-3 py-1.5">
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider">Submissions</p>
+            <span
+              className="rounded bg-[var(--color-cell)] px-1.5 py-0.5 text-xs font-semibold tabular-nums text-[var(--color-text)]"
+              data-testid="work-progress-submission-count"
+            >
+              {submissionTotal}
+            </span>
           </div>
-        </div>
-      </FilterToolbar>
-
-      {isDesktopFilters ? (
-        <FilterPopover
-          activeCount={activeFilterCount}
-          anchorRef={filterButtonRef}
-          footer={filterPanelFooter}
-          onClose={() => setFiltersOpen(false)}
-          open={filtersOpen}
-          title="Filters"
-        >
-          {secondaryFilters}
-        </FilterPopover>
-      ) : (
-        <MobileFilterSheet
-          activeCount={activeFilterCount}
-          footer={filterPanelFooter}
-          onClose={() => setFiltersOpen(false)}
-          open={filtersOpen}
-          returnFocusRef={filterButtonRef}
-          title="Filters"
-        >
-          {secondaryFilters}
-        </MobileFilterSheet>
-      )}
-
-      <section className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-        <header className="flex items-center justify-between border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
-          <p className="text-[10px] font-bold uppercase tracking-wider">Submissions ({submissionTotal})</p>
-          <span className="text-xs text-[var(--color-text-muted)]">{submissionStart}–{submissionEnd} of {submissionTotal}</span>
+          <Button
+            aria-controls={submissionsPanelId}
+            aria-expanded={submissionsExpanded}
+            className="h-8 min-h-8 shrink-0 gap-1 px-2 text-xs font-semibold"
+            data-testid="work-progress-submissions-toggle"
+            onClick={toggleSubmissionsExpanded}
+            size="sm"
+            type="button"
+            variant="secondary"
+          >
+            {submissionsExpanded ? "Hide submissions" : "Show submissions"}
+            <ChevronDown
+              aria-hidden
+              className={`h-4 w-4 transition-transform ${submissionsExpanded ? "rotate-180" : ""}`}
+            />
+          </Button>
         </header>
-        {submissionError ? <p className="px-3 py-2 text-sm text-[var(--color-danger-700)]">{submissionError}</p> : null}
-        <div className="w-full min-w-0 max-w-full overflow-x-auto p-2">
-          {submissionLoading ? <p className="p-2 text-sm text-[var(--color-text-muted)]">Loading submissions…</p> : null}
-          {!submissionLoading && submissions.length === 0 ? <p className="p-2 text-sm text-[var(--color-text-muted)]">No submissions match these filters.</p> : null}
-          {!submissionLoading && submissions.length > 0 ? (
-            <Table className="text-xs">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className={`${DENSE_HEAD} w-[6.5rem]`}>Date</TableHead>
-                  <TableHead className={DENSE_HEAD}>Employee</TableHead>
-                  <TableHead className={DENSE_HEAD}>Site</TableHead>
-                  <TableHead className={DENSE_HEAD}>Title / type</TableHead>
-                  <TableHead className={`${DENSE_HEAD} w-14 text-right`}>Pictures</TableHead>
-                  <TableHead className={`${DENSE_HEAD} whitespace-nowrap`}>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {submissions.map((row) => {
-                  const employee = row.employee_name || row.user_email;
-                  return (
-                  <TableRow className={row.status === "archived" ? "opacity-65" : undefined} key={row.id}>
-                    <TableCell className={`${DENSE_CELL} w-[6.5rem] whitespace-nowrap`}>{formatDate(row.work_date)}</TableCell>
-                    <TableCell className={`${DENSE_CELL} max-w-[9rem]`}>
-                      <TruncateText value={employee} />
-                    </TableCell>
-                    <TableCell className={`${DENSE_CELL} max-w-[9rem]`}>
-                      <TruncateText value={row.location_name} />
-                    </TableCell>
-                    <TableCell className={`${DENSE_CELL} max-w-[14rem]`}>
-                      <span className="inline-flex max-w-full items-center gap-1">
-                        <TruncateText className="min-w-0" value={row.title} />
-                        {row.status === "archived" ? (
-                          <span className="shrink-0 text-[10px] font-bold uppercase text-[var(--color-text-muted)]">Archived</span>
-                        ) : null}
-                      </span>
-                    </TableCell>
-                    <TableCell className={`${DENSE_CELL} w-14 text-right tabular-nums`}>{row.attachment_count}</TableCell>
-                    <TableCell className={`${DENSE_CELL} whitespace-nowrap`}>
-                      <div className="hidden flex-wrap items-center gap-1 md:flex">
-                        <Button
-                          aria-label="Show pictures from this submission"
-                          className={COMPACT_ACTION_BTN}
-                          onClick={() => {
-                            setShownSubmission(row);
-                            setPictureOffset(0);
-                            setSelectedIds(new Set());
-                          }}
-                          size="sm"
-                          title="Show pictures from this submission"
-                          type="button"
-                          variant="secondary"
-                        >
-                          Pictures
-                        </Button>
-                        <Button
-                          aria-label="Archive this submission"
-                          className={COMPACT_ACTION_BTN}
-                          disabled={busy || row.status === "archived"}
-                          onClick={() => void archiveSubmission(row)}
-                          size="sm"
-                          title="Archive this submission"
-                          type="button"
-                          variant="secondary"
-                        >
-                          Archive
-                        </Button>
-                        <Button
-                          aria-label="Permanently delete this submission"
-                          className={COMPACT_ACTION_BTN}
-                          disabled={busy}
-                          onClick={(event) => openPermanentDelete(row, event.currentTarget)}
-                          size="sm"
-                          title="Permanently delete this submission"
-                          type="button"
-                          variant="danger"
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                      <label className="md:hidden">
-                        <span className="sr-only">Actions for {row.title}</span>
-                        <select
-                          aria-label={`Actions for ${row.title}`}
-                          className="timiq-select h-8 w-full min-w-0 max-w-[11rem] rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] px-1"
-                          defaultValue=""
-                          disabled={busy}
-                          onChange={(event) => {
-                            const action = event.target.value;
-                            event.target.value = "";
-                            if (action === "pictures") {
-                              setShownSubmission(row);
-                              setPictureOffset(0);
-                              setSelectedIds(new Set());
-                            } else if (action === "archive") {
-                              void archiveSubmission(row);
-                            } else if (action === "delete") {
-                              openPermanentDelete(row, event.currentTarget as unknown as HTMLButtonElement);
-                            }
-                          }}
-                        >
-                          <option disabled value="">Actions…</option>
-                          <option value="pictures">Pictures</option>
-                          <option disabled={row.status === "archived"} value="archive">Archive</option>
-                          <option value="delete">Delete</option>
-                        </select>
-                      </label>
-                    </TableCell>
-                  </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          ) : null}
-        </div>
-        <footer className="flex justify-end gap-2 border-t border-[var(--color-border)] px-3 py-2">
-          <Button disabled={submissionOffset === 0 || submissionLoading} onClick={() => setSubmissionOffset(Math.max(0, submissionOffset - SUBMISSION_PAGE_SIZE))} size="sm" type="button" variant="secondary">Previous</Button>
-          <Button disabled={submissionOffset + submissions.length >= submissionTotal || submissionLoading} onClick={() => setSubmissionOffset(submissionOffset + SUBMISSION_PAGE_SIZE)} size="sm" type="button" variant="secondary">Next</Button>
-        </footer>
+
+        {submissionsExpanded ? (
+          <div className="space-y-3 border-t border-[var(--color-border-dark)] p-2" id={submissionsPanelId}>
+            <FilterToolbar>
+              <div
+                className="flex w-full min-w-0 max-w-full flex-col gap-2 md:flex-row md:flex-nowrap md:items-center md:gap-2"
+                data-testid="work-progress-filter-row"
+              >
+                <FilterSearch
+                  className="min-w-0 flex-1 md:min-w-[12rem]"
+                  label="Search title or type"
+                  onChange={(value) => updateFilter(() => setTitleSearch(value))}
+                  placeholder="Search title/type…"
+                  value={titleSearch}
+                />
+                <div className="flex w-full min-w-0 items-center gap-2 md:w-auto md:shrink-0">
+                  <div className="relative min-w-0 flex-1 md:w-[15rem] md:max-w-[17.5rem] md:flex-none">
+                    <MapPin
+                      aria-hidden
+                      className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--color-text-muted)]"
+                    />
+                    <label className="sr-only" htmlFor="work-progress-site-filter">
+                      Site
+                    </label>
+                    <select
+                      className="h-11 w-full min-w-0 max-w-full truncate rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] py-2 pl-9 pr-10 text-sm"
+                      disabled={administrator && !companyId}
+                      id="work-progress-site-filter"
+                      onChange={(event) => updateFilter(() => setLocationId(event.target.value))}
+                      value={locationId}
+                    >
+                      <option value="">All sites</option>
+                      {locations.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {location.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="relative flex shrink-0 items-center gap-1.5">
+                    <FilterButton
+                      activeCount={activeFilterCount}
+                      onClick={() => setFiltersOpen((open) => !open)}
+                      open={filtersOpen}
+                      ref={filterButtonRef}
+                    />
+                    {activeFilterCount > 0 ? <FilterClearAction onClick={clearFilters} /> : null}
+                  </div>
+                </div>
+              </div>
+            </FilterToolbar>
+
+            {isDesktopFilters ? (
+              <FilterPopover
+                activeCount={activeFilterCount}
+                anchorRef={filterButtonRef}
+                footer={filterPanelFooter}
+                onClose={() => setFiltersOpen(false)}
+                open={filtersOpen}
+                title="Filters"
+              >
+                {secondaryFilters}
+              </FilterPopover>
+            ) : (
+              <MobileFilterSheet
+                activeCount={activeFilterCount}
+                footer={filterPanelFooter}
+                onClose={() => setFiltersOpen(false)}
+                open={filtersOpen}
+                returnFocusRef={filterButtonRef}
+                title="Filters"
+              >
+                {secondaryFilters}
+              </MobileFilterSheet>
+            )}
+
+            {submissionError ? (
+              <p className="px-1 text-sm text-[var(--color-danger-700)]">{submissionError}</p>
+            ) : null}
+            <div className="flex items-center justify-between gap-2 px-1 text-xs text-[var(--color-text-muted)]">
+              <span>
+                {submissionStart}–{submissionEnd} of {submissionTotal}
+              </span>
+            </div>
+            <div
+              className="w-full min-w-0 max-w-full overflow-auto max-h-[55vh] md:max-h-[min(50vh,520px)]"
+              data-testid="work-progress-submissions-table-scroll"
+            >
+              {submissionLoading ? (
+                <p className="p-2 text-sm text-[var(--color-text-muted)]">Loading submissions…</p>
+              ) : null}
+              {!submissionLoading && submissions.length === 0 ? (
+                <p className="p-2 text-sm text-[var(--color-text-muted)]">No submissions match these filters.</p>
+              ) : null}
+              {!submissionLoading && submissions.length > 0 ? (
+                <Table className="text-xs">
+                  <TableHeader className="sticky top-0 z-10 bg-[var(--color-header)]">
+                    <TableRow>
+                      <TableHead className={`${DENSE_HEAD} w-[6.5rem]`}>Date</TableHead>
+                      <TableHead className={DENSE_HEAD}>Employee</TableHead>
+                      <TableHead className={DENSE_HEAD}>Site</TableHead>
+                      <TableHead className={DENSE_HEAD}>Title / type</TableHead>
+                      <TableHead className={`${DENSE_HEAD} w-14 text-right`}>Pictures</TableHead>
+                      <TableHead className={`${DENSE_HEAD} whitespace-nowrap`}>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {submissions.map((row) => {
+                      const employee = row.employee_name || row.user_email;
+                      return (
+                        <TableRow className={row.status === "archived" ? "opacity-65" : undefined} key={row.id}>
+                          <TableCell className={`${DENSE_CELL} w-[6.5rem] whitespace-nowrap`}>
+                            {formatDate(row.work_date)}
+                          </TableCell>
+                          <TableCell className={`${DENSE_CELL} max-w-[9rem]`}>
+                            <TruncateText value={employee} />
+                          </TableCell>
+                          <TableCell className={`${DENSE_CELL} max-w-[9rem]`}>
+                            <TruncateText value={row.location_name} />
+                          </TableCell>
+                          <TableCell className={`${DENSE_CELL} max-w-[14rem]`}>
+                            <span className="inline-flex max-w-full items-center gap-1">
+                              <TruncateText className="min-w-0" value={row.title} />
+                              {row.status === "archived" ? (
+                                <span className="shrink-0 text-[10px] font-bold uppercase text-[var(--color-text-muted)]">
+                                  Archived
+                                </span>
+                              ) : null}
+                            </span>
+                          </TableCell>
+                          <TableCell className={`${DENSE_CELL} w-14 text-right tabular-nums`}>
+                            {row.attachment_count}
+                          </TableCell>
+                          <TableCell className={`${DENSE_CELL} whitespace-nowrap`}>
+                            <div className="hidden flex-wrap items-center gap-1 md:flex">
+                              <Button
+                                aria-label="Show pictures from this submission"
+                                className={COMPACT_ACTION_BTN}
+                                onClick={() => showPicturesFromSubmission(row)}
+                                size="sm"
+                                title="Show pictures from this submission"
+                                type="button"
+                                variant="secondary"
+                              >
+                                Pictures
+                              </Button>
+                              <Button
+                                aria-label="Archive this submission"
+                                className={COMPACT_ACTION_BTN}
+                                disabled={busy || row.status === "archived"}
+                                onClick={() => void archiveSubmission(row)}
+                                size="sm"
+                                title="Archive this submission"
+                                type="button"
+                                variant="secondary"
+                              >
+                                Archive
+                              </Button>
+                              <Button
+                                aria-label="Permanently delete this submission"
+                                className={COMPACT_ACTION_BTN}
+                                disabled={busy}
+                                onClick={(event) => openPermanentDelete(row, event.currentTarget)}
+                                size="sm"
+                                title="Permanently delete this submission"
+                                type="button"
+                                variant="danger"
+                              >
+                                Delete
+                              </Button>
+                            </div>
+                            <label className="md:hidden">
+                              <span className="sr-only">Actions for {row.title}</span>
+                              <select
+                                aria-label={`Actions for ${row.title}`}
+                                className="timiq-select h-8 w-full min-w-0 max-w-[11rem] rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] px-1"
+                                defaultValue=""
+                                disabled={busy}
+                                onChange={(event) => {
+                                  const action = event.target.value;
+                                  event.target.value = "";
+                                  if (action === "pictures") {
+                                    showPicturesFromSubmission(row);
+                                  } else if (action === "archive") {
+                                    void archiveSubmission(row);
+                                  } else if (action === "delete") {
+                                    openPermanentDelete(
+                                      row,
+                                      event.currentTarget as unknown as HTMLButtonElement,
+                                    );
+                                  }
+                                }}
+                              >
+                                <option disabled value="">
+                                  Actions…
+                                </option>
+                                <option value="pictures">Pictures</option>
+                                <option disabled={row.status === "archived"} value="archive">
+                                  Archive
+                                </option>
+                                <option value="delete">Delete</option>
+                              </select>
+                            </label>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              ) : null}
+            </div>
+            <footer className="flex justify-end gap-2 border-t border-[var(--color-border)] px-1 pt-2">
+              <Button
+                disabled={submissionOffset === 0 || submissionLoading}
+                onClick={() => setSubmissionOffset(Math.max(0, submissionOffset - SUBMISSION_PAGE_SIZE))}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                Previous
+              </Button>
+              <Button
+                disabled={
+                  submissionOffset + submissions.length >= submissionTotal || submissionLoading
+                }
+                onClick={() => setSubmissionOffset(submissionOffset + SUBMISSION_PAGE_SIZE)}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                Next
+              </Button>
+            </footer>
+          </div>
+        ) : null}
       </section>
 
       <section className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
         <header className="flex flex-wrap items-center justify-between gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-wider">Picture gallery ({pictureTotal})</p>
+            <p
+              className="text-[10px] font-bold uppercase tracking-wider"
+              data-testid="work-progress-gallery-heading"
+              ref={galleryHeadingRef}
+            >
+              Picture gallery ({pictureTotal})
+            </p>
             <p className="text-xs text-[var(--color-text-muted)]">Selected: {selectedIds.size} · ZIP limited to 48 pictures</p>
           </div>
           <div className="flex flex-wrap gap-2">
