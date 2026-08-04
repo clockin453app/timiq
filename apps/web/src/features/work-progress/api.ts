@@ -183,9 +183,16 @@ export async function createMyWorkProgress(body: WorkProgressCreateBody): Promis
   return response.json() as Promise<WorkProgressEntryDetail>;
 }
 
-export async function uploadWorkProgressFile(progressId: string, file: File): Promise<WorkProgressEntryDetail> {
+export async function uploadWorkProgressFile(
+  progressId: string,
+  file: File,
+  clientUploadId?: string,
+): Promise<WorkProgressEntryDetail> {
   const form = new FormData();
   form.append("file", file);
+  if (clientUploadId) {
+    form.append("client_upload_id", clientUploadId);
+  }
   const response = await fetch(
     `${API_URL}/api/work-progress/me/${encodeURIComponent(progressId)}/files`,
     {

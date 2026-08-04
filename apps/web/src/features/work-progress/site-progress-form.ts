@@ -28,7 +28,16 @@ export type QueuedPhoto = {
   file: File;
   /** Object URL for thumbnail preview; caller must revoke when removed. */
   previewUrl: string;
+  /** Stable id for idempotent server retries across partial failures. */
+  uploadId: string;
 };
+
+export function createPhotoUploadId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `upload-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 export function fileIdentityKey(file: File): string {
   return `${file.name}::${file.size}::${file.lastModified}`;
@@ -139,6 +148,7 @@ export function mergePhotoFilesIntoQueue(
       key,
       file,
       previewUrl: createPreviewUrl(file),
+      uploadId: createPhotoUploadId(),
     });
   }
   return { next, skippedDuplicates };
@@ -208,14 +218,14 @@ export function submitPhaseLabel(
     case "preparing":
       return "Preparing photos…";
     case "uploading":
-      return total > 0 ? `Uploading ${uploaded} of ${total} photos…` : "Uploading photos…";
+      return total > 0 ? `Uploading ${uploaded} of ${total}` : "Uploading photos…";
     case "processing":
       return "Processing photos…";
     case "success":
-      return "Update submitted";
+      return total > 0 ? `${uploaded} of ${total} uploaded` : "Update submitted";
     case "partial":
       return failed > 0
-        ? `Update saved, but ${failed} photo${failed === 1 ? "" : "s"} failed`
+        ? `${uploaded} of ${total} uploaded — ${failed} need retry`
         : "Update saved with photo issues";
     default:
       return "";

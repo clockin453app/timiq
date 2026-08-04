@@ -138,7 +138,7 @@ function PictureTile({
         >
           {broken ? (
             <span className="flex h-full items-center justify-center px-2 text-center text-xs font-semibold text-[var(--color-text-soft)]">
-              Unavailable
+              Preview pending
             </span>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element

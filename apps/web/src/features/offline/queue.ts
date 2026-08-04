@@ -71,11 +71,12 @@ export async function enqueueWorkProgressPhotos(
 }
 
 export function photosFromPreparedUploads(
-  prepared: { uploadFile: File; displayName: string }[],
+  prepared: { uploadFile: File; displayName: string; uploadId?: string }[],
 ): WorkProgressOfflinePhotoBlob[] {
   return prepared.map((p) => ({
     filename: p.uploadFile.name || p.displayName,
     contentType: p.uploadFile.type || "application/octet-stream",
     blob: p.uploadFile,
+    clientUploadId: p.uploadId,
   }));
 }

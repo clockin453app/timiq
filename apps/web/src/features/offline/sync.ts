@@ -43,11 +43,11 @@ export async function processOfflineQueue(userId: string): Promise<void> {
       if (item.payload.kind === "work_progress_submit") {
         const created = await createMyWorkProgress(item.payload.createBody);
         for (const ph of item.payload.photos) {
-          await uploadWorkProgressFile(created.id, blobToUploadFile(ph));
+          await uploadWorkProgressFile(created.id, blobToUploadFile(ph), ph.clientUploadId);
         }
       } else if (item.payload.kind === "work_progress_photos") {
         for (const ph of item.payload.photos) {
-          await uploadWorkProgressFile(item.payload.progressId, blobToUploadFile(ph));
+          await uploadWorkProgressFile(item.payload.progressId, blobToUploadFile(ph), ph.clientUploadId);
         }
       }
       await idbDeleteQueueItem(item.id);

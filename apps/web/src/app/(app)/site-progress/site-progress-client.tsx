@@ -29,7 +29,6 @@ import {
   enqueueWorkProgressSubmit,
   isLikelyNetworkFailure,
   isNavigatorOffline,
-  photosFromPreparedUploads,
 } from "@/features/offline";
 import {
   WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS,
@@ -40,7 +39,6 @@ import {
   fetchWorkProgressMeOptions,
   getMyWorkProgressDetail,
   listMyWorkProgress,
-  uploadWorkProgressFile,
   workProgressFileUrl,
   type WorkProgressAttachmentMeta,
   type WorkProgressEntryDetail,
@@ -49,10 +47,7 @@ import {
 } from "@/features/work-progress/api";
 import {
   prepareSiteProgressPhotoUpload,
-  runWithConcurrency,
-  SITE_PROGRESS_UPLOAD_CONCURRENCY,
   yieldToBrowser,
-  type PreparedSiteProgressUpload,
 } from "@/features/work-progress/image-compression";
 import {
   buildCreateBody,
@@ -68,6 +63,11 @@ import {
   validateQueuedPhotos,
   validateSiteProgressRequiredFields,
 } from "@/features/work-progress/site-progress-form";
+import {
+  formatBatchUploadResult,
+  formatPhotoStatusLine,
+  processAndUploadPhotosSequentially,
+} from "@/features/work-progress/upload-queue";
 import { todayLocalDateString } from "@/lib/datetime-local";
 import { genericStatusLabel, useT } from "@/lib/i18n";
 import { uiClasses } from "@/lib/ui-classes";
@@ -450,82 +450,63 @@ export function SiteProgressClient() {
     });
   }
 
-  async function uploadPreparedPhotos(
-    progressId: string,
-    prepared: PreparedSiteProgressUpload[],
-    onProgress: (finished: number, total: number) => void,
-  ): Promise<{
-    latestDetail: WorkProgressEntryDetail | null;
-    failures: { file: File; displayName: string; message: string }[];
-  }> {
-    let latestDetail: WorkProgressEntryDetail | null = null;
-    const uploadProgress = { finished: 0 };
-    type UploadAttemptResult =
-      | { ok: true; detail: WorkProgressEntryDetail }
-      | { ok: false; file: File; displayName: string; message: string };
-
-    const uploadResults = await runWithConcurrency(
-      prepared,
-      SITE_PROGRESS_UPLOAD_CONCURRENCY,
-      async (prep): Promise<UploadAttemptResult> => {
-        try {
-          const d = await uploadWorkProgressFile(progressId, prep.uploadFile);
-          return { ok: true, detail: d };
-        } catch (err) {
-          return {
-            ok: false,
-            file: prep.originalFile,
-            displayName: prep.displayName,
-            message: err instanceof Error ? err.message : "Upload failed.",
-          };
-        } finally {
-          uploadProgress.finished += 1;
-          onProgress(uploadProgress.finished, prepared.length);
-        }
-      },
-    );
-
-    const failures: { file: File; displayName: string; message: string }[] = [];
-    for (const r of uploadResults) {
-      if (r.ok) {
-        latestDetail = r.detail;
-      } else {
-        failures.push({ file: r.file, displayName: r.displayName, message: r.message });
-      }
-    }
-    return { latestDetail, failures };
-  }
-
-  async function prepareQueue(
-    files: File[],
+  async function prepareOfflinePhotos(
+    queue: QueuedPhoto[],
     onStatus: (msg: string) => void,
-    onBar: (pct: number) => void,
   ): Promise<{
-    prepared: PreparedSiteProgressUpload[];
+    photos: { filename: string; contentType: string; blob: Blob; clientUploadId: string }[];
     prepareFailures: { file: File; message: string }[];
   }> {
-    const prepared: PreparedSiteProgressUpload[] = [];
+    const photos: { filename: string; contentType: string; blob: Blob; clientUploadId: string }[] = [];
     const prepareFailures: { file: File; message: string }[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i]!;
-      onBar(Math.round(((i + 0.5) / files.length) * 50));
+    for (const item of queue) {
       try {
-        const p = await prepareSiteProgressPhotoUpload(file, maxOriginalBytes, {
+        const prepared = await prepareSiteProgressPhotoUpload(item.file, maxOriginalBytes, {
           onStatus: (msg) => onStatus(msg),
         });
-        prepared.push(p);
-        const suffix = p.usedClientCompression ? "" : " (original)";
-        onStatus(`${p.displayName}: ${formatBytes(p.originalBytes)} → ${formatBytes(p.uploadBytes)}${suffix}`);
+        photos.push({
+          filename: prepared.uploadFile.name || prepared.displayName,
+          contentType: prepared.uploadFile.type || "application/octet-stream",
+          blob: prepared.uploadFile,
+          clientUploadId: item.uploadId,
+        });
+        onStatus(`${prepared.displayName}: ready for sync`);
       } catch (err) {
         prepareFailures.push({
-          file,
+          file: item.file,
           message: err instanceof Error ? err.message : "Could not prepare file.",
         });
       }
-      onBar(Math.round(((i + 1) / files.length) * 50));
       await yieldToBrowser();
     }
-    return { prepared, prepareFailures };
+    return { photos, prepareFailures };
+  }
+
+  async function runSequentialUpload(
+    progressId: string,
+    queue: QueuedPhoto[],
+    onPhase: (phase: SubmitPhase) => void,
+    onProgress: (uploaded: number, total: number, failed: number) => void,
+    onBar: (pct: number) => void,
+  ) {
+    return processAndUploadPhotosSequentially(progressId, queue, maxOriginalBytes, {
+      onFileUpdate: (update) => {
+        setSubmitDetailLines((lines) => {
+          const label = formatPhotoStatusLine(update);
+          const without = lines.filter((line) => !line.startsWith(`${update.displayName}:`));
+          return [...without, label].slice(-24);
+        });
+        if (update.status === "preparing") {
+          onPhase("preparing");
+        } else if (update.status === "uploading") {
+          onPhase("uploading");
+        }
+      },
+      onCounts: (uploaded, totalCount) => {
+        onProgress(uploaded, totalCount, 0);
+        onBar(Math.round(50 + (50 * uploaded) / Math.max(1, totalCount)));
+      },
+    });
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -566,20 +547,18 @@ export function SiteProgressClient() {
     try {
       if (isNavigatorOffline()) {
         setSubmitPhase("preparing");
-        const { prepared, prepareFailures } = await prepareQueue(
-          queuedFiles,
-          (msg) => setSubmitDetailLines((lines) => [...lines, msg].slice(-24)),
-          setSubmitBarPercent,
+        const { photos, prepareFailures } = await prepareOfflinePhotos(createQueue, (msg) =>
+          setSubmitDetailLines((lines) => [...lines, msg].slice(-24)),
         );
         await enqueueWorkProgressSubmit(
           currentUser.id,
           currentUser.company_id,
           body,
-          photosFromPreparedUploads(prepared),
+          photos,
         );
         setOfflineNotice(
           prepareFailures.length > 0
-            ? `Queued offline with ${prepared.length} photo(s). ${prepareFailures.length} file(s) could not be prepared and were kept for retry after sync.`
+            ? `Queued offline with ${photos.length} photo(s). ${prepareFailures.length} file(s) could not be prepared and were kept for retry after sync.`
             : "Queued offline — this update and photos will sync when you are online.",
         );
         if (prepareFailures.length === 0) {
@@ -620,36 +599,18 @@ export function SiteProgressClient() {
       }
 
       setSubmitPhase("preparing");
-      const { prepared, prepareFailures } = await prepareQueue(
-        queuedFiles,
-        (msg) => setSubmitDetailLines((lines) => [...lines, msg].slice(-24)),
-        (pct) => setSubmitBarPercent(Math.round(10 + pct * 0.4)),
-      );
+      setSubmitProgress({ uploaded: 0, total: createQueue.length, failed: 0 });
 
-      if (prepared.length === 0) {
-        setSubmitPhase("partial");
-        setPartialEntryId(created.id);
-        setSubmitProgress({ uploaded: 0, total: queuedFiles.length, failed: prepareFailures.length });
-        setFormError(
-          `Update saved, but photos could not be prepared:\n${prepareFailures.map((f) => `"${f.file.name}": ${f.message}`).join("\n")}`,
+      const { latestDetail, failures: uploadFailures, successes, prepareFailures } =
+        await runSequentialUpload(
+          created.id,
+          createQueue,
+          setSubmitPhase,
+          (uploaded, totalCount, failed) => {
+            setSubmitProgress({ uploaded, total: totalCount, failed });
+          },
+          setSubmitBarPercent,
         );
-        setCreateQueue((q) => retainFailedPhotoFiles(q, prepareFailures.map((f) => f.file)));
-        await loadList();
-        return;
-      }
-
-      setSubmitPhase("uploading");
-      setSubmitProgress({ uploaded: 0, total: prepared.length, failed: 0 });
-
-      const { latestDetail, failures: uploadFailures } = await uploadPreparedPhotos(
-        created.id,
-        prepared,
-        (finished, totalCount) => {
-          setSubmitProgress({ uploaded: finished, total: totalCount, failed: 0 });
-          setSubmitBarPercent(Math.round(50 + (50 * finished) / totalCount));
-          setSubmitPhase("uploading");
-        },
-      );
 
       try {
         const refreshed = await getMyWorkProgressDetail(created.id);
@@ -666,16 +627,17 @@ export function SiteProgressClient() {
         ...uploadFailures.map((f) => f.file),
       ];
       const failCount = allFailedFiles.length;
-      const okCount = prepared.length - uploadFailures.length;
+      const totalCount = createQueue.length;
+      const okCount = successes;
 
       if (failCount === 0) {
         setSubmitPhase("success");
         setSubmitBarPercent(100);
-        setSubmitProgress({ uploaded: okCount, total: prepared.length, failed: 0 });
+        setSubmitProgress({ uploaded: okCount, total: totalCount, failed: 0 });
         setSuccessMessage(
-          prepared.length === 1
-            ? "Update submitted with 1 photo."
-            : `Update submitted with ${prepared.length} photos.`,
+          totalCount === 0
+            ? "Update submitted."
+            : formatBatchUploadResult(okCount, totalCount, 0),
         );
         setTitle("");
         setNotes("");
@@ -690,13 +652,13 @@ export function SiteProgressClient() {
       } else {
         setSubmitPhase("partial");
         setPartialEntryId(created.id);
-        setSubmitProgress({ uploaded: okCount, total: prepared.length + prepareFailures.length, failed: failCount });
+        setSubmitProgress({ uploaded: okCount, total: totalCount, failed: failCount });
         const messages = [
           ...prepareFailures.map((f) => `"${f.file.name}": ${f.message}`),
           ...uploadFailures.map((f) => `"${f.displayName}": ${f.message}`),
         ];
         setFormError(
-          `Update saved, but ${failCount} photo${failCount === 1 ? "" : "s"} failed (${okCount} uploaded).\n${messages.join("\n")}`,
+          `${formatBatchUploadResult(okCount, totalCount, failCount)}.\n${messages.join("\n")}`,
         );
         setCreateQueue((q) => retainFailedPhotoFiles(q, allFailedFiles));
         setActiveMode("add");
@@ -705,16 +667,14 @@ export function SiteProgressClient() {
       if (isLikelyNetworkFailure(err)) {
         try {
           setSubmitPhase("preparing");
-          const { prepared } = await prepareQueue(
-            queuedFiles,
-            (msg) => setSubmitDetailLines((lines) => [...lines, msg].slice(-24)),
-            setSubmitBarPercent,
+          const { photos } = await prepareOfflinePhotos(createQueue, (msg) =>
+            setSubmitDetailLines((lines) => [...lines, msg].slice(-24)),
           );
           await enqueueWorkProgressSubmit(
             currentUser.id,
             currentUser.company_id,
             body,
-            photosFromPreparedUploads(prepared),
+            photos,
           );
           setOfflineNotice(
             "Network unavailable — update and photos saved on this device and queued for sync.",
@@ -748,8 +708,7 @@ export function SiteProgressClient() {
     setSubmitPhase("preparing");
     setSubmitDetailLines([]);
     try {
-      const files = createQueue.map((q) => q.file);
-      const photoErrors = validateQueuedPhotos(files, {
+      const photoErrors = validateQueuedPhotos(createQueue.map((q) => q.file), {
         maxAttachments,
         maxOriginalBytes,
         existingAttachmentCount: activeDetail?.attachments.length ?? 0,
@@ -760,25 +719,21 @@ export function SiteProgressClient() {
         return;
       }
 
-      const { prepared, prepareFailures } = await prepareQueue(
-        files,
-        (msg) => setSubmitDetailLines((lines) => [...lines, msg].slice(-24)),
-        (pct) => setSubmitBarPercent(Math.round(pct * 0.5)),
-      );
-
-      if (prepared.length === 0) {
-        setFormError(prepareFailures.map((f) => `"${f.file.name}": ${f.message}`).join("\n"));
-        setCreateQueue((q) => retainFailedPhotoFiles(q, prepareFailures.map((f) => f.file)));
-        setSubmitPhase("partial");
-        return;
-      }
-
       if (isNavigatorOffline()) {
+        const { photos, prepareFailures } = await prepareOfflinePhotos(createQueue, (msg) =>
+          setSubmitDetailLines((lines) => [...lines, msg].slice(-24)),
+        );
+        if (photos.length === 0) {
+          setFormError(prepareFailures.map((f) => `"${f.file.name}": ${f.message}`).join("\n"));
+          setCreateQueue((q) => retainFailedPhotoFiles(q, prepareFailures.map((f) => f.file)));
+          setSubmitPhase("partial");
+          return;
+        }
         await enqueueWorkProgressPhotos(
           currentUser.id,
           currentUser.company_id,
           partialEntryId,
-          photosFromPreparedUploads(prepared),
+          photos,
         );
         setOfflineNotice("Failed photos re-queued for offline sync.");
         setCreateQueue((q) =>
@@ -788,14 +743,15 @@ export function SiteProgressClient() {
         return;
       }
 
-      setSubmitPhase("uploading");
-      const { latestDetail, failures } = await uploadPreparedPhotos(
+      setSubmitProgress({ uploaded: 0, total: createQueue.length, failed: 0 });
+      const { latestDetail, failures, successes, prepareFailures } = await runSequentialUpload(
         partialEntryId,
-        prepared,
-        (finished, totalCount) => {
-          setSubmitProgress({ uploaded: finished, total: totalCount, failed: 0 });
-          setSubmitBarPercent(Math.round(50 + (50 * finished) / totalCount));
+        createQueue,
+        setSubmitPhase,
+        (uploaded, totalCount, failed) => {
+          setSubmitProgress({ uploaded, total: totalCount, failed });
         },
+        setSubmitBarPercent,
       );
       try {
         const refreshed = await getMyWorkProgressDetail(partialEntryId);
@@ -809,16 +765,22 @@ export function SiteProgressClient() {
         ...prepareFailures.map((f) => f.file),
         ...failures.map((f) => f.file),
       ];
+      const totalCount = createQueue.length;
       if (failedFiles.length === 0) {
         setSubmitPhase("success");
-        setSuccessMessage("All remaining photos uploaded.");
+        setSuccessMessage(formatBatchUploadResult(successes, totalCount, 0));
         setPartialEntryId(null);
         setCreateQueue((q) => clearQueuedPhotos(q));
         setFormError("");
       } else {
         setSubmitPhase("partial");
+        setSubmitProgress({
+          uploaded: successes,
+          total: totalCount,
+          failed: failedFiles.length,
+        });
         setFormError(
-          `Still failing: ${failedFiles.map((f) => f.name).join(", ")}`,
+          `${formatBatchUploadResult(successes, totalCount, failedFiles.length)}.\n${failedFiles.map((f) => f.name).join(", ")}`,
         );
         setCreateQueue((q) => retainFailedPhotoFiles(q, failedFiles));
       }
@@ -853,24 +815,19 @@ export function SiteProgressClient() {
     setAddMoreBar(0);
 
     try {
-      const { prepared, prepareFailures } = await prepareQueue(
-        files,
-        () => undefined,
-        setAddMoreBar,
-      );
-      if (prepared.length === 0) {
-        setAddMoreError(prepareFailures.map((f) => `"${f.file.name}": ${f.message}`).join("\n"));
-        setAddMoreQueue((q) => retainFailedPhotoFiles(q, prepareFailures.map((f) => f.file)));
-        setAddMorePhase("idle");
-        return;
-      }
-
       if (isNavigatorOffline()) {
+        const { photos, prepareFailures } = await prepareOfflinePhotos(addMoreQueue, () => undefined);
+        if (photos.length === 0) {
+          setAddMoreError(prepareFailures.map((f) => `"${f.file.name}": ${f.message}`).join("\n"));
+          setAddMoreQueue((q) => retainFailedPhotoFiles(q, prepareFailures.map((f) => f.file)));
+          setAddMorePhase("idle");
+          return;
+        }
         await enqueueWorkProgressPhotos(
           currentUser.id,
           currentUser.company_id,
           activeEntryId,
-          photosFromPreparedUploads(prepared),
+          photos,
         );
         setOfflineNotice("Photos queued offline — they will upload when you are online.");
         setAddMoreQueue((q) =>
@@ -882,15 +839,21 @@ export function SiteProgressClient() {
         return;
       }
 
-      setAddMorePhase("uploading");
-      const { latestDetail, failures } = await uploadPreparedPhotos(
-        activeEntryId,
-        prepared,
-        (finished, totalCount) => {
-          setAddMoreProgress({ uploaded: finished, total: totalCount, failed: 0 });
-          setAddMoreBar(Math.round(50 + (50 * finished) / totalCount));
-        },
-      );
+      setAddMoreProgress({ uploaded: 0, total: addMoreQueue.length, failed: 0 });
+      const { latestDetail, failures, successes, prepareFailures } =
+        await processAndUploadPhotosSequentially(activeEntryId, addMoreQueue, maxOriginalBytes, {
+          onFileUpdate: (update) => {
+            if (update.status === "preparing") {
+              setAddMorePhase("preparing");
+            } else if (update.status === "uploading") {
+              setAddMorePhase("uploading");
+            }
+          },
+          onCounts: (uploaded, totalCount) => {
+            setAddMoreProgress({ uploaded, total: totalCount, failed: 0 });
+            setAddMoreBar(Math.round(50 + (50 * uploaded) / Math.max(1, totalCount)));
+          },
+        });
       try {
         const refreshed = await getMyWorkProgressDetail(activeEntryId);
         setActiveDetail(refreshed);
@@ -903,22 +866,19 @@ export function SiteProgressClient() {
         ...prepareFailures.map((f) => f.file),
         ...failures.map((f) => f.file),
       ];
+      const totalCount = addMoreQueue.length;
       if (failedFiles.length === 0) {
         setAddMorePhase("success");
-        setAddMoreNotice(
-          prepared.length === 1 ? "1 photo uploaded." : `${prepared.length} photos uploaded.`,
-        );
+        setAddMoreNotice(formatBatchUploadResult(successes, totalCount, 0));
         setAddMoreQueue((q) => clearQueuedPhotos(q));
       } else {
         setAddMorePhase("partial");
         setAddMoreProgress({
-          uploaded: prepared.length - failures.length,
-          total: prepared.length + prepareFailures.length,
+          uploaded: successes,
+          total: totalCount,
           failed: failedFiles.length,
         });
-        setAddMoreError(
-          `Uploaded ${prepared.length - failures.length}; ${failedFiles.length} failed. Retry keeps only failed files.`,
-        );
+        setAddMoreError(formatBatchUploadResult(successes, totalCount, failedFiles.length));
         setAddMoreQueue((q) => retainFailedPhotoFiles(q, failedFiles));
       }
     } catch (err) {

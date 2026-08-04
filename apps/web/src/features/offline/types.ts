@@ -14,6 +14,7 @@ export type WorkProgressOfflinePhotoBlob = {
   filename: string;
   contentType: string;
   blob: Blob;
+  clientUploadId?: string;
 };
 
 export type WorkProgressSubmitPayload = {

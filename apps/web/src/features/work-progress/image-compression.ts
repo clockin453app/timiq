@@ -8,6 +8,14 @@ const CLIENT_MAX_LONG_EDGE = 1600;
 const CLIENT_JPEG_QUALITY_PRIMARY = 0.8;
 const CLIENT_JPEG_QUALITY_FALLBACK = 0.78;
 
+/** Safe uncompressed fallback when browser compression is unavailable. */
+export const CLIENT_FALLBACK_MAX_BYTES = 3 * 1024 * 1024;
+export const CLIENT_FALLBACK_MAX_PIXELS = 12_000_000;
+export const CLIENT_FALLBACK_MAX_LONG_EDGE = 4000;
+
+export const COMPRESSION_FALLBACK_UNSAFE_MESSAGE =
+  "This photo is too large to process safely. Try taking a lower-resolution photo or choose a smaller file.";
+
 export type PreparedSiteProgressUpload = {
   /** Original filename for display / server metadata */
   displayName: string;
@@ -19,6 +27,8 @@ export type PreparedSiteProgressUpload = {
   uploadBytes: number;
   /** False when original was uploaded under safe size (compression failed) */
   usedClientCompression: boolean;
+  /** Stable id for idempotent server retries */
+  uploadId?: string;
 };
 
 function stemFilename(name: string): string {
@@ -148,6 +158,45 @@ async function loadWithHtmlImage(file: File): Promise<HTMLImageElement> {
   }
 }
 
+export async function probeImageDimensions(
+  file: File,
+): Promise<{ width: number; height: number } | null> {
+  let disposable: ImageBitmap | null = null;
+  try {
+    const bmp = await loadWithCreateImageBitmap(file);
+    if (bmp) {
+      disposable = bmp;
+      return { width: bmp.width, height: bmp.height };
+    }
+    const img = await loadWithHtmlImage(file);
+    return { width: img.naturalWidth || img.width, height: img.naturalHeight || img.height };
+  } catch {
+    return null;
+  } finally {
+    disposable?.close();
+  }
+}
+
+export function isSafeCompressionFallback(
+  file: File,
+  dimensions: { width: number; height: number } | null,
+): boolean {
+  if (file.size > CLIENT_FALLBACK_MAX_BYTES) {
+    return false;
+  }
+  if (!dimensions) {
+    return file.size <= 512 * 1024;
+  }
+  const longest = Math.max(dimensions.width, dimensions.height);
+  if (longest > CLIENT_FALLBACK_MAX_LONG_EDGE) {
+    return false;
+  }
+  if (dimensions.width * dimensions.height > CLIENT_FALLBACK_MAX_PIXELS) {
+    return false;
+  }
+  return true;
+}
+
 export function yieldToBrowser(): Promise<void> {
   return new Promise((resolve) => {
     requestAnimationFrame(() => resolve());
@@ -156,7 +205,7 @@ export function yieldToBrowser(): Promise<void> {
 
 /**
  * Resize longest edge to ~1600px, JPEG ~0.8, white background (transparency flattened).
- * On failure: use original file only if size <= maxOriginalBytes; otherwise throw.
+ * On failure: allow original only when within safe fallback limits; otherwise throw.
  */
 export async function prepareSiteProgressPhotoUpload(
   file: File,
@@ -215,8 +264,9 @@ export async function prepareSiteProgressPhotoUpload(
       usedClientCompression: true,
     };
   } catch (err) {
-    if (originalBytes <= maxOriginalBytes) {
-      onStatus?.(`${displayName}: using original (compression unavailable in browser).`);
+    const dimensions = await probeImageDimensions(file);
+    if (isSafeCompressionFallback(file, dimensions)) {
+      onStatus?.(`${displayName}: using reduced original (compression unavailable in browser).`);
       return {
         displayName,
         originalFile: file,
@@ -226,19 +276,16 @@ export async function prepareSiteProgressPhotoUpload(
         usedClientCompression: false,
       };
     }
-    const msg =
-      err instanceof Error
-        ? err.message
-        : "Could not compress image in this browser. Try a smaller file or another photo.";
-    throw new Error(
-      `${msg} This file is over the ${Math.round(maxOriginalBytes / (1024 * 1024))} MB limit, so the original cannot be uploaded without compression.`,
-    );
+    if (err instanceof Error && err.message.includes("too large")) {
+      throw new Error(COMPRESSION_FALLBACK_UNSAFE_MESSAGE);
+    }
+    throw new Error(COMPRESSION_FALLBACK_UNSAFE_MESSAGE);
   } finally {
     disposable?.close();
   }
 }
 
-const DEFAULT_UPLOAD_CONCURRENCY = 3;
+const DEFAULT_UPLOAD_CONCURRENCY = 1;
 
 /**
  * Run async tasks with limited concurrency; preserves result order by index.

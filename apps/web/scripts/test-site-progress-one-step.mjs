@@ -187,9 +187,9 @@ check("successful upload clears queue; partial retains only failed files", () =>
 
 check("submit phase labels cover create / upload / partial", () => {
   assert.equal(form.submitPhaseLabel("creating"), "Creating update…");
-  assert.equal(form.submitPhaseLabel("uploading", { uploaded: 1, total: 5 }), "Uploading 1 of 5 photos…");
-  assert.match(form.submitPhaseLabel("partial", { failed: 2 }), /2 photos failed/);
-  assert.equal(form.submitPhaseLabel("success"), "Update submitted");
+  assert.equal(form.submitPhaseLabel("uploading", { uploaded: 1, total: 5 }), "Uploading 1 of 5");
+  assert.match(form.submitPhaseLabel("partial", { uploaded: 18, total: 20, failed: 2 }), /18 of 20 uploaded — 2 need retry/);
+  assert.equal(form.submitPhaseLabel("success", { uploaded: 3, total: 3 }), "3 of 3 uploaded");
 });
 
 const clientSrc = fs.readFileSync(
@@ -201,7 +201,7 @@ check("client exposes photos before create and one Submit update action", () => 
   assert.match(clientSrc, /Submit update/);
   assert.match(clientSrc, /createQueue/);
   assert.match(clientSrc, /createMyWorkProgress/);
-  assert.match(clientSrc, /uploadWorkProgressFile/);
+  assert.match(clientSrc, /processAndUploadPhotosSequentially/);
   assert.match(clientSrc, /PhotoQueuePanel/);
   assert.match(clientSrc, /Choose photos/);
   assert.match(clientSrc, /Take photo/);
@@ -221,7 +221,7 @@ check("duplicate submit is blocked while processing", () => {
 check("partial failure keeps failed files and offers retry", () => {
   assert.match(clientSrc, /Retry failed uploads/);
   assert.match(clientSrc, /retainFailedPhotoFiles/);
-  assert.match(clientSrc, /Update saved, but/);
+  assert.match(clientSrc, /formatBatchUploadResult/);
   assert.match(clientSrc, /View saved update/);
 });
 
@@ -260,7 +260,16 @@ check("accessibility: required markers, live region, remove aria-labels, focus t
 });
 
 check("offline enqueue includes queued photos on create", () => {
-  assert.match(clientSrc, /enqueueWorkProgressSubmit\([\s\S]*photosFromPreparedUploads/);
+  assert.match(clientSrc, /enqueueWorkProgressSubmit\([\s\S]*prepareOfflinePhotos/);
+});
+
+check("uploads run sequentially one picture at a time", () => {
+  const compression = fs.readFileSync(
+    path.join(webRoot, "src/features/work-progress/image-compression.ts"),
+    "utf8",
+  );
+  assert.match(compression, /DEFAULT_UPLOAD_CONCURRENCY = 1/);
+  assert.match(clientSrc, /processAndUploadPhotosSequentially/);
 });
 
 const reviewSrc = fs.readFileSync(
