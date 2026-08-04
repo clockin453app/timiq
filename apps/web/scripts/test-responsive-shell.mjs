@@ -98,13 +98,13 @@ check("drawer has focus trap", /event\.key !== "Tab"/.test(mobileHeader));
 check("drawer closes on Escape", /event\.key === "Escape"/.test(mobileHeader));
 check("drawer width is viewport safe", /w-\[min\(100vw-1\.25rem,360px\)\]/.test(mobileHeader));
 check("drawer prevents horizontal scroll", /overflow-x-hidden overflow-y-auto/.test(mobileHeader));
-check("drawer has sticky footer navigation", /timiq-mobile-drawer-footer/.test(mobileHeader));
-check("drawer account actions live in the sticky footer", /timiq-mobile-drawer-footer[\s\S]*href="\/profile"/.test(mobileHeader));
+check("drawer has no sticky account footer", !/timiq-mobile-drawer-footer/.test(mobileHeader));
+check("drawer Account actions live in the scrollable tree", /accountSectionExtras/.test(mobileHeader) && /getMobileDrawerNavigationTree/.test(mobileHeader));
 check("main mobile header uses the large approved lockup", /MOBILE_HEADER_LOGO_HEIGHT = 46/.test(mobileHeader) && /surface="onDark"/.test(mobileHeader));
 check("drawer header hosts TimIQ logo plus close", /timiq-mobile-drawer-header[\s\S]*TimIQBrandLockup/.test(mobileHeader) && (mobileHeader.match(/<TimIQBrandLockup/g) ?? []).length === 2);
 check("drawer does not use compact mark-only branding", !/variant="compact"/.test(mobileHeader));
-check("Logout uses menu row", /appearance="menuRow"/.test(mobileHeader));
-check("drawer omits account leaves from tree", /omitMobileDrawerFooterLeaves/.test(mobileHeader));
+check("Logout confirm remains available", /LogoutConfirmDialog/.test(mobileHeader));
+check("drawer keeps account leaves in the tree", !/omitMobileDrawerFooterLeaves/.test(mobileHeader));
 check("top header keeps utilities without account avatar menu", !/UserAvatar[\s\S]*menuButtonRef|menuButtonRef[\s\S]*UserAvatar/.test(mobileHeader.split("menuOpen")[0] ?? ""));
 
 check("shared Table contains width", /max-w-full min-w-0 w-full overflow-x-auto/.test(table));

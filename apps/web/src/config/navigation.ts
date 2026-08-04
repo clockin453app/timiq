@@ -844,9 +844,10 @@ export function getMobileDrawerNavigationTree(
   return getDesktopSidebarNavigationTree(role, options);
 }
 
-/** Account actions live in the mobile drawer footer — omit from the scrollable tree. */
+/** Previously used to strip account links into a fixed footer; mobile Account section owns them now. */
 const MOBILE_DRAWER_FOOTER_HREFS = new Set<string>(["/profile", "/settings", "/help"]);
 
+/** @deprecated Prefer keeping Profile/Settings/Help inside the Account section tree. */
 export function omitMobileDrawerFooterLeaves(nodes: NavigationNode[]): NavigationNode[] {
   const out: NavigationNode[] = [];
   for (const node of nodes) {

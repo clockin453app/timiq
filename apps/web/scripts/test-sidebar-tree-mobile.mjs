@@ -107,11 +107,10 @@ check(
     /document\.body\.style\.overflow = previousOverflow/.test(mobile),
 );
 check(
-  "17. Navigation scrolls; sticky footer stays reachable",
+  "17. Navigation scrolls full height without a fixed account footer",
   /timiq-mobile-drawer-scroll[\s\S]*min-h-0 flex-1 overflow-x-hidden overflow-y-auto/.test(mobile) &&
-    /timiq-mobile-drawer-footer/.test(mobile) &&
-    /appearance="menuRow"/.test(mobile) &&
-    /href="\/profile"/.test(mobile),
+    !/timiq-mobile-drawer-footer/.test(mobile) &&
+    /accountSectionExtras/.test(mobile),
 );
 check(
   "18. No horizontal overflow occurs at 320 px",
@@ -128,9 +127,10 @@ check("tree geometry", folderPad >= 30 && folderPad <= 34 && guideX >= 44 && gui
 check("section pad", sectionPad >= 14 && sectionPad <= 16);
 check("guide colour is neutral grey", /--color-sidebar-guide: #c7cbd1/.test(tokens));
 check("hover is lighter than active", /--color-sidebar-page-hover: #f3f4f6/.test(tokens) && /--color-sidebar-page-active-bg: #e5e7eb/.test(tokens));
+check("active route scrolls into view on desktop", /scrollIntoView/.test(navTree) && /scrollActiveIntoView/.test(navTree));
+check("mobile drawer skips auto-reveal scroll", /scrollActiveIntoView=\{false\}/.test(mobile));
 check("child-aware tree branches", /childIsFolder/.test(navTree) && /folderPadX\(depth \+ 1\)/.test(navTree));
-check("active route scrolls into view", /scrollIntoView/.test(navTree) && /scrollIntoView/.test(mobile));
-check("ancestors stay open", /!open && ancestorIds\.includes\(id\)/.test(navTree));
+check("ancestors stay open on desktop when autoExpandActive", /autoExpandActive && ancestorIds\.includes\(id\)/.test(navTree));
 check("desktop sidebar usable", /<NavTree/.test(sidebar));
 check("mobile drawer usable", /variant="drawer"/.test(mobile) && /min-h-11/.test(navTree));
 check("icons navy white / light black", /navy: "text-white", light: "text-black"/.test(navIcons));

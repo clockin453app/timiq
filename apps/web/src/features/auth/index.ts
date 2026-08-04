@@ -7,6 +7,7 @@ export {
   useRefreshAuthUser,
 } from "./auth-context";
 export { LogoutButton } from "./logout-button";
+export { LogoutConfirmDialog } from "./logout-confirm-dialog";
 export { RoleGuard } from "./role-guard";
 export { UserAccountSummary } from "./user-account-summary";
 export {

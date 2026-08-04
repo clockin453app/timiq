@@ -1,24 +1,21 @@
 "use client";
 
-import Link from "next/link";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from "react";
-import { Menu, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { LogOut, Menu, X } from "lucide-react";
 
 import { TimIQBrandLockup } from "../brand";
-import {
-  getMobileDrawerNavigationTree,
-  omitMobileDrawerFooterLeaves,
-} from "../../config/navigation";
-import { LogoutButton, useCurrentUser } from "../../features/auth";
+import { getMobileDrawerNavigationTree } from "../../config/navigation";
+import { logout, LogoutConfirmDialog, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
-import { useT } from "../../lib/i18n";
+import { clearAllTimiqOfflineData } from "../../features/offline/db";
+import { useI18n, useT } from "../../lib/i18n";
 
 import { cn } from "../../lib/cn";
 import { uiClasses } from "../../lib/ui-classes";
 
 import { MessagesHeaderButton } from "./messages-header-button";
 import { createMobileDrawerState, mobileDrawerReducer } from "./mobile-drawer-state";
-import { NavItemIcon } from "./nav-item-icon";
 import { NavTree } from "./nav-tree";
 import { NotificationBell } from "./notification-bell";
 
@@ -31,29 +28,24 @@ const MOBILE_HEADER_LOGO_HEIGHT = 46;
 /** Compact lockup for the fixed drawer chrome. */
 const MOBILE_DRAWER_LOGO_HEIGHT = 36;
 
-function mobileDrawerLinkClass(active: boolean): string {
-  return cn(
-    "flex min-h-11 min-w-0 max-w-full items-center gap-2.5 rounded-none border-l-[3px] px-2 py-1.5 text-[14px]",
-    uiClasses.transitionColors,
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/35",
-    active
-      ? "border-l-black bg-[var(--color-sidebar-page-active-bg)] font-semibold text-black"
-      : "border-l-transparent bg-white font-normal text-black hover:bg-[var(--color-sidebar-page-hover)] hover:text-black",
-  );
-}
+const MOBILE_ACCOUNT_SECTION_IDS = ["emp-account", "limited-profile"];
 
 export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const user = useCurrentUser();
   const t = useT();
+  const { setLocale } = useI18n();
+  const router = useRouter();
   const [drawer, dispatch] = useReducer(mobileDrawerReducer, activeHref, createMobileDrawerState);
   const menuOpen = drawer.open;
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-  const scrollRef = useRef<HTMLElement | null>(null);
+  const logoutOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const limited = userHasLimitedAccess(user);
-  const showAccountExtras = !limited;
+  const isEmployeeDrawer = user.system_role === "employee" || limited;
 
   const closeMenu = useCallback((restoreFocus = true) => {
     dispatch({ type: "close" });
@@ -62,11 +54,13 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const toggleMenu = useCallback(() => dispatch({ type: "toggle" }), []);
 
   const drawerTree = useMemo(
-    () =>
-      omitMobileDrawerFooterLeaves(
-        getMobileDrawerNavigationTree(user.system_role, { limitedAccess: limited }),
-      ),
+    () => getMobileDrawerNavigationTree(user.system_role, { limitedAccess: limited }),
     [user.system_role, limited],
+  );
+
+  const hasAccountSection = useMemo(
+    () => drawerTree.some((node) => MOBILE_ACCOUNT_SECTION_IDS.includes(node.id)),
+    [drawerTree],
   );
 
   useEffect(() => {
@@ -131,13 +125,59 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     };
   }, [menuOpen, closeMenu]);
 
-  useLayoutEffect(() => {
-    if (!menuOpen) {
-      return;
+  const openLogoutConfirm = useCallback(() => {
+    if (isLoggingOut) return;
+    setLogoutConfirmOpen(true);
+    closeMenu(false);
+  }, [closeMenu, isLoggingOut]);
+
+  const closeLogoutConfirm = useCallback(() => {
+    if (!isLoggingOut) {
+      setLogoutConfirmOpen(false);
     }
-    const active = scrollRef.current?.querySelector<HTMLElement>('[aria-current="page"]');
-    active?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [menuOpen, activeHref]);
+  }, [isLoggingOut]);
+
+  const handleLogout = useCallback(async () => {
+    setIsLoggingOut(true);
+    try {
+      await logout();
+      await clearAllTimiqOfflineData();
+      setLocale("en-GB");
+      router.replace("/login");
+      router.refresh();
+    } finally {
+      setIsLoggingOut(false);
+      setLogoutConfirmOpen(false);
+    }
+  }, [router, setLocale]);
+
+  const logoutLabel = isLoggingOut
+    ? t("common.logging_out", "Logging out...")
+    : t("common.logout", "Logout");
+
+  const logoutRow = (
+    <button
+      ref={logoutOpenerRef}
+      aria-label={logoutLabel}
+      className={cn(
+        "relative flex w-full min-w-0 items-center gap-2.5 border-l-[3px] border-transparent pr-3 text-left",
+        "min-h-11 bg-white font-normal text-[var(--color-danger-700)]",
+        "hover:bg-[var(--color-danger-50)]",
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/35",
+        "disabled:pointer-events-none disabled:opacity-60",
+      )}
+      data-testid="timiq-mobile-drawer-logout"
+      disabled={isLoggingOut}
+      style={{ paddingLeft: 68, fontSize: 14 }}
+      type="button"
+      onClick={openLogoutConfirm}
+    >
+      <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
+        <LogOut aria-hidden className="h-[17px] w-[17px] shrink-0 text-[var(--color-danger-700)]" />
+      </span>
+      <span className="min-w-0 flex-1 truncate">{logoutLabel}</span>
+    </button>
+  );
 
   const menuLabel = menuOpen ? t("nav.close_menu", "Close menu") : t("nav.menu", "Menu");
 
@@ -156,7 +196,6 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
         )}
       >
         <div className="flex min-w-0 flex-1 items-center overflow-hidden">
-          {/* Light plate keeps approved dark “Tim” readable on navy without recolouriing the asset. */}
           <TimIQBrandLockup
             className="max-w-[min(100%,115px)]"
             markSize={MOBILE_HEADER_LOGO_HEIGHT}
@@ -202,7 +241,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             onClick={() => closeMenu()}
           />
           <div
-            className="fixed bottom-0 right-0 top-0 z-[60] flex w-[min(100vw-1.25rem,360px)] max-w-[min(100vw-1.25rem,360px)] flex-col overflow-hidden overscroll-contain border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)]"
+            className="fixed bottom-0 right-0 top-0 z-[60] flex w-[min(100vw-1.25rem,360px)] max-w-[min(100vw-1.25rem,360px)] flex-col overflow-hidden overscroll-contain border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
             id="timiq-mobile-menu"
             role="dialog"
             aria-modal="true"
@@ -210,7 +249,6 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             data-testid="timiq-mobile-drawer"
             ref={drawerRef}
           >
-            {/* A. Fixed drawer header: logo + close */}
             <div className="timiq-mobile-drawer-header shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sheet)] pt-[env(safe-area-inset-top,0px)]">
               <div className="flex min-h-14 items-center gap-2 px-3 py-2">
                 <div className="min-w-0 flex-1 overflow-hidden">
@@ -237,17 +275,23 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
               </div>
             </div>
 
-            {/* B. Scrollable navigation only */}
             <nav
               aria-label={t("shell.drawer_nav", "More navigation")}
               className="timiq-mobile-drawer-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-1.5 py-1 [-webkit-overflow-scrolling:touch]"
-              ref={scrollRef}
             >
               {drawerTree.length > 0 ? (
                 <NavTree
+                  accountSectionExtras={hasAccountSection ? logoutRow : undefined}
+                  accountSectionIds={MOBILE_ACCOUNT_SECTION_IDS}
                   activeHref={activeHref}
+                  expansion={
+                    isEmployeeDrawer
+                      ? { mode: "section-accordion", persist: false, autoExpandActive: false }
+                      : { mode: "multi", persist: false, autoExpandActive: false }
+                  }
                   nodes={drawerTree}
                   role={user.system_role}
+                  scrollActiveIntoView={false}
                   storageScope="mobile-drawer"
                   variant="drawer"
                   onNavigate={() => closeMenu(false)}
@@ -257,47 +301,23 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                   {t("nav.drawer_hint_primary", "All primary pages are on the bottom bar.")}
                 </p>
               )}
+              {!hasAccountSection ? (
+                <div className="mt-1 border-t border-[var(--color-border)] pt-1" data-sidebar-account-extras="">
+                  {logoutRow}
+                </div>
+              ) : null}
             </nav>
-
-            {/* C. Sticky account footer */}
-            <div
-              className="timiq-mobile-drawer-footer shrink-0 border-t border-[var(--color-border)] bg-[var(--color-sheet)] px-1.5 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] pt-1"
-              role="group"
-              aria-label={t("nav.group.account", "Account")}
-            >
-              <Link
-                className={mobileDrawerLinkClass(activeHref === "/profile")}
-                href="/profile"
-                onClick={() => closeMenu(false)}
-              >
-                <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.profile" surface="light" />
-                <span className="min-w-0 flex-1 truncate">{t("nav.profile", "Profile")}</span>
-              </Link>
-              {showAccountExtras ? (
-                <Link
-                  className={mobileDrawerLinkClass(activeHref === "/settings")}
-                  href="/settings"
-                  onClick={() => closeMenu(false)}
-                >
-                  <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.settings" surface="light" />
-                  <span className="min-w-0 flex-1 truncate">{t("nav.settings", "Settings")}</span>
-                </Link>
-              ) : null}
-              {showAccountExtras ? (
-                <Link
-                  className={mobileDrawerLinkClass(activeHref === "/help")}
-                  href="/help"
-                  onClick={() => closeMenu(false)}
-                >
-                  <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.help" surface="light" />
-                  <span className="min-w-0 flex-1 truncate">{t("nav.help", "Help centre")}</span>
-                </Link>
-              ) : null}
-              <LogoutButton appearance="menuRow" className="min-h-11" />
-            </div>
           </div>
         </>
       ) : null}
+
+      <LogoutConfirmDialog
+        isLoggingOut={isLoggingOut}
+        open={logoutConfirmOpen}
+        returnFocusRef={logoutOpenerRef}
+        onCancel={closeLogoutConfirm}
+        onConfirm={() => void handleLogout()}
+      />
     </header>
   );
 }

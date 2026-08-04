@@ -28,7 +28,7 @@ const {
   mobileDrawerReducer,
 } = loadModule("components/layout/mobile-drawer-state.ts");
 
-const { getMobileDrawerNavigationTree, collectNavigationLeaves, omitMobileDrawerFooterLeaves } =
+const { getMobileDrawerNavigationTree, collectNavigationLeaves } =
   loadModule("config/navigation.ts");
 
 let passed = 0;
@@ -211,22 +211,20 @@ check("drawer logo header is fixed", /timiq-mobile-drawer-header/.test(header) &
 check("drawer header shows logo and close", /timiq-mobile-drawer-header[\s\S]*TimIQBrandLockup/.test(header) && /MOBILE_DRAWER_LOGO_HEIGHT/.test(header));
 check("main header hosts the large approved logo", /MOBILE_HEADER_LOGO_HEIGHT = 46/.test(header) && /surface="onDark"/.test(header));
 check("brand lockup appears in top bar and drawer header", (header.match(/<TimIQBrandLockup/g) ?? []).length === 2);
-check("scroll container holds navigation only", /timiq-mobile-drawer-scroll[\s\S]*min-h-0 flex-1 overflow-x-hidden overflow-y-auto/.test(header));
-check("sticky footer holds account actions", /timiq-mobile-drawer-footer/.test(header));
-check("Profile lives in the sticky footer", /timiq-mobile-drawer-footer[\s\S]*href="\/profile"/.test(header));
-check("Settings is gated for limited users", /showAccountExtras \? \([\s\S]*href="\/settings"/.test(header));
-check("Help is gated for limited users", /showAccountExtras \? \([\s\S]*href="\/help"/.test(header));
-check("Logout appears as a menu row in the sticky footer", /timiq-mobile-drawer-footer[\s\S]*appearance="menuRow"/.test(header));
-check("nav scroll region does not host UserAvatar", !/timiq-mobile-drawer-scroll[\s\S]*UserAvatar/.test(header));
-check("account leaves are omitted from the NavTree", /omitMobileDrawerFooterLeaves/.test(header));
+check("scroll container holds navigation including Account", /timiq-mobile-drawer-scroll[\s\S]*min-h-0 flex-1 overflow-x-hidden overflow-y-auto/.test(header));
+check("there is no sticky account footer block", !/timiq-mobile-drawer-footer/.test(header));
+check("Profile lives in the Account navigation tree", /getMobileDrawerNavigationTree/.test(header) && !/omitMobileDrawerFooterLeaves/.test(header));
+check("Logout is rendered inside Account extras", /accountSectionExtras=\{hasAccountSection \? logoutRow : undefined\}/.test(header));
+check("Logout confirm remains mounted outside the drawer", /LogoutConfirmDialog/.test(header));
+check("employee drawer uses section accordion", /section-accordion/.test(header));
+check("mobile expansion is not persisted", /persist: false/.test(header) && /autoExpandActive: false/.test(header));
+check("account leaves remain in the NavTree", !/omitMobileDrawerFooterLeaves/.test(header));
 check("drawer width is min(100vw-1.25rem, 360px)", /w-\[min\(100vw-1\.25rem,360px\)\]/.test(header));
 check("drawer avoids forced 300px min-width overflow", !/min-w-\[min\(100%,300px\)\]/.test(header));
 check("close control has a large touch target", /h-11 w-11/.test(header));
-check("account links use black active indicator", /border-l-black bg-\[var\(--color-sidebar-page-active-bg\)\]/.test(header));
 check("backdrop has test id", /data-testid="timiq-mobile-drawer-backdrop"/.test(header));
 check("body overscroll locked while open", /overscrollBehavior = "none"/.test(header));
-check("active page scrolls into view when drawer opens", /scrollIntoView/.test(header));
-check("logout confirmation remains wired", /LogoutButton/.test(header));
+check("logout confirmation remains wired", /await logout\(\)/.test(header));
 check("top bar avatar is not a duplicate account menu", !/<UserAvatar[\s\S]{0,200}menuButtonRef/.test(header.split("{menuOpen")[0] ?? ""));
 
 const overview = read("app/(app)/overview/overview-client.tsx");
@@ -255,23 +253,9 @@ check("limited access drawer excludes PAYE pay history", !limitedHrefs.includes(
 check("limited access drawer excludes the clock", !limitedHrefs.includes("/clock"));
 check("limited access drawer excludes management pages", !limitedHrefs.includes("/employees"));
 
-const employeeFooterTree = omitMobileDrawerFooterLeaves(employeeTree);
-const limitedFooterTree = omitMobileDrawerFooterLeaves(limitedTree);
-const footerHrefs = (nodes) => collectNavigationLeaves(nodes).map((leaf) => leaf.href);
-check(
-  "employee scroll tree omits profile/settings/help",
-  !footerHrefs(employeeFooterTree).includes("/profile") &&
-    !footerHrefs(employeeFooterTree).includes("/settings") &&
-    !footerHrefs(employeeFooterTree).includes("/help"),
-);
-check(
-  "limited scroll tree omits profile",
-  !footerHrefs(limitedFooterTree).includes("/profile"),
-);
-check(
-  "omitting footer leaves keeps other employee routes",
-  footerHrefs(employeeFooterTree).includes("/clock") || footerHrefs(employeeFooterTree).includes("/messages"),
-);
+check("employee Account section includes profile/settings/help", hrefs(employeeTree).includes("/profile") && hrefs(employeeTree).includes("/settings") && hrefs(employeeTree).includes("/help"));
+check("limited Account section includes profile", limitedHrefs.includes("/profile"));
+check("employee drawer still exposes clock/messages", hrefs(employeeTree).includes("/clock") || hrefs(employeeTree).includes("/messages"));
 
 const logoutButton = read("features/auth/logout-button.tsx");
 check("LogoutButton supports menuRow appearance", /appearance === "menuRow"/.test(logoutButton));

@@ -78,6 +78,17 @@ function treeGuideX(parentDepth: number): number {
   return SIDEBAR_TREE_GUIDE_X + Math.max(0, parentDepth - 1) * SIDEBAR_NEST_STEP;
 }
 
+export type NavTreeExpansionMode = "multi" | "section-accordion";
+
+type NavTreeExpansionOptions = {
+  /** Desktop: multi. Employee mobile drawer: section-accordion (one main section). */
+  mode?: NavTreeExpansionMode;
+  /** Persist expanded ids in localStorage. Disabled for mobile drawer. */
+  persist?: boolean;
+  /** Force-open ancestors of the active route. Disabled for mobile drawer. */
+  autoExpandActive?: boolean;
+};
+
 type NavTreeProps = {
   nodes: NavigationNode[];
   activeHref: string;
@@ -89,7 +100,15 @@ type NavTreeProps = {
   onNavigate?: () => void;
   /** Extra folder ids that must be open (e.g. collapsed-rail section click). */
   forceOpenIds?: string[];
+  expansion?: NavTreeExpansionOptions;
+  /** Mobile: Logout (and similar) rendered inside matching Account section panels. */
+  accountSectionExtras?: ReactNode;
+  accountSectionIds?: string[];
+  /** When false, do not scroll the active leaf into view (mobile starts collapsed). */
+  scrollActiveIntoView?: boolean;
 };
+
+const DEFAULT_ACCOUNT_SECTION_IDS = ["emp-account", "limited-profile"];
 
 function expansionStorageKey(scope: string, role: SystemRole): string {
   return `${TREE_EXPANSION_PREFIX}${scope}:${role}`;
@@ -153,23 +172,54 @@ export function useNavTreeExpansion(
   storageScope: string,
   role: SystemRole,
   forceOpenIds: string[] = [],
+  expansion: NavTreeExpansionOptions = {},
 ) {
+  const mode = expansion.mode ?? "multi";
+  const persist = expansion.persist ?? true;
+  const autoExpandActive = expansion.autoExpandActive ?? true;
+
   const ancestorIds = useMemo(
-    () => findActiveAncestorIds(nodes, activeHref),
-    [nodes, activeHref],
+    () => (autoExpandActive ? findActiveAncestorIds(nodes, activeHref) : []),
+    [nodes, activeHref, autoExpandActive],
   );
   const validFolderIds = useMemo(() => new Set(collectFolderIds(nodes)), [nodes]);
+  const rootSectionIds = useMemo(
+    () =>
+      new Set(
+        nodes
+          .filter((node) => Boolean(node.children?.length) && !node.href)
+          .map((node) => node.id),
+      ),
+    [nodes],
+  );
 
   const [manualExpanded, setManualExpanded] = useState<string[]>(() => {
-    const stored = readExpandedIds(storageScope, role).filter((id) => validFolderIds.has(id));
-    return mergeUnique([...stored, ...ancestorIds, ...forceOpenIds]);
+    if (!persist && !autoExpandActive) {
+      return forceOpenIds.filter((id) => validFolderIds.has(id));
+    }
+    const stored = persist
+      ? readExpandedIds(storageScope, role).filter((id) => validFolderIds.has(id))
+      : [];
+    return mergeUnique([...stored, ...ancestorIds, ...forceOpenIds]).filter((id) =>
+      validFolderIds.has(id),
+    );
   });
 
   useEffect(() => {
     clearLegacyNavStorage(storageScope, role);
-  }, [storageScope, role]);
+    if (!persist && typeof window !== "undefined") {
+      try {
+        window.localStorage.removeItem(expansionStorageKey(storageScope, role));
+      } catch {
+        /* ignore */
+      }
+    }
+  }, [storageScope, role, persist]);
 
   useEffect(() => {
+    if (!autoExpandActive && forceOpenIds.length === 0) {
+      return;
+    }
     setManualExpanded((prev) => {
       const pruned = prev.filter((id) => validFolderIds.has(id));
       const next = mergeUnique([...pruned, ...ancestorIds, ...forceOpenIds]).filter((id) =>
@@ -178,10 +228,12 @@ export function useNavTreeExpansion(
       if (next.length === prev.length && next.every((id, i) => id === prev[i])) {
         return prev;
       }
-      writeExpandedIds(storageScope, role, next);
+      if (persist) {
+        writeExpandedIds(storageScope, role, next);
+      }
       return next;
     });
-  }, [ancestorIds, forceOpenIds, storageScope, role, validFolderIds]);
+  }, [ancestorIds, forceOpenIds, storageScope, role, validFolderIds, autoExpandActive, persist]);
 
   const expandedSet = useMemo(() => new Set(manualExpanded), [manualExpanded]);
 
@@ -191,28 +243,43 @@ export function useNavTreeExpansion(
     (id: string, nextOpen?: boolean) => {
       setManualExpanded((prev) => {
         const open = nextOpen ?? !prev.includes(id);
-        if (!open && ancestorIds.includes(id)) {
+        if (!open && autoExpandActive && ancestorIds.includes(id)) {
           return prev;
         }
-        const next = open
-          ? mergeUnique([...prev, id])
-          : prev.filter((existing) => existing !== id);
-        writeExpandedIds(storageScope, role, next);
+
+        let next: string[];
+        if (mode === "section-accordion" && rootSectionIds.has(id)) {
+          // One main section at a time; nested folders under other sections are cleared.
+          next = open ? [id] : [];
+        } else if (mode === "section-accordion" && open) {
+          const openRoot = prev.find((existing) => rootSectionIds.has(existing));
+          next = mergeUnique([...(openRoot ? [openRoot] : []), ...prev.filter((existing) => !rootSectionIds.has(existing)), id]);
+        } else {
+          next = open
+            ? mergeUnique([...prev, id])
+            : prev.filter((existing) => existing !== id);
+        }
+
+        if (persist) {
+          writeExpandedIds(storageScope, role, next);
+        }
         return next;
       });
     },
-    [ancestorIds, storageScope, role],
+    [ancestorIds, storageScope, role, mode, rootSectionIds, autoExpandActive, persist],
   );
 
   const ensureOpen = useCallback(
     (ids: string[]) => {
       setManualExpanded((prev) => {
         const next = mergeUnique([...prev, ...ids]);
-        writeExpandedIds(storageScope, role, next);
+        if (persist) {
+          writeExpandedIds(storageScope, role, next);
+        }
         return next;
       });
     },
-    [storageScope, role],
+    [storageScope, role, persist],
   );
 
   return { isExpanded, toggleExpanded, ensureOpen, expandedIds: manualExpanded };
@@ -229,6 +296,8 @@ type TreeRowProps = {
   toggleExpanded: (id: string, nextOpen?: boolean) => void;
   onNavigate?: () => void;
   showGuides: boolean;
+  accountSectionExtras?: ReactNode;
+  accountSectionIds: string[];
 };
 
 function IconBox({ children }: { children: ReactNode }) {
@@ -312,6 +381,8 @@ function TreeRow({
   toggleExpanded,
   onNavigate,
   showGuides,
+  accountSectionExtras,
+  accountSectionIds,
 }: TreeRowProps) {
   const t = useT();
   const isFolder = Boolean(node.children && node.children.length > 0 && !node.href);
@@ -434,7 +505,9 @@ function TreeRow({
             id={panelId}
           >
             {node.children?.map((child, index) => {
-              const isLast = index === (node.children?.length ?? 0) - 1;
+              const isLast =
+                index === (node.children?.length ?? 0) - 1 &&
+                !(accountSectionExtras && accountSectionIds.includes(node.id));
               const childIsFolder = Boolean(child.children?.length && !child.href);
               const childPad = childIsFolder ? folderPadX(depth + 1) : pagePadX(depth + 1);
               const branchWidth = Math.max(10, childPad - guideLeft - 6);
@@ -448,6 +521,8 @@ function TreeRow({
                     />
                   ) : null}
                   <TreeRow
+                    accountSectionExtras={accountSectionExtras}
+                    accountSectionIds={accountSectionIds}
                     activeHref={activeHref}
                     badgeByHref={badgeByHref}
                     depth={depth + 1}
@@ -462,6 +537,11 @@ function TreeRow({
                 </div>
               );
             })}
+            {accountSectionExtras && accountSectionIds.includes(node.id) ? (
+              <div className="relative" data-sidebar-account-extras="">
+                {accountSectionExtras}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -544,31 +624,54 @@ export function NavTree({
   badgeByHref = {},
   onNavigate,
   forceOpenIds = [],
+  expansion,
+  accountSectionExtras,
+  accountSectionIds = DEFAULT_ACCOUNT_SECTION_IDS,
+  scrollActiveIntoView = true,
 }: NavTreeProps) {
   const treeRootRef = useRef<HTMLDivElement | null>(null);
+  const expansionOptions = useMemo<NavTreeExpansionOptions>(() => {
+    if (expansion) {
+      return expansion;
+    }
+    if (variant === "drawer") {
+      return { mode: "multi", persist: false, autoExpandActive: false };
+    }
+    return { mode: "multi", persist: true, autoExpandActive: true };
+  }, [expansion, variant]);
+
   const { isExpanded, toggleExpanded, expandedIds } = useNavTreeExpansion(
     nodes,
     activeHref,
     storageScope,
     role,
     forceOpenIds,
+    expansionOptions,
   );
 
   useLayoutEffect(() => {
+    if (!scrollActiveIntoView) {
+      return;
+    }
     const root = treeRootRef.current;
     if (!root) {
       return;
     }
     const active = root.querySelector<HTMLElement>('[aria-current="page"]');
     active?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [activeHref, expandedIds, variant]);
+  }, [activeHref, expandedIds, variant, scrollActiveIntoView]);
 
   if (nodes.length === 0) {
     return null;
   }
 
   return (
-    <div className="space-y-0" data-nav-tree={variant} ref={treeRootRef}>
+    <div
+      className="space-y-0"
+      data-nav-accordion={expansionOptions.mode === "section-accordion" ? "sections" : "multi"}
+      data-nav-tree={variant}
+      ref={treeRootRef}
+    >
       {nodes.map((node) => (
         <div
           className={
@@ -580,6 +683,8 @@ export function NavTree({
           key={node.id}
         >
           <TreeRow
+            accountSectionExtras={accountSectionExtras}
+            accountSectionIds={accountSectionIds}
             activeHref={activeHref}
             badgeByHref={badgeByHref}
             depth={0}

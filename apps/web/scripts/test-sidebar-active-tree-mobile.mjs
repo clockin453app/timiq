@@ -22,7 +22,6 @@ const {
   getDesktopSidebarNavigationTree,
   getMobileDrawerNavigationTree,
   findActiveAncestorIds,
-  omitMobileDrawerFooterLeaves,
 } = loadModule("config/navigation.ts");
 
 let passed = 0;
@@ -54,7 +53,7 @@ check("11. fixed pads prevent label shift", /SIDEBAR_PAGE_PAD_X = 68/.test(navTr
 
 /* Route expansion */
 const desktop = getDesktopSidebarNavigationTree("administrator");
-const mobileTree = omitMobileDrawerFooterLeaves(getMobileDrawerNavigationTree("administrator"));
+const mobileTree = getMobileDrawerNavigationTree("administrator");
 const cases = [
   ["/work-progress-review", ["mgmt-sites", "mgmt-sites-progress"]],
   ["/locations", ["mgmt-sites", "mgmt-sites-management"]],
@@ -65,8 +64,8 @@ for (const [href, expected] of cases) {
   const ancestors = findActiveAncestorIds(desktop, href);
   check(`12-14. ${href} expands ancestors`, expected.every((id) => ancestors.includes(id)));
 }
-check("15. drawer scrolls active page into view on open", /useLayoutEffect[\s\S]*menuOpen[\s\S]*scrollIntoView/.test(mobile));
-check("16. unrelated folders remain toggleable", /toggleExpanded\(node\.id\)/.test(navTree) && /!open && ancestorIds\.includes\(id\)/.test(navTree));
+check("15. mobile drawer does not auto-scroll active on open", /scrollActiveIntoView=\{false\}/.test(mobile));
+check("16. unrelated folders remain toggleable on desktop", /toggleExpanded\(node\.id\)/.test(navTree) && /mode === "section-accordion"/.test(navTree));
 
 /* Mobile drawer */
 check("17. drawer width avoids 320 overflow", /w-\[min\(100vw-1\.25rem,360px\)\]/.test(mobile) && /overflow-x-hidden/.test(mobile));
@@ -79,9 +78,9 @@ check("23. body scroll restores after closing", /document\.body\.style\.overflow
 check("24. final-page navigation closes drawer", /onNavigate=\{\(\) => closeMenu\(false\)\}/.test(mobile));
 check("25. collapsed section headers remain rendered", /data-sidebar-section-header=\{isSectionFolder \? node\.id : undefined\}/.test(navTree));
 check("26. collapsed folder rows remain rendered", /data-sidebar-level=\{isSectionFolder \? "section" : "folder"\}/.test(navTree));
-check("27. footer actions remain reachable", /timiq-mobile-drawer-footer[\s\S]*\/profile/.test(mobile));
-check("28. Logout remains reachable", /timiq-mobile-drawer-footer[\s\S]*appearance="menuRow"/.test(mobile));
-check("29. navigation is not covered by footer", /timiq-mobile-drawer-scroll[\s\S]*min-h-0 flex-1/.test(mobile) && /timiq-mobile-drawer-footer[\s\S]*shrink-0/.test(mobile));
+check("27. Account actions remain in the scrollable tree", /accountSectionExtras/.test(mobile) && !/timiq-mobile-drawer-footer/.test(mobile));
+check("28. Logout remains reachable via Account extras", /timiq-mobile-drawer-logout/.test(mobile));
+check("29. navigation is not covered by a fixed footer", /timiq-mobile-drawer-scroll[\s\S]*min-h-0 flex-1/.test(mobile) && !/timiq-mobile-drawer-footer/.test(mobile));
 check("30. focus behaviour remains usable", /closeButtonRef\.current\?\.focus/.test(mobile) && /menuButtonRef\.current\?\.focus/.test(mobile));
 
 /* Regression */

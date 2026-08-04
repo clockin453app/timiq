@@ -20,7 +20,6 @@ function loadModule(relative) {
 
 const {
   getMobileDrawerNavigationTree,
-  omitMobileDrawerFooterLeaves,
   collectNavigationLeaves,
 } = loadModule("config/navigation.ts");
 
@@ -34,7 +33,7 @@ const navTree = read("components/layout/nav-tree.tsx");
 const mobile = read("components/layout/mobile-header.tsx");
 const sidebar = read("components/layout/desktop-sidebar.tsx");
 
-const employeeTree = omitMobileDrawerFooterLeaves(getMobileDrawerNavigationTree("employee"));
+const employeeTree = getMobileDrawerNavigationTree("employee");
 const sectionIds = employeeTree.map((n) => n.id);
 const work = employeeTree.find((n) => n.id === "emp-work");
 const pay = employeeTree.find((n) => n.id === "emp-pay");
