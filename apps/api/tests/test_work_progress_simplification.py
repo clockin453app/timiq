@@ -243,26 +243,26 @@ def test_archive_preserves_attachments_and_storage_objects() -> None:
     storage.assert_not_called()
 
 
-def test_upload_route_invokes_thumbnail_through_threadpool() -> None:
+def test_upload_route_does_not_schedule_inline_thumbnail_generation() -> None:
     from app.modules.work_progress.router import post_work_progress_me_file
 
     company_id = uuid.uuid4()
     actor = _user(SystemRole.EMPLOYEE, company_id)
-    attachment_id = uuid.uuid4()
     detail = SimpleNamespace(
         company_id=company_id,
-        attachments=[SimpleNamespace(id=attachment_id, created_at=datetime.now(timezone.utc))],
+        attachments=[SimpleNamespace(id=uuid.uuid4(), created_at=datetime.now(timezone.utc))],
     )
-    threadpool = AsyncMock(return_value=None)
     upload = UploadFile(filename="new.jpg", file=io.BytesIO(b"jpeg"), headers={"content-type": "image/jpeg"})
-    with (
-        patch("app.modules.work_progress.router.upload_my_entry_file", return_value=detail),
-        patch("app.modules.work_progress.router._attachment_storage_path", return_value="work-progress-files/new.jpg"),
-        patch("app.modules.work_progress.router.run_in_threadpool", threadpool),
-    ):
-        result = asyncio.run(post_work_progress_me_file(uuid.uuid4(), upload, MagicMock(), actor))
+    with patch("app.modules.work_progress.router.upload_my_entry_file", return_value=detail) as upload_fn:
+        result = post_work_progress_me_file(
+            uuid.uuid4(),
+            upload,
+            None,
+            MagicMock(),
+            actor,
+        )
     assert result is detail
-    threadpool.assert_awaited_once()
+    upload_fn.assert_called_once()
 
 
 def test_best_effort_thumbnail_failure_never_escapes() -> None:

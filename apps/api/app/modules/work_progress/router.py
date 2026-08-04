@@ -1,17 +1,15 @@
 import uuid
 from datetime import date
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status as http_status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status as http_status
 from fastapi.responses import Response
-from starlette.concurrency import run_in_threadpool
+from sqlalchemy.orm import Session
 
 from app.core.storage.file_response import (
     content_disposition_attachment,
     protected_file_response,
     protected_inline_image_response,
 )
-from sqlalchemy.orm import Session
-
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_current_user, require_admin_or_administrator
 from app.modules.auth.models import User
@@ -32,7 +30,6 @@ from app.modules.work_progress.schemas import (
     WorkProgressReviewListResponse,
 )
 from app.modules.work_progress.service import (
-    MAX_STORED_JPEG_BYTES,
     WorkProgressNotFoundError,
     WorkProgressPermissionError,
     WorkProgressStateError,
@@ -59,7 +56,6 @@ from app.modules.work_progress.service import (
     work_progress_attachment_response_filename,
     work_progress_attachment_response_media_type,
 )
-from app.modules.work_progress.thumbnail import generate_work_progress_thumbnail_best_effort
 
 router = APIRouter(prefix="/api/work-progress", tags=["work_progress"])
 
@@ -123,48 +119,37 @@ def get_work_progress_me_detail(
 
 
 @router.post("/me/{progress_id}/files", response_model=WorkProgressEntryDetailResponse)
-async def post_work_progress_me_file(
+def post_work_progress_me_file(
     progress_id: uuid.UUID,
     file: UploadFile = File(...),
+    client_upload_id: str | None = Form(default=None),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> WorkProgressEntryDetailResponse:
     filename, content_type, raw = _read_upload_file(file)
+    parsed_upload_id: uuid.UUID | None = None
+    if client_upload_id and client_upload_id.strip():
+        try:
+            parsed_upload_id = uuid.UUID(client_upload_id.strip())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=http_status.HTTP_400_BAD_REQUEST,
+                detail="client_upload_id must be a valid UUID.",
+            ) from exc
     try:
-        detail = upload_my_entry_file(
+        return upload_my_entry_file(
             db_session,
             current_user,
             progress_id,
             original_filename=filename,
             content_type=content_type,
             file_bytes=raw,
+            client_upload_id=parsed_upload_id,
         )
     except WorkProgressNotFoundError:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
     except WorkProgressValidationError as exc:
         raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-
-    if detail.attachments:
-        newest = max(detail.attachments, key=lambda a: a.created_at)
-        storage_path = _attachment_storage_path(db_session, newest.id)
-        if storage_path:
-            await run_in_threadpool(
-                generate_work_progress_thumbnail_best_effort,
-                attachment_id=newest.id,
-                storage_path=storage_path,
-                max_source_bytes=MAX_STORED_JPEG_BYTES,
-                company_id=detail.company_id,
-            )
-    return detail
-
-
-def _attachment_storage_path(db_session: Session, attachment_id: uuid.UUID) -> str:
-    from app.modules.work_progress.repository import get_attachment_by_id
-
-    att = get_attachment_by_id(db_session, attachment_id)
-    if att is None:
-        return ""
-    return att.storage_path
 
 
 @router.get("/review", response_model=WorkProgressReviewListResponse)

@@ -14,9 +14,9 @@ from app.core.storage.factory import get_storage_backend
 from app.modules.work_progress.thumbnail_sync import (
     clear_thumb_failure,
     mark_thumb_failure,
-    thumb_decode_semaphore,
     thumb_failure_hot,
     thumb_stripe_lock,
+    work_progress_image_processing_semaphore,
 )
 
 if TYPE_CHECKING:
@@ -173,7 +173,7 @@ def ensure_thumbnail_bytes(
             clear_thumb_failure(original_key)
             return data
 
-        with thumb_decode_semaphore():
+        with work_progress_image_processing_semaphore():
             if backend.exists(thumb_key):
                 data = backend.read_bytes(thumb_key)
                 if len(data) > max_source_bytes:
@@ -219,6 +219,8 @@ def ensure_thumbnail_bytes(
                     safe_storage_key_hash(original_key),
                 )
                 raise
+            finally:
+                del source
 
             try:
                 backend.write_bytes_replace(thumb_key, jpeg)

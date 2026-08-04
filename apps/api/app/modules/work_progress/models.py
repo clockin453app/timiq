@@ -95,6 +95,11 @@ class WorkProgressAttachment(Base):
     image_width: Mapped[int] = mapped_column(Integer, nullable=True)
     image_height: Mapped[int] = mapped_column(Integer, nullable=True)
     processing_version: Mapped[str] = mapped_column(String(32), nullable=True)
+    client_upload_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -23,6 +23,18 @@ def get_attachment_by_id(db_session: Session, attachment_id: uuid.UUID) -> WorkP
     return db_session.scalar(stmt)
 
 
+def get_attachment_by_client_upload_id(
+    db_session: Session,
+    entry_id: uuid.UUID,
+    client_upload_id: uuid.UUID,
+) -> WorkProgressAttachment | None:
+    stmt = select(WorkProgressAttachment).where(
+        WorkProgressAttachment.entry_id == entry_id,
+        WorkProgressAttachment.client_upload_id == client_upload_id,
+    )
+    return db_session.scalar(stmt)
+
+
 def count_attachments_for_entry(db_session: Session, entry_id: uuid.UUID) -> int:
     stmt = select(func.count()).select_from(WorkProgressAttachment).where(
         WorkProgressAttachment.entry_id == entry_id

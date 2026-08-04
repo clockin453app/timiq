@@ -18,14 +18,17 @@ from app.modules.employee_profiles.repository import get_employee_profile_by_use
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
 from app.modules.work_progress.image_processing import (
     PROCESSING_VERSION,
+    ImageProcessingError,
     detect_magic_file_kind,
     process_site_progress_photo,
 )
+from app.modules.work_progress.thumbnail_sync import work_progress_image_processing_semaphore
 from app.modules.work_progress.repository import (
     count_attachments_for_entry,
     count_attachments_for_entry_ids,
     count_review_attachments,
     delete_attachments_many,
+    get_attachment_by_client_upload_id,
     get_attachment_by_id,
     get_company_by_id,
     get_entry_by_id,
@@ -138,7 +141,17 @@ def _validate_and_process_new_progress_photo(file_bytes: bytes) -> tuple[bytes, 
         raise WorkProgressValidationError("Unsupported image type. Only JPEG, PNG, or WebP are allowed.")
 
     try:
-        processed, w, h = process_site_progress_photo(file_bytes)
+        with work_progress_image_processing_semaphore():
+            processed, w, h = process_site_progress_photo(file_bytes)
+    except ImageProcessingError as exc:
+        code = str(exc)
+        if code == "too_many_pixels" or code == "dimension_too_large":
+            raise WorkProgressValidationError(
+                "Image dimensions are too large to process safely. Try a lower-resolution photo."
+            ) from exc
+        if code == "decompression_bomb":
+            raise WorkProgressValidationError("Image file is too large to decode safely.") from exc
+        raise WorkProgressValidationError("Failed to process image. Try a different photo.") from exc
     except Exception:
         raise WorkProgressValidationError("Failed to process image. Try a different photo.") from None
 
@@ -146,6 +159,14 @@ def _validate_and_process_new_progress_photo(file_bytes: bytes) -> tuple[bytes, 
         raise WorkProgressValidationError("Failed to produce a reasonably sized image. Try a different photo.")
 
     return processed, len(file_bytes), w, h
+
+
+def _delete_storage_path(relative_path: str) -> None:
+    backend = get_storage_backend()
+    try:
+        backend.delete_file(relative_path)
+    except OSError:
+        pass
 
 
 def _remove_storage_file(att: WorkProgressAttachment) -> None:
@@ -402,20 +423,31 @@ def upload_my_entry_file(
     original_filename: str,
     content_type: str,
     file_bytes: bytes,
+    client_upload_id: uuid.UUID | None = None,
 ) -> WorkProgressEntryDetailResponse:
     del content_type  # Declared MIME is not trusted for allowlisting; magic bytes are authoritative.
     row = get_entry_by_id(db_session, entry_id)
     if row is None or row.user_id != user.id:
         raise WorkProgressNotFoundError()
+
+    if client_upload_id is not None:
+        existing = get_attachment_by_client_upload_id(db_session, row.id, client_upload_id)
+        if existing is not None:
+            atts = list_attachments_for_entry(db_session, row.id)
+            return _build_detail(db_session, row, atts)
+
     if count_attachments_for_entry(db_session, row.id) >= MAX_ATTACHMENTS_PER_ENTRY:
         raise WorkProgressValidationError(
             f"Maximum number of photos reached for this entry ({MAX_ATTACHMENTS_PER_ENTRY})."
         )
 
     processed, original_len, img_w, img_h = _validate_and_process_new_progress_photo(file_bytes)
+    del file_bytes
+
     rel_path = f"work-progress-files/{user.id}/{row.id}/file-{uuid.uuid4().hex}.jpg"
     _write_binary_file(rel_path, processed)
     stored_len = len(processed)
+    del processed
 
     att = WorkProgressAttachment(
         entry_id=row.id,
@@ -429,9 +461,14 @@ def upload_my_entry_file(
         image_width=img_w,
         image_height=img_h,
         processing_version=PROCESSING_VERSION,
+        client_upload_id=client_upload_id,
         created_at=_utc_now(),
     )
-    save_attachment(db_session, att)
+    try:
+        save_attachment(db_session, att)
+    except Exception:
+        _delete_storage_path(rel_path)
+        raise
 
     create_internal_audit_event(
         db_session=db_session,
@@ -443,8 +480,7 @@ def upload_my_entry_file(
         details={"entry_id": str(row.id), "filename": att.original_filename},
     )
 
-    # Best-effort thumbnail is scheduled by the async route via run_in_threadpool after this returns.
-    # Callers may also invoke generate_work_progress_thumbnail_best_effort directly in tests.
+    # Thumbnails are generated lazily on first gallery/thumbnail request under the shared semaphore.
 
     atts = list_attachments_for_entry(db_session, row.id)
     return _build_detail(db_session, row, atts)

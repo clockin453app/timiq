@@ -1,4 +1,4 @@
-"""Per-process thumbnail concurrency: one decode + fixed striped locks + bounded failure cache."""
+"""Shared Work Progress image-processing concurrency and thumbnail cache helpers."""
 
 from __future__ import annotations
 
@@ -8,13 +8,18 @@ import time
 from collections import OrderedDict
 
 THUMB_STRIPE_COUNT = 64
-_THUMB_DECODE_SEM = threading.BoundedSemaphore(1)
+# One Pillow decode/resize/encode at a time per API process (uploads + thumbnails).
+_WORK_PROGRESS_IMAGE_PROCESSING_SEM = threading.BoundedSemaphore(1)
 _THUMB_STRIPES = tuple(threading.Lock() for _ in range(THUMB_STRIPE_COUNT))
 
 _FAILURE_CACHE_MAX = 256
 _FAILURE_TTL_SEC = 60.0
 _failure_lock = threading.Lock()
 _failure_cache: OrderedDict[str, float] = OrderedDict()
+
+
+def work_progress_image_processing_semaphore() -> threading.BoundedSemaphore:
+    return _WORK_PROGRESS_IMAGE_PROCESSING_SEM
 
 
 def thumb_stripe_index(storage_key: str) -> int:
@@ -27,7 +32,8 @@ def thumb_stripe_lock(storage_key: str) -> threading.Lock:
 
 
 def thumb_decode_semaphore() -> threading.BoundedSemaphore:
-    return _THUMB_DECODE_SEM
+    """Alias for the shared work-progress image-processing semaphore."""
+    return _WORK_PROGRESS_IMAGE_PROCESSING_SEM
 
 
 def mark_thumb_failure(storage_key: str) -> None:
