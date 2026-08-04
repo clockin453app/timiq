@@ -1,0 +1,73 @@
+name: verify-work-progress-512mb
+
+on:
+  push:
+    branches:
+      - verify/work-progress-512mb
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci_user
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: timiq_disposable_ci_wp512
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    defaults:
+      run:
+        working-directory: apps/api
+    env:
+      APP_ENV: test
+      TIMIQ_ENV: test
+      SESSION_SECRET: verify-work-progress-512mb
+      DATABASE_URL: postgresql+psycopg://ci_user:ci_password@localhost:5432/timiq_disposable_ci_wp512
+      CORS_ALLOWED_ORIGINS: http://localhost:3000
+      WEB_ORIGIN: http://localhost:3000
+      SESSION_COOKIE_SAMESITE: lax
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Print disposable database identity
+        run: |
+          python - <<'PY'
+          from urllib.parse import urlparse
+          import os
+          url = os.environ["DATABASE_URL"]
+          parsed = urlparse(url)
+          dbname = parsed.path.lstrip("/")
+          if not dbname.startswith("timiq_disposable_"):
+              raise SystemExit(f"Refusing to run non-disposable DB: {dbname}")
+          print(f"database_host={parsed.hostname}")
+          print(f"database_port={parsed.port}")
+          print(f"database_name={dbname}")
+          PY
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Migrate disposable database to head
+        run: python -m alembic upgrade head
+
+      - name: Linux RSS measurement
+        run: python scripts/measure_work_progress_rss.py
+
+      - name: Focused work progress safety tests
+        run: |
+          python -m pytest tests/test_work_progress_production_safety.py tests/test_work_progress_safe_upload.py tests/test_work_progress_migration_client_upload.py tests/test_work_progress_simplification.py tests/test_work_progress_gallery_safety.py -q
+
