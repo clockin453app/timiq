@@ -354,7 +354,11 @@ function TreeRow({
     const branchWidth = Math.max(10, childPad - guideLeft - 6);
 
     return (
-      <div className="relative" data-sidebar-level={isSectionFolder ? "section" : "folder"}>
+      <div
+        className="relative"
+        data-sidebar-level={isSectionFolder ? "section" : "folder"}
+        data-sidebar-node={node.id}
+      >
         <button
           aria-controls={panelId}
           aria-expanded={open}
@@ -366,11 +370,12 @@ function TreeRow({
             isSectionFolder
               ? cn(
                   !isDrawer && "min-h-[var(--layout-sidebar-row-height)]",
+                  /* Solid navy always — never hover:bg-white/10 (sticky :hover on touch
+                     replaces the navy fill with translucent white on the white drawer). */
                   "bg-[var(--color-sidebar-bg)] font-semibold text-white",
+                  "hover:bg-[var(--color-sidebar-active)]",
                   "focus-visible:ring-white/80",
-                  containsActive || open
-                    ? "bg-[var(--color-sidebar-active)]"
-                    : "hover:bg-white/10",
+                  (containsActive || open) && "bg-[var(--color-sidebar-active)]",
                 )
               : cn(
                   !isDrawer && "min-h-[var(--layout-sidebar-folder-row-height)]",
@@ -381,6 +386,7 @@ function TreeRow({
                     : "bg-[var(--color-sidebar-folder-bg)] hover:bg-[var(--color-sidebar-folder-hover)]",
                 ),
           )}
+          data-sidebar-section-header={isSectionFolder ? node.id : undefined}
           style={{
             paddingLeft: folderPad,
             fontSize: isSectionFolder ? SIDEBAR_SECTION_FONT_PX : SIDEBAR_FOLDER_FONT_PX,
@@ -423,6 +429,7 @@ function TreeRow({
                 ? "bg-[var(--color-sidebar-child-bg)]"
                 : "bg-[var(--color-sidebar-page-bg)]",
             )}
+            data-sidebar-section-panel={isSectionFolder ? node.id : undefined}
             data-sidebar-tree-panel=""
             id={panelId}
           >
@@ -477,10 +484,11 @@ function TreeRow({
           ? cn(
               !isDrawer && "min-h-[var(--layout-sidebar-row-height)]",
               "border-l-[3px] border-transparent bg-[var(--color-sidebar-bg)] font-semibold text-white",
+              "hover:bg-[var(--color-sidebar-active)]",
               "focus-visible:ring-white/80",
               activeLeaf
                 ? "border-l-white bg-[var(--color-sidebar-active)]"
-                : "hover:bg-white/10",
+                : null,
             )
           : cn(
               !isDrawer && "min-h-[var(--layout-sidebar-page-row-height)]",
