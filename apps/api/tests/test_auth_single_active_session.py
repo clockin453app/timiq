@@ -60,6 +60,15 @@ def _cookie_value(response: Response) -> str:
 def test_login_creates_active_session_id_and_cookie_sid() -> None:
     user = _user(active_session_id=None)
     response = Response()
+    http_request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/api/auth/login",
+            "headers": [],
+            "client": ("127.0.0.1", 54321),
+        }
+    )
 
     def set_session(_db, target: User, session_id: uuid.UUID) -> User:
         target.active_session_id = session_id
@@ -68,8 +77,15 @@ def test_login_creates_active_session_id_and_cookie_sid() -> None:
     with (
         patch("app.modules.auth.router.authenticate_user", return_value=user),
         patch("app.modules.auth.router.set_user_active_session_id", side_effect=set_session) as set_active,
+        patch("app.modules.auth.router.check_login_allowed", return_value=(True, None)),
+        patch("app.modules.auth.router.record_login_success"),
     ):
-        result = login(LoginRequest(email=user.email, password="Password123"), response, MagicMock())
+        result = login(
+            LoginRequest(email=user.email, password="Password123"),
+            http_request,
+            response,
+            MagicMock(),
+        )
 
     claims = read_session_token(_cookie_value(response))
     assert result.user.id == user.id
