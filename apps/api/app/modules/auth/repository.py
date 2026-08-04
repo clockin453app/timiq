@@ -27,23 +27,33 @@ def _profile_field_value(value: object) -> str | None:
 def get_employee_profile_fields_for_user(
     db_session: Session,
     user_id: uuid.UUID,
-) -> tuple[str | None, str | None, str | None]:
-    """Current user's employee profile names for auth session responses."""
+) -> tuple[str | None, str | None, str | None, bool]:
+    """Current user's employee profile names + face-reference flag for auth session responses."""
     ep = EmployeeProfile
     row = db_session.execute(
-        select(ep.first_name, ep.last_name, ep.job_title).where(ep.user_id == user_id),
+        select(
+            ep.first_name,
+            ep.last_name,
+            ep.job_title,
+            ep.face_reference_storage_path,
+            ep.face_check_consent_at,
+        ).where(ep.user_id == user_id),
     ).first()
     if row is None:
-        return None, None, None
+        return None, None, None, False
 
     try:
+        storage_path = (row[3] or "").strip() if row[3] is not None else ""
+        consent_at = row[4]
+        face_configured = consent_at is not None and bool(storage_path)
         return (
             _profile_field_value(row[0]),
             _profile_field_value(row[1]),
             _profile_field_value(row[2]),
+            face_configured,
         )
     except (IndexError, TypeError):
-        return None, None, None
+        return None, None, None, False
 
 
 def list_users(db_session: Session) -> list[User]:

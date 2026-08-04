@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_authenticated_user
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import get_employee_profile_fields_for_user
@@ -47,16 +48,26 @@ def test_build_user_response_includes_profile_names() -> None:
 def test_get_employee_profile_fields_for_user_returns_none_when_missing() -> None:
     db = MagicMock()
     db.execute.return_value.first.return_value = None
-    assert get_employee_profile_fields_for_user(db, uuid.uuid4()) == (None, None, None)
+    assert get_employee_profile_fields_for_user(db, uuid.uuid4()) == (None, None, None, False)
 
 
 def test_get_employee_profile_fields_for_user_strips_whitespace() -> None:
     db = MagicMock()
-    db.execute.return_value.first.return_value = ("  Petre ", " Stelian ", " Site manager ")
-    first, last, job = get_employee_profile_fields_for_user(db, uuid.uuid4())
+    db.execute.return_value.first.return_value = ("  Petre ", " Stelian ", " Site manager ", None, None)
+    first, last, job, face = get_employee_profile_fields_for_user(db, uuid.uuid4())
     assert first == "Petre"
     assert last == "Stelian"
     assert job == "Site manager"
+    assert face is False
+
+
+def test_get_employee_profile_fields_for_user_face_requires_consent_and_path() -> None:
+    db = MagicMock()
+    now = datetime.now(timezone.utc)
+    db.execute.return_value.first.return_value = ("A", "B", "C", "face-references/x.jpg", now)
+    assert get_employee_profile_fields_for_user(db, uuid.uuid4())[3] is True
+    db.execute.return_value.first.return_value = ("A", "B", "C", "face-references/x.jpg", None)
+    assert get_employee_profile_fields_for_user(db, uuid.uuid4())[3] is False
 
 
 @pytest.fixture
@@ -67,12 +78,13 @@ def client() -> TestClient:
 def test_me_includes_profile_names_from_employee_profile(client: TestClient) -> None:
     user = _user()
     app.dependency_overrides[get_authenticated_user] = lambda: user
+    app.dependency_overrides[get_db_session] = lambda: MagicMock()
 
     try:
         with pytest.MonkeyPatch.context() as patcher:
             patcher.setattr(
                 "app.modules.auth.router.get_employee_profile_fields_for_user",
-                lambda _db, _uid: ("Petre", "Stelian", "Payroll lead"),
+                lambda _db, _uid: ("Petre", "Stelian", "Payroll lead", True),
             )
             response = client.get("/api/auth/me")
     finally:
@@ -83,4 +95,24 @@ def test_me_includes_profile_names_from_employee_profile(client: TestClient) -> 
     assert body["profile_first_name"] == "Petre"
     assert body["profile_last_name"] == "Stelian"
     assert body["profile_job_title"] == "Payroll lead"
+    assert body["face_reference_configured"] is True
     assert body["email"] == user.email
+
+
+def test_me_face_reference_flag_defaults_false_without_enrolment(client: TestClient) -> None:
+    user = _user()
+    app.dependency_overrides[get_authenticated_user] = lambda: user
+    app.dependency_overrides[get_db_session] = lambda: MagicMock()
+
+    try:
+        with pytest.MonkeyPatch.context() as patcher:
+            patcher.setattr(
+                "app.modules.auth.router.get_employee_profile_fields_for_user",
+                lambda _db, _uid: ("Ada", "Lovelace", None, False),
+            )
+            response = client.get("/api/auth/me")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["face_reference_configured"] is False

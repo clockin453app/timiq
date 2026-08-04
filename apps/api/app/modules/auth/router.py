@@ -77,12 +77,16 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 def _build_authenticated_user_response(db_session: Session, user: User) -> UserResponse:
-    first_name, last_name, job_title = get_employee_profile_fields_for_user(db_session, user.id)
+    first_name, last_name, job_title, face_configured = get_employee_profile_fields_for_user(
+        db_session,
+        user.id,
+    )
     return build_user_response(
         user,
         profile_first_name=first_name,
         profile_last_name=last_name,
         profile_job_title=job_title,
+        face_reference_configured=face_configured,
     )
 
 
