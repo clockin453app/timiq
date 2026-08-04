@@ -159,14 +159,15 @@ const NAV_ICON_TONE_BY_LABEL_KEY: Record<string, IconTone> = {
   "nav.my_leave": "green",
 };
 
+/* Sidebar hierarchy: navy rows = white icons; light rows = black icons only. */
 const ICON_COLOR_BY_TONE: Record<IconTone, Record<IconSurface, string>> = {
-  blue: { navy: "text-[#9cc8ff]", light: "text-[#326da8]", neutral: "text-current" },
-  cyan: { navy: "text-[#86d9e5]", light: "text-[#287f91]", neutral: "text-current" },
-  green: { navy: "text-[#8fd2b7]", light: "text-[#2f7b66]", neutral: "text-current" },
-  yellow: { navy: "text-[#e4c56a]", light: "text-[#806619]", neutral: "text-current" },
-  gold: { navy: "text-[#e5b955]", light: "text-[#806018]", neutral: "text-current" },
-  orange: { navy: "text-[#eca866]", light: "text-[#96551f]", neutral: "text-current" },
-  grey: { navy: "text-[#c3cfdd]", light: "text-[#53657a]", neutral: "text-current" },
+  blue: { navy: "text-white", light: "text-black", neutral: "text-current" },
+  cyan: { navy: "text-white", light: "text-black", neutral: "text-current" },
+  green: { navy: "text-white", light: "text-black", neutral: "text-current" },
+  yellow: { navy: "text-white", light: "text-black", neutral: "text-current" },
+  gold: { navy: "text-white", light: "text-black", neutral: "text-current" },
+  orange: { navy: "text-white", light: "text-black", neutral: "text-current" },
+  grey: { navy: "text-white", light: "text-black", neutral: "text-current" },
 };
 
 const NAV_GROUP_ICON_BY_ID: Record<string, LucideIcon> = {

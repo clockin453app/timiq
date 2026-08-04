@@ -29,9 +29,27 @@ const LEGACY_STORAGE_PREFIXES = [
   "timiq-nav-groups:v2:",
 ] as const;
 
-const GUIDE_COLOR = "rgba(80, 110, 150, 0.35)";
+const GUIDE_COLOR = "var(--color-sidebar-guide)";
 
 export type NavTreeVariant = "sidebar" | "drawer";
+
+const SIDEBAR_SECTION_PAD_X = 12;
+const SIDEBAR_FOLDER_PAD_X = 24;
+const SIDEBAR_PAGE_PAD_X = 46;
+
+function folderPadX(depth: number): number {
+  if (depth <= 0) {
+    return SIDEBAR_SECTION_PAD_X;
+  }
+  return SIDEBAR_FOLDER_PAD_X + Math.max(0, depth - 1) * 12;
+}
+
+function pagePadX(depth: number): number {
+  if (depth <= 0) {
+    return SIDEBAR_SECTION_PAD_X;
+  }
+  return SIDEBAR_PAGE_PAD_X + Math.max(0, depth - 1) * 8;
+}
 
 type NavTreeProps = {
   nodes: NavigationNode[];
@@ -204,10 +222,12 @@ function TreeRow({
   const open = isFolder ? isExpanded(node.id) : false;
   const activeLeaf = Boolean(node.href && navItemMatchesActive(node.href, activeHref));
   const containsActive = nodeContainsActiveRoute(node, activeHref);
-  const indentPx = depth * (variant === "drawer" ? 12 : 15);
   const badgeHref = node.badgeId ?? node.href;
   const badgeCount = badgeHref ? (badgeByHref[badgeHref] ?? 0) : 0;
-  const nestedOnChildBg = variant === "sidebar" && depth > 0;
+  const isSectionFolder = depth === 0;
+  const folderPad = folderPadX(depth);
+  const pagePad = pagePadX(depth);
+  const guideLeft = folderPad + 5;
 
   const onFolderKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "ArrowRight") {
@@ -233,32 +253,26 @@ function TreeRow({
           aria-controls={panelId}
           aria-expanded={open}
           className={cn(
-            "relative flex w-full min-w-0 items-center gap-1.5 text-left",
+            "relative flex w-full min-w-0 items-center gap-2 pr-3 text-left font-medium",
             uiClasses.transitionColors,
-            variant === "sidebar"
+            "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset",
+            isSectionFolder
               ? cn(
-                  "px-2 font-medium",
-                  "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80",
-                  depth === 0
-                    ? "min-h-[var(--layout-sidebar-row-height)] text-[12.5px] text-white"
-                    : "min-h-[var(--layout-sidebar-folder-row-height)] text-[12px] text-[var(--color-sidebar-child-fg)]",
-                  nestedOnChildBg
-                    ? containsActive || open
-                      ? "bg-[#d5e1ee]"
-                      : "hover:bg-[var(--color-sidebar-child-hover)]"
-                    : containsActive || open
-                      ? "bg-[var(--color-sidebar-active)]"
-                      : "hover:bg-white/10",
+                  "min-h-[var(--layout-sidebar-row-height)] bg-[var(--color-sidebar-bg)] text-[12.5px] text-white",
+                  "focus-visible:ring-white/80",
+                  containsActive || open
+                    ? "bg-[var(--color-sidebar-active)]"
+                    : "hover:bg-white/10",
                 )
               : cn(
-                  "min-h-10 rounded-none border-l-[3px] px-2 text-[length:var(--text-nav-row)] font-medium text-[var(--color-text)]",
-                  uiClasses.focusRing,
-                  open || containsActive
-                    ? "border-l-[var(--color-brand)]/40 bg-[var(--color-brand-tint)]/50"
-                    : "border-l-transparent hover:bg-[var(--color-header)]",
+                  "min-h-[var(--layout-sidebar-folder-row-height)] bg-[var(--color-sidebar-child-bg)] text-[12px] text-black",
+                  "focus-visible:ring-black/35",
+                  containsActive || open
+                    ? "bg-[var(--color-sidebar-page-active-bg)]"
+                    : "hover:bg-[var(--color-sidebar-child-hover)]",
                 ),
           )}
-          style={{ paddingLeft: 8 + indentPx }}
+          style={{ paddingLeft: folderPad }}
           title={label}
           type="button"
           onClick={() => toggleExpanded(node.id)}
@@ -267,50 +281,50 @@ function TreeRow({
           <ChevronRight
             aria-hidden
             className={cn(
-              "shrink-0 transition-transform duration-150 motion-reduce:transition-none",
-              variant === "drawer" ? "h-3 w-3" : "h-2.5 w-2.5",
-              nestedOnChildBg
-                ? "text-[var(--color-sidebar-child-fg)]/70"
-                : variant === "sidebar"
-                  ? "text-white/70"
-                  : "text-[var(--color-text-soft)]",
+              "h-2.5 w-2.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+              isSectionFolder ? "text-white" : "text-black",
               open ? "rotate-90" : "",
             )}
             strokeWidth={1.8}
           />
           {showIcons ? (
             <NavGroupIcon
-              className={cn("shrink-0", variant === "drawer" ? "h-3.5 w-3.5" : "h-3.5 w-3.5")}
+              className="h-3.5 w-3.5 shrink-0"
               groupId={node.iconKey}
-              surface={variant === "sidebar" ? (nestedOnChildBg ? "light" : "navy") : "light"}
+              surface={isSectionFolder ? "navy" : "light"}
             />
           ) : null}
           <span className="min-w-0 flex-1 truncate">{label}</span>
         </button>
         {open ? (
           <div
-            className={cn("relative", variant === "sidebar" ? "bg-[var(--color-sidebar-child-bg)]" : undefined)}
+            className={cn(
+              "relative",
+              isSectionFolder
+                ? "bg-[var(--color-sidebar-child-bg)]"
+                : "bg-[var(--color-sidebar-page-bg)]",
+            )}
             id={panelId}
           >
-            {showGuides && variant === "sidebar" ? (
+            {showGuides ? (
               <span
                 aria-hidden
                 className="pointer-events-none absolute bottom-1 top-0 w-px"
                 style={{
-                  left: 8 + indentPx + 5,
+                  left: guideLeft,
                   backgroundColor: GUIDE_COLOR,
                 }}
               />
             ) : null}
             {node.children?.map((child) => (
               <div className="relative" key={child.id}>
-                {showGuides && variant === "sidebar" ? (
+                {showGuides ? (
                   <span
                     aria-hidden
                     className="pointer-events-none absolute top-1/2 h-px"
                     style={{
-                      left: 8 + indentPx + 5,
-                      width: 10,
+                      left: guideLeft,
+                      width: Math.max(8, pagePadX(depth + 1) - guideLeft - 4),
                       backgroundColor: GUIDE_COLOR,
                     }}
                   />
@@ -339,51 +353,42 @@ function TreeRow({
     return null;
   }
 
-  const isRootLeaf = depth === 0 && variant === "sidebar";
+  const isRootLeaf = depth === 0;
   const leafIconKey = node.iconKey.startsWith("nav.") ? node.iconKey : node.labelKey;
 
   return (
     <Link
       aria-current={activeLeaf ? "page" : undefined}
       className={cn(
-        "relative flex w-full min-w-0 items-center gap-1.5",
+        "relative flex w-full min-w-0 items-center gap-2 pr-3",
         uiClasses.transitionColors,
-        variant === "sidebar"
+        "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset",
+        isRootLeaf
           ? cn(
-              isRootLeaf
-                ? "min-h-[var(--layout-sidebar-row-height)] border-l-[3px] border-transparent px-3 text-[12.5px] font-medium text-white"
-                : "min-h-[var(--layout-sidebar-page-row-height)] border-l-[3px] border-transparent text-[12px] font-medium text-[var(--color-sidebar-child-fg)]",
-              "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-white/80",
+              "min-h-[var(--layout-sidebar-row-height)] border-l-[3px] border-transparent bg-[var(--color-sidebar-bg)] text-[12.5px] font-medium text-white",
+              "focus-visible:ring-white/80",
               activeLeaf
-                ? isRootLeaf
-                  ? "border-l-white/80 bg-[var(--color-sidebar-active)]"
-                  : "border-l-[var(--color-sidebar-active)] bg-[#d5e1ee] font-semibold"
-                : isRootLeaf
-                  ? "hover:bg-white/10"
-                  : "hover:bg-[var(--color-sidebar-child-hover)]",
+                ? "border-l-white bg-[var(--color-sidebar-active)] font-semibold"
+                : "hover:bg-white/10",
             )
           : cn(
-              uiClasses.navDrawerLinkBase,
-              "min-h-10 gap-2 rounded-none",
-              activeLeaf ? uiClasses.navDrawerLinkActive : uiClasses.navDrawerLinkIdle,
+              "min-h-[var(--layout-sidebar-page-row-height)] border-l-[3px] border-transparent bg-[var(--color-sidebar-page-bg)] text-[12px] font-medium text-black",
+              "focus-visible:ring-black/35",
+              activeLeaf
+                ? "border-l-black bg-[var(--color-sidebar-page-active-bg)] font-semibold text-black"
+                : "hover:bg-[var(--color-sidebar-child-hover)] hover:text-black",
             ),
       )}
       href={node.href}
-      style={
-        variant === "sidebar" && !isRootLeaf
-          ? { paddingLeft: 8 + indentPx + 14, paddingRight: 12 }
-          : variant === "drawer"
-            ? { paddingLeft: 8 + indentPx }
-            : undefined
-      }
+      style={{ paddingLeft: pagePad }}
       title={label}
       onClick={onNavigate}
     >
       {showIcons ? (
         <NavItemIcon
-          className={cn("shrink-0", variant === "drawer" ? "h-3.5 w-3.5" : "h-3.5 w-3.5")}
+          className="h-3.5 w-3.5 shrink-0"
           labelKey={leafIconKey}
-          surface={variant === "sidebar" ? (isRootLeaf ? "navy" : "light") : "neutral"}
+          surface={isRootLeaf ? "navy" : "light"}
         />
       ) : null}
       <span className="min-w-0 flex-1 truncate">
@@ -425,7 +430,12 @@ export function NavTree({
     <div className={variant === "sidebar" ? "space-y-0" : "space-y-0"}>
       {nodes.map((node) => (
         <div
-          className={variant === "sidebar" ? "border-b border-white/10 last:border-b-0" : undefined}
+          className={
+            variant === "sidebar"
+              ? "border-b border-white/10 last:border-b-0"
+              : "border-b border-neutral-200 last:border-b-0"
+          }
+          data-nav-variant={variant}
           key={node.id}
         >
           <TreeRow
