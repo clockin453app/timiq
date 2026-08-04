@@ -35,9 +35,20 @@ from app.modules.smart_forms.router import router as smart_forms_router
 from app.modules.toolbox_talks.router import router as toolbox_talks_router
 from app.modules.rams.router import router as rams_router
 
+
+def _api_docs_enabled() -> bool:
+    """OpenAPI UI and schema are available outside production only."""
+    return settings.app_env.strip().lower() not in {"production", "prod"}
+
+
+_docs_enabled = _api_docs_enabled()
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
+    docs_url="/docs" if _docs_enabled else None,
+    redoc_url="/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 allowed_origins = [
