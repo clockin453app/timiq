@@ -177,7 +177,7 @@ def list_colleagues(
 
     rows = list_users_visible_to_user_with_profile_names(db_session, actor)
     out: list[ColleagueResponse] = []
-    for user, fn, ln, _jt in rows:
+    for user, fn, ln, _jt, *_rest in rows:
         if user.id == actor.id:
             continue
         if not user.is_active:

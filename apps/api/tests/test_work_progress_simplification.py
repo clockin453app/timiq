@@ -149,10 +149,10 @@ def test_employee_options_include_inactive_and_exclude_management_roles() -> Non
     admin = _user(SystemRole.ADMIN, company_id, email="admin@example.com")
     other = _user(SystemRole.EMPLOYEE, uuid.uuid4(), email="other@example.com")
     rows = [
-        (active, "Jane", "Doe", None),
-        (inactive, "John", "Smith", None),
-        (admin, "Manager", "User", None),
-        (other, "Other", "Company", None),
+        (active, "Jane", "Doe", None, None, False),
+        (inactive, "John", "Smith", None, None, False),
+        (admin, "Manager", "User", None, None, False),
+        (other, "Other", "Company", None, None, False),
     ]
     with (
         patch("app.core.company_scope.resolve_operational_company_id", return_value=company_id),

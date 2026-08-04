@@ -72,28 +72,45 @@ def list_users_visible_to_user_with_profile_names(
     actor: User,
     *,
     company_id: uuid.UUID | None = None,
-) -> list[tuple[User, str | None, str | None, str | None]]:
+) -> list[tuple[User, str | None, str | None, str | None, str | None, bool]]:
     ep = EmployeeProfile
+    columns = (
+        User,
+        ep.first_name,
+        ep.last_name,
+        ep.job_title,
+        ep.payroll_type,
+        ep.face_reference_storage_path,
+    )
     if actor.system_role == SystemRole.ADMINISTRATOR:
-        statement = (
-            select(User, ep.first_name, ep.last_name, ep.job_title)
-            .outerjoin(ep, ep.user_id == User.id)
-            .order_by(User.created_at.desc())
-        )
+        statement = select(*columns).outerjoin(ep, ep.user_id == User.id).order_by(User.created_at.desc())
         if company_id is not None:
             statement = statement.where(User.company_id == company_id)
     elif actor.company_id is None:
         return []
     else:
         statement = (
-            select(User, ep.first_name, ep.last_name, ep.job_title)
+            select(*columns)
             .outerjoin(ep, ep.user_id == User.id)
             .where(User.company_id == actor.company_id)
             .order_by(User.created_at.desc())
         )
 
     rows = db_session.execute(statement).all()
-    return [(row[0], row[1], row[2], row[3]) for row in rows]
+    result: list[tuple[User, str | None, str | None, str | None, str | None, bool]] = []
+    for row in rows:
+        storage_path = (row[5] or "").strip() if row[5] is not None else ""
+        result.append(
+            (
+                row[0],
+                row[1],
+                row[2],
+                row[3],
+                (row[4] or "").strip() or None,
+                bool(storage_path),
+            ),
+        )
+    return result
 
 
 def delete_user_record(db_session: Session, user: User) -> None:

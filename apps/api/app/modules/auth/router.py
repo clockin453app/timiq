@@ -319,9 +319,11 @@ def get_users(
                 "profile_first_name": first_name,
                 "profile_last_name": last_name,
                 "profile_job_title": (job_title or "").strip() or None,
+                "payroll_type": payroll_type,
+                "face_reference_configured": face_reference_configured,
             },
         )
-        for user, first_name, last_name, job_title in rows
+        for user, first_name, last_name, job_title, payroll_type, face_reference_configured in rows
     ]
 
 

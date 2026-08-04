@@ -1347,7 +1347,7 @@ def list_employee_filter_options(
         company_id=filter_company_id,
     )
     items: list[dict[str, object]] = []
-    for user, first_name, last_name, _job in rows:
+    for user, first_name, last_name, _job, *_rest in rows:
         if user.system_role != SystemRole.EMPLOYEE:
             continue
         if actor.system_role == SystemRole.ADMINISTRATOR and user.company_id != scoped:

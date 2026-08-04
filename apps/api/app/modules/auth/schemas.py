@@ -118,6 +118,8 @@ class UserResponse(BaseModel):
     profile_first_name: Optional[str] = None
     profile_last_name: Optional[str] = None
     profile_job_title: Optional[str] = None
+    payroll_type: Optional[str] = None
+    face_reference_configured: bool = False
     email_verified_at: Optional[datetime] = None
     invited_at: Optional[datetime] = None
     invite_accepted_at: Optional[datetime] = None
@@ -130,6 +132,8 @@ def build_user_response(
     profile_first_name: str | None = None,
     profile_last_name: str | None = None,
     profile_job_title: str | None = None,
+    payroll_type: str | None = None,
+    face_reference_configured: bool = False,
 ) -> UserResponse:
     base = UserResponse.model_validate(user)
     return base.model_copy(
@@ -138,6 +142,8 @@ def build_user_response(
             "profile_first_name": profile_first_name,
             "profile_last_name": profile_last_name,
             "profile_job_title": profile_job_title,
+            "payroll_type": payroll_type,
+            "face_reference_configured": face_reference_configured,
         },
     )
 

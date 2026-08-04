@@ -86,6 +86,7 @@ def delete_my_face_reference(
 @router.get("/users/{user_id}/face-reference-image")
 def read_user_face_reference_image(
     user_id: uuid.UUID,
+    variant: str = Query(default="full"),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(get_current_user),
 ) -> Response:
@@ -94,6 +95,7 @@ def read_user_face_reference_image(
             db_session,
             current_user,
             user_id,
+            variant=variant,
         )
     except FaceReferencePermissionError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc

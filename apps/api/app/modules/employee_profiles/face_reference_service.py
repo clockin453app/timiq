@@ -74,10 +74,26 @@ def _image_content_type_from_path(path: str) -> str:
     return "image/jpeg"
 
 
+def _make_face_reference_thumbnail(data: bytes, *, max_edge: int = 96) -> tuple[bytes, str]:
+    """Return a compact JPEG thumbnail for list UIs (does not change stored original)."""
+    from io import BytesIO
+
+    from PIL import Image
+
+    with Image.open(BytesIO(data)) as image:
+        image = image.convert("RGB")
+        image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+        buf = BytesIO()
+        image.save(buf, format="JPEG", quality=82, optimize=True)
+        return buf.getvalue(), "image/jpeg"
+
+
 def resolve_face_reference_image(
     db_session: Session,
     actor: User,
     subject_user_id: uuid.UUID,
+    *,
+    variant: str = "full",
 ) -> tuple[bytes, str, str, User]:
     subject = get_user_by_id(db_session, subject_user_id)
     if subject is None:
@@ -101,6 +117,19 @@ def resolve_face_reference_image(
     except FileNotFoundError:
         raise FaceReferenceNotFoundError("Face reference photo not found.") from None
 
+    media_type = _image_content_type_from_path(key)
+    filename = f"face-reference-{subject.id}"
+    image_kind = "reference"
+    cleaned_variant = (variant or "full").strip().lower()
+    if cleaned_variant in {"thumb", "thumbnail"}:
+        try:
+            data, media_type = _make_face_reference_thumbnail(data)
+            filename = f"face-reference-{subject.id}-thumb.jpg"
+            image_kind = "reference_thumb"
+        except Exception:
+            # Fall back to original bytes if thumbnail generation fails.
+            image_kind = "reference"
+
     create_internal_audit_event(
         db_session,
         actor,
@@ -111,10 +140,10 @@ def resolve_face_reference_image(
         details={
             "actor_user_id": str(actor.id),
             "subject_user_id": str(subject.id),
-            "image_kind": "reference",
+            "image_kind": image_kind,
         },
     )
-    return data, _image_content_type_from_path(key), f"face-reference-{subject.id}", subject
+    return data, media_type, filename, subject
 
 
 def enroll_face_reference(
