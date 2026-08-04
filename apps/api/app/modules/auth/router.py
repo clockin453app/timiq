@@ -1,3 +1,4 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -11,6 +12,11 @@ from app.modules.auth.dependencies import (
     require_authenticated_employee,
     require_authenticated_employee_self_service,
     require_administrator,
+)
+from app.modules.auth.login_rate_limit import (
+    check_login_allowed,
+    record_login_failure,
+    record_login_success,
 )
 from app.modules.auth.models import SystemRole, User
 from app.modules.auth.repository import (
@@ -74,6 +80,19 @@ from app.modules.auth.account_access_service import (
 )
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
+
+
+def _client_ip_for_rate_limit(request: Request) -> str:
+    """Use the peer address from the ASGI connection only.
+
+    Do not trust client-supplied X-Forwarded-For without a verified proxy
+    configuration. On Render the platform terminates TLS; when uvicorn sees the
+    platform proxy as the peer, that address is used (shared per edge).
+    """
+    if request.client and request.client.host:
+        return request.client.host
+    return "unknown"
 
 
 def _build_authenticated_user_response(db_session: Session, user: User) -> UserResponse:
@@ -112,16 +131,50 @@ def _session_cookie_params() -> dict[str, bool | str]:
 @router.post("/login", response_model=LoginResponse)
 def login(
     request: LoginRequest,
+    http_request: Request,
     response: Response,
     db_session: Session = Depends(get_db_session),
 ) -> LoginResponse:
+    client_ip = _client_ip_for_rate_limit(http_request)
+    allowed, retry_after = check_login_allowed(email=request.email, client_ip=client_ip)
+    if not allowed:
+        logger.warning(
+            "login_rate_limited email_hash=%s client_ip=%s",
+            hash(request.email.strip().lower()) & 0xFFFFFFFF,
+            client_ip,
+        )
+        headers = {"Retry-After": str(retry_after or 60)}
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts. Try again later.",
+            headers=headers,
+        )
+
     user = authenticate_user(db_session, request.email, request.password)
 
     if user is None:
+        still_allowed, failure_retry = record_login_failure(
+            email=request.email,
+            client_ip=client_ip,
+        )
+        logger.info(
+            "login_failed email_hash=%s client_ip=%s",
+            hash(request.email.strip().lower()) & 0xFFFFFFFF,
+            client_ip,
+        )
+        if not still_allowed:
+            headers = {"Retry-After": str(failure_retry or 60)}
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Too many login attempts. Try again later.",
+                headers=headers,
+            )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
         )
+
+    record_login_success(email=request.email, client_ip=client_ip)
 
     session_id = uuid.uuid4()
     user = set_user_active_session_id(db_session, user, session_id)
