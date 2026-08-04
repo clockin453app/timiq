@@ -17,9 +17,23 @@ def normalize_email_value(value: str) -> str:
     return normalized
 
 
+FORBIDDEN_PLACEHOLDER_PASSWORDS = frozenset(
+    {
+        "admin12345",
+        "employee12345",
+        "password123",
+    }
+)
+
+
 def validate_password_strength_value(value: str) -> str:
     if value.strip() != value:
         raise ValueError("Password cannot start or end with spaces.")
+
+    if value.lower() in FORBIDDEN_PLACEHOLDER_PASSWORDS:
+        raise ValueError(
+            "Choose a stronger password. Known placeholder passwords are not allowed."
+        )
 
     has_letter = any(character.isalpha() for character in value)
     has_number = any(character.isdigit() for character in value)
