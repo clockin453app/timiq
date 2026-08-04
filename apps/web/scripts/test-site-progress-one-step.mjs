@@ -148,7 +148,7 @@ check("duplicate files are skipped and selected files retained after validation 
   assert.equal(second.next.length, 2);
 
   const bad = form.validateQueuedPhotos([fakeFile("x.gif", "image/gif")], {
-    maxAttachments: 20,
+    maxAttachments: 30,
     maxOriginalBytes: 25 * 1024 * 1024,
   });
   assert.match(bad.photos, /Unsupported type/);
@@ -159,17 +159,43 @@ check("duplicate files are skipped and selected files retained after validation 
 check("file count and size limits are enforced", () => {
   const files = Array.from({ length: 3 }, (_, i) => fakeFile(`f${i}.jpg`, "image/jpeg", 10, i));
   const countErr = form.validateQueuedPhotos(files, {
-    maxAttachments: 20,
+    maxAttachments: 30,
     maxOriginalBytes: 100,
-    existingAttachmentCount: 18,
+    existingAttachmentCount: 28,
   });
   assert.match(countErr.photos, /only 2 slot/);
 
   const sizeErr = form.validateQueuedPhotos([fakeFile("big.jpg", "image/jpeg", 200)], {
-    maxAttachments: 20,
+    maxAttachments: 30,
     maxOriginalBytes: 100,
   });
   assert.match(sizeErr.photos, /exceeds/);
+});
+
+check("thirty pictures can be queued; thirty-one are rejected before upload", () => {
+  const thirty = Array.from({ length: 30 }, (_, i) => fakeFile(`ok${i}.jpg`, "image/jpeg", 10, i));
+  const ok = form.validateQueuedPhotos(thirty, {
+    maxAttachments: 30,
+    maxOriginalBytes: 100,
+  });
+  assert.equal(ok.photos, undefined);
+
+  const thirtyOne = Array.from({ length: 31 }, (_, i) => fakeFile(`x${i}.jpg`, "image/jpeg", 10, i));
+  const over = form.validateQueuedPhotos(thirtyOne, {
+    maxAttachments: 30,
+    maxOriginalBytes: 100,
+  });
+  assert.match(over.photos, /only 30 slot|max 30/);
+
+  const existingPlusNew = form.validateQueuedPhotos(
+    Array.from({ length: 2 }, (_, i) => fakeFile(`n${i}.jpg`, "image/jpeg", 10, i)),
+    {
+      maxAttachments: 30,
+      maxOriginalBytes: 100,
+      existingAttachmentCount: 29,
+    },
+  );
+  assert.match(existingPlusNew.photos, /only 1 slot|max 30/);
 });
 
 check("successful upload clears queue; partial retains only failed files", () => {
@@ -188,7 +214,8 @@ check("successful upload clears queue; partial retains only failed files", () =>
 check("submit phase labels cover create / upload / partial", () => {
   assert.equal(form.submitPhaseLabel("creating"), "Creating update…");
   assert.equal(form.submitPhaseLabel("uploading", { uploaded: 1, total: 5 }), "Uploading 1 of 5");
-  assert.match(form.submitPhaseLabel("partial", { uploaded: 18, total: 20, failed: 2 }), /18 of 20 uploaded — 2 need retry/);
+  assert.match(form.submitPhaseLabel("partial", { uploaded: 28, total: 30, failed: 2 }), /28 of 30 uploaded — 2 need retry/);
+  assert.equal(form.submitPhaseLabel("uploading", { uploaded: 30, total: 30 }), "Uploading 30 of 30");
   assert.equal(form.submitPhaseLabel("success", { uploaded: 3, total: 3 }), "3 of 3 uploaded");
 });
 
@@ -196,6 +223,15 @@ const clientSrc = fs.readFileSync(
   path.join(webRoot, "src/app/(app)/site-progress/site-progress-client.tsx"),
   "utf8",
 );
+
+check("offline queue validation uses the same thirty-picture maximum", () => {
+  assert.match(clientSrc, /WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS/);
+  assert.match(clientSrc, /validateQueuedPhotos/);
+  assert.match(clientSrc, /enqueueWorkProgressSubmit/);
+  assert.match(clientSrc, /enqueueWorkProgressPhotos/);
+  const apiSrc = fs.readFileSync(path.join(webRoot, "src/features/work-progress/api.ts"), "utf8");
+  assert.match(apiSrc, /WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS = 30/);
+});
 
 check("client exposes photos before create and one Submit update action", () => {
   assert.match(clientSrc, /Submit update/);

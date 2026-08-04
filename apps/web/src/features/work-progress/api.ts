@@ -2,7 +2,7 @@ import { API_URL } from "../../config/api";
 import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 
 /** Defaults if `/me/options` omits limits (older server). Must match backend intent. */
-export const WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS = 20;
+export const WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS = 30;
 export const WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES = 25 * 1024 * 1024;
 
 export const WORK_PROGRESS_STATUS_OPTIONS = [
