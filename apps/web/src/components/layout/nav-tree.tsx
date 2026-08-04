@@ -108,7 +108,7 @@ type NavTreeProps = {
   scrollActiveIntoView?: boolean;
 };
 
-const DEFAULT_ACCOUNT_SECTION_IDS = ["emp-account", "limited-profile"];
+const DEFAULT_ACCOUNT_SECTION_IDS = ["emp-account", "limited-profile", "mgmt-workspace"];
 
 function expansionStorageKey(scope: string, role: SystemRole): string {
   return `${TREE_EXPANSION_PREFIX}${scope}:${role}`;
@@ -314,9 +314,11 @@ function IconBox({ children }: { children: ReactNode }) {
 function ChevronBox({
   open,
   tone,
+  size = 16,
 }: {
   open: boolean;
   tone: "white" | "black";
+  size?: number;
 }) {
   const Icon = open ? ChevronDown : ChevronRight;
   return (
@@ -327,8 +329,9 @@ function ChevronBox({
     >
       <Icon
         aria-hidden
-        className={cn("h-4 w-4 shrink-0", tone === "white" ? "text-white" : "text-black")}
+        className={cn("shrink-0", tone === "white" ? "text-white" : "text-black")}
         strokeWidth={2.4}
+        style={{ width: size, height: size }}
       />
     </span>
   );
@@ -434,7 +437,8 @@ function TreeRow({
           aria-controls={panelId}
           aria-expanded={open}
           className={cn(
-            "relative flex w-full min-w-0 items-center gap-2.5 pr-3 text-left",
+            "relative flex w-full min-w-0 items-center gap-2.5 text-left",
+            isDrawer ? "pr-3.5" : "pr-3",
             uiClasses.transitionColors,
             "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset",
             touchMin,
@@ -467,7 +471,7 @@ function TreeRow({
           onClick={() => toggleExpanded(node.id)}
           onKeyDown={onFolderKeyDown}
         >
-          <ChevronBox open={open} tone={isSectionFolder ? "white" : "black"} />
+          {!isDrawer ? <ChevronBox open={open} tone={isSectionFolder ? "white" : "black"} /> : null}
           {showIcons ? (
             isSectionFolder ? (
               <IconBox>
@@ -490,7 +494,17 @@ function TreeRow({
               </IconBox>
             )
           ) : null}
-          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <span
+            className={cn(
+              "min-w-0 flex-1",
+              isDrawer ? "leading-snug [overflow-wrap:anywhere]" : "truncate",
+            )}
+          >
+            {label}
+          </span>
+          {isDrawer ? (
+            <ChevronBox open={open} size={17} tone={isSectionFolder ? "white" : "black"} />
+          ) : null}
         </button>
         {open ? (
           <div
@@ -559,7 +573,8 @@ function TreeRow({
     <Link
       aria-current={activeLeaf ? "page" : undefined}
       className={cn(
-        "relative flex w-full min-w-0 items-center gap-2.5 pr-3",
+        "relative flex w-full min-w-0 items-center gap-2.5",
+        isDrawer ? "pr-3.5" : "pr-3",
         uiClasses.transitionColors,
         "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset",
         touchMin,
@@ -604,7 +619,14 @@ function TreeRow({
           />
         </IconBox>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">{label}</span>
+      <span
+        className={cn(
+          "min-w-0 flex-1",
+          isDrawer ? "leading-snug [overflow-wrap:anywhere]" : "truncate",
+        )}
+      >
+        {label}
+      </span>
       {badgeCount > 0 ? (
         <span className="ml-1 shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-tight text-white">
           {badgeCount > 99 ? "99+" : badgeCount}

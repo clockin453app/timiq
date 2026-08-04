@@ -312,11 +312,12 @@ check("mobile keeps account leaves in the tree", !/omitMobileDrawerFooterLeaves/
 check("mobile escape", /event\.key === "Escape"/.test(mobile));
 check("mobile focus trap", /event\.key !== "Tab"/.test(mobile));
 check("mobile limited messages gate", /\{!limited \? \(\s*<>\s*<MessagesHeaderButton/.test(mobile));
-check("mobile Account hosts Logout extras", /accountSectionExtras=\{hasAccountSection \? logoutRow : undefined\}/.test(mobile));
+check("mobile Account hosts Logout extras", /accountSectionExtras=\{accountSectionId \? logoutRow : undefined\}/.test(mobile));
 check("mobile drawer logout uses confirmation dialog", /LogoutConfirmDialog/.test(mobile));
 check("mobile drawer has no fixed account footer", !/timiq-mobile-drawer-footer/.test(mobile));
-check("mobile drawer width fits narrow viewports", /w-\[min\(100vw-1\.25rem,360px\)\]/.test(mobile));
+check("mobile drawer width fits narrow viewports", /w-\[min\(300px,calc\(100vw-32px\)\)\]/.test(mobile));
 check("mobile employee accordion", /section-accordion/.test(mobile));
+check("mobile drawer chevrons sit on the far right", /isDrawer \? \(\s*<ChevronBox/.test(navTree));
 check("logout a11y", /createPortal\(/.test(logoutDialog) && /returnFocusRef/.test(logoutButton));
 check("logout menuRow appearance exists", /appearance === "menuRow"/.test(logoutButton));
 check("public shell isolated", /uiClasses\.shellTopBar/.test(publicShell) && !/DesktopSidebar|color-utilitybar/.test(publicShell));

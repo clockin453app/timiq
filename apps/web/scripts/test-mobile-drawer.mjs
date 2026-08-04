@@ -214,12 +214,13 @@ check("brand lockup appears in top bar and drawer header", (header.match(/<TimIQ
 check("scroll container holds navigation including Account", /timiq-mobile-drawer-scroll[\s\S]*min-h-0 flex-1 overflow-x-hidden overflow-y-auto/.test(header));
 check("there is no sticky account footer block", !/timiq-mobile-drawer-footer/.test(header));
 check("Profile lives in the Account navigation tree", /getMobileDrawerNavigationTree/.test(header) && !/omitMobileDrawerFooterLeaves/.test(header));
-check("Logout is rendered inside Account extras", /accountSectionExtras=\{hasAccountSection \? logoutRow : undefined\}/.test(header));
+check("Logout is rendered inside Account extras", /accountSectionExtras=\{accountSectionId \? logoutRow : undefined\}/.test(header));
 check("Logout confirm remains mounted outside the drawer", /LogoutConfirmDialog/.test(header));
 check("employee drawer uses section accordion", /section-accordion/.test(header));
 check("mobile expansion is not persisted", /persist: false/.test(header) && /autoExpandActive: false/.test(header));
 check("account leaves remain in the NavTree", !/omitMobileDrawerFooterLeaves/.test(header));
-check("drawer width is min(100vw-1.25rem, 360px)", /w-\[min\(100vw-1\.25rem,360px\)\]/.test(header));
+check("drawer width is min(300px, calc(100vw - 32px))", /w-\[min\(300px,calc\(100vw-32px\)\)\]/.test(header));
+check("drawer is left-aligned", /fixed bottom-0 left-0 top-0/.test(header));
 check("drawer avoids forced 300px min-width overflow", !/min-w-\[min\(100%,300px\)\]/.test(header));
 check("close control has a large touch target", /h-11 w-11/.test(header));
 check("backdrop has test id", /data-testid="timiq-mobile-drawer-backdrop"/.test(header));

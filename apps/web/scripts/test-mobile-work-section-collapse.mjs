@@ -99,7 +99,7 @@ check(
 
 check(
   "10. Mobile drawer remains usable at 320 px",
-  /w-\[min\(100vw-1\.25rem,360px\)\]/.test(mobile) &&
+  /w-\[min\(300px,calc\(100vw-32px\)\)\]/.test(mobile) &&
     /overflow-x-hidden/.test(mobile) &&
     /variant="drawer"/.test(mobile),
 );

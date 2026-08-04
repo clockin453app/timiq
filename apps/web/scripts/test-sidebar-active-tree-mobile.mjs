@@ -68,7 +68,7 @@ check("15. mobile drawer does not auto-scroll active on open", /scrollActiveInto
 check("16. unrelated folders remain toggleable on desktop", /toggleExpanded\(node\.id\)/.test(navTree) && /mode === "section-accordion"/.test(navTree));
 
 /* Mobile drawer */
-check("17. drawer width avoids 320 overflow", /w-\[min\(100vw-1\.25rem,360px\)\]/.test(mobile) && /overflow-x-hidden/.test(mobile));
+check("17. drawer width avoids 320 overflow", /w-\[min\(300px,calc\(100vw-32px\)\)\]/.test(mobile) && /overflow-x-hidden/.test(mobile));
 check("18. header remains fixed while nav scrolls", /timiq-mobile-drawer-header[\s\S]*shrink-0/.test(mobile) && /timiq-mobile-drawer-scroll[\s\S]*flex-1/.test(mobile));
 check("19. close button remains reachable", /h-11 w-11/.test(mobile) && /closeButtonRef/.test(mobile));
 check("20. backdrop closes drawer", /data-testid="timiq-mobile-drawer-backdrop"/.test(mobile));

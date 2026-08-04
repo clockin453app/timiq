@@ -28,7 +28,11 @@ const MOBILE_HEADER_LOGO_HEIGHT = 46;
 /** Compact lockup for the fixed drawer chrome. */
 const MOBILE_DRAWER_LOGO_HEIGHT = 36;
 
-const MOBILE_ACCOUNT_SECTION_IDS = ["emp-account", "limited-profile"];
+/** Employee Account / limited Account / admin My workspace. */
+const MOBILE_ACCOUNT_SECTION_IDS = ["emp-account", "limited-profile", "mgmt-workspace"];
+
+/** max 300px, always leave ~32px backdrop: min(300px, calc(100vw - 32px)) */
+const MOBILE_DRAWER_WIDTH_CLASS = "w-[min(300px,calc(100vw-32px))] max-w-[min(300px,calc(100vw-32px))]";
 
 export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const user = useCurrentUser();
@@ -45,7 +49,6 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const limited = userHasLimitedAccess(user);
-  const isEmployeeDrawer = user.system_role === "employee" || limited;
 
   const closeMenu = useCallback((restoreFocus = true) => {
     dispatch({ type: "close" });
@@ -58,8 +61,8 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     [user.system_role, limited],
   );
 
-  const hasAccountSection = useMemo(
-    () => drawerTree.some((node) => MOBILE_ACCOUNT_SECTION_IDS.includes(node.id)),
+  const accountSectionId = useMemo(
+    () => drawerTree.find((node) => MOBILE_ACCOUNT_SECTION_IDS.includes(node.id))?.id ?? null,
     [drawerTree],
   );
 
@@ -160,9 +163,9 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
       ref={logoutOpenerRef}
       aria-label={logoutLabel}
       className={cn(
-        "relative flex w-full min-w-0 items-center gap-2.5 border-l-[3px] border-transparent pr-3 text-left",
+        "relative flex w-full min-w-0 items-center gap-2.5 border-l-[3px] border-transparent pr-3.5 text-left",
         "min-h-11 bg-white font-normal text-[var(--color-danger-700)]",
-        "hover:bg-[var(--color-danger-50)]",
+        "hover:bg-[var(--color-sidebar-page-hover)]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/35",
         "disabled:pointer-events-none disabled:opacity-60",
       )}
@@ -175,7 +178,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
       <span className="inline-flex h-5 w-5 shrink-0 items-center justify-center">
         <LogOut aria-hidden className="h-[17px] w-[17px] shrink-0 text-[var(--color-danger-700)]" />
       </span>
-      <span className="min-w-0 flex-1 truncate">{logoutLabel}</span>
+      <span className="min-w-0 flex-1 leading-snug [overflow-wrap:anywhere]">{logoutLabel}</span>
     </button>
   );
 
@@ -241,7 +244,10 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             onClick={() => closeMenu()}
           />
           <div
-            className="fixed bottom-0 right-0 top-0 z-[60] flex w-[min(100vw-1.25rem,360px)] max-w-[min(100vw-1.25rem,360px)] flex-col overflow-hidden overscroll-contain border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
+            className={cn(
+              "fixed bottom-0 left-0 top-0 z-[60] flex flex-col overflow-hidden overscroll-contain border-r border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]",
+              MOBILE_DRAWER_WIDTH_CLASS,
+            )}
             id="timiq-mobile-menu"
             role="dialog"
             aria-modal="true"
@@ -281,14 +287,10 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             >
               {drawerTree.length > 0 ? (
                 <NavTree
-                  accountSectionExtras={hasAccountSection ? logoutRow : undefined}
-                  accountSectionIds={MOBILE_ACCOUNT_SECTION_IDS}
+                  accountSectionExtras={accountSectionId ? logoutRow : undefined}
+                  accountSectionIds={accountSectionId ? [accountSectionId] : MOBILE_ACCOUNT_SECTION_IDS}
                   activeHref={activeHref}
-                  expansion={
-                    isEmployeeDrawer
-                      ? { mode: "section-accordion", persist: false, autoExpandActive: false }
-                      : { mode: "multi", persist: false, autoExpandActive: false }
-                  }
+                  expansion={{ mode: "section-accordion", persist: false, autoExpandActive: false }}
                   nodes={drawerTree}
                   role={user.system_role}
                   scrollActiveIntoView={false}
@@ -301,11 +303,6 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                   {t("nav.drawer_hint_primary", "All primary pages are on the bottom bar.")}
                 </p>
               )}
-              {!hasAccountSection ? (
-                <div className="mt-1 border-t border-[var(--color-border)] pt-1" data-sidebar-account-extras="">
-                  {logoutRow}
-                </div>
-              ) : null}
             </nav>
           </div>
         </>

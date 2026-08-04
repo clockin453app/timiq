@@ -114,7 +114,7 @@ check(
 );
 check(
   "18. No horizontal overflow occurs at 320 px",
-  /w-\[min\(100vw-1\.25rem,360px\)\]/.test(mobile) &&
+  /w-\[min\(300px,calc\(100vw-32px\)\)\]/.test(mobile) &&
     !/min-w-\[min\(100%,300px\)\]/.test(mobile) &&
     /overflow-x-hidden/.test(mobile),
 );

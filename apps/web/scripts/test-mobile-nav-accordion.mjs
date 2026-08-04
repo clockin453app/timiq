@@ -81,7 +81,7 @@ check("8. Account contains Settings", accountHrefs.includes("/settings"));
 check("9. Account contains Help centre", accountHrefs.includes("/help"));
 check(
   "10. Account contains Logout",
-  /accountSectionExtras=\{hasAccountSection \? logoutRow : undefined\}/.test(mobile) &&
+  /accountSectionExtras=\{accountSectionId \? logoutRow : undefined\}/.test(mobile) &&
     /data-testid="timiq-mobile-drawer-logout"/.test(mobile),
 );
 
@@ -127,7 +127,7 @@ check(
 
 check(
   "21. Mobile has no horizontal overflow at 320 px",
-  /w-\[min\(100vw-1\.25rem,360px\)\]/.test(mobile) && /overflow-x-hidden/.test(mobile),
+  /w-\[min\(300px,calc\(100vw-32px\)\)\]/.test(mobile) && /overflow-x-hidden/.test(mobile),
 );
 
 check(
@@ -146,7 +146,7 @@ check(
     collectFolderIds(employeeTree).includes("emp-work"),
 );
 
-check("employee accordion wired only for employee drawer", /isEmployeeDrawer[\s\S]*section-accordion/.test(mobile));
+check("employee accordion wired for mobile drawer", /section-accordion/.test(mobile));
 check("mobile does not auto-scroll active into view", /scrollActiveIntoView=\{false\}/.test(mobile));
 check("no mobile expansion localStorage writes when persist false", /if \(persist\) \{\s*writeExpandedIds/.test(navTree));
 
