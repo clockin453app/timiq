@@ -3395,7 +3395,8 @@ def export_print_html(
     user_id: uuid.UUID | None = None,
 ) -> str:
     company = get_company_by_id(db_session, company_id)
-    name = html.escape(company.name if company else "Company")
+    company_name = company.name if company else "Company"
+    name = html.escape(company_name)
     report = get_payroll_report(
         db_session,
         actor,
@@ -3405,60 +3406,294 @@ def export_print_html(
         auto_recalculate_if_safe=False,
     )
     week_end = _week_end_display(week_start)
-    week_end_esc = html.escape(str(week_end))
-    wk_esc = html.escape(str(week_start))
-    tz_esc = html.escape(report.period.timezone_name if report.period.total_items else "")
+    period_label = f"Payroll week: {week_start.isoformat()} to {week_end.isoformat()}"
+    tz_name = report.period.timezone_name if report.period.total_items else ""
+    filter_label = _employee_filter_label(
+        db_session,
+        company_id=company_id,
+        employee_user_id=user_id,
+    )
+    gen = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    alert_lines = _payroll_report_alert_lines(report.alerts)
+    notes_text = " · ".join(alert_lines) if alert_lines else "No additional notes for this report."
 
     by_id: dict[uuid.UUID, PayrollItem] = {}
     if report.items:
         pid = report.items[0].period_id
         by_id = {i.id: i for i in list_items_for_period(db_session, pid)}
 
+    total_seconds = 0
+    gross_sum = Decimal(0)
+    cis_sum = Decimal(0)
+    net_sum = Decimal(0)
+    has_gross = has_cis = has_net = False
+    employee_ids: set[uuid.UUID] = set()
     rows_html: list[str] = []
+    period_cell = html.escape(f"{week_start.isoformat()} to {week_end.isoformat()}")
     for row in report.items:
         item = by_id.get(row.id)
         eff_cis = _effective_tax_amount_for_item(item) if item is not None else None
         eff_net = _effective_net_amount_for_item(item) if item is not None else None
+        emp_label = (row.employee_name or row.employee_email or "").strip() or "—"
+        jt = (row.employee_job_title or "").strip() or "—"
+        total_seconds += row.rounded_total_seconds
+        if row.user_id is not None:
+            employee_ids.add(row.user_id)
+        if row.gross_amount is not None:
+            gross_sum += Decimal(str(row.gross_amount))
+            has_gross = True
+        if eff_cis is not None:
+            cis_sum += eff_cis
+            has_cis = True
+        if eff_net is not None:
+            net_sum += eff_net
+            has_net = True
         cis_txt = "—" if eff_cis is None else f"{eff_cis:.2f}"
         net_txt = "—" if eff_net is None else f"{eff_net:.2f}"
-        mode_lbl = html.escape(_payment_mode_label(row.payment_mode))
-        jt = html.escape((row.employee_job_title or "").strip())
-        jt_cell = jt if jt else "—"
+        status = html.escape(row.status)
         rows_html.append(
             "<tr>"
-            f"<td>{html.escape(row.employee_email or '')}</td>"
-            f"<td>{html.escape(row.employee_name or '')}</td>"
-            f"<td>{jt_cell}</td>"
-            f"<td>{mode_lbl}</td>"
-            f"<td>{row.regular_seconds / 3600:.2f}</td>"
-            f"<td>{row.overtime_seconds / 3600:.2f}</td>"
-            f"<td>{row.rounded_total_seconds / 3600:.2f}</td>"
-            f"<td>{row.gross_amount if row.gross_amount is not None else '—'}</td>"
-            f"<td>{cis_txt}</td>"
-            f"<td>{html.escape(str(row.other_deductions_amount))}</td>"
-            f"<td>{net_txt}</td>"
-            f"<td>{html.escape(row.status)}</td>"
+            f'<td class="text">{html.escape(emp_label)}</td>'
+            f'<td class="text">{html.escape(jt)}</td>'
+            f'<td class="text">{period_cell}</td>'
+            f'<td class="num">{row.rounded_total_seconds / 3600:.2f}</td>'
+            f'<td class="num">{row.overtime_seconds / 3600:.2f}</td>'
+            f'<td class="num">{row.gross_amount if row.gross_amount is not None else "—"}</td>'
+            f'<td class="num">{cis_txt}</td>'
+            f'<td class="num">{net_txt}</td>'
+            f'<td class="num">{html.escape(str(row.other_deductions_amount))}</td>'
+            f'<td class="text"><span class="status">{status}</span></td>'
             "</tr>",
         )
+    if not rows_html:
+        rows_html.append(
+            '<tr><td colspan="10" class="empty">No payable payroll rows for this selected range.</td></tr>',
+        )
+
+    def _money_html(value: Decimal | None, present: bool) -> str:
+        if not present or value is None:
+            return "—"
+        return f"£{value:,.2f}"
+
+    hours_txt = f"{total_seconds / 3600:,.2f}"
+    emp_count_txt = str(len(employee_ids)) if employee_ids else "—"
+    notes_esc = html.escape(notes_text)
     html_out = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/><title>Payroll {name} — {wk_esc}</title>
+<html lang="en"><head><meta charset="utf-8"/>
+<title>TimIQ Payroll Report — {name}</title>
 <style>
-body {{ font-family: system-ui, sans-serif; margin: 24px; color: #111; }}
-h1 {{ font-size: 1.25rem; }}
-table {{ border-collapse: collapse; width: 100%; margin-top: 16px; }}
-th, td {{ border: 1px solid #ccc; padding: 8px; text-align: left; font-size: 0.875rem; }}
-th {{ background: #f4f4f5; }}
-@media print {{ body {{ margin: 12px; }} }}
-</style></head><body>
-<h1>Payroll — {name}</h1>
-<p>Week {wk_esc} to {week_end_esc} · {tz_esc}</p>
-<table><thead><tr>
-<th>Email</th><th>Name</th><th>Job title</th><th>Payment mode</th>
-<th>Regular h</th><th>OT h</th><th>Rounded h</th><th>Gross</th><th>CIS tax</th><th>Other ded.</th><th>Net</th><th>Status</th>
-</tr></thead><tbody>
-{"".join(rows_html)}
-</tbody></table>
-<p style="margin-top:16px;font-size:12px;color:#666;">Use browser Print → Save as PDF for a PDF copy.</p>
+  :root {{ color-scheme: light; }}
+  * {{ box-sizing: border-box; }}
+  body {{
+    margin: 0;
+    padding: 16px;
+    color: #111827;
+    background: #e5e7eb;
+    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+  }}
+  .report-canvas {{
+    margin: 0 auto;
+    max-width: 1100px;
+    background: #fff;
+    border: 1px solid #d1d5db;
+    padding: 14px 16px 18px;
+  }}
+  .report-header {{
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: stretch;
+  }}
+  .details, .summary, .notes {{
+    background: #f9fafb;
+    border: 1px solid #d1d5db;
+    padding: 8px 10px;
+  }}
+  .summary {{ background: #f3f4f6; }}
+  .details h1 {{
+    margin: 0 0 6px;
+    font-size: 20px;
+    line-height: 1.2;
+    font-weight: 700;
+  }}
+  .kv {{
+    display: grid;
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    gap: 2px 8px;
+    font-size: 12px;
+    line-height: 1.35;
+  }}
+  .kv dt {{
+    margin: 0;
+    color: #4b5563;
+    font-weight: 600;
+  }}
+  .kv dd {{
+    margin: 0;
+    color: #111827;
+    font-weight: 600;
+  }}
+  .summary h2 {{
+    margin: 0 0 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #4b5563;
+  }}
+  .metrics {{
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 3px 10px;
+    font-size: 12px;
+  }}
+  .metrics .label {{ color: #4b5563; font-weight: 600; }}
+  .metrics .value {{
+    text-align: right;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }}
+  .notes {{
+    margin-top: 10px;
+    padding: 6px 10px;
+  }}
+  .notes h2 {{
+    margin: 0 0 2px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #4b5563;
+  }}
+  .notes p {{
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.35;
+    color: #374151;
+  }}
+  .rows-heading {{
+    margin: 10px 0 4px;
+    font-size: 14px;
+    font-weight: 600;
+  }}
+  table.payroll {{
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }}
+  table.payroll thead {{ display: table-header-group; }}
+  table.payroll th, table.payroll td {{
+    border-bottom: 1px solid #d1d5db;
+    padding: 6px 5px;
+    font-size: 11px;
+    vertical-align: middle;
+    word-wrap: break-word;
+  }}
+  table.payroll th {{
+    background: #111827;
+    color: #fff;
+    font-weight: 700;
+    text-align: left;
+  }}
+  table.payroll tbody tr:nth-child(even) td {{ background: #f9fafb; }}
+  table.payroll td.text {{ text-align: left; color: #111827; }}
+  table.payroll td.num {{
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #111827;
+  }}
+  table.payroll td.empty {{ text-align: center; color: #4b5563; }}
+  .status {{
+    display: inline-block;
+    border: 1px solid #9ca3af;
+    background: #f3f4f6;
+    color: #111827;
+    font-weight: 600;
+    font-size: 10px;
+    line-height: 1.2;
+    padding: 2px 5px;
+  }}
+  .hint {{
+    margin-top: 12px;
+    font-size: 11px;
+    color: #6b7280;
+  }}
+  @media (max-width: 800px) {{
+    .report-header {{ grid-template-columns: 1fr; }}
+    .report-canvas {{ overflow-x: auto; }}
+  }}
+  @page {{
+    size: A4 landscape;
+    margin: 11mm;
+  }}
+  @media print {{
+    body {{
+      background: #fff;
+      padding: 0;
+      margin: 0;
+    }}
+    .report-canvas {{
+      max-width: none;
+      margin: 0;
+      border: 0;
+      padding: 0;
+    }}
+    .report-header {{ grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }}
+    .hint {{ display: none; }}
+    table.payroll {{ break-inside: auto; page-break-inside: auto; }}
+    table.payroll tr {{ break-inside: avoid; page-break-inside: avoid; }}
+    table.payroll thead {{ display: table-header-group; }}
+    .rows-heading {{ break-after: avoid; page-break-after: avoid; }}
+    .notes {{ break-after: avoid; page-break-after: avoid; }}
+  }}
+</style>
+</head>
+<body>
+  <main class="report-canvas">
+    <header class="report-header">
+      <section class="details" aria-labelledby="report-title">
+        <h1 id="report-title">TimIQ Payroll Report</h1>
+        <dl class="kv">
+          <dt>Company</dt><dd>{html.escape(company_name)}</dd>
+          <dt>Period</dt><dd>{html.escape(period_label)}</dd>
+          <dt>Employee filter</dt><dd>{html.escape(filter_label)}</dd>
+          <dt>Timezone</dt><dd>{html.escape(tz_name or "—")}</dd>
+          <dt>Generated</dt><dd>{html.escape(gen)}</dd>
+        </dl>
+      </section>
+      <section class="summary" aria-labelledby="summary-title">
+        <h2 id="summary-title">Summary</h2>
+        <div class="metrics">
+          <span class="label">Total hours</span><span class="value">{hours_txt}</span>
+          <span class="label">Employees</span><span class="value">{emp_count_txt}</span>
+          <span class="label">Gross pay</span><span class="value">{_money_html(gross_sum if has_gross else None, has_gross)}</span>
+          <span class="label">CIS tax</span><span class="value">{_money_html(cis_sum if has_cis else None, has_cis)}</span>
+          <span class="label">Net pay</span><span class="value">{_money_html(net_sum if has_net else None, has_net)}</span>
+        </div>
+      </section>
+    </header>
+    <section class="notes" aria-labelledby="notes-title">
+      <h2 id="notes-title">Notes</h2>
+      <p>{notes_esc}</p>
+    </section>
+    <h2 class="rows-heading">Payroll rows</h2>
+    <table class="payroll">
+      <thead>
+        <tr>
+          <th scope="col">Employee</th>
+          <th scope="col">Role</th>
+          <th scope="col">Period / date</th>
+          <th scope="col">Hours</th>
+          <th scope="col">OT h</th>
+          <th scope="col">Gross</th>
+          <th scope="col">CIS tax</th>
+          <th scope="col">Net</th>
+          <th scope="col">Other ded.</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {"".join(rows_html)}
+      </tbody>
+    </table>
+    <p class="hint">Use browser Print → Save as PDF for a PDF copy. Prefer Download PDF for the paginated TimIQ export.</p>
+  </main>
 </body></html>"""
     period_entity = str(report.period.id) if report.period.total_items else None
     create_internal_audit_event(

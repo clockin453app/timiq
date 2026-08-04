@@ -9,11 +9,12 @@ from io import BytesIO
 from typing import Any
 
 from reportlab.lib import colors
+from reportlab.lib.enums import TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4, landscape
-from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import cm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.units import cm, mm
+from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 
 def _p(text: str, style: ParagraphStyle) -> Paragraph:
@@ -30,12 +31,33 @@ def _hours(seconds: int) -> str:
     return f"{seconds / 3600:,.2f}"
 
 
-def _page_number(canvas, doc) -> None:  # type: ignore[no-untyped-def]
-    canvas.saveState()
-    canvas.setFont("Helvetica", 8)
-    canvas.setFillColor(colors.HexColor("#6b7280"))
-    canvas.drawRightString(doc.pagesize[0] - doc.rightMargin, 0.65 * cm, f"Page {doc.page}")
-    canvas.restoreState()
+class _NumberedCanvas(pdf_canvas.Canvas):
+    """Footer: TimIQ Payroll Report + Page X of Y."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self._saved_page_states: list[dict[str, Any]] = []
+
+    def showPage(self) -> None:  # noqa: N802
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self) -> None:
+        page_count = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self._draw_page_footer(page_count)
+            super().showPage()
+        super().save()
+
+    def _draw_page_footer(self, page_count: int) -> None:
+        self.saveState()
+        self.setFont("Helvetica", 8)
+        self.setFillColor(colors.HexColor("#4b5563"))
+        y = 7 * mm
+        self.drawString(11 * mm, y, "TimIQ Payroll Report")
+        self.drawRightString(self._pagesize[0] - 11 * mm, y, f"Page {self._pageNumber} of {page_count}")
+        self.restoreState()
 
 
 def build_payroll_report_pdf(
@@ -55,82 +77,184 @@ def build_payroll_report_pdf(
     employee_count: int | None = None,
 ) -> bytes:
     styles = getSampleStyleSheet()
-    title_s = ParagraphStyle("T", parent=styles["Heading1"], fontSize=18, leading=22, spaceAfter=8, textColor=colors.HexColor("#111827"))
-    h2 = ParagraphStyle("H2", parent=styles["Heading2"], fontSize=11, leading=14, spaceAfter=6, textColor=colors.HexColor("#111827"))
-    body = ParagraphStyle("B", parent=styles["Normal"], fontSize=8.8, leading=11.5, textColor=colors.HexColor("#1f2937"))
-    small = ParagraphStyle("S", parent=body, fontSize=7.5, leading=9.5)
-    right_small = ParagraphStyle("RS", parent=small, alignment=TA_RIGHT)
+    title_s = ParagraphStyle(
+        "PayrollReportTitle",
+        parent=styles["Heading1"],
+        fontSize=15,
+        leading=18,
+        spaceAfter=2,
+        textColor=colors.HexColor("#111827"),
+    )
+    label_s = ParagraphStyle(
+        "PayrollReportLabel",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=7.5,
+        leading=9.5,
+        textColor=colors.HexColor("#4b5563"),
+    )
+    value_s = ParagraphStyle(
+        "PayrollReportValue",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=8.5,
+        leading=10.5,
+        textColor=colors.HexColor("#111827"),
+    )
+    body = ParagraphStyle(
+        "PayrollReportBody",
+        parent=styles["Normal"],
+        fontSize=8.2,
+        leading=10.5,
+        textColor=colors.HexColor("#1f2937"),
+    )
+    small = ParagraphStyle("PayrollReportSmall", parent=body, fontSize=7.8, leading=9.8)
+    right_small = ParagraphStyle("PayrollReportRightSmall", parent=small, alignment=TA_RIGHT)
+    metric_label = ParagraphStyle(
+        "PayrollReportMetricLabel",
+        parent=label_s,
+        fontSize=7,
+        leading=8.5,
+        alignment=TA_LEFT,
+    )
+    metric_value = ParagraphStyle(
+        "PayrollReportMetricValue",
+        parent=value_s,
+        fontSize=9.5,
+        leading=11.5,
+        alignment=TA_RIGHT,
+    )
+    notes_s = ParagraphStyle(
+        "PayrollReportNotes",
+        parent=body,
+        fontSize=7.8,
+        leading=9.8,
+        textColor=colors.HexColor("#374151"),
+    )
+    section_s = ParagraphStyle(
+        "PayrollReportSection",
+        parent=styles["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=12,
+        spaceBefore=0,
+        spaceAfter=3,
+        textColor=colors.HexColor("#111827"),
+    )
+    status_s = ParagraphStyle(
+        "PayrollReportStatus",
+        parent=small,
+        fontName="Helvetica-Bold",
+        fontSize=7.4,
+        leading=9.2,
+        textColor=colors.HexColor("#111827"),
+        alignment=TA_LEFT,
+    )
+
     buf = BytesIO()
+    margin = 11 * mm
     doc = SimpleDocTemplate(
         buf,
         pagesize=landscape(A4),
-        rightMargin=0.9 * cm,
-        leftMargin=0.9 * cm,
-        topMargin=0.9 * cm,
-        bottomMargin=1.1 * cm,
+        rightMargin=margin,
+        leftMargin=margin,
+        topMargin=margin,
+        bottomMargin=14 * mm,
         pageCompression=0,
     )
-    story: list[Any] = []
-    story.append(_p("TimIQ Payroll Report", title_s))
+    usable_width = landscape(A4)[0] - (2 * margin)
+    details_w = usable_width * 0.62
+    summary_w = usable_width * 0.38
+
     gen = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     report_period = period_label or f"Payroll week: {week_start.isoformat()} to {week_end.isoformat()}"
-    meta_rows = [
-        [_p("Company", small), _p(company_name, body), _p("Generated", small), _p(gen, body)],
-        [_p("Period", small), _p(report_period, body), _p("Timezone", small), _p(timezone_name or "—", body)],
-        [_p("Employee filter", small), _p(employee_filter_label or "All employees", body), _p("Rows", small), _p(str(len(rows)), body)],
+
+    details_data = [
+        [_p("TimIQ Payroll Report", title_s), ""],
+        [_p("Company", label_s), _p(company_name, value_s)],
+        [_p("Period", label_s), _p(report_period, value_s)],
+        [_p("Employee filter", label_s), _p(employee_filter_label or "All employees", value_s)],
+        [_p("Timezone", label_s), _p(timezone_name or "—", value_s)],
+        [_p("Generated", label_s), _p(gen, value_s)],
     ]
-    meta = Table(meta_rows, colWidths=[2.6 * cm, 10.7 * cm, 2.6 * cm, 10.7 * cm])
-    meta.setStyle(
+    details = Table(details_data, colWidths=[details_w * 0.32, details_w * 0.64])
+    details.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f9fafb")),
-                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#d1d5db")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#e5e7eb")),
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("FONTNAME", (2, 0), (2, -1), "Helvetica-Bold"),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+                ("SPAN", (0, 0), (1, 0)),
                 ("LEFTPADDING", (0, 0), (-1, -1), 6),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
             ],
         ),
     )
-    story.append(meta)
-    story.append(Spacer(1, 0.25 * cm))
 
-    summary_rows = [
-        [_p("Total hours", small), _p(_hours(total_hours_seconds), right_small)],
-        [_p("Employees", small), _p(str(employee_count) if employee_count is not None else "—", right_small)],
-        [_p("Gross pay", small), _p(_money(total_gross), right_small)],
-        [_p("CIS tax", small), _p(_money(total_cis_tax), right_small)],
-        [_p("Net pay", small), _p(_money(total_net), right_small)],
+    summary_inner = [
+        [_p("Summary", label_s), ""],
+        [_p("Total hours", metric_label), _p(_hours(total_hours_seconds), metric_value)],
+        [
+            _p("Employees", metric_label),
+            _p(str(employee_count) if employee_count is not None else "—", metric_value),
+        ],
+        [_p("Gross pay", metric_label), _p(_money(total_gross), metric_value)],
+        [_p("CIS tax", metric_label), _p(_money(total_cis_tax), metric_value)],
+        [_p("Net pay", metric_label), _p(_money(total_net), metric_value)],
     ]
-    summary = Table(summary_rows, colWidths=[4.0 * cm, 3.0 * cm])
+    summary = Table(summary_inner, colWidths=[summary_w * 0.48, summary_w * 0.48])
     summary.setStyle(
         TableStyle(
             [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eef2ff")),
-                ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#c7d2fe")),
-                ("INNERGRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#e0e7ff")),
-                ("FONTNAME", (0, 0), (0, -1), "Helvetica-Bold"),
-                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f4f6")),
+                ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#d1d5db")),
+                ("SPAN", (0, 0), (1, 0)),
                 ("LEFTPADDING", (0, 0), (-1, -1), 6),
                 ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
             ],
         ),
     )
-    story.append(_p("Summary", h2))
-    story.append(summary)
-    story.append(Spacer(1, 0.25 * cm))
 
-    if alert_lines:
-        story.append(_p("Notes", h2))
-        for line in alert_lines:
-            story.append(_p(f"• {line}", body))
-        story.append(Spacer(1, 0.2 * cm))
+    header = Table([[details, summary]], colWidths=[details_w, summary_w])
+    header.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (0, 0), 5),
+                ("LEFTPADDING", (1, 0), (1, 0), 5),
+                ("RIGHTPADDING", (1, 0), (1, 0), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ],
+        ),
+    )
+
+    story: list[Any] = [header, Spacer(1, 0.12 * cm)]
+
+    note_text = " · ".join(alert_lines) if alert_lines else "No additional notes for this report."
+    notes = Table(
+        [[_p("Notes", label_s)], [_p(note_text, notes_s)]],
+        colWidths=[usable_width],
+    )
+    notes.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f9fafb")),
+                ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor("#d1d5db")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ],
+        ),
+    )
+    story.append(KeepTogether([notes, Spacer(1, 0.08 * cm), _p("Payroll rows", section_s)]))
 
     hdr = [
         [
@@ -146,6 +270,24 @@ def build_payroll_report_pdf(
             "Status",
         ],
     ]
+
+    def _status_cell(raw: str) -> Any:
+        label = str(raw or "—")
+        badge = Table([[_p(label, status_s)]], colWidths=[1.7 * cm])
+        badge.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f4f6")),
+                    ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#9ca3af")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ("TOPPADDING", (0, 0), (-1, -1), 1.5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
+                ],
+            ),
+        )
+        return badge
+
     data_rows = [
         [
             _p(str(r["employee"]), small),
@@ -157,37 +299,51 @@ def build_payroll_report_pdf(
             _p(str(r["cis_tax"]), right_small),
             _p(str(r["net"]), right_small),
             _p(str(r["other_deductions"]), right_small),
-            _p(str(r["status"]), small),
+            _status_cell(str(r["status"])),
         ]
         for r in rows
     ]
     if not data_rows:
         data_rows = [[_p("No payable payroll rows for this selected range.", body), "", "", "", "", "", "", "", "", ""]]
 
-    story.append(_p("Payroll rows", h2))
-    col_widths = [4.2 * cm, 2.4 * cm, 3.0 * cm, 1.55 * cm, 1.35 * cm, 2.05 * cm, 2.0 * cm, 2.0 * cm, 1.9 * cm, 2.1 * cm]
+    col_widths = [
+        4.4 * cm,
+        2.6 * cm,
+        3.2 * cm,
+        1.5 * cm,
+        1.3 * cm,
+        2.0 * cm,
+        1.9 * cm,
+        2.0 * cm,
+        1.8 * cm,
+        2.0 * cm,
+    ]
     table = Table(hdr + data_rows, colWidths=col_widths, repeatRows=1)
-    table.setStyle(
-        TableStyle(
-            [
-                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 7.4),
-                ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#d1d5db")),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ALIGN", (3, 1), (8, -1), "RIGHT"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 4),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 5),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-            ],
-        ),
-    )
+    style_cmds: list[tuple[Any, ...]] = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#111827")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 8),
+        ("FONTSIZE", (0, 1), (-1, -1), 7.6),
+        ("LINEBELOW", (0, 0), (-1, -1), 0.35, colors.HexColor("#d1d5db")),
+        ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor("#9ca3af")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (3, 1), (8, -1), "RIGHT"),
+        ("ALIGN", (0, 0), (2, -1), "LEFT"),
+        ("ALIGN", (9, 0), (9, -1), "LEFT"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+    ]
+    for i in range(1, len(data_rows) + 1):
+        if i % 2 == 0:
+            style_cmds.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#f9fafb")))
+    table.setStyle(TableStyle(style_cmds))
     if not rows:
         table.setStyle(TableStyle([("SPAN", (0, 1), (-1, 1)), ("ALIGN", (0, 1), (-1, 1), "CENTER")]))
     story.append(table)
-    doc.build(story, onFirstPage=_page_number, onLaterPages=_page_number)
+    doc.build(story, canvasmaker=_NumberedCanvas)
     return buf.getvalue()
 
 
