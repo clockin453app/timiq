@@ -19,13 +19,11 @@ const navIcons = read("components/layout/nav-item-icon.tsx");
 const sidebar = read("components/layout/desktop-sidebar.tsx");
 const mobile = read("components/layout/mobile-header.tsx");
 
-check("1. main section headers use white text", /text-\[12\.5px\] text-white/.test(navTree));
-check("2. folder rows use black text", /folder-row-height\)\] bg-\[var\(--color-sidebar-child-bg\)\] text-\[12px\] text-black/.test(navTree));
+check("1. main section headers use white text", /font-semibold text-white/.test(navTree));
+check("2. folder rows use black text", /font-medium text-black/.test(navTree));
 check(
   "3. final page links use black text on white backgrounds",
-  /page-row-height\)\] border-l-\[3px\] border-transparent bg-\[var\(--color-sidebar-page-bg\)\] text-\[12px\] font-medium text-black/.test(
-    navTree,
-  ) && /--color-sidebar-page-bg: #ffffff/.test(tokens),
+  /font-normal text-black/.test(navTree) && /--color-sidebar-page-bg: #ffffff/.test(tokens),
 );
 check(
   "4. no sidebar navigation item uses blue text",
@@ -53,8 +51,8 @@ check(
 check(
   "7. indentation increases consistently by hierarchy level",
   /SIDEBAR_SECTION_PAD_X = 12/.test(navTree) &&
-    /SIDEBAR_FOLDER_PAD_X = 24/.test(navTree) &&
-    /SIDEBAR_PAGE_PAD_X = 46/.test(navTree) &&
+    /SIDEBAR_FOLDER_PAD_X = 28/.test(navTree) &&
+    /SIDEBAR_PAGE_PAD_X = 58/.test(navTree) &&
     /folderPadX\(depth\)/.test(navTree) &&
     /pagePadX\(depth\)/.test(navTree) &&
     SIDEBAR_SECTION_PAD_X_VALUE(navTree) < SIDEBAR_FOLDER_PAD_X_VALUE(navTree) &&
@@ -62,11 +60,11 @@ check(
 );
 check(
   "8. row heights and icon alignment are consistent",
-  /--layout-sidebar-row-height: 2\.25rem/.test(tokens) &&
-    /--layout-sidebar-folder-row-height: 2\.125rem/.test(tokens) &&
-    /--layout-sidebar-page-row-height: 2rem/.test(tokens) &&
+  /--layout-sidebar-row-height: 2\.375rem/.test(tokens) &&
+    /--layout-sidebar-folder-row-height: 2\.25rem/.test(tokens) &&
+    /--layout-sidebar-page-row-height: 2\.125rem/.test(tokens) &&
     /items-center gap-2/.test(navTree) &&
-    /h-3\.5 w-3\.5 shrink-0/.test(navTree) &&
+    /inline-flex h-\[18px\] w-\[18px\]/.test(navTree) &&
     /GUIDE_COLOR = "var\(--color-sidebar-guide\)"/.test(navTree) &&
     /--color-sidebar-guide: #c8c8c8/.test(tokens),
 );

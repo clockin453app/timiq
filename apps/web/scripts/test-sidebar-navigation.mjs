@@ -245,9 +245,10 @@ check("sidebar page bg white", /--color-sidebar-page-bg: #ffffff/.test(tokens));
 check("sidebar child text black", /--color-sidebar-child-fg: #000000/.test(tokens));
 check("sidebar guide neutral", /--color-sidebar-guide: #c8c8c8/.test(tokens));
 check("sidebar row heights hierarchy",
-  /--layout-sidebar-row-height: 2\.25rem/.test(tokens) &&
-  /--layout-sidebar-folder-row-height: 2\.125rem/.test(tokens) &&
-  /--layout-sidebar-page-row-height: 2rem/.test(tokens));
+  /--layout-sidebar-row-height: 2\.375rem/.test(tokens) &&
+  /--layout-sidebar-folder-row-height: 2\.25rem/.test(tokens) &&
+  /--layout-sidebar-page-row-height: 2\.125rem/.test(tokens));
+check("sidebar folder gold", /--color-sidebar-folder-gold: #c58a00/.test(tokens));
 check("collapse preference", /localStorage\.getItem\(SIDEBAR_COLLAPSED_KEY\)/.test(sidebarState));
 check("sidebar uses NavTree", /<NavTree/.test(sidebar));
 check("collapsed section expands", /setCollapsed\(false\)/.test(sidebar) && /forceOpenIds/.test(sidebar));
@@ -295,12 +296,13 @@ check("guide lines", /GUIDE_COLOR/.test(navTree) && /var\(--color-sidebar-guide\
 check("disclosure chevron", /<ChevronRight/.test(navTree));
 check("active page black indicator", /border-l-black/.test(navTree) && /font-semibold text-black/.test(navTree));
 check("no blue active page fill", !/bg-\[#d5e1ee\]/.test(navTree));
-check("section headers white text", /isSectionFolder[\s\S]*text-white/.test(navTree) || /text-white[\s\S]*isSectionFolder/.test(navTree) || /bg-\[var\(--color-sidebar-bg\)\] text-\[12\.5px\] text-white/.test(navTree));
-check("folder rows black text", /text-\[12px\] text-black/.test(navTree));
-check("page rows white bg black text", /bg-\[var\(--color-sidebar-page-bg\)\][\s\S]*text-black/.test(navTree) || /text-black[\s\S]*sidebar-page-bg/.test(navTree));
+check("section headers white text", /font-semibold text-white/.test(navTree));
+check("folder rows black text", /font-medium text-black/.test(navTree));
+check("page rows white bg black text", /font-normal text-black/.test(navTree) && /--color-sidebar-page-bg: #ffffff/.test(tokens));
 check("no blue sidebar text tokens in tree", !/text-\[#192f60\]/.test(navTree) && !/text-\[var\(--color-sidebar-child-fg\)\]/.test(navTree));
-check("indent helpers", /SIDEBAR_SECTION_PAD_X = 12/.test(navTree) && /SIDEBAR_FOLDER_PAD_X = 24/.test(navTree) && /SIDEBAR_PAGE_PAD_X = 46/.test(navTree));
+check("indent helpers", /SIDEBAR_SECTION_PAD_X = 12/.test(navTree) && /SIDEBAR_FOLDER_PAD_X = 28/.test(navTree) && /SIDEBAR_PAGE_PAD_X = 58/.test(navTree));
 check("icon gap 8px", /items-center gap-2/.test(navTree));
+check("gold folder open closed", /open \? FolderOpen : Folder/.test(navTree) && /FOLDER_GOLD/.test(navTree));
 check("folder icons present", /"mgmt-people-employees": Folder/.test(navIcons));
 check("sidebar icons white or black only", /navy: "text-white", light: "text-black"/.test(navIcons));
 check("mobile uses NavTree", /getMobileDrawerNavigationTree/.test(mobile) && /<NavTree/.test(mobile));

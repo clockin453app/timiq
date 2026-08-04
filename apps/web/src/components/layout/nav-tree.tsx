@@ -8,7 +8,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Folder, FolderOpen } from "lucide-react";
 
 import {
   collectFolderIds,
@@ -30,12 +30,21 @@ const LEGACY_STORAGE_PREFIXES = [
 ] as const;
 
 const GUIDE_COLOR = "var(--color-sidebar-guide)";
+const FOLDER_GOLD = "var(--color-sidebar-folder-gold)";
 
 export type NavTreeVariant = "sidebar" | "drawer";
 
+/** Main section left padding (px). */
 const SIDEBAR_SECTION_PAD_X = 12;
-const SIDEBAR_FOLDER_PAD_X = 24;
-const SIDEBAR_PAGE_PAD_X = 46;
+/** Second-level folder content left position (px). */
+const SIDEBAR_FOLDER_PAD_X = 28;
+/** Final page content left position (px). */
+const SIDEBAR_PAGE_PAD_X = 58;
+
+/** Section / folder / page label sizes (px) — section largest, page ≥ 13. */
+const SIDEBAR_SECTION_FONT_PX = 14.5;
+const SIDEBAR_FOLDER_FONT_PX = 13.5;
+const SIDEBAR_PAGE_FONT_PX = 13;
 
 function folderPadX(depth: number): number {
   if (depth <= 0) {
@@ -247,52 +256,75 @@ function TreeRow({
 
   if (isFolder) {
     const panelId = `nav-tree-${node.id}`;
+    const FolderIcon = open ? FolderOpen : Folder;
     return (
       <div className="relative">
         <button
           aria-controls={panelId}
           aria-expanded={open}
           className={cn(
-            "relative flex w-full min-w-0 items-center gap-2 pr-3 text-left font-medium",
+            "relative flex w-full min-w-0 items-center gap-2 pr-3 text-left",
             uiClasses.transitionColors,
             "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset",
             isSectionFolder
               ? cn(
-                  "min-h-[var(--layout-sidebar-row-height)] bg-[var(--color-sidebar-bg)] text-[12.5px] text-white",
+                  "min-h-[var(--layout-sidebar-row-height)] bg-[var(--color-sidebar-bg)] font-semibold text-white",
                   "focus-visible:ring-white/80",
                   containsActive || open
                     ? "bg-[var(--color-sidebar-active)]"
                     : "hover:bg-white/10",
                 )
               : cn(
-                  "min-h-[var(--layout-sidebar-folder-row-height)] bg-[var(--color-sidebar-child-bg)] text-[12px] text-black",
+                  "min-h-[var(--layout-sidebar-folder-row-height)] font-medium text-black",
                   "focus-visible:ring-black/35",
-                  containsActive || open
-                    ? "bg-[var(--color-sidebar-page-active-bg)]"
-                    : "hover:bg-[var(--color-sidebar-child-hover)]",
+                  open
+                    ? "bg-[var(--color-sidebar-folder-expanded-bg)]"
+                    : "bg-[var(--color-sidebar-folder-bg)] hover:bg-[var(--color-sidebar-folder-hover)]",
                 ),
           )}
-          style={{ paddingLeft: folderPad }}
+          style={{
+            paddingLeft: folderPad,
+            fontSize: isSectionFolder ? SIDEBAR_SECTION_FONT_PX : SIDEBAR_FOLDER_FONT_PX,
+          }}
           title={label}
           type="button"
           onClick={() => toggleExpanded(node.id)}
           onKeyDown={onFolderKeyDown}
         >
-          <ChevronRight
-            aria-hidden
-            className={cn(
-              "h-2.5 w-2.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
-              isSectionFolder ? "text-white" : "text-black",
-              open ? "rotate-90" : "",
-            )}
-            strokeWidth={1.8}
-          />
-          {showIcons ? (
-            <NavGroupIcon
-              className="h-3.5 w-3.5 shrink-0"
-              groupId={node.iconKey}
-              surface={isSectionFolder ? "navy" : "light"}
+          <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+            <ChevronRight
+              aria-hidden
+              className={cn(
+                "h-2.5 w-2.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
+                isSectionFolder ? "text-white" : "text-black",
+                open ? "rotate-90" : "",
+              )}
+              strokeWidth={1.8}
             />
+          </span>
+          {showIcons ? (
+            isSectionFolder ? (
+              <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+                <NavGroupIcon
+                  className="h-4 w-4 shrink-0"
+                  groupId={node.iconKey}
+                  surface="navy"
+                />
+              </span>
+            ) : (
+              <span
+                aria-hidden
+                className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center"
+                data-sidebar-folder-icon={open ? "open" : "closed"}
+              >
+                <FolderIcon
+                  aria-hidden
+                  className="h-4 w-4 shrink-0"
+                  strokeWidth={1.8}
+                  style={{ color: FOLDER_GOLD }}
+                />
+              </span>
+            )
           ) : null}
           <span className="min-w-0 flex-1 truncate">{label}</span>
         </button>
@@ -365,14 +397,14 @@ function TreeRow({
         "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset",
         isRootLeaf
           ? cn(
-              "min-h-[var(--layout-sidebar-row-height)] border-l-[3px] border-transparent bg-[var(--color-sidebar-bg)] text-[12.5px] font-medium text-white",
+              "min-h-[var(--layout-sidebar-row-height)] border-l-[3px] border-transparent bg-[var(--color-sidebar-bg)] font-semibold text-white",
               "focus-visible:ring-white/80",
               activeLeaf
-                ? "border-l-white bg-[var(--color-sidebar-active)] font-semibold"
+                ? "border-l-white bg-[var(--color-sidebar-active)]"
                 : "hover:bg-white/10",
             )
           : cn(
-              "min-h-[var(--layout-sidebar-page-row-height)] border-l-[3px] border-transparent bg-[var(--color-sidebar-page-bg)] text-[12px] font-medium text-black",
+              "min-h-[var(--layout-sidebar-page-row-height)] border-l-[3px] border-transparent bg-[var(--color-sidebar-page-bg)] font-normal text-black",
               "focus-visible:ring-black/35",
               activeLeaf
                 ? "border-l-black bg-[var(--color-sidebar-page-active-bg)] font-semibold text-black"
@@ -380,16 +412,24 @@ function TreeRow({
             ),
       )}
       href={node.href}
-      style={{ paddingLeft: pagePad }}
+      style={{
+        paddingLeft: pagePad,
+        fontSize: isRootLeaf ? SIDEBAR_SECTION_FONT_PX : SIDEBAR_PAGE_FONT_PX,
+      }}
       title={label}
       onClick={onNavigate}
     >
       {showIcons ? (
-        <NavItemIcon
-          className="h-3.5 w-3.5 shrink-0"
-          labelKey={leafIconKey}
-          surface={isRootLeaf ? "navy" : "light"}
-        />
+        <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+          <NavItemIcon
+            className={cn(
+              "h-4 w-4 shrink-0",
+              !isRootLeaf && "text-[var(--color-sidebar-page-icon)]",
+            )}
+            labelKey={leafIconKey}
+            surface={isRootLeaf ? "navy" : "light"}
+          />
+        </span>
       ) : null}
       <span className="min-w-0 flex-1 truncate">
         {label}
