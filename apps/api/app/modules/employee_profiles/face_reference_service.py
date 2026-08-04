@@ -65,27 +65,106 @@ def _write_reference_file(actor_id: uuid.UUID, extension: str, file_bytes: bytes
     return relative_path
 
 
-def _image_content_type_from_path(path: str) -> str:
-    cleaned = path.lower().split("?", 1)[0]
-    if cleaned.endswith(".png"):
-        return "image/png"
-    if cleaned.endswith(".webp"):
-        return "image/webp"
-    return "image/jpeg"
+# Display serving only — originals in storage are unchanged.
+_MAX_FACE_DISPLAY_PIXELS = 8_000_000
+_FACE_THUMB_MAX_EDGE = 96
+_FACE_THUMB_JPEG_QUALITY = 82
+_FACE_FULL_JPEG_QUALITY = 90
 
 
-def _make_face_reference_thumbnail(data: bytes, *, max_edge: int = 96) -> tuple[bytes, str]:
-    """Return a compact JPEG thumbnail for list UIs (does not change stored original)."""
+def _close_pil_image(image: object | None) -> None:
+    if image is None:
+        return
+    close = getattr(image, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
+def _normalize_face_reference_for_display(
+    data: bytes,
+    *,
+    variant: str = "full",
+    max_edge: int = _FACE_THUMB_MAX_EDGE,
+) -> tuple[bytes, str]:
+    """Decode → EXIF-orient → (optional thumb) → JPEG with upright pixels and no Orientation tag."""
     from io import BytesIO
+    import warnings
 
-    from PIL import Image
+    from PIL import Image, ImageOps
 
-    with Image.open(BytesIO(data)) as image:
-        image = image.convert("RGB")
-        image.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+    if not data:
+        raise ValueError("empty image")
+
+    cleaned_variant = (variant or "full").strip().lower()
+    is_thumb = cleaned_variant in {"thumb", "thumbnail"}
+
+    stream = BytesIO(data)
+    img = None
+    oriented = None
+    working = None
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            try:
+                img = Image.open(stream)
+                img.load()
+            except (Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+                raise ValueError("decompression_bomb") from exc
+            except Exception as exc:
+                raise ValueError("corrupt image") from exc
+
+        try:
+            oriented = ImageOps.exif_transpose(img)
+        except Exception as exc:
+            raise ValueError("orientation") from exc
+
+        if oriented is not img:
+            _close_pil_image(img)
+            img = None
+        else:
+            oriented = img
+            img = None
+
+        width, height = oriented.size
+        if width <= 0 or height <= 0:
+            raise ValueError("invalid_size")
+        if width * height > _MAX_FACE_DISPLAY_PIXELS:
+            raise ValueError("too_many_pixels")
+
+        if oriented.mode == "RGB":
+            working = oriented
+            oriented = None
+        elif oriented.mode == "L":
+            working = oriented.convert("RGB")
+            _close_pil_image(oriented)
+            oriented = None
+        else:
+            working = oriented.convert("RGB")
+            if working is not oriented:
+                _close_pil_image(oriented)
+            oriented = None
+
+        if is_thumb:
+            working.thumbnail((max_edge, max_edge), Image.Resampling.LANCZOS)
+
         buf = BytesIO()
-        image.save(buf, format="JPEG", quality=82, optimize=True)
+        quality = _FACE_THUMB_JPEG_QUALITY if is_thumb else _FACE_FULL_JPEG_QUALITY
+        # Explicit empty EXIF so Orientation is not left for the browser.
+        working.save(buf, format="JPEG", quality=quality, optimize=True, exif=b"")
         return buf.getvalue(), "image/jpeg"
+    finally:
+        _close_pil_image(img)
+        _close_pil_image(oriented)
+        _close_pil_image(working)
+        stream.close()
+
+
+def _make_face_reference_thumbnail(data: bytes, *, max_edge: int = _FACE_THUMB_MAX_EDGE) -> tuple[bytes, str]:
+    """Return a compact upright JPEG thumbnail for list UIs (does not change stored original)."""
+    return _normalize_face_reference_for_display(data, variant="thumb", max_edge=max_edge)
 
 
 def resolve_face_reference_image(
@@ -117,18 +196,21 @@ def resolve_face_reference_image(
     except FileNotFoundError:
         raise FaceReferenceNotFoundError("Face reference photo not found.") from None
 
-    media_type = _image_content_type_from_path(key)
-    filename = f"face-reference-{subject.id}"
-    image_kind = "reference"
     cleaned_variant = (variant or "full").strip().lower()
-    if cleaned_variant in {"thumb", "thumbnail"}:
-        try:
-            data, media_type = _make_face_reference_thumbnail(data)
-            filename = f"face-reference-{subject.id}-thumb.jpg"
-            image_kind = "reference_thumb"
-        except Exception:
-            # Fall back to original bytes if thumbnail generation fails.
-            image_kind = "reference"
+    is_thumb = cleaned_variant in {"thumb", "thumbnail"}
+    image_kind = "reference_thumb" if is_thumb else "reference"
+    filename = (
+        f"face-reference-{subject.id}-thumb.jpg"
+        if is_thumb
+        else f"face-reference-{subject.id}.jpg"
+    )
+    try:
+        data, media_type = _normalize_face_reference_for_display(
+            data,
+            variant="thumb" if is_thumb else "full",
+        )
+    except Exception as exc:
+        raise FaceReferenceNotFoundError("Face reference photo not found.") from exc
 
     create_internal_audit_event(
         db_session,

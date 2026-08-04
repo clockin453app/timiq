@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import SystemRole, User
 from app.modules.employee_profiles.face_reference_service import (
@@ -40,6 +41,7 @@ def test_face_reference_image_endpoint_returns_image_content_type(mock_resolve: 
     subject = _user(role=SystemRole.EMPLOYEE, company_id=company_id)
     mock_resolve.return_value = (b"\xff\xd8\xffimage", "image/jpeg", "face-reference", subject)
     app.dependency_overrides[get_current_user] = lambda: admin
+    app.dependency_overrides[get_db_session] = lambda: MagicMock()
     try:
         response = TestClient(app).get(f"/api/employee-profiles/users/{subject.id}/face-reference-image")
     finally:
@@ -57,6 +59,7 @@ def test_face_reference_image_endpoint_missing_reference_returns_404(mock_resolv
     admin = _user(role=SystemRole.ADMIN, company_id=uuid.uuid4())
     mock_resolve.side_effect = FaceReferenceNotFoundError("Face reference photo not found.")
     app.dependency_overrides[get_current_user] = lambda: admin
+    app.dependency_overrides[get_db_session] = lambda: MagicMock()
     try:
         response = TestClient(app).get(f"/api/employee-profiles/users/{uuid.uuid4()}/face-reference-image")
     finally:
@@ -98,6 +101,10 @@ def test_face_reference_image_audit_contains_no_storage_path(
     mock_storage: MagicMock,
     mock_audit: MagicMock,
 ) -> None:
+    from io import BytesIO
+
+    from PIL import Image
+
     company_id = uuid.uuid4()
     admin = _user(role=SystemRole.ADMIN, company_id=company_id)
     subject = _user(role=SystemRole.EMPLOYEE, company_id=company_id)
@@ -108,16 +115,18 @@ def test_face_reference_image_audit_contains_no_storage_path(
         face_check_consent_at=datetime.now(timezone.utc),
         face_reference_storage_path="face-references/secret/path.jpg",
     )
+    jpeg = BytesIO()
+    Image.new("RGB", (32, 32), color=(8, 8, 8)).save(jpeg, format="JPEG")
     mock_get_user.return_value = subject
     mock_get_profile.return_value = profile
     mock_storage.return_value = SimpleNamespace(
         exists=MagicMock(return_value=True),
-        read_bytes=MagicMock(return_value=b"\xff\xd8\xffimage"),
+        read_bytes=MagicMock(return_value=jpeg.getvalue()),
     )
 
     body, media_type, _filename, _subject = resolve_face_reference_image(MagicMock(), admin, subject.id)
 
-    assert body.startswith(b"\xff\xd8\xff")
+    assert body.startswith(b"\xff\xd8")
     assert media_type == "image/jpeg"
     details = mock_audit.call_args.kwargs.get("details") or mock_audit.call_args[0][5]
     assert "path" not in details
