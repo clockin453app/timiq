@@ -15,6 +15,7 @@ import { cn } from "../../lib/cn";
 import { uiClasses } from "../../lib/ui-classes";
 
 import { MessagesHeaderButton } from "./messages-header-button";
+import { MobileHeaderAvatar } from "./mobile-header-avatar";
 import { createMobileDrawerState, mobileDrawerReducer } from "./mobile-drawer-state";
 import { NavTree } from "./nav-tree";
 import { NotificationBell } from "./notification-bell";
@@ -37,6 +38,8 @@ const MOBILE_DRAWER_WIDTH_CLASS = "w-[min(300px,calc(100vw-32px))] max-w-[min(30
 const MOBILE_DRAWER_CHILD_PAD_X = 45;
 const MOBILE_DRAWER_TRANSITION_MS = 220;
 
+type DrawerOpenSource = "menu" | "avatar";
+
 export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const user = useCurrentUser();
   const t = useT();
@@ -45,22 +48,19 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const [drawer, dispatch] = useReducer(mobileDrawerReducer, activeHref, createMobileDrawerState);
   const menuOpen = drawer.open;
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
+  const avatarButtonRef = useRef<HTMLButtonElement | null>(null);
   const drawerRef = useRef<HTMLDivElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
   const logoutOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const openSourceRef = useRef<DrawerOpenSource | null>(null);
   const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [drawerMounted, setDrawerMounted] = useState(false);
   const [drawerEntered, setDrawerEntered] = useState(false);
   const [navTreeKey, setNavTreeKey] = useState(0);
+  const [forceOpenIds, setForceOpenIds] = useState<string[]>([]);
 
   const limited = userHasLimitedAccess(user);
-
-  const closeMenu = useCallback((restoreFocus = true) => {
-    dispatch({ type: "close" });
-    if (restoreFocus) menuButtonRef.current?.focus();
-  }, []);
-  const toggleMenu = useCallback(() => dispatch({ type: "toggle" }), []);
 
   const drawerTree = useMemo(
     () => getMobileDrawerNavigationTree(user.system_role, { limitedAccess: limited }),
@@ -71,6 +71,46 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     () => drawerTree.find((node) => MOBILE_ACCOUNT_SECTION_IDS.includes(node.id))?.id ?? null,
     [drawerTree],
   );
+
+  const closeMenu = useCallback((restoreFocus = true) => {
+    const source = openSourceRef.current;
+    dispatch({ type: "close" });
+    setForceOpenIds([]);
+    openSourceRef.current = null;
+    if (restoreFocus) {
+      if (source === "avatar") {
+        avatarButtonRef.current?.focus();
+      } else {
+        menuButtonRef.current?.focus();
+      }
+    }
+  }, []);
+
+  const openCollapsedFromMenu = useCallback(() => {
+    if (menuOpen) {
+      openSourceRef.current = "menu";
+      closeMenu();
+      return;
+    }
+    setForceOpenIds([]);
+    openSourceRef.current = "menu";
+    dispatch({ type: "open" });
+  }, [closeMenu, menuOpen]);
+
+  const openAccountFromAvatar = useCallback(() => {
+    const accountIds = accountSectionId ? [accountSectionId] : [];
+    if (menuOpen && openSourceRef.current === "avatar") {
+      closeMenu();
+      return;
+    }
+    setForceOpenIds(accountIds);
+    openSourceRef.current = "avatar";
+    if (menuOpen) {
+      setNavTreeKey((key) => key + 1);
+      return;
+    }
+    dispatch({ type: "open" });
+  }, [accountSectionId, closeMenu, menuOpen]);
 
   useEffect(() => {
     dispatch({ type: "route", href: activeHref });
@@ -88,6 +128,8 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
     const timer = window.setTimeout(() => {
       setDrawerMounted(false);
       setNavTreeKey((key) => key + 1);
+      setForceOpenIds([]);
+      openSourceRef.current = null;
     }, MOBILE_DRAWER_TRANSITION_MS);
     return () => window.clearTimeout(timer);
   }, [menuOpen]);
@@ -229,13 +271,21 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
           />
         </div>
 
-        <div className="flex min-w-0 shrink-0 items-center gap-0.5 min-[400px]:gap-1.5">
+        <div
+          className="flex min-w-0 shrink-0 items-center gap-1.5 min-[400px]:gap-2"
+          data-testid="timiq-mobile-header-actions"
+        >
           {!limited ? (
             <>
               <MessagesHeaderButton activeHref={activeHref} />
               <NotificationBell />
             </>
           ) : null}
+          <MobileHeaderAvatar
+            buttonRef={avatarButtonRef}
+            user={user}
+            onOpenAccount={openAccountFromAvatar}
+          />
           <button
             aria-controls="timiq-mobile-menu"
             aria-expanded={menuOpen}
@@ -246,8 +296,9 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
               uiClasses.transitionColors,
               uiClasses.topBarFocusRing,
             )}
+            data-testid="timiq-mobile-header-menu"
             type="button"
-            onClick={toggleMenu}
+            onClick={openCollapsedFromMenu}
             ref={menuButtonRef}
           >
             <Menu aria-hidden className="h-5 w-5" />
@@ -280,6 +331,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             aria-modal="true"
             aria-label={t("shell.drawer_nav", "More navigation")}
             data-testid="timiq-mobile-drawer"
+            data-account-expanded={forceOpenIds.length > 0 ? "true" : "false"}
             ref={drawerRef}
           >
             <div className="timiq-mobile-drawer-header shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sheet)] pt-[env(safe-area-inset-top,0px)]">
@@ -319,6 +371,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                   accountSectionIds={accountSectionId ? [accountSectionId] : MOBILE_ACCOUNT_SECTION_IDS}
                   activeHref={activeHref}
                   expansion={{ mode: "section-accordion", persist: false, autoExpandActive: false }}
+                  forceOpenIds={forceOpenIds}
                   nodes={drawerTree}
                   role={user.system_role}
                   scrollActiveIntoView={false}

@@ -9,6 +9,7 @@ export type MobileDrawerState = {
 
 export type MobileDrawerAction =
   | { type: "toggle" }
+  | { type: "open" }
   | { type: "close" }
   | { type: "route"; href: string }
   | { type: "viewport"; width: number };
@@ -24,6 +25,8 @@ export function mobileDrawerReducer(
   switch (action.type) {
     case "toggle":
       return { ...state, open: !state.open };
+    case "open":
+      return state.open ? state : { ...state, open: true };
     case "close":
       return state.open ? { ...state, open: false } : state;
     case "route":

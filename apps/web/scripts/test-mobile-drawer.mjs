@@ -194,11 +194,11 @@ check(
   "the self-closing effect is gone",
   !/if \(menuOpen\) closeMenu\(false\)/.test(header),
 );
-check("menu button is wired to the toggle", /onClick=\{toggleMenu\}/.test(header));
+check("menu button is wired to collapsed open", /onClick=\{openCollapsedFromMenu\}/.test(header));
 check("aria-expanded reflects drawer state", /aria-expanded=\{menuOpen\}/.test(header));
 check(
   "focus returns to the trigger without waiting for a frame",
-  /if \(restoreFocus\) menuButtonRef\.current\?\.focus\(\);/.test(header),
+  /avatarButtonRef\.current\?\.focus\(\)/.test(header) && /menuButtonRef\.current\?\.focus\(\)/.test(header),
 );
 check(
   "backdrop sits under the drawer and over the header row",
@@ -226,7 +226,11 @@ check("close control has a large touch target", /h-11 w-11/.test(header));
 check("backdrop has test id", /data-testid="timiq-mobile-drawer-backdrop"/.test(header));
 check("body overscroll locked while open", /overscrollBehavior = "none"/.test(header));
 check("logout confirmation remains wired", /await logout\(\)/.test(header));
-check("top bar avatar is not a duplicate account menu", !/<UserAvatar[\s\S]{0,200}menuButtonRef/.test(header.split("{menuOpen")[0] ?? ""));
+check(
+  "profile avatar sits between bell and menu",
+  /NotificationBell[\s\S]*MobileHeaderAvatar[\s\S]*timiq-mobile-header-menu/.test(header),
+);
+check("avatar opens account section", /openAccountFromAvatar/.test(header) && /forceOpenIds=\{forceOpenIds\}/.test(header));
 
 const overview = read("app/(app)/overview/overview-client.tsx");
 const pageGuide = read("components/layout/page-location-guide.tsx");
