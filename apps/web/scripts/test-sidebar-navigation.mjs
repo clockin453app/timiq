@@ -243,12 +243,13 @@ check("tokens row heights", /--layout-sidebar-folder-row-height/.test(tokens) &&
 check("sidebar colours", /--color-sidebar-bg: #192f60/.test(tokens) && /--color-sidebar-child-bg: #f5f5f5/.test(tokens));
 check("sidebar page bg white", /--color-sidebar-page-bg: #ffffff/.test(tokens));
 check("sidebar child text black", /--color-sidebar-child-fg: #000000/.test(tokens));
-check("sidebar guide neutral", /--color-sidebar-guide: #c8c8c8/.test(tokens));
+check("sidebar guide neutral", /--color-sidebar-guide: #9ca3af/.test(tokens));
 check("sidebar row heights hierarchy",
-  /--layout-sidebar-row-height: 2\.375rem/.test(tokens) &&
-  /--layout-sidebar-folder-row-height: 2\.25rem/.test(tokens) &&
-  /--layout-sidebar-page-row-height: 2\.125rem/.test(tokens));
+  /--layout-sidebar-row-height: 2\.5625rem/.test(tokens) &&
+  /--layout-sidebar-folder-row-height: 2\.4375rem/.test(tokens) &&
+  /--layout-sidebar-page-row-height: 2\.3125rem/.test(tokens));
 check("sidebar folder gold", /--color-sidebar-folder-gold: #c58a00/.test(tokens));
+check("sidebar tree guide", /--color-sidebar-guide: #9ca3af/.test(tokens));
 check("collapse preference", /localStorage\.getItem\(SIDEBAR_COLLAPSED_KEY\)/.test(sidebarState));
 check("sidebar uses NavTree", /<NavTree/.test(sidebar));
 check("collapsed section expands", /setCollapsed\(false\)/.test(sidebar) && /forceOpenIds/.test(sidebar));
@@ -292,17 +293,18 @@ check("prunes invalid expanded ids", /validFolderIds/.test(navTree));
 check("aria-expanded folders", /aria-expanded=\{open\}/.test(navTree));
 check("aria-current leaves", /aria-current=\{activeLeaf \? "page" : undefined\}/.test(navTree));
 check("keyboard left right", /ArrowRight/.test(navTree) && /ArrowLeft/.test(navTree));
-check("guide lines", /GUIDE_COLOR/.test(navTree) && /var\(--color-sidebar-guide\)/.test(navTree));
-check("disclosure chevron", /<ChevronRight/.test(navTree));
+check("guide lines", /GUIDE_COLOR/.test(navTree) && /TreeBranchGuides/.test(navTree));
+check("disclosure chevron", /ChevronDown/.test(navTree) && /ChevronRight/.test(navTree));
 check("active page black indicator", /border-l-black/.test(navTree) && /font-semibold text-black/.test(navTree));
 check("no blue active page fill", !/bg-\[#d5e1ee\]/.test(navTree));
 check("section headers white text", /font-semibold text-white/.test(navTree));
 check("folder rows black text", /font-medium text-black/.test(navTree));
 check("page rows white bg black text", /font-normal text-black/.test(navTree) && /--color-sidebar-page-bg: #ffffff/.test(tokens));
-check("no blue sidebar text tokens in tree", !/text-\[#192f60\]/.test(navTree) && !/text-\[var\(--color-sidebar-child-fg\)\]/.test(navTree));
-check("indent helpers", /SIDEBAR_SECTION_PAD_X = 12/.test(navTree) && /SIDEBAR_FOLDER_PAD_X = 28/.test(navTree) && /SIDEBAR_PAGE_PAD_X = 58/.test(navTree));
-check("icon gap 8px", /items-center gap-2/.test(navTree));
+check("no blue sidebar text tokens in tree", !/text-\[#192f60\]/.test(navTree));
+check("indent helpers", /SIDEBAR_SECTION_PAD_X = 12/.test(navTree) && /SIDEBAR_FOLDER_PAD_X = 32/.test(navTree) && /SIDEBAR_PAGE_PAD_X = 68/.test(navTree));
+check("icon gap", /items-center gap-2\.5/.test(navTree));
 check("gold folder open closed", /open \? FolderOpen : Folder/.test(navTree) && /FOLDER_GOLD/.test(navTree));
+check("last child tree terminate", /isLast \? "50%" : "100%"/.test(navTree));
 check("folder icons present", /"mgmt-people-employees": Folder/.test(navIcons));
 check("sidebar icons white or black only", /navy: "text-white", light: "text-black"/.test(navIcons));
 check("mobile uses NavTree", /getMobileDrawerNavigationTree/.test(mobile) && /<NavTree/.test(mobile));
@@ -313,6 +315,7 @@ check("mobile limited messages gate", /\{!limited \? \(\s*<>\s*<MessagesHeaderBu
 check("mobile drawer scroll hosts Profile", /timiq-mobile-drawer-scroll[\s\S]*\/profile/.test(mobile));
 check("mobile drawer logout is a menu row", /appearance="menuRow"/.test(mobile));
 check("mobile drawer has no fixed footer nav", !/timiq-mobile-drawer-footer/.test(mobile));
+check("mobile drawer width fits narrow viewports", /w-\[min\(100vw-1\.25rem,360px\)\]/.test(mobile));
 check("logout a11y", /createPortal\(/.test(logoutDialog) && /returnFocusRef/.test(logoutButton));
 check("logout menuRow appearance exists", /appearance === "menuRow"/.test(logoutButton));
 check("public shell isolated", /uiClasses\.shellTopBar/.test(publicShell) && !/DesktopSidebar|color-utilitybar/.test(publicShell));

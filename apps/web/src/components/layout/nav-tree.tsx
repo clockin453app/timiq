@@ -7,8 +7,9 @@ import {
   useMemo,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
-import { ChevronRight, Folder, FolderOpen } from "lucide-react";
+import { ChevronDown, ChevronRight, Folder, FolderOpen } from "lucide-react";
 
 import {
   collectFolderIds,
@@ -37,27 +38,42 @@ export type NavTreeVariant = "sidebar" | "drawer";
 /** Main section left padding (px). */
 const SIDEBAR_SECTION_PAD_X = 12;
 /** Second-level folder content left position (px). */
-const SIDEBAR_FOLDER_PAD_X = 28;
-/** Final page content left position (px). */
-const SIDEBAR_PAGE_PAD_X = 58;
+const SIDEBAR_FOLDER_PAD_X = 32;
+/** Vertical tree line X under expanded folders (px). */
+const SIDEBAR_TREE_GUIDE_X = 46;
+/** Final page content (icon) left position (px). */
+const SIDEBAR_PAGE_PAD_X = 68;
+/** Nesting step for deeper levels (px). */
+const SIDEBAR_NEST_STEP = 10;
 
-/** Section / folder / page label sizes (px) — section largest, page ≥ 13. */
-const SIDEBAR_SECTION_FONT_PX = 14.5;
-const SIDEBAR_FOLDER_FONT_PX = 13.5;
-const SIDEBAR_PAGE_FONT_PX = 13;
+/** Section / folder / page label sizes (px) — nothing below 14. */
+const SIDEBAR_SECTION_FONT_PX = 15.5;
+const SIDEBAR_FOLDER_FONT_PX = 14.5;
+const SIDEBAR_PAGE_FONT_PX = 14;
+
+const CHEVRON_BOX_PX = 20;
+const ICON_BOX_PX = 20;
 
 function folderPadX(depth: number): number {
   if (depth <= 0) {
     return SIDEBAR_SECTION_PAD_X;
   }
-  return SIDEBAR_FOLDER_PAD_X + Math.max(0, depth - 1) * 12;
+  return SIDEBAR_FOLDER_PAD_X + Math.max(0, depth - 1) * SIDEBAR_NEST_STEP;
 }
 
 function pagePadX(depth: number): number {
   if (depth <= 0) {
     return SIDEBAR_SECTION_PAD_X;
   }
-  return SIDEBAR_PAGE_PAD_X + Math.max(0, depth - 1) * 8;
+  return SIDEBAR_PAGE_PAD_X + Math.max(0, depth - 1) * SIDEBAR_NEST_STEP;
+}
+
+/** Vertical guide X for children of a folder/section at `parentDepth`. */
+function treeGuideX(parentDepth: number): number {
+  if (parentDepth <= 0) {
+    return SIDEBAR_SECTION_PAD_X + Math.floor(CHEVRON_BOX_PX / 2);
+  }
+  return SIDEBAR_TREE_GUIDE_X + Math.max(0, parentDepth - 1) * SIDEBAR_NEST_STEP;
 }
 
 type NavTreeProps = {
@@ -213,6 +229,76 @@ type TreeRowProps = {
   showGuides: boolean;
 };
 
+function IconBox({ children }: { children: ReactNode }) {
+  return (
+    <span
+      className="inline-flex shrink-0 items-center justify-center"
+      style={{ width: ICON_BOX_PX, height: ICON_BOX_PX }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ChevronBox({
+  open,
+  tone,
+}: {
+  open: boolean;
+  tone: "white" | "black";
+}) {
+  const Icon = open ? ChevronDown : ChevronRight;
+  return (
+    <span
+      className="inline-flex shrink-0 items-center justify-center"
+      data-sidebar-chevron={open ? "expanded" : "collapsed"}
+      style={{ width: CHEVRON_BOX_PX, height: CHEVRON_BOX_PX }}
+    >
+      <Icon
+        aria-hidden
+        className={cn("h-4 w-4 shrink-0", tone === "white" ? "text-white" : "text-black")}
+        strokeWidth={2.4}
+      />
+    </span>
+  );
+}
+
+/** Per-child tree guides: vertical segment + horizontal branch; last child stops at mid-row. */
+function TreeBranchGuides({
+  guideLeft,
+  branchWidth,
+  isLast,
+}: {
+  guideLeft: number;
+  branchWidth: number;
+  isLast: boolean;
+}) {
+  return (
+    <>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute left-0 top-0 w-px"
+        data-sidebar-tree-vertical={isLast ? "last" : "continue"}
+        style={{
+          left: guideLeft,
+          height: isLast ? "50%" : "100%",
+          backgroundColor: GUIDE_COLOR,
+        }}
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute top-1/2 h-px"
+        data-sidebar-tree-branch=""
+        style={{
+          left: guideLeft,
+          width: Math.max(10, branchWidth),
+          backgroundColor: GUIDE_COLOR,
+        }}
+      />
+    </>
+  );
+}
+
 function TreeRow({
   node,
   depth,
@@ -234,11 +320,17 @@ function TreeRow({
   const badgeHref = node.badgeId ?? node.href;
   const badgeCount = badgeHref ? (badgeByHref[badgeHref] ?? 0) : 0;
   const isSectionFolder = depth === 0;
+  const isDrawer = variant === "drawer";
   const folderPad = folderPadX(depth);
   const pagePad = pagePadX(depth);
-  const guideLeft = folderPad + 5;
+  const touchMin = isDrawer ? "min-h-11" : undefined;
 
   const onFolderKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleExpanded(node.id);
+      return;
+    }
     if (event.key === "ArrowRight") {
       event.preventDefault();
       if (!open) {
@@ -257,25 +349,32 @@ function TreeRow({
   if (isFolder) {
     const panelId = `nav-tree-${node.id}`;
     const FolderIcon = open ? FolderOpen : Folder;
+    const guideLeft = treeGuideX(depth);
+    const childPad = pagePadX(depth + 1);
+    const branchWidth = Math.max(10, childPad - guideLeft - 6);
+
     return (
-      <div className="relative">
+      <div className="relative" data-sidebar-level={isSectionFolder ? "section" : "folder"}>
         <button
           aria-controls={panelId}
           aria-expanded={open}
           className={cn(
-            "relative flex w-full min-w-0 items-center gap-2 pr-3 text-left",
+            "relative flex w-full min-w-0 items-center gap-2.5 pr-3 text-left",
             uiClasses.transitionColors,
             "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset",
+            touchMin,
             isSectionFolder
               ? cn(
-                  "min-h-[var(--layout-sidebar-row-height)] bg-[var(--color-sidebar-bg)] font-semibold text-white",
+                  !isDrawer && "min-h-[var(--layout-sidebar-row-height)]",
+                  "bg-[var(--color-sidebar-bg)] font-semibold text-white",
                   "focus-visible:ring-white/80",
                   containsActive || open
                     ? "bg-[var(--color-sidebar-active)]"
                     : "hover:bg-white/10",
                 )
               : cn(
-                  "min-h-[var(--layout-sidebar-folder-row-height)] font-medium text-black",
+                  !isDrawer && "min-h-[var(--layout-sidebar-folder-row-height)]",
+                  "font-medium text-black",
                   "focus-visible:ring-black/35",
                   open
                     ? "bg-[var(--color-sidebar-folder-expanded-bg)]"
@@ -291,39 +390,27 @@ function TreeRow({
           onClick={() => toggleExpanded(node.id)}
           onKeyDown={onFolderKeyDown}
         >
-          <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center">
-            <ChevronRight
-              aria-hidden
-              className={cn(
-                "h-2.5 w-2.5 shrink-0 transition-transform duration-150 motion-reduce:transition-none",
-                isSectionFolder ? "text-white" : "text-black",
-                open ? "rotate-90" : "",
-              )}
-              strokeWidth={1.8}
-            />
-          </span>
+          <ChevronBox open={open} tone={isSectionFolder ? "white" : "black"} />
           {showIcons ? (
             isSectionFolder ? (
-              <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+              <IconBox>
                 <NavGroupIcon
-                  className="h-4 w-4 shrink-0"
+                  className="h-[17px] w-[17px] shrink-0 text-white"
                   groupId={node.iconKey}
                   surface="navy"
                 />
-              </span>
+              </IconBox>
             ) : (
-              <span
-                aria-hidden
-                className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center"
-                data-sidebar-folder-icon={open ? "open" : "closed"}
-              >
-                <FolderIcon
-                  aria-hidden
-                  className="h-4 w-4 shrink-0"
-                  strokeWidth={1.8}
-                  style={{ color: FOLDER_GOLD }}
-                />
-              </span>
+              <IconBox>
+                <span data-sidebar-folder-icon={open ? "open" : "closed"}>
+                  <FolderIcon
+                    aria-hidden
+                    className="h-[17px] w-[17px] shrink-0"
+                    strokeWidth={1.9}
+                    style={{ color: FOLDER_GOLD }}
+                  />
+                </span>
+              </IconBox>
             )
           ) : null}
           <span className="min-w-0 flex-1 truncate">{label}</span>
@@ -336,45 +423,35 @@ function TreeRow({
                 ? "bg-[var(--color-sidebar-child-bg)]"
                 : "bg-[var(--color-sidebar-page-bg)]",
             )}
+            data-sidebar-tree-panel=""
             id={panelId}
           >
-            {showGuides ? (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute bottom-1 top-0 w-px"
-                style={{
-                  left: guideLeft,
-                  backgroundColor: GUIDE_COLOR,
-                }}
-              />
-            ) : null}
-            {node.children?.map((child) => (
-              <div className="relative" key={child.id}>
-                {showGuides ? (
-                  <span
-                    aria-hidden
-                    className="pointer-events-none absolute top-1/2 h-px"
-                    style={{
-                      left: guideLeft,
-                      width: Math.max(8, pagePadX(depth + 1) - guideLeft - 4),
-                      backgroundColor: GUIDE_COLOR,
-                    }}
+            {node.children?.map((child, index) => {
+              const isLast = index === (node.children?.length ?? 0) - 1;
+              return (
+                <div className="relative" data-sidebar-tree-child={isLast ? "last" : "item"} key={child.id}>
+                  {showGuides ? (
+                    <TreeBranchGuides
+                      branchWidth={branchWidth}
+                      guideLeft={guideLeft}
+                      isLast={isLast}
+                    />
+                  ) : null}
+                  <TreeRow
+                    activeHref={activeHref}
+                    badgeByHref={badgeByHref}
+                    depth={depth + 1}
+                    isExpanded={isExpanded}
+                    node={child}
+                    showGuides={showGuides}
+                    showIcons={showIcons}
+                    toggleExpanded={toggleExpanded}
+                    variant={variant}
+                    onNavigate={onNavigate}
                   />
-                ) : null}
-                <TreeRow
-                  activeHref={activeHref}
-                  badgeByHref={badgeByHref}
-                  depth={depth + 1}
-                  isExpanded={isExpanded}
-                  node={child}
-                  showGuides={showGuides}
-                  showIcons={showIcons}
-                  toggleExpanded={toggleExpanded}
-                  variant={variant}
-                  onNavigate={onNavigate}
-                />
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </div>
@@ -392,25 +469,29 @@ function TreeRow({
     <Link
       aria-current={activeLeaf ? "page" : undefined}
       className={cn(
-        "relative flex w-full min-w-0 items-center gap-2 pr-3",
+        "relative flex w-full min-w-0 items-center gap-2.5 pr-3",
         uiClasses.transitionColors,
         "focus-visible:relative focus-visible:z-[1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset",
+        touchMin,
         isRootLeaf
           ? cn(
-              "min-h-[var(--layout-sidebar-row-height)] border-l-[3px] border-transparent bg-[var(--color-sidebar-bg)] font-semibold text-white",
+              !isDrawer && "min-h-[var(--layout-sidebar-row-height)]",
+              "border-l-[3px] border-transparent bg-[var(--color-sidebar-bg)] font-semibold text-white",
               "focus-visible:ring-white/80",
               activeLeaf
                 ? "border-l-white bg-[var(--color-sidebar-active)]"
                 : "hover:bg-white/10",
             )
           : cn(
-              "min-h-[var(--layout-sidebar-page-row-height)] border-l-[3px] border-transparent bg-[var(--color-sidebar-page-bg)] font-normal text-black",
+              !isDrawer && "min-h-[var(--layout-sidebar-page-row-height)]",
+              "border-l-[3px] border-transparent bg-[var(--color-sidebar-page-bg)] font-normal text-black",
               "focus-visible:ring-black/35",
               activeLeaf
                 ? "border-l-black bg-[var(--color-sidebar-page-active-bg)] font-semibold text-black"
                 : "hover:bg-[var(--color-sidebar-child-hover)] hover:text-black",
             ),
       )}
+      data-sidebar-level={isRootLeaf ? "section-leaf" : "page"}
       href={node.href}
       style={{
         paddingLeft: pagePad,
@@ -420,20 +501,18 @@ function TreeRow({
       onClick={onNavigate}
     >
       {showIcons ? (
-        <span className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center">
+        <IconBox>
           <NavItemIcon
             className={cn(
-              "h-4 w-4 shrink-0",
+              "h-[17px] w-[17px] shrink-0",
               !isRootLeaf && "text-[var(--color-sidebar-page-icon)]",
             )}
             labelKey={leafIconKey}
             surface={isRootLeaf ? "navy" : "light"}
           />
-        </span>
+        </IconBox>
       ) : null}
-      <span className="min-w-0 flex-1 truncate">
-        {label}
-      </span>
+      <span className="min-w-0 flex-1 truncate">{label}</span>
       {badgeCount > 0 ? (
         <span className="ml-1 shrink-0 rounded-full bg-red-600 px-1.5 text-[10px] font-bold leading-tight text-white">
           {badgeCount > 99 ? "99+" : badgeCount}
@@ -467,13 +546,13 @@ export function NavTree({
   }
 
   return (
-    <div className={variant === "sidebar" ? "space-y-0" : "space-y-0"}>
+    <div className="space-y-0" data-nav-tree={variant}>
       {nodes.map((node) => (
         <div
           className={
             variant === "sidebar"
-              ? "border-b border-white/10 last:border-b-0"
-              : "border-b border-neutral-200 last:border-b-0"
+              ? "border-b border-white/20 last:border-b-0"
+              : "border-b border-neutral-300 last:border-b-0"
           }
           data-nav-variant={variant}
           key={node.id}
@@ -484,7 +563,7 @@ export function NavTree({
             depth={0}
             isExpanded={isExpanded}
             node={node}
-            showGuides={variant === "sidebar"}
+            showGuides
             showIcons={showIcons}
             toggleExpanded={toggleExpanded}
             variant={variant}

@@ -11,12 +11,12 @@
   --color-sidebar-fg-muted: rgba(255, 255, 255, 0.78);
   --color-sidebar-child-fg: #000000;
   --color-sidebar-child-hover: #eeeeee;
-  --color-sidebar-page-active-bg: #f0f0f0;
-  --color-sidebar-guide: #c8c8c8;
+  --color-sidebar-page-active-bg: #e5e7eb;
+  --color-sidebar-guide: #9ca3af;
   --color-sidebar-folder-gold: #c58a00;
   --color-sidebar-folder-bg: #ffffff;
   --color-sidebar-folder-expanded-bg: #f3f4f6;
-  --color-sidebar-folder-hover: #e8e8e8;
+  --color-sidebar-folder-hover: #e5e7eb;
   --color-sidebar-page-icon: #1a1a1a;
   --color-utilitybar-bg: #ffffff;
   --color-utilitybar-border: #c5d1df;
@@ -284,12 +284,12 @@
   --layout-topbar-brand-width: 18.25rem;
   --layout-topbar-divider-height: 2.75rem;
   --layout-desktop-content-height: calc(100dvh - var(--layout-topbar-height));
-  --layout-sidebar-row-height: 2.375rem;
-  --layout-sidebar-folder-row-height: 2.25rem;
-  --layout-sidebar-page-row-height: 2.125rem;
-  --layout-sidebar-child-row-height: 2.25rem;
-  --layout-sidebar-icon-size: 1rem;
-  --layout-sidebar-icon-box: 1.125rem;
+  --layout-sidebar-row-height: 2.5625rem;
+  --layout-sidebar-folder-row-height: 2.4375rem;
+  --layout-sidebar-page-row-height: 2.3125rem;
+  --layout-sidebar-child-row-height: 2.4375rem;
+  --layout-sidebar-icon-size: 1.0625rem;
+  --layout-sidebar-icon-box: 1.25rem;
   --layout-mobile-bottom-nav-height: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   --layout-mobile-keyboard-pad: 1rem;
 

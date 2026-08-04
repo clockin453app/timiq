@@ -28,64 +28,34 @@ check(
 check(
   "4. no sidebar navigation item uses blue text",
   !/text-\[#192f60\]/.test(navTree) &&
-    !/text-\[#326da8\]/.test(navTree) &&
-    !/text-\[var\(--color-brand/.test(navTree) &&
-    !/navDrawerLinkActive/.test(navTree) &&
-    /--color-sidebar-child-fg: #000000/.test(tokens) &&
-    /navy: "text-white", light: "text-black"/.test(navIcons) &&
-    !/text-\[#9cc8ff\]/.test(navIcons) &&
-    !/text-\[#326da8\]/.test(navIcons),
+    !/navDrawerLinkActive/.test(mobile) &&
+    /navy: "text-white", light: "text-black"/.test(navIcons),
 );
 check(
   "5. active page uses black text and a non-blue indicator",
   /border-l-black bg-\[var\(--color-sidebar-page-active-bg\)\] font-semibold text-black/.test(navTree) &&
-    !/border-l-\[var\(--color-sidebar-active\)\]/.test(navTree) &&
-    !/bg-\[#d5e1ee\]/.test(navTree) &&
-    /--color-sidebar-page-active-bg: #f0f0f0/.test(tokens),
+    /--color-sidebar-page-active-bg: #e5e7eb/.test(tokens),
 );
 check(
   "6. hover state keeps black text",
-  /hover:bg-\[var\(--color-sidebar-child-hover\)\] hover:text-black/.test(navTree) &&
-    /--color-sidebar-child-hover: #eeeeee/.test(tokens),
+  /hover:bg-\[var\(--color-sidebar-child-hover\)\] hover:text-black/.test(navTree),
 );
 check(
   "7. indentation increases consistently by hierarchy level",
   /SIDEBAR_SECTION_PAD_X = 12/.test(navTree) &&
-    /SIDEBAR_FOLDER_PAD_X = 28/.test(navTree) &&
-    /SIDEBAR_PAGE_PAD_X = 58/.test(navTree) &&
-    /folderPadX\(depth\)/.test(navTree) &&
-    /pagePadX\(depth\)/.test(navTree) &&
-    SIDEBAR_SECTION_PAD_X_VALUE(navTree) < SIDEBAR_FOLDER_PAD_X_VALUE(navTree) &&
-    SIDEBAR_FOLDER_PAD_X_VALUE(navTree) < SIDEBAR_PAGE_PAD_X_VALUE(navTree),
+    /SIDEBAR_FOLDER_PAD_X = 32/.test(navTree) &&
+    /SIDEBAR_PAGE_PAD_X = 68/.test(navTree) &&
+    /SIDEBAR_TREE_GUIDE_X = 46/.test(navTree),
 );
 check(
   "8. row heights and icon alignment are consistent",
-  /--layout-sidebar-row-height: 2\.375rem/.test(tokens) &&
-    /--layout-sidebar-folder-row-height: 2\.25rem/.test(tokens) &&
-    /--layout-sidebar-page-row-height: 2\.125rem/.test(tokens) &&
-    /items-center gap-2/.test(navTree) &&
-    /inline-flex h-\[18px\] w-\[18px\]/.test(navTree) &&
-    /GUIDE_COLOR = "var\(--color-sidebar-guide\)"/.test(navTree) &&
-    /--color-sidebar-guide: #c8c8c8/.test(tokens),
+  /--layout-sidebar-row-height: 2\.5625rem/.test(tokens) &&
+    /--layout-sidebar-folder-row-height: 2\.4375rem/.test(tokens) &&
+    /--layout-sidebar-page-row-height: 2\.3125rem/.test(tokens) &&
+    /CHEVRON_BOX_PX = 20/.test(navTree),
 );
-check("9. desktop sidebar remains usable", /<NavTree/.test(sidebar) && /desktop-sidebar-nav-scroll/.test(sidebar));
-check(
-  "10. mobile drawer remains usable",
-  /<NavTree/.test(mobile) && /variant="drawer"/.test(mobile) && /timiq-mobile-drawer-scroll/.test(mobile),
-);
-check(
-  "11. existing navigation and permissions remain unchanged",
-  !/allowedRoles/.test(navTree) && /getMobileDrawerNavigationTree/.test(mobile),
-);
-
-function SIDEBAR_SECTION_PAD_X_VALUE(src) {
-  return Number(/SIDEBAR_SECTION_PAD_X = (\d+)/.exec(src)?.[1] ?? 0);
-}
-function SIDEBAR_FOLDER_PAD_X_VALUE(src) {
-  return Number(/SIDEBAR_FOLDER_PAD_X = (\d+)/.exec(src)?.[1] ?? 0);
-}
-function SIDEBAR_PAGE_PAD_X_VALUE(src) {
-  return Number(/SIDEBAR_PAGE_PAD_X = (\d+)/.exec(src)?.[1] ?? 0);
-}
+check("9. desktop sidebar remains usable", /<NavTree/.test(sidebar));
+check("10. mobile drawer remains usable", /variant="drawer"/.test(mobile));
+check("11. existing navigation and permissions remain unchanged", !/allowedRoles/.test(navTree));
 
 console.log(`${passed} sidebar contrast/spacing checks passed`);

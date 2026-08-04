@@ -17,7 +17,7 @@ import { useT } from "../../lib/i18n";
 
 import { cn } from "../../lib/cn";
 import { uiClasses } from "../../lib/ui-classes";
-import { authUserAvatarName } from "../../lib/user-display";
+import { authUserAvatarName, formatAuthUserDisplayName } from "../../lib/user-display";
 
 import { MessagesHeaderButton } from "./messages-header-button";
 import { createMobileDrawerState, mobileDrawerReducer } from "./mobile-drawer-state";
@@ -34,10 +34,12 @@ const MOBILE_HEADER_LOGO_HEIGHT = 46;
 
 function mobileDrawerLinkClass(active: boolean): string {
   return cn(
-    uiClasses.navDrawerLinkBase,
-    "min-h-10 gap-2",
+    "flex min-h-11 min-w-0 max-w-full items-center gap-2.5 rounded-none border-l-[3px] px-2 py-1.5 text-[14px]",
     uiClasses.transitionColors,
-    active ? uiClasses.navDrawerLinkActive : uiClasses.navDrawerLinkIdle,
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-black/35",
+    active
+      ? "border-l-black bg-[var(--color-sidebar-page-active-bg)] font-semibold text-black"
+      : "border-l-transparent bg-white font-normal text-black hover:bg-[var(--color-sidebar-child-hover)] hover:text-black",
   );
 }
 
@@ -117,11 +119,14 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
 
     window.addEventListener("keydown", onKeyDown);
     const previousOverflow = document.body.style.overflow;
+    const previousOverscroll = document.body.style.overscrollBehavior;
     document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
 
     return () => {
       window.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
+      document.body.style.overscrollBehavior = previousOverscroll;
       if (appMain) appMain.inert = false;
     };
   }, [menuOpen, closeMenu]);
@@ -129,6 +134,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const menuLabel = menuOpen ? t("nav.close_menu", "Close menu") : t("nav.menu", "Menu");
   const roleLabel = employeeRoleLabel(t, user.system_role);
   const avatarName = authUserAvatarName(user);
+  const displayName = formatAuthUserDisplayName(user);
 
   return (
     <header
@@ -185,35 +191,43 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
         <>
           <button
             aria-label={t("nav.close_menu", "Close menu")}
-            className="fixed inset-0 z-50 bg-black/30"
+            className="fixed inset-0 z-50 bg-black/40"
+            data-testid="timiq-mobile-drawer-backdrop"
             type="button"
             onClick={() => closeMenu()}
           />
           <div
-            className="fixed bottom-0 right-0 top-0 z-[60] flex w-[min(92vw,360px)] min-w-[min(100%,300px)] max-w-[min(92vw,360px)] flex-col overflow-hidden border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)]"
+            className="fixed bottom-0 right-0 top-0 z-[60] flex w-[min(100vw-1.25rem,360px)] max-w-[min(100vw-1.25rem,360px)] flex-col overflow-hidden overscroll-contain border-l border-[var(--color-border-dark)] bg-[var(--color-sheet)] shadow-[var(--shadow-modal)]"
             id="timiq-mobile-menu"
             role="dialog"
             aria-modal="true"
             aria-label={t("shell.drawer_nav", "More navigation")}
+            data-testid="timiq-mobile-drawer"
             ref={drawerRef}
           >
             {/* Fixed account header only — no logo */}
             <div className="timiq-mobile-drawer-header shrink-0 border-b border-[var(--color-border)] bg-[var(--color-sheet)] pt-[env(safe-area-inset-top,0px)]">
-              <div className="flex h-14 items-center gap-2 px-3">
+              <div className="flex min-h-14 items-center gap-2 px-3 py-2">
                 <UserAvatar
                   email={user.email}
                   name={avatarName}
                   sizeClassName="h-9 w-9"
                   userId={user.id}
                 />
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 overflow-hidden">
                   <p
-                    className="truncate text-[13px] font-medium leading-tight text-[var(--color-text)]"
+                    className="truncate text-[14px] font-semibold leading-tight text-black"
+                    title={displayName}
+                  >
+                    {displayName}
+                  </p>
+                  <p
+                    className="truncate text-[12px] font-normal leading-tight text-black/70"
                     title={user.email}
                   >
                     {user.email}
                   </p>
-                  <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-muted)]">
+                  <p className="truncate text-[10px] font-semibold uppercase tracking-wide text-black/55">
                     {roleLabel}
                   </p>
                 </div>
@@ -237,7 +251,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
             {/* Single scrollable menu: nav tree + account actions */}
             <nav
               aria-label={t("shell.drawer_nav", "More navigation")}
-              className="timiq-mobile-drawer-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-2 py-1 text-[length:var(--text-nav-row)] [-webkit-overflow-scrolling:touch] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
+              className="timiq-mobile-drawer-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain px-1.5 py-1 [-webkit-overflow-scrolling:touch] pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]"
             >
               {drawerTree.length > 0 ? (
                 <NavTree
@@ -249,7 +263,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                   onNavigate={() => closeMenu(false)}
                 />
               ) : (
-                <p className="px-2 py-2 text-xs text-[var(--color-text-muted)]">
+                <p className="px-2 py-2 text-sm text-black/70">
                   {t("nav.drawer_hint_primary", "All primary pages are on the bottom bar.")}
                 </p>
               )}
@@ -260,7 +274,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                   href="/profile"
                   onClick={() => closeMenu(false)}
                 >
-                  <NavItemIcon className="h-3.5 w-3.5 shrink-0" labelKey="nav.profile" />
+                  <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.profile" surface="light" />
                   <span className="min-w-0 flex-1 truncate">{t("nav.profile", "Profile")}</span>
                 </Link>
                 {showAccountExtras ? (
@@ -269,7 +283,7 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                     href="/settings"
                     onClick={() => closeMenu(false)}
                   >
-                    <NavItemIcon className="h-3.5 w-3.5 shrink-0" labelKey="nav.settings" />
+                    <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.settings" surface="light" />
                     <span className="min-w-0 flex-1 truncate">{t("nav.settings", "Settings")}</span>
                   </Link>
                 ) : null}
@@ -279,11 +293,11 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
                     href="/help"
                     onClick={() => closeMenu(false)}
                   >
-                    <NavItemIcon className="h-3.5 w-3.5 shrink-0" labelKey="nav.help" />
+                    <NavItemIcon className="h-[17px] w-[17px] shrink-0 text-black" labelKey="nav.help" surface="light" />
                     <span className="min-w-0 flex-1 truncate">{t("nav.help", "Help centre")}</span>
                   </Link>
                 ) : null}
-                <LogoutButton appearance="menuRow" className="min-h-10" />
+                <LogoutButton appearance="menuRow" className="min-h-11" />
               </div>
             </nav>
           </div>

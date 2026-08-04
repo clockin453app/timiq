@@ -219,8 +219,13 @@ check("Help is gated for limited users", /showAccountExtras \? \([\s\S]*href="\/
 check("Logout appears as a menu row in the scrollable menu", /timiq-mobile-drawer-scroll[\s\S]*appearance="menuRow"/.test(header));
 check("account identity is not duplicated below the header", !/timiq-mobile-drawer-scroll[\s\S]*UserAvatar/.test(header));
 check("account leaves are omitted from the NavTree", /omitMobileDrawerFooterLeaves/.test(header));
-check("drawer width is min(92vw, 360px)", /w-\[min\(92vw,360px\)\]/.test(header));
+check("drawer width is min(100vw-1.25rem, 360px)", /w-\[min\(100vw-1\.25rem,360px\)\]/.test(header));
+check("drawer avoids forced 300px min-width overflow", !/min-w-\[min\(100%,300px\)\]/.test(header));
 check("close control has a large touch target", /h-11 w-11/.test(header));
+check("account links use black active indicator", /border-l-black bg-\[var\(--color-sidebar-page-active-bg\)\]/.test(header));
+check("backdrop has test id", /data-testid="timiq-mobile-drawer-backdrop"/.test(header));
+check("body overscroll locked while open", /overscrollBehavior = "none"/.test(header));
+check("drawer header truncates name and email", /formatAuthUserDisplayName/.test(header) && /truncate text-\[14px\]/.test(header));
 check("logout confirmation remains wired", /LogoutButton/.test(header));
 check("top bar avatar is not a duplicate account menu", !/<UserAvatar[\s\S]{0,200}menuButtonRef/.test(header.split("{menuOpen")[0] ?? ""));
 
