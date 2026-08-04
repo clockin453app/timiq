@@ -53,3 +53,11 @@ export {
   type InviteUserResponse,
   type SendVerificationEmailResponse,
 } from "./account-access-api";
+export {
+  FORBIDDEN_TEMPORARY_PASSWORDS,
+  GENERATED_TEMPORARY_PASSWORD_LENGTH,
+  TEMPORARY_PASSWORD_MIN_LENGTH,
+  generateSecureTemporaryPassword,
+  validateTemporaryPassword,
+  type TemporaryPasswordValidation,
+} from "./temporary-password";

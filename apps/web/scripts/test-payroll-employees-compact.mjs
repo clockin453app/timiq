@@ -72,9 +72,11 @@ check("No max-w 48rem empty-gap layout", !/max-w-\[min\(48rem/.test(employees));
 check("Search uses FilterSearch / FilterToolbar", /FilterSearch/.test(employees) && /FilterToolbar/.test(employees));
 check("Search placeholder name or email", /Search employees by name or email/.test(employees));
 check("Client-side filteredUsers preserved", /filteredUsers/.test(employees) && /employeeSearch\.trim\(\)\.toLowerCase\(\)/.test(employees));
-check("Table columns remain", /employees\.col_name/.test(employees) && /employees\.col_email/.test(employees) && /employees\.col_job_title/.test(employees) && /employees\.col_actions/.test(employees));
+check("Table columns remain", /employees\.col_employee/.test(employees) && /employees\.col_job_title/.test(employees) && /employees\.col_actions/.test(employees));
 check("Edit action remains", /employees\.edit/.test(employees) && /setPanelUserId/.test(employees));
-check("Temporary password default preserved", /Employee12345/.test(employees));
+check("Temporary password starts empty", /generateSecureTemporaryPassword/.test(employees) && !/Employee12345|Admin12345/.test(employees));
+check("Generate password control present", /Generate password/.test(employees));
+check("Secure temporary password helper imported", /generateSecureTemporaryPassword/.test(employees) && /validateTemporaryPassword/.test(employees));
 
 // --- Shared Apply support ---
 check("FilterActionRow supports comfortable density", /density\?: \"dense\" \| \"comfortable\"/.test(filterToolbar) || /density = \"dense\"/.test(filterToolbar));

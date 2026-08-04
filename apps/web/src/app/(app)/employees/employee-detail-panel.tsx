@@ -16,10 +16,12 @@ import {
   canManageUser,
   clearManagedUserHistory,
   deleteManagedUser,
+  generateSecureTemporaryPassword,
   isAdministrator,
   resetManagedUserPassword,
   updateManagedUser,
   updateManagedUserStatus,
+  validateTemporaryPassword,
   type AuthUser,
   type SystemRole,
 } from "@/features/auth";
@@ -94,9 +96,8 @@ export function EmployeeDetailPanel({
   const [email, setEmail] = useState(user.email);
   const [systemRole, setSystemRole] = useState<SystemRole>(user.system_role);
   const [companyId, setCompanyId] = useState(user.company_id ?? "");
-  const [resetPassword, setResetPassword] = useState(
-    user.system_role === "admin" ? "Admin12345" : "Employee12345",
-  );
+  const [resetPassword, setResetPassword] = useState("");
+  const [passwordCopyStatus, setPasswordCopyStatus] = useState("");
   const [localError, setLocalError] = useState("");
   const [localSuccess, setLocalSuccess] = useState("");
   const [isSavingUser, setIsSavingUser] = useState(false);
@@ -336,10 +337,9 @@ export function EmployeeDetailPanel({
     setEmail(user.email);
     setSystemRole(user.system_role);
     setCompanyId(user.company_id ?? "");
-    const nextPassword =
-      user.system_role === "admin" ? "Admin12345" : "Employee12345";
-    setResetPassword(nextPassword);
+    setResetPassword("");
     setPasswordVisible(false);
+    setPasswordCopyStatus("");
     setProfileBaseline(
       snapshot({
         account: {
@@ -351,7 +351,7 @@ export function EmployeeDetailPanel({
         earlyAccessEnabled: false,
       }),
     );
-    setSecurityBaseline(snapshot({ resetPassword: nextPassword }));
+    setSecurityBaseline(snapshot({ resetPassword: "" }));
     setStatusBaseline(snapshot({ clearHistoryPhrase: "", deletePhrase: "" }));
   }, [user.id]);
 
@@ -524,11 +524,18 @@ export function EmployeeDetailPanel({
   async function handleResetPassword() {
     setLocalError("");
     setLocalSuccess("");
+    const passwordCheck = validateTemporaryPassword(resetPassword);
+    if (!passwordCheck.ok) {
+      setLocalError(passwordCheck.message);
+      return;
+    }
     setIsResettingPassword(true);
     try {
       await resetManagedUserPassword(user.id, resetPassword);
       setLocalSuccess("Password reset.");
       setResetPassword("");
+      setPasswordVisible(false);
+      setPasswordCopyStatus("");
       setSecurityBaseline(snapshot({ resetPassword: "" }));
       await onRefresh();
     } catch (error) {
@@ -1264,7 +1271,10 @@ export function EmployeeDetailPanel({
               <input
                 autoComplete="new-password"
                 className="h-11 min-w-0 flex-1 rounded border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 text-sm"
-                onChange={(event) => setResetPassword(event.target.value)}
+                onChange={(event) => {
+                  setResetPassword(event.target.value);
+                  setPasswordCopyStatus("");
+                }}
                 type={passwordVisible ? "text" : "password"}
                 value={resetPassword}
               />
@@ -1278,8 +1288,51 @@ export function EmployeeDetailPanel({
               </Button>
             </div>
           </label>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              className="min-h-11"
+              onClick={() => {
+                try {
+                  const generated = generateSecureTemporaryPassword();
+                  setResetPassword(generated);
+                  setPasswordVisible(true);
+                  setPasswordCopyStatus("");
+                } catch (error) {
+                  setLocalError(
+                    error instanceof Error
+                      ? error.message
+                      : "Could not generate a temporary password.",
+                  );
+                }
+              }}
+              type="button"
+              variant="secondary"
+            >
+              Generate password
+            </Button>
+            <Button
+              className="min-h-11"
+              disabled={!resetPassword}
+              onClick={() => {
+                void navigator.clipboard.writeText(resetPassword).then(
+                  () => setPasswordCopyStatus("Copied"),
+                  () => setPasswordCopyStatus("Copy failed"),
+                );
+              }}
+              type="button"
+              variant="secondary"
+            >
+              Copy
+            </Button>
+            {passwordCopyStatus ? (
+              <span className="self-center text-xs text-[var(--color-text-muted)]">
+                {passwordCopyStatus}
+              </span>
+            ) : null}
+          </div>
           <p className="text-xs text-[var(--color-text-muted)]">
-            Resetting the password replaces the employee&apos;s current sign-in password.
+            Enter or generate a new temporary password. The current password is never shown.
+            Resetting replaces the employee&apos;s current sign-in password.
           </p>
         </section>
         ) : null}

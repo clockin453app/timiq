@@ -19,11 +19,13 @@ import {
 } from "@/components/ui";
 import {
   createManagedUser,
+  generateSecureTemporaryPassword,
   inviteUserByEmail,
   isAdministrator,
   listManagedUsers,
   RoleGuard,
   useCurrentUser,
+  validateTemporaryPassword,
   type AuthUser,
   type SystemRole,
 } from "@/features/auth";
@@ -67,7 +69,9 @@ export function EmployeesClient() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState("");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("Employee12345");
+  const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [passwordCopyStatus, setPasswordCopyStatus] = useState("");
   const [systemRole, setSystemRole] = useState<SystemRole>("employee");
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [panelUserId, setPanelUserId] = useState<string | null>(null);
@@ -239,6 +243,13 @@ export function EmployeesClient() {
       return;
     }
 
+    const passwordCheck = validateTemporaryPassword(password);
+    if (!passwordCheck.ok) {
+      setErrorMessage(passwordCheck.message);
+      setIsCreating(false);
+      return;
+    }
+
     try {
       const createdUser = await createManagedUser({
         email,
@@ -252,7 +263,9 @@ export function EmployeesClient() {
         t("employees.created_success", "Created {{email}}", { email: createdUser.email }),
       );
       setEmail("");
-      setPassword("Employee12345");
+      setPassword("");
+      setPasswordVisible(false);
+      setPasswordCopyStatus("");
       setSystemRole("employee");
 
       const firstActiveCompany = companies.find((company) => company.is_active);
@@ -354,12 +367,70 @@ export function EmployeesClient() {
                       autoComplete="new-password"
                       className={fieldInputClass}
                       name="password"
-                      onChange={(event) => setPassword(event.target.value)}
+                      onChange={(event) => {
+                        setPassword(event.target.value);
+                        setPasswordCopyStatus("");
+                      }}
                       required
-                      type="text"
+                      type={passwordVisible ? "text" : "password"}
                       value={password}
                     />
                   </label>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      className="min-h-11"
+                      onClick={() => {
+                        try {
+                          const generated = generateSecureTemporaryPassword();
+                          setPassword(generated);
+                          setPasswordVisible(true);
+                          setPasswordCopyStatus("");
+                        } catch (error) {
+                          setErrorMessage(
+                            error instanceof Error
+                              ? error.message
+                              : "Could not generate a temporary password.",
+                          );
+                        }
+                      }}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Generate password
+                    </Button>
+                    <Button
+                      className="min-h-11"
+                      disabled={!password}
+                      onClick={() => setPasswordVisible((visible) => !visible)}
+                      type="button"
+                      variant="secondary"
+                    >
+                      {passwordVisible ? "Hide" : "Show"}
+                    </Button>
+                    <Button
+                      className="min-h-11"
+                      disabled={!password}
+                      onClick={() => {
+                        void navigator.clipboard.writeText(password).then(
+                          () => setPasswordCopyStatus("Copied"),
+                          () => setPasswordCopyStatus("Copy failed"),
+                        );
+                      }}
+                      type="button"
+                      variant="secondary"
+                    >
+                      Copy
+                    </Button>
+                    {passwordCopyStatus ? (
+                      <span className="self-center text-xs text-[var(--color-text-muted)]">
+                        {passwordCopyStatus}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-[var(--color-text-muted)]">
+                    Leave empty until you enter or generate a strong temporary password. Do not use
+                    known placeholders.
+                  </p>
 
                   <label className={fieldLabelClass}>
                     {t("employees.role", "Role")}
