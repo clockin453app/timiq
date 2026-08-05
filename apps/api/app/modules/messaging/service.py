@@ -823,11 +823,20 @@ def mark_conversation_read(
     actor: User,
     conversation_id: uuid.UUID,
 ) -> None:
+    from app.modules.notifications import repository as notif_repo
+
     part = get_participant(db_session, conversation_id=conversation_id, user_id=actor.id)
     if part is None:
         raise MessagingPermissionError("You are not part of this conversation.")
-    part.last_read_at = _now()
+    now = _now()
+    part.last_read_at = now
     db_session.add(part)
+    notif_repo.mark_message_received_seen_for_conversation(
+        db_session,
+        user_id=actor.id,
+        conversation_id=conversation_id,
+        seen_at=now,
+    )
     db_session.flush()
     db_session.commit()
 

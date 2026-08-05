@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -34,6 +35,7 @@ NotificationKind = Literal[
     "face_check_setup",
     "attendance_late_arrival",
     "attendance_forgot_clock_in",
+    "attendance_missing_clock_in",
     "attendance_forgot_clock_out",
     "push_test",
     "payroll_paid",
@@ -62,11 +64,20 @@ class NotificationSummaryItem(BaseModel):
         default=False,
         description="False while the row is shown; informational rows are omitted once dismissed via mark-seen.",
     )
+    occurred_at: datetime | None = Field(
+        default=None,
+        description="UTC timestamp of the underlying event when known; null when no truthful source exists.",
+    )
 
 
 class NotificationSummaryResponse(BaseModel):
-    total_count: int = Field(ge=0)
+    total_count: int = Field(ge=0, description="Bell badge: sum of visible non-message item counts.")
     items: list[NotificationSummaryItem]
+    messages_unread_count: int = Field(
+        ge=0,
+        default=0,
+        description="Messages nav badge: conversation unread (+ announcements when included by clients).",
+    )
 
 
 class NotificationMarkSeenRequest(BaseModel):

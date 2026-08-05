@@ -29,10 +29,14 @@ from app.modules.auth.models import SystemRole, User
 from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.employee_profiles.models import EmployeeProfile
-from app.modules.notifications.repository import create_notification_record_once
+from app.modules.notifications.repository import (
+    create_notification_record_once,
+    mark_attendance_missing_clock_in_seen_for_subject,
+)
 
 ATTENDANCE_LATE_KIND = "attendance_late_arrival"
 ATTENDANCE_FORGOT_IN_KIND = "attendance_forgot_clock_in"
+ATTENDANCE_MISSING_CLOCK_IN_KIND = "attendance_missing_clock_in"
 ATTENDANCE_FORGOT_OUT_KIND = "attendance_forgot_clock_out"
 
 
@@ -221,6 +225,32 @@ def _create_or_count(
         result.notifications_created += 1
 
 
+def _missing_clock_in_dedupe_key(
+    *,
+    company_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    work_date: date,
+    recipient_id: uuid.UUID,
+) -> str:
+    return (
+        f"attendance:missing_clock_in:{company_id}:{employee_id}:"
+        f"{work_date.isoformat()}:{recipient_id}"
+    )
+
+
+def _forgot_clock_out_dedupe_key(
+    *,
+    company_id: uuid.UUID,
+    employee_id: uuid.UUID,
+    work_date: date,
+    recipient_id: uuid.UUID,
+) -> str:
+    return (
+        f"attendance:forgot_clock_out:{company_id}:{employee_id}:"
+        f"{work_date.isoformat()}:{recipient_id}"
+    )
+
+
 def _check_late_and_forgot_in(
     db: Session,
     *,
@@ -247,6 +277,14 @@ def _check_late_and_forgot_in(
         ):
             continue
         if user_has_clock_in_between(db, user_id=employee.id, start_utc=day_start_utc, end_utc=day_end_utc):
+            if not dry_run:
+                mark_attendance_missing_clock_in_seen_for_subject(
+                    db,
+                    company_id=settings.company_id,
+                    subject_user_id=employee.id,
+                    work_date=work_date,
+                    seen_at=now_utc,
+                )
             continue
         expected_start_value = _expected_start_time_for_user(
             db,
@@ -260,88 +298,80 @@ def _check_late_and_forgot_in(
         name = _display_name(profile, employee)
         expected_label = expected_start.strftime("%H:%M")
 
+        late_due = False
         if settings.late_arrival_enabled:
             late_at = expected_dt + timedelta(minutes=settings.late_arrival_grace_minutes)
-            if local_now >= late_at:
-                desc_admin = (
-                    f"{name} has not clocked in. Expected start was {expected_label}. "
-                    f"Grace period: {settings.late_arrival_grace_minutes} minutes."
-                )
-                desc_employee = "You may be late for your expected start and have not clocked in."
-                for rid in _recipient_ids(
+            late_due = local_now >= late_at
+
+        forgot_due = False
+        check_time = _parse_hhmm(settings.forgot_clock_in_check_time)
+        if settings.forgot_clock_in_enabled and check_time is not None:
+            check_dt = datetime.combine(work_date, check_time, tzinfo=tz)
+            forgot_due = local_now >= check_dt
+
+        if not late_due and not forgot_due:
+            continue
+
+        recipient_ids: list[uuid.UUID] = []
+        if late_due:
+            recipient_ids.extend(
+                _recipient_ids(
                     db,
                     company_id=settings.company_id,
                     employee=employee,
                     notify_employee=settings.late_arrival_notify_employee,
                     notify_admins=settings.late_arrival_notify_admins,
-                ):
-                    is_employee = rid == employee.id
-                    _create_or_count(
-                        db,
-                        dry_run=dry_run,
-                        result=result,
-                        recipient_user_id=rid,
-                        company_id=settings.company_id,
-                        kind=ATTENDANCE_LATE_KIND,
-                        dedupe_key=f"attendance:late_arrival:{settings.company_id}:{employee.id}:{work_date.isoformat()}",
-                        title="Late arrival",
-                        description=desc_employee if is_employee else desc_admin,
-                        href="/clock" if is_employee else "/live-attendance",
-                        source_rule_type="late_arrival",
-                        subject_user_id=employee.id,
-                        work_date=work_date,
-                        created_at=now_utc,
-                    )
-
-        check_time = _parse_hhmm(settings.forgot_clock_in_check_time)
-        if settings.forgot_clock_in_enabled and check_time is not None:
-            check_dt = datetime.combine(work_date, check_time, tzinfo=tz)
-            if local_now >= check_dt:
-                desc_admin = f"{name} has no clock-in recorded for today."
-                desc_employee = "You may have forgotten to clock in."
-                for rid in _recipient_ids(
+                ),
+            )
+        if forgot_due:
+            recipient_ids.extend(
+                _recipient_ids(
                     db,
                     company_id=settings.company_id,
                     employee=employee,
                     notify_employee=settings.forgot_clock_in_notify_employee,
                     notify_admins=settings.forgot_clock_in_notify_admins,
-                ):
-                    is_employee = rid == employee.id
-                    _create_or_count(
-                        db,
-                        dry_run=dry_run,
-                        result=result,
-                        recipient_user_id=rid,
-                        company_id=settings.company_id,
-                        kind=ATTENDANCE_FORGOT_IN_KIND,
-                        dedupe_key=f"attendance:forgot_clock_in:{settings.company_id}:{employee.id}:{work_date.isoformat()}",
-                        title="Forgot clock-in",
-                        description=desc_employee if is_employee else desc_admin,
-                        href="/clock" if is_employee else "/live-attendance",
-                        source_rule_type="forgot_clock_in",
-                        subject_user_id=employee.id,
-                        work_date=work_date,
-                        created_at=now_utc,
-                    )
+                ),
+            )
+        recipient_ids = list(dict.fromkeys(recipient_ids))
 
+        if late_due:
+            title = "Missing clock-in"
+            source_rule = "late_arrival" if not forgot_due else "missing_clock_in"
+            desc_admin = (
+                f"{name} has not clocked in. Expected start was {expected_label}. "
+                f"Grace period: {settings.late_arrival_grace_minutes} minutes."
+            )
+            desc_employee = "You may be late for your expected start and have not clocked in."
+        else:
+            title = "Missing clock-in"
+            source_rule = "forgot_clock_in"
+            desc_admin = f"{name} has no clock-in recorded for today."
+            desc_employee = "You may have forgotten to clock in."
 
-def _forgot_clock_out_dedupe_key(
-    *,
-    settings: AttendanceNotificationSettings,
-    employee_id: uuid.UUID,
-    shift_id: uuid.UUID,
-    elapsed: timedelta,
-) -> str:
-    base = f"attendance:forgot_clock_out:{settings.company_id}:{employee_id}:{shift_id}"
-    repeat_hours = settings.forgot_clock_out_repeat_hours
-    if repeat_hours is None:
-        return base
-    if repeat_hours <= 0:
-        return base
-    threshold = timedelta(hours=settings.forgot_clock_out_threshold_hours)
-    repeat = timedelta(hours=repeat_hours)
-    bucket = int(max(0, (elapsed - threshold).total_seconds()) // repeat.total_seconds())
-    return f"{base}:repeat:{bucket}"
+        for rid in recipient_ids:
+            is_employee = rid == employee.id
+            _create_or_count(
+                db,
+                dry_run=dry_run,
+                result=result,
+                recipient_user_id=rid,
+                company_id=settings.company_id,
+                kind=ATTENDANCE_MISSING_CLOCK_IN_KIND,
+                dedupe_key=_missing_clock_in_dedupe_key(
+                    company_id=settings.company_id,
+                    employee_id=employee.id,
+                    work_date=work_date,
+                    recipient_id=rid,
+                ),
+                title=title,
+                description=desc_employee if is_employee else desc_admin,
+                href="/clock" if is_employee else "/live-attendance",
+                source_rule_type=source_rule,
+                subject_user_id=employee.id,
+                work_date=work_date,
+                created_at=now_utc,
+            )
 
 
 def _check_forgot_clock_out(
@@ -354,22 +384,18 @@ def _check_forgot_clock_out(
 ) -> None:
     if not settings.forgot_clock_out_enabled:
         return
+    policy = ensure_company_time_policy(db, settings.company_id)
+    tz = _zone(policy.timezone_name)
     threshold = timedelta(hours=settings.forgot_clock_out_threshold_hours)
     for shift, employee, profile in list_open_shifts_for_company(db, company_id=settings.company_id):
         elapsed = now_utc - shift.clock_in_at
         if elapsed < threshold:
             continue
-        local_day = shift.clock_in_at.date()
+        local_day = shift.clock_in_at.astimezone(tz).date()
         name = _display_name(profile, employee)
         clock_in_label = shift.clock_in_at.astimezone(timezone.utc).strftime("%H:%M UTC")
         desc_admin = f"{name} has an open shift since {clock_in_label}. Please check if they forgot to clock out."
         desc_employee = "You may have forgotten to clock out."
-        dedupe_key = _forgot_clock_out_dedupe_key(
-            settings=settings,
-            employee_id=employee.id,
-            shift_id=shift.id,
-            elapsed=elapsed,
-        )
         for rid in _recipient_ids(
             db,
             company_id=settings.company_id,
@@ -385,7 +411,12 @@ def _check_forgot_clock_out(
                 recipient_user_id=rid,
                 company_id=settings.company_id,
                 kind=ATTENDANCE_FORGOT_OUT_KIND,
-                dedupe_key=dedupe_key,
+                dedupe_key=_forgot_clock_out_dedupe_key(
+                    company_id=settings.company_id,
+                    employee_id=employee.id,
+                    work_date=local_day,
+                    recipient_id=rid,
+                ),
                 title="Forgot clock-out",
                 description=desc_employee if is_employee else desc_admin,
                 href="/clock" if is_employee else "/time-records",

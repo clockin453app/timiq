@@ -209,6 +209,56 @@ def mark_record_seen(
     db.execute(stmt)
 
 
+def mark_message_received_seen_for_conversation(
+    db: Session,
+    *,
+    user_id: uuid.UUID,
+    conversation_id: uuid.UUID,
+    seen_at: datetime | None = None,
+) -> int:
+    """Mark hidden message_received rows for this user/conversation as seen (no delete)."""
+    when = seen_at or datetime.now(timezone.utc)
+    prefix = f"message:{conversation_id}:"
+    stmt = (
+        update(NotificationRecord)
+        .where(NotificationRecord.recipient_user_id == user_id)
+        .where(NotificationRecord.kind == "message_received")
+        .where(NotificationRecord.dedupe_key.like(f"{prefix}%"))
+        .where(NotificationRecord.seen_at.is_(None))
+        .values(seen_at=when)
+    )
+    result = db.execute(stmt)
+    return int(result.rowcount or 0)
+
+
+def mark_attendance_missing_clock_in_seen_for_subject(
+    db: Session,
+    *,
+    company_id: uuid.UUID,
+    subject_user_id: uuid.UUID,
+    work_date: date,
+    seen_at: datetime | None = None,
+) -> int:
+    """Resolve daily missing-clock-in alerts when the employee clocks in (legacy kinds included)."""
+    when = seen_at or datetime.now(timezone.utc)
+    kinds = (
+        "attendance_missing_clock_in",
+        "attendance_late_arrival",
+        "attendance_forgot_clock_in",
+    )
+    stmt = (
+        update(NotificationRecord)
+        .where(NotificationRecord.company_id == company_id)
+        .where(NotificationRecord.subject_user_id == subject_user_id)
+        .where(NotificationRecord.work_date == work_date)
+        .where(NotificationRecord.kind.in_(kinds))
+        .where(NotificationRecord.seen_at.is_(None))
+        .values(seen_at=when)
+    )
+    result = db.execute(stmt)
+    return int(result.rowcount or 0)
+
+
 def mark_all_records_seen_for_user(
     db: Session,
     *,

@@ -54,10 +54,17 @@ _COMPUTED_DISMISSIBLE_KINDS = frozenset(
     }
 )
 
+_BELL_HIDDEN_RECORD_KINDS = frozenset(
+    {
+        "message_received",
+    }
+)
+
 _PERSISTENT_RECORD_KINDS = frozenset(
     {
         "attendance_late_arrival",
         "attendance_forgot_clock_in",
+        "attendance_missing_clock_in",
         "attendance_forgot_clock_out",
         "push_test",
         "message_received",
@@ -117,6 +124,7 @@ def _category_for_kind(kind: str) -> str:
         "time_review",
         "attendance_late_arrival",
         "attendance_forgot_clock_in",
+        "attendance_missing_clock_in",
         "attendance_forgot_clock_out",
         "push_test",
     ):
@@ -137,6 +145,7 @@ def _item(
     href: str,
     count: int,
     priority: str = "normal",
+    occurred_at: datetime | None = None,
 ) -> NotificationSummaryItem:
     cat = _category_for_kind(kind)
     pr = "high" if priority == "high" else "normal"
@@ -152,6 +161,7 @@ def _item(
         category=cat,
         group=cat,
         is_seen=False,
+        occurred_at=occurred_at,
     )
 
 
@@ -345,22 +355,16 @@ def get_notification_summary(
                 description="Unread company or platform announcements.",
                 href="/messages?tab=news",
                 count=unread_ann,
+                occurred_at=None,
             ),
         )
 
-    for mb in message_bell_items(db, user_id=actor.id):
-        items.append(
-            _item(
-                kind="message",
-                target_key=mb.target_key,
-                title=mb.title,
-                description=mb.description,
-                href=mb.href,
-                count=mb.count,
-            ),
-        )
+    message_rows = message_bell_items(db, user_id=actor.id)
+    messages_unread_count = sum(mb.count for mb in message_rows) + unread_ann
 
     for record in notif_seen_repo.list_unseen_records_for_user(db, user_id=actor.id, company_id=company_id):
+        if record.kind in _BELL_HIDDEN_RECORD_KINDS:
+            continue
         items.append(
             _item(
                 kind=record.kind,
@@ -370,6 +374,7 @@ def get_notification_summary(
                 href=record.href,
                 count=1,
                 priority=record.priority,
+                occurred_at=record.created_at,
             ),
         )
 
@@ -549,6 +554,7 @@ def get_notification_summary(
                         description="RAMS assessments still in draft.",
                         href="/rams/manage",
                         count=rams_d,
+                        occurred_at=rams_latest,
                     ),
                 )
             tb_d = tt_repo.count_talks_for_company_by_status(db, scope, "draft")
@@ -580,6 +586,7 @@ def get_notification_summary(
                         href="/payroll-report",
                         count=pending_pay,
                         priority="high",
+                        occurred_at=pending_pay_latest,
                     ),
                 )
             pending_leave = leave_repo.count_pending_leave_for_company(db, scope)
@@ -643,6 +650,7 @@ def get_notification_summary(
                         description="RAMS assessments still in draft.",
                         href="/rams/manage",
                         count=rams_d,
+                        occurred_at=rams_latest,
                     ),
                 )
             tb_d = tt_repo.count_talks_by_status_global(db, "draft")
@@ -662,4 +670,15 @@ def get_notification_summary(
                 )
 
     total = sum(i.count for i in items)
-    return NotificationSummaryResponse(total_count=total, items=items)
+    items.sort(
+        key=lambda row: (
+            row.occurred_at is None,
+            -(row.occurred_at.timestamp()) if row.occurred_at is not None else 0,
+            row.title,
+        ),
+    )
+    return NotificationSummaryResponse(
+        total_count=total,
+        items=items,
+        messages_unread_count=messages_unread_count,
+    )

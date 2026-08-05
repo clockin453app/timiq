@@ -70,10 +70,94 @@ def test_notification_summary_item_schema_has_category() -> None:
         unseen_count=2,
         category="messages",
         group="messages",
+        occurred_at=datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc),
     )
     dumped = row.model_dump()
     assert dumped["category"] == "messages"
     assert dumped["unseen_count"] == 2
+    assert dumped["occurred_at"] == datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
+
+
+def test_message_kinds_excluded_from_bell_but_counted_for_messages_badge() -> None:
+    from app.modules.messaging.service import MessageBellItem
+
+    cid = uuid.uuid4()
+    actor = _admin(cid)
+    conversation_id = uuid.uuid4()
+    record = MagicMock()
+    record.kind = "message_received"
+    record.dedupe_key = f"message:{conversation_id}:{uuid.uuid4()}:{actor.id}"
+    record.title = "New message"
+    record.description = "You have a new message in TimIQ."
+    record.href = f"/messages?tab=messages&conversation={conversation_id}"
+    record.priority = "normal"
+    record.created_at = datetime(2026, 8, 5, 10, 0, tzinfo=timezone.utc)
+
+    attendance = MagicMock()
+    attendance.kind = "attendance_missing_clock_in"
+    attendance.dedupe_key = "attendance:missing_clock_in:x"
+    attendance.title = "Missing clock-in"
+    attendance.description = "No clock-in today."
+    attendance.href = "/live-attendance"
+    attendance.priority = "high"
+    attendance.created_at = datetime(2026, 8, 5, 9, 0, tzinfo=timezone.utc)
+
+    bell_item = MessageBellItem(
+        conversation_id=conversation_id,
+        count=1,
+        title="Alice",
+        description="Hi",
+        href=f"/messages?tab=messages&conversation={conversation_id}",
+        target_key=f"message:{conversation_id}",
+    )
+
+    with ExitStack() as stack:
+        _start_patches(
+            stack,
+            [
+                patch("app.modules.notifications.service.count_unread_visible_announcements", return_value=0),
+                patch("app.modules.notifications.service.message_bell_items", return_value=[bell_item]),
+                patch(
+                    "app.modules.notifications.service.notif_seen_repo.list_unseen_records_for_user",
+                    return_value=[record, attendance],
+                ),
+                patch("app.modules.notifications.service.sf_repo.count_submissions_for_review", return_value=0),
+                patch("app.modules.notifications.service.tt_repo.count_talks_for_company_by_status", return_value=0),
+                patch("app.modules.notifications.service.leave_repo.count_pending_leave_for_company", return_value=0),
+                patch("app.modules.notifications.service.time_clock_repo.count_open_shifts_for_company_employees", return_value=0),
+                patch("app.modules.notifications.service.payroll_repo.count_rate_missing_payroll_items_for_company", return_value=0),
+                patch("app.modules.notifications.service.notif_seen_repo.has_seen", return_value=False),
+                patch("app.modules.notifications.service.rams_repo.assessment_status_fingerprint_for_company", return_value=(0, None)),
+                patch("app.modules.notifications.service.payroll_repo.pending_payroll_items_fingerprint_for_company", return_value=(0, None)),
+            ],
+        )
+        summary = get_notification_summary(MagicMock(), actor, company_id=None)
+
+    assert summary.messages_unread_count == 1
+    assert all(i.kind not in {"message", "message_received"} for i in summary.items)
+    assert summary.total_count == 1
+    assert summary.items[0].kind == "attendance_missing_clock_in"
+    assert summary.items[0].occurred_at == attendance.created_at
+
+
+def test_payroll_pending_exposes_fingerprint_occurred_at() -> None:
+    cid = uuid.uuid4()
+    actor = _admin(cid)
+    latest = datetime(2026, 5, 16, 9, 0, tzinfo=timezone.utc)
+    with ExitStack() as stack:
+        _start_patches(
+            stack,
+            [
+                *_summary_base_patches(),
+                patch("app.modules.notifications.service.notif_seen_repo.has_seen", return_value=False),
+                patch("app.modules.notifications.service.rams_repo.assessment_status_fingerprint_for_company", return_value=(0, None)),
+                patch("app.modules.notifications.service.payroll_repo.pending_payroll_items_fingerprint_for_company", return_value=(2, latest)),
+            ],
+        )
+        summary = get_notification_summary(MagicMock(), actor, company_id=None)
+    item = next(i for i in summary.items if i.kind == "payroll_pending")
+    assert item.occurred_at == latest
+    assert item.count == 2
 
 
 def _admin(company_id: uuid.UUID) -> MagicMock:
