@@ -211,3 +211,53 @@ class BudgetInvoiceDocument(Base):
         default=lambda: datetime.now(timezone.utc),
     )
     replaced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BudgetInvoicePayment(Base):
+    """Payment against a customer invoice (gross). Soft-reversed via reversed_at."""
+
+    __tablename__ = "budget_invoice_payments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    budget_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("budget_projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("budget_customer_invoices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    client_action_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
+    payment_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    payment_method: Mapped[str] = mapped_column(String(40), nullable=False)
+    reference: Mapped[str] = mapped_column(String(200), nullable=True)
+    notes: Mapped[str] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    reversed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    reversed_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reversal_reason: Mapped[str] = mapped_column(String(500), nullable=True)

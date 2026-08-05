@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date, datetime
 
@@ -9,6 +11,7 @@ from app.modules.budgets.models import (
     BudgetCustomerInvoice,
     BudgetExpense,
     BudgetInvoiceDocument,
+    BudgetInvoicePayment,
     BudgetProject,
 )
 from app.modules.employee_profiles.models import EmployeeProfile
@@ -279,3 +282,86 @@ def sum_issued_invoice_amounts(
     )
     row = db_session.execute(statement).one()
     return float(row[0] or 0), float(row[1] or 0), float(row[2] or 0)
+
+
+def get_invoice_payment(
+    db_session: Session,
+    payment_id: uuid.UUID,
+) -> BudgetInvoicePayment | None:
+    return db_session.get(BudgetInvoicePayment, payment_id)
+
+
+def get_invoice_payment_by_client_action_id(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    client_action_id: uuid.UUID,
+) -> BudgetInvoicePayment | None:
+    statement = (
+        select(BudgetInvoicePayment)
+        .where(BudgetInvoicePayment.company_id == company_id)
+        .where(BudgetInvoicePayment.client_action_id == client_action_id)
+        .limit(1)
+    )
+    return db_session.scalars(statement).first()
+
+
+def list_payments_for_invoice(
+    db_session: Session,
+    invoice_id: uuid.UUID,
+) -> list[BudgetInvoicePayment]:
+    statement = (
+        select(BudgetInvoicePayment)
+        .where(BudgetInvoicePayment.invoice_id == invoice_id)
+        .order_by(
+            BudgetInvoicePayment.payment_date.asc(),
+            BudgetInvoicePayment.created_at.asc(),
+        )
+    )
+    return list(db_session.scalars(statement).all())
+
+
+def sum_active_payments_for_invoice(db_session: Session, invoice_id: uuid.UUID) -> float:
+    statement = (
+        select(func.coalesce(func.sum(BudgetInvoicePayment.amount), 0))
+        .where(BudgetInvoicePayment.invoice_id == invoice_id)
+        .where(BudgetInvoicePayment.reversed_at.is_(None))
+    )
+    return float(db_session.scalar(statement) or 0)
+
+
+def sum_active_payments_for_budget(db_session: Session, budget_id: uuid.UUID) -> float:
+    """Sum all active (non-reversed) payments on invoices for the budget."""
+    statement = (
+        select(func.coalesce(func.sum(BudgetInvoicePayment.amount), 0))
+        .where(BudgetInvoicePayment.budget_id == budget_id)
+        .where(BudgetInvoicePayment.reversed_at.is_(None))
+    )
+    return float(db_session.scalar(statement) or 0)
+
+
+def lock_customer_invoice_for_update(
+    db_session: Session,
+    invoice_id: uuid.UUID,
+) -> BudgetCustomerInvoice | None:
+    statement = (
+        select(BudgetCustomerInvoice)
+        .where(BudgetCustomerInvoice.id == invoice_id)
+        .with_for_update()
+    )
+    return db_session.scalars(statement).first()
+
+
+def save_payment(
+    db_session: Session,
+    row: BudgetInvoicePayment,
+    *,
+    commit: bool = True,
+) -> BudgetInvoicePayment:
+    db_session.add(row)
+    if commit:
+        db_session.commit()
+    else:
+        db_session.flush()
+    db_session.refresh(row)
+    return row

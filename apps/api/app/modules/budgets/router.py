@@ -22,6 +22,7 @@ from app.modules.budgets.billing import (
     void_invoice,
 )
 from app.modules.budgets.invoice_documents import download_invoice_document, upload_invoice_document
+from app.modules.budgets.payments import create_payment, list_payments, reverse_payment
 from app.modules.budgets.schemas import (
     BillingSummaryResponse,
     BudgetExpenseCreateRequest,
@@ -37,6 +38,9 @@ from app.modules.budgets.schemas import (
     InvoiceResponse,
     InvoiceVoidRequest,
     LabourCostResponse,
+    PaymentCreateRequest,
+    PaymentResponse,
+    PaymentReverseRequest,
 )
 from app.modules.budgets.saved_budgets import (
     archive_budget,
@@ -317,6 +321,46 @@ def void_budget_invoice(
     current_user: User = Depends(require_admin_or_administrator),
 ) -> InvoiceResponse:
     return void_invoice(db_session, current_user, budget_id, invoice_id, body)
+
+
+@router.get("/{budget_id}/invoices/{invoice_id}/payments", response_model=list[PaymentResponse])
+def read_invoice_payments(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> list[PaymentResponse]:
+    return list_payments(db_session, current_user, budget_id, invoice_id)
+
+
+@router.post(
+    "/{budget_id}/invoices/{invoice_id}/payments",
+    response_model=PaymentResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def add_invoice_payment(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    body: PaymentCreateRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> PaymentResponse:
+    return create_payment(db_session, current_user, budget_id, invoice_id, body)
+
+
+@router.post(
+    "/{budget_id}/invoices/{invoice_id}/payments/{payment_id}/reverse",
+    response_model=PaymentResponse,
+)
+def reverse_invoice_payment(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    payment_id: uuid.UUID,
+    body: PaymentReverseRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> PaymentResponse:
+    return reverse_payment(db_session, current_user, budget_id, invoice_id, payment_id, body)
 
 
 @router.post("/{budget_id}/invoices/{invoice_id}/document", response_model=InvoiceResponse)

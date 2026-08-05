@@ -102,24 +102,15 @@ def _company_local_today(db_session: Session, company_id: uuid.UUID) -> date:
     return datetime.now(timezone.utc).astimezone(tz).date()
 
 
-def _is_overdue(invoice: BudgetCustomerInvoice, today_local: date) -> bool:
-    if invoice.status != "issued":
-        return False
-    if invoice.due_date is None:
-        return False
-    return invoice.due_date < today_local
+def _display_status(
+    invoice: BudgetCustomerInvoice,
+    today_local: date,
+    payments_received: Decimal,
+) -> str:
+    # Lazy import avoids circular dependency with payments.py (which imports helpers here).
+    from app.modules.budgets.payments import derive_display_status
 
-
-def _display_status(invoice: BudgetCustomerInvoice, today_local: date) -> str:
-    if invoice.status == "void":
-        return "void"
-    if invoice.status == "draft":
-        return "draft"
-    if invoice.status == "issued" and _is_overdue(invoice, today_local):
-        return "overdue"
-    if invoice.status == "issued":
-        return "issued"
-    return invoice.status
+    return derive_display_status(invoice, today_local, payments_received)
 
 
 def _invoice_response(
@@ -127,9 +118,22 @@ def _invoice_response(
     invoice: BudgetCustomerInvoice,
     *,
     today_local: date | None = None,
+    payments_received: Decimal | None = None,
 ) -> InvoiceResponse:
+    from app.modules.budgets.payments import active_payments_total
+
     if today_local is None:
         today_local = _company_local_today(db_session, invoice.company_id)
+    if payments_received is None:
+        payments_received = active_payments_total(db_session, invoice.id)
+    else:
+        payments_received = _money(payments_received)
+
+    gross = _money(invoice.gross_amount)
+    outstanding = max(gross - payments_received, Decimal("0.00")).quantize(
+        MONEY_QUANT,
+        rounding=ROUND_HALF_UP,
+    )
     doc = get_current_invoice_document(db_session, invoice.id)
     return InvoiceResponse(
         id=invoice.id,
@@ -141,11 +145,13 @@ def _invoice_response(
         invoice_date=invoice.invoice_date,
         due_date=invoice.due_date,
         status=invoice.status,
-        display_status=_display_status(invoice, today_local),
+        display_status=_display_status(invoice, today_local, payments_received),
         currency=invoice.currency,
         net_amount=_money(invoice.net_amount),
         vat_amount=_money(invoice.vat_amount),
-        gross_amount=_money(invoice.gross_amount),
+        gross_amount=gross,
+        payments_received_gross=payments_received,
+        outstanding_gross=outstanding,
         description=invoice.description,
         reference=invoice.reference,
         payment_terms=invoice.payment_terms,
@@ -166,6 +172,9 @@ def get_billing_summary(
     actor: User,
     budget_id: uuid.UUID,
 ) -> BillingSummaryResponse:
+    from app.modules.budgets.payments import active_payments_total, derive_display_status
+    from app.modules.budgets.repository import sum_active_payments_for_budget
+
     project = _load_budget(db_session, actor, budget_id)
     today_local = _company_local_today(db_session, project.company_id)
     invoices = list_customer_invoices_for_budget(db_session, budget_id=budget_id, limit=5000)
@@ -174,20 +183,47 @@ def get_billing_summary(
     issued_count = 0
     overdue_count = 0
     void_count = 0
+    part_paid_count = 0
+    paid_count = 0
+    outstanding_gross = Decimal("0.00")
+    overdue_outstanding_gross = Decimal("0.00")
+
     for inv in invoices:
         if inv.status == "draft":
             draft_count += 1
-        elif inv.status == "void":
+            continue
+        if inv.status == "void":
             void_count += 1
-        elif inv.status == "issued":
+            continue
+        if inv.status == "issued":
             issued_count += 1
-            if _is_overdue(inv, today_local):
+            received = active_payments_total(db_session, inv.id)
+            gross = _money(inv.gross_amount)
+            outstanding = max(gross - received, Decimal("0.00")).quantize(
+                MONEY_QUANT,
+                rounding=ROUND_HALF_UP,
+            )
+            outstanding_gross = (outstanding_gross + outstanding).quantize(
+                MONEY_QUANT,
+                rounding=ROUND_HALF_UP,
+            )
+            display = derive_display_status(inv, today_local, received)
+            if display == "paid":
+                paid_count += 1
+            elif display == "part_paid":
+                part_paid_count += 1
+            elif display == "overdue":
                 overdue_count += 1
+                overdue_outstanding_gross = (overdue_outstanding_gross + outstanding).quantize(
+                    MONEY_QUANT,
+                    rounding=ROUND_HALF_UP,
+                )
 
     net_f, vat_f, gross_f = sum_issued_invoice_amounts(db_session, budget_id)
     active_net = _money(net_f)
     vat_invoiced = _money(vat_f)
     gross_invoiced = _money(gross_f)
+    payments_received_gross = _money(sum_active_payments_for_budget(db_session, budget_id))
 
     contract: Decimal | None = None
     if project.contract_value_net is not None:
@@ -207,10 +243,15 @@ def get_billing_summary(
         active_invoiced_net=active_net,
         vat_invoiced=vat_invoiced,
         gross_invoiced=gross_invoiced,
+        payments_received_gross=payments_received_gross,
+        outstanding_gross=outstanding_gross,
+        overdue_outstanding_gross=overdue_outstanding_gross,
         remaining_to_invoice=remaining,
         over_invoiced=over,
         draft_count=draft_count,
         issued_count=issued_count,
+        part_paid_count=part_paid_count,
+        paid_count=paid_count,
         overdue_count=overdue_count,
         void_count=void_count,
         active_count=issued_count,
@@ -552,6 +593,8 @@ def void_invoice(
     invoice_id: uuid.UUID,
     body: InvoiceVoidRequest,
 ) -> InvoiceResponse:
+    from app.modules.budgets.payments import active_payments_total
+
     project, invoice = _load_invoice(db_session, actor, budget_id, invoice_id)
     if invoice.status != "issued":
         raise HTTPException(
@@ -562,6 +605,12 @@ def void_invoice(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="confirm must be true to void an invoice.",
+        )
+
+    if active_payments_total(db_session, invoice.id) > Decimal("0.00"):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="An invoice with active payments cannot be voided until those payments are reversed.",
         )
 
     now = datetime.now(timezone.utc)

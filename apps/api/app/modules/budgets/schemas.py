@@ -256,7 +256,8 @@ class BudgetProjectDetailResponse(BaseModel):
 
 
 INVOICE_STORED_STATUSES = ("draft", "issued", "void")
-INVOICE_DISPLAY_STATUSES = ("draft", "issued", "overdue", "void")
+INVOICE_DISPLAY_STATUSES = ("draft", "issued", "part_paid", "paid", "overdue", "void")
+PAYMENT_METHODS = ("bank_transfer", "card", "cash", "cheque", "other")
 
 
 class ContractValueUpdateRequest(BaseModel):
@@ -377,6 +378,8 @@ class InvoiceResponse(BaseModel):
     net_amount: Decimal
     vat_amount: Decimal
     gross_amount: Decimal
+    payments_received_gross: Decimal = Field(default=Decimal("0.00"))
+    outstanding_gross: Decimal = Field(default=Decimal("0.00"))
     description: str | None = None
     reference: str | None = None
     payment_terms: str | None = None
@@ -391,6 +394,72 @@ class InvoiceResponse(BaseModel):
     document_version: int | None = None
 
 
+class PaymentCreateRequest(BaseModel):
+    client_action_id: uuid.UUID
+    payment_date: date
+    amount: Decimal = Field(..., gt=0)
+    payment_method: str = Field(..., max_length=40)
+    currency: str | None = Field(default=None, max_length=3)
+    reference: str | None = Field(default=None, max_length=200)
+    notes: str | None = Field(default=None, max_length=8000)
+
+    @field_validator("payment_method")
+    @classmethod
+    def _method(cls, v: str) -> str:
+        s = v.strip().lower()
+        if s not in PAYMENT_METHODS:
+            raise ValueError(
+                f"payment_method must be one of: {', '.join(PAYMENT_METHODS)}.",
+            )
+        return s
+
+    @field_validator("currency")
+    @classmethod
+    def _currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip().upper()
+        if len(s) != 3 or not s.isalpha():
+            raise ValueError("currency must be a 3-letter ISO 4217 code.")
+        return s
+
+
+class PaymentReverseRequest(BaseModel):
+    confirm: bool
+    reason: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("reason is required.")
+        return s
+
+
+class PaymentResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    company_id: uuid.UUID
+    budget_id: uuid.UUID
+    invoice_id: uuid.UUID
+    client_action_id: uuid.UUID | None = None
+    payment_date: date
+    amount: Decimal
+    currency: str
+    payment_method: str
+    reference: str | None = None
+    notes: str | None = None
+    created_by_user_id: uuid.UUID | None = None
+    created_by_display: str | None = None
+    created_at: datetime
+    reversed_at: datetime | None = None
+    reversed_by_user_id: uuid.UUID | None = None
+    reversal_reason: str | None = None
+    is_reversed: bool = False
+
+
 class BillingSummaryResponse(BaseModel):
     budget_id: uuid.UUID
     company_id: uuid.UUID
@@ -399,10 +468,15 @@ class BillingSummaryResponse(BaseModel):
     active_invoiced_net: Decimal = Field(default=Decimal("0.00"))
     vat_invoiced: Decimal = Field(default=Decimal("0.00"))
     gross_invoiced: Decimal = Field(default=Decimal("0.00"))
+    payments_received_gross: Decimal = Field(default=Decimal("0.00"))
+    outstanding_gross: Decimal = Field(default=Decimal("0.00"))
+    overdue_outstanding_gross: Decimal = Field(default=Decimal("0.00"))
     remaining_to_invoice: Decimal | None = None
     over_invoiced: Decimal | None = None
     draft_count: int = 0
     issued_count: int = 0
+    part_paid_count: int = 0
+    paid_count: int = 0
     overdue_count: int = 0
     void_count: int = 0
     active_count: int = 0

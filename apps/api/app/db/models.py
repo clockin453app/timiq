@@ -10,6 +10,7 @@ from app.modules.budgets.models import (
     BudgetCustomerInvoice,
     BudgetExpense,
     BudgetInvoiceDocument,
+    BudgetInvoicePayment,
     BudgetProject,
 )
 from app.modules.companies.models import Company, CompanyTimePolicy
@@ -60,6 +61,7 @@ __all__ = [
     "BudgetCustomerInvoice",
     "BudgetExpense",
     "BudgetInvoiceDocument",
+    "BudgetInvoicePayment",
     "BudgetProject",
     "Company",
     "CompanyAccountingSettings",
