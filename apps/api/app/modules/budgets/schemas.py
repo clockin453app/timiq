@@ -253,3 +253,156 @@ class BudgetProjectDetailResponse(BaseModel):
     breakdown_by_employee: list[BudgetEmployeeLabourBreakdown]
     breakdown_by_category: BudgetCategoryTotals
     recent_expenses: list[BudgetExpenseResponse]
+
+
+INVOICE_STORED_STATUSES = ("draft", "issued", "void")
+INVOICE_DISPLAY_STATUSES = ("draft", "issued", "overdue", "void")
+
+
+class ContractValueUpdateRequest(BaseModel):
+    contract_value_net: Decimal | None = Field(default=None)
+    billing_currency: str | None = Field(default=None, max_length=3)
+
+    @field_validator("billing_currency")
+    @classmethod
+    def _currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip().upper()
+        if not s:
+            return None
+        if len(s) != 3 or not s.isalpha():
+            raise ValueError("billing_currency must be a 3-letter ISO 4217 code.")
+        return s
+
+
+class InvoiceCreateRequest(BaseModel):
+    client_action_id: uuid.UUID
+    customer_name: str = Field(..., min_length=1, max_length=200)
+    invoice_number: str | None = Field(default=None, max_length=120)
+    invoice_date: date | None = None
+    due_date: date | None = None
+    currency: str = Field(default="GBP", max_length=3)
+    net_amount: Decimal = Field(..., ge=0)
+    vat_amount: Decimal = Field(default=Decimal("0.00"), ge=0)
+    gross_amount: Decimal = Field(..., ge=0)
+    description: str | None = Field(default=None, max_length=8000)
+    reference: str | None = Field(default=None, max_length=200)
+    payment_terms: str | None = Field(default=None, max_length=200)
+
+    @field_validator("currency")
+    @classmethod
+    def _currency(cls, v: str) -> str:
+        s = (v or "GBP").strip().upper()
+        if len(s) != 3 or not s.isalpha():
+            raise ValueError("currency must be a 3-letter ISO 4217 code.")
+        return s
+
+    @field_validator("customer_name")
+    @classmethod
+    def _customer_name(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("customer_name is required.")
+        return s
+
+
+class InvoicePatchRequest(BaseModel):
+    customer_name: str | None = Field(default=None, min_length=1, max_length=200)
+    invoice_number: str | None = Field(default=None, max_length=120)
+    invoice_date: date | None = None
+    due_date: date | None = None
+    currency: str | None = Field(default=None, max_length=3)
+    net_amount: Decimal | None = Field(default=None, ge=0)
+    vat_amount: Decimal | None = Field(default=None, ge=0)
+    gross_amount: Decimal | None = Field(default=None, ge=0)
+    description: str | None = Field(default=None, max_length=8000)
+    reference: str | None = Field(default=None, max_length=200)
+    payment_terms: str | None = Field(default=None, max_length=200)
+
+    @field_validator("currency")
+    @classmethod
+    def _currency(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip().upper()
+        if len(s) != 3 or not s.isalpha():
+            raise ValueError("currency must be a 3-letter ISO 4217 code.")
+        return s
+
+    @field_validator("customer_name")
+    @classmethod
+    def _customer_name(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        if not s:
+            raise ValueError("customer_name cannot be empty.")
+        return s
+
+
+class InvoiceIssueRequest(BaseModel):
+    """Optional body for issue; all required fields must already be on the draft."""
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class InvoiceVoidRequest(BaseModel):
+    confirm: bool
+    reason: str = Field(..., min_length=1, max_length=500)
+
+    @field_validator("reason")
+    @classmethod
+    def _reason(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("reason is required.")
+        return s
+
+
+class InvoiceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    company_id: uuid.UUID
+    budget_id: uuid.UUID
+    client_action_id: uuid.UUID | None = None
+    customer_name: str
+    invoice_number: str | None = None
+    invoice_date: date | None = None
+    due_date: date | None = None
+    status: str
+    display_status: str
+    currency: str
+    net_amount: Decimal
+    vat_amount: Decimal
+    gross_amount: Decimal
+    description: str | None = None
+    reference: str | None = None
+    payment_terms: str | None = None
+    issued_at: datetime | None = None
+    voided_at: datetime | None = None
+    void_reason: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    has_document: bool = False
+    document_filename: str | None = None
+    document_content_type: str | None = None
+    document_version: int | None = None
+
+
+class BillingSummaryResponse(BaseModel):
+    budget_id: uuid.UUID
+    company_id: uuid.UUID
+    contract_value_net: Decimal | None = None
+    billing_currency: str | None = None
+    active_invoiced_net: Decimal = Field(default=Decimal("0.00"))
+    vat_invoiced: Decimal = Field(default=Decimal("0.00"))
+    gross_invoiced: Decimal = Field(default=Decimal("0.00"))
+    remaining_to_invoice: Decimal | None = None
+    over_invoiced: Decimal | None = None
+    draft_count: int = 0
+    issued_count: int = 0
+    overdue_count: int = 0
+    void_count: int = 0
+    active_count: int = 0

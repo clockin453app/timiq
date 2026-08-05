@@ -6,7 +6,12 @@ from app.modules.accounting.models import (
 from app.modules.attendance_notifications.models import AttendanceNotificationSettings
 from app.modules.audit.models import AuditEvent
 from app.modules.auth.models import AccountActionToken, EmployeeJobRole, User
-from app.modules.budgets.models import BudgetExpense, BudgetProject
+from app.modules.budgets.models import (
+    BudgetCustomerInvoice,
+    BudgetExpense,
+    BudgetInvoiceDocument,
+    BudgetProject,
+)
 from app.modules.companies.models import Company, CompanyTimePolicy
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.messaging.models import (
@@ -52,7 +57,9 @@ from app.modules.timesheet_extra_hours.models import TimesheetExtraHours
 __all__ = [
     "AuditEvent",
     "AttendanceNotificationSettings",
+    "BudgetCustomerInvoice",
     "BudgetExpense",
+    "BudgetInvoiceDocument",
     "BudgetProject",
     "Company",
     "CompanyAccountingSettings",

@@ -2,15 +2,28 @@ import uuid
 from datetime import date
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.export_csv import safe_export_filename
-from app.core.storage.file_response import content_disposition_attachment
+from app.core.storage.file_response import content_disposition_attachment, protected_file_response
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import require_admin_or_administrator
 from app.modules.auth.models import User
+from app.modules.budgets.billing import (
+    create_invoice,
+    delete_invoice,
+    get_billing_summary,
+    get_invoice,
+    issue_invoice,
+    list_invoices,
+    patch_invoice,
+    update_contract_value,
+    void_invoice,
+)
+from app.modules.budgets.invoice_documents import download_invoice_document, upload_invoice_document
 from app.modules.budgets.schemas import (
+    BillingSummaryResponse,
     BudgetExpenseCreateRequest,
     BudgetExpensePatchRequest,
     BudgetExpenseResponse,
@@ -18,6 +31,11 @@ from app.modules.budgets.schemas import (
     BudgetProjectDetailResponse,
     BudgetProjectPatchRequest,
     BudgetProjectSummary,
+    ContractValueUpdateRequest,
+    InvoiceCreateRequest,
+    InvoicePatchRequest,
+    InvoiceResponse,
+    InvoiceVoidRequest,
     LabourCostResponse,
 )
 from app.modules.budgets.saved_budgets import (
@@ -209,6 +227,132 @@ def delete_budget_expense_route(
     current_user: User = Depends(require_admin_or_administrator),
 ) -> None:
     remove_expense(db_session, current_user, budget_id, expense_id)
+
+
+@router.patch("/{budget_id}/contract-value", response_model=BillingSummaryResponse)
+def patch_budget_contract_value(
+    budget_id: uuid.UUID,
+    body: ContractValueUpdateRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BillingSummaryResponse:
+    return update_contract_value(db_session, current_user, budget_id, body)
+
+
+@router.get("/{budget_id}/billing-summary", response_model=BillingSummaryResponse)
+def read_billing_summary(
+    budget_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BillingSummaryResponse:
+    return get_billing_summary(db_session, current_user, budget_id)
+
+
+@router.get("/{budget_id}/invoices", response_model=list[InvoiceResponse])
+def read_budget_invoices(
+    budget_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> list[InvoiceResponse]:
+    return list_invoices(db_session, current_user, budget_id)
+
+
+@router.post("/{budget_id}/invoices", response_model=InvoiceResponse, status_code=status.HTTP_201_CREATED)
+def add_budget_invoice(
+    budget_id: uuid.UUID,
+    body: InvoiceCreateRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> InvoiceResponse:
+    return create_invoice(db_session, current_user, budget_id, body)
+
+
+@router.get("/{budget_id}/invoices/{invoice_id}", response_model=InvoiceResponse)
+def read_budget_invoice(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> InvoiceResponse:
+    return get_invoice(db_session, current_user, budget_id, invoice_id)
+
+
+@router.patch("/{budget_id}/invoices/{invoice_id}", response_model=InvoiceResponse)
+def update_budget_invoice(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    body: InvoicePatchRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> InvoiceResponse:
+    return patch_invoice(db_session, current_user, budget_id, invoice_id, body)
+
+
+@router.delete("/{budget_id}/invoices/{invoice_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_budget_invoice_route(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> None:
+    delete_invoice(db_session, current_user, budget_id, invoice_id)
+
+
+@router.post("/{budget_id}/invoices/{invoice_id}/issue", response_model=InvoiceResponse)
+def issue_budget_invoice(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> InvoiceResponse:
+    return issue_invoice(db_session, current_user, budget_id, invoice_id)
+
+
+@router.post("/{budget_id}/invoices/{invoice_id}/void", response_model=InvoiceResponse)
+def void_budget_invoice(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    body: InvoiceVoidRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> InvoiceResponse:
+    return void_invoice(db_session, current_user, budget_id, invoice_id, body)
+
+
+@router.post("/{budget_id}/invoices/{invoice_id}/document", response_model=InvoiceResponse)
+async def upload_budget_invoice_document(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> InvoiceResponse:
+    raw = await file.read()
+    return upload_invoice_document(
+        db_session,
+        current_user,
+        budget_id,
+        invoice_id,
+        file_bytes=raw,
+        filename=file.filename,
+        content_type=file.content_type,
+    )
+
+
+@router.get("/{budget_id}/invoices/{invoice_id}/document")
+def download_budget_invoice_document(
+    budget_id: uuid.UUID,
+    invoice_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    body, filename, media_type = download_invoice_document(
+        db_session,
+        current_user,
+        budget_id,
+        invoice_id,
+    )
+    return protected_file_response(body=body, download_filename=filename, media_type=media_type)
 
 
 @router.post("/{budget_id}/archive", response_model=BudgetProjectDetailResponse)

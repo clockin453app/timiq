@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import Date, DateTime, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,6 +44,8 @@ class BudgetProject(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=True)
     end_date: Mapped[date] = mapped_column(Date, nullable=True)
     planned_budget_amount: Mapped[float] = mapped_column(Numeric(14, 4), nullable=False)
+    contract_value_net: Mapped[float] = mapped_column(Numeric(14, 2), nullable=True)
+    billing_currency: Mapped[str] = mapped_column(String(3), nullable=True)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
     created_by_user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
@@ -106,3 +110,104 @@ class BudgetExpense(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class BudgetCustomerInvoice(Base):
+    """Customer (revenue) invoice for a saved budget/job. Separate from supplier purchases."""
+
+    __tablename__ = "budget_customer_invoices"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    budget_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("budget_projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    client_action_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=True)
+    customer_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    invoice_number: Mapped[str] = mapped_column(String(120), nullable=True)
+    invoice_date: Mapped[date] = mapped_column(Date, nullable=True)
+    due_date: Mapped[date] = mapped_column(Date, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="draft", index=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False, default="GBP")
+    net_amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
+    vat_amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    gross_amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=True)
+    reference: Mapped[str] = mapped_column(String(200), nullable=True)
+    payment_terms: Mapped[str] = mapped_column(String(200), nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    voided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(500), nullable=True)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    updated_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class BudgetInvoiceDocument(Base):
+    """Versioned protected document for a customer invoice."""
+
+    __tablename__ = "budget_invoice_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    budget_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("budget_projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    invoice_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("budget_customer_invoices.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_current: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    storage_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_by_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    replaced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)

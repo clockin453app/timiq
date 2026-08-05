@@ -1,11 +1,16 @@
 import uuid
-from datetime import date, datetime
+from datetime import date
 
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
-from app.modules.budgets.models import BudgetExpense, BudgetProject
+from app.modules.budgets.models import (
+    BudgetCustomerInvoice,
+    BudgetExpense,
+    BudgetInvoiceDocument,
+    BudgetProject,
+)
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
 from app.modules.time_clock.models import TimeShift
@@ -153,3 +158,124 @@ def sum_expense_amount_total(db_session: Session, budget_id: uuid.UUID) -> float
     statement = select(func.coalesce(func.sum(BudgetExpense.amount), 0)).where(BudgetExpense.budget_id == budget_id)
     v = db_session.scalar(statement)
     return float(v or 0)
+
+
+def get_customer_invoice(db_session: Session, invoice_id: uuid.UUID) -> BudgetCustomerInvoice | None:
+    return db_session.get(BudgetCustomerInvoice, invoice_id)
+
+
+def get_customer_invoice_by_client_action_id(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    client_action_id: uuid.UUID,
+) -> BudgetCustomerInvoice | None:
+    statement = (
+        select(BudgetCustomerInvoice)
+        .where(BudgetCustomerInvoice.company_id == company_id)
+        .where(BudgetCustomerInvoice.client_action_id == client_action_id)
+        .limit(1)
+    )
+    return db_session.scalars(statement).first()
+
+
+def get_customer_invoice_by_number(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    invoice_number: str,
+) -> BudgetCustomerInvoice | None:
+    statement = (
+        select(BudgetCustomerInvoice)
+        .where(BudgetCustomerInvoice.company_id == company_id)
+        .where(BudgetCustomerInvoice.invoice_number == invoice_number)
+        .limit(1)
+    )
+    return db_session.scalars(statement).first()
+
+
+def list_customer_invoices_for_budget(
+    db_session: Session,
+    *,
+    budget_id: uuid.UUID,
+    limit: int = 500,
+) -> list[BudgetCustomerInvoice]:
+    statement = (
+        select(BudgetCustomerInvoice)
+        .where(BudgetCustomerInvoice.budget_id == budget_id)
+        .order_by(
+            BudgetCustomerInvoice.invoice_date.desc().nulls_last(),
+            BudgetCustomerInvoice.created_at.desc(),
+        )
+        .limit(limit)
+    )
+    return list(db_session.scalars(statement).all())
+
+
+def save_customer_invoice(db_session: Session, row: BudgetCustomerInvoice) -> BudgetCustomerInvoice:
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+def delete_customer_invoice(db_session: Session, invoice_id: uuid.UUID) -> None:
+    db_session.execute(delete(BudgetCustomerInvoice).where(BudgetCustomerInvoice.id == invoice_id))
+    db_session.commit()
+
+
+def get_current_invoice_document(
+    db_session: Session,
+    invoice_id: uuid.UUID,
+) -> BudgetInvoiceDocument | None:
+    statement = (
+        select(BudgetInvoiceDocument)
+        .where(BudgetInvoiceDocument.invoice_id == invoice_id)
+        .where(BudgetInvoiceDocument.is_current.is_(True))
+        .limit(1)
+    )
+    return db_session.scalars(statement).first()
+
+
+def list_invoice_documents(
+    db_session: Session,
+    invoice_id: uuid.UUID,
+) -> list[BudgetInvoiceDocument]:
+    statement = (
+        select(BudgetInvoiceDocument)
+        .where(BudgetInvoiceDocument.invoice_id == invoice_id)
+        .order_by(BudgetInvoiceDocument.version.asc())
+    )
+    return list(db_session.scalars(statement).all())
+
+
+def next_invoice_document_version(db_session: Session, invoice_id: uuid.UUID) -> int:
+    statement = select(func.coalesce(func.max(BudgetInvoiceDocument.version), 0)).where(
+        BudgetInvoiceDocument.invoice_id == invoice_id,
+    )
+    current_max = db_session.scalar(statement)
+    return int(current_max or 0) + 1
+
+
+def save_invoice_document(db_session: Session, row: BudgetInvoiceDocument) -> BudgetInvoiceDocument:
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+def sum_issued_invoice_amounts(
+    db_session: Session,
+    budget_id: uuid.UUID,
+) -> tuple[float, float, float]:
+    statement = (
+        select(
+            func.coalesce(func.sum(BudgetCustomerInvoice.net_amount), 0),
+            func.coalesce(func.sum(BudgetCustomerInvoice.vat_amount), 0),
+            func.coalesce(func.sum(BudgetCustomerInvoice.gross_amount), 0),
+        )
+        .where(BudgetCustomerInvoice.budget_id == budget_id)
+        .where(BudgetCustomerInvoice.status == "issued")
+    )
+    row = db_session.execute(statement).one()
+    return float(row[0] or 0), float(row[1] or 0), float(row[2] or 0)
