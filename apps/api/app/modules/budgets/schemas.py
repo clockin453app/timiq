@@ -480,3 +480,63 @@ class BillingSummaryResponse(BaseModel):
     overdue_count: int = 0
     void_count: int = 0
     active_count: int = 0
+
+
+class BudgetCostPosition(BaseModel):
+    planned_budget_amount: Decimal
+    finalized_labour_cost: Decimal
+    estimated_labour_cost: Decimal
+    total_labour_cost: Decimal
+    total_expenses: Decimal
+    forecast_total_cost: Decimal
+    remaining_budget: Decimal
+    over_budget_amount: Decimal
+    budget_used_percent: Decimal | None = None
+    open_shift_count: int = 0
+    missing_rate_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    estimate_note: str = ""
+
+
+class BudgetBillingPosition(BaseModel):
+    contract_value_net: Decimal | None = None
+    billing_currency: str | None = None
+    active_invoiced_net: Decimal = Field(default=Decimal("0.00"))
+    vat_invoiced: Decimal = Field(default=Decimal("0.00"))
+    gross_invoiced: Decimal = Field(default=Decimal("0.00"))
+    remaining_to_invoice: Decimal | None = None
+    over_invoiced: Decimal | None = None
+    payments_received_gross: Decimal = Field(default=Decimal("0.00"))
+    outstanding_gross: Decimal = Field(default=Decimal("0.00"))
+    overdue_outstanding_gross: Decimal = Field(default=Decimal("0.00"))
+    draft_count: int = 0
+    issued_count: int = 0
+    overdue_count: int = 0
+    void_count: int = 0
+    part_paid_count: int = 0
+    paid_count: int = 0
+    active_count: int = 0
+
+
+class BudgetProfitability(BaseModel):
+    forecast_revenue_net: Decimal | None = None
+    forecast_total_cost: Decimal | None = None
+    forecast_profit: Decimal | None = None
+    forecast_margin_percent: Decimal | None = None
+
+
+class InvoiceStatusCounts(BaseModel):
+    draft: int = 0
+    issued: int = 0
+    part_paid: int = 0
+    paid: int = 0
+    overdue: int = 0
+    void: int = 0
+
+
+class BudgetFinancialSummaryResponse(BaseModel):
+    budget: BudgetProjectSummary
+    cost_position: BudgetCostPosition
+    billing_position: BudgetBillingPosition
+    profitability: BudgetProfitability
+    invoice_status_counts: InvoiceStatusCounts

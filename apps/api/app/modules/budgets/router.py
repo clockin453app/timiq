@@ -21,6 +21,13 @@ from app.modules.budgets.billing import (
     update_contract_value,
     void_invoice,
 )
+from app.modules.budgets.financial_reporting import (
+    export_financial_summary_csv,
+    export_financial_summary_print_html,
+    export_invoice_register_csv,
+    export_invoice_register_print_html,
+    get_financial_summary,
+)
 from app.modules.budgets.invoice_documents import download_invoice_document, upload_invoice_document
 from app.modules.budgets.payments import create_payment, list_payments, reverse_payment
 from app.modules.budgets.schemas import (
@@ -28,6 +35,7 @@ from app.modules.budgets.schemas import (
     BudgetExpenseCreateRequest,
     BudgetExpensePatchRequest,
     BudgetExpenseResponse,
+    BudgetFinancialSummaryResponse,
     BudgetProjectCreateRequest,
     BudgetProjectDetailResponse,
     BudgetProjectPatchRequest,
@@ -190,6 +198,79 @@ def print_budget_report(
         content=html_body,
         media_type="text/html; charset=utf-8",
         headers={"Content-Disposition": 'inline; filename="budget-report.html"'},
+    )
+
+
+@router.get("/{budget_id}/financial-summary", response_model=BudgetFinancialSummaryResponse)
+def read_financial_summary(
+    budget_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetFinancialSummaryResponse:
+    return get_financial_summary(db_session, current_user, budget_id)
+
+
+@router.get("/{budget_id}/reports/financial-summary.csv")
+def download_financial_summary_csv(
+    budget_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+):
+    body, _fname = export_financial_summary_csv(db_session, current_user, budget_id)
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": content_disposition_attachment(
+                safe_export_filename("financial-summary", str(budget_id)) + ".csv",
+            ),
+        },
+    )
+
+
+@router.get("/{budget_id}/reports/financial-summary.print")
+def print_financial_summary(
+    budget_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    html_body = export_financial_summary_print_html(db_session, current_user, budget_id)
+    return Response(
+        content=html_body,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": 'inline; filename="financial-summary.html"'},
+    )
+
+
+@router.get("/{budget_id}/reports/invoice-register.csv")
+def download_invoice_register_csv(
+    budget_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+):
+    body, _fname = export_invoice_register_csv(db_session, current_user, budget_id)
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": content_disposition_attachment(
+                safe_export_filename("invoice-register", str(budget_id)) + ".csv",
+            ),
+        },
+    )
+
+
+@router.get("/{budget_id}/reports/invoice-register.print")
+def print_invoice_register(
+    budget_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> Response:
+    html_body = export_invoice_register_print_html(db_session, current_user, budget_id)
+    return Response(
+        content=html_body,
+        media_type="text/html; charset=utf-8",
+        headers={"Content-Disposition": 'inline; filename="invoice-register.html"'},
     )
 
 

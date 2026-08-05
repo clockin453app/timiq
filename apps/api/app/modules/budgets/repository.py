@@ -340,6 +340,24 @@ def sum_active_payments_for_budget(db_session: Session, budget_id: uuid.UUID) ->
     return float(db_session.scalar(statement) or 0)
 
 
+def map_active_payment_totals_for_budget(
+    db_session: Session,
+    budget_id: uuid.UUID,
+) -> dict[uuid.UUID, float]:
+    """One-query active payment totals keyed by invoice_id for a budget."""
+    statement = (
+        select(
+            BudgetInvoicePayment.invoice_id,
+            func.coalesce(func.sum(BudgetInvoicePayment.amount), 0),
+        )
+        .where(BudgetInvoicePayment.budget_id == budget_id)
+        .where(BudgetInvoicePayment.reversed_at.is_(None))
+        .group_by(BudgetInvoicePayment.invoice_id)
+    )
+    rows = db_session.execute(statement).all()
+    return {invoice_id: float(total or 0) for invoice_id, total in rows}
+
+
 def lock_customer_invoice_for_update(
     db_session: Session,
     invoice_id: uuid.UUID,
