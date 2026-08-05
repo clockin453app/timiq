@@ -285,7 +285,19 @@ export function MessagesClient() {
         const prevCount = prevMsgCountRef.current;
         prevMsgCountRef.current = rows.length;
         setMessages(rows);
-        await markConversationRead(conversationId);
+        try {
+          await markConversationRead(conversationId);
+          setConversations((prev) =>
+            prev.map((row) =>
+              row.id === conversationId ? { ...row, unread_count: 0, is_unread: false } : row,
+            ),
+          );
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("timiq:messages-read", { detail: { conversationId } }));
+          }
+        } catch {
+          setConvError("Could not mark conversation as read. Unread state may still be accurate after refresh.");
+        }
 
         if (opts?.silent && !opts.intent) {
           if (rows.length > prevCount) {
@@ -638,15 +650,24 @@ export function MessagesClient() {
               <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2 md:max-h-none">
                 {conversations.map((c) => {
                   const selected = selectedConvId === c.id;
+                  const unreadCount = Math.max(0, c.unread_count ?? 0);
+                  const unread = Boolean(c.is_unread) || unreadCount > 0;
                   const title = conversationListTitle(c, user.id);
                   const subtitle = conversationListSubtitle(c, user.id);
+                  const ariaLabel = unread
+                    ? `${title}, ${unreadCount} unread message${unreadCount === 1 ? "" : "s"}`
+                    : title;
                   return (
                     <li key={c.id}>
                       <button
-                        className={`flex w-full items-start gap-3 rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-colors ${
+                        aria-current={selected ? "true" : undefined}
+                        aria-label={ariaLabel}
+                        className={`flex w-full min-h-11 items-start gap-3 rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-btn-active-border)] ${
                           selected
                             ? "border-[var(--color-btn-active-border)] bg-[var(--color-btn-active-bg)] shadow-sm"
-                            : "border-transparent hover:border-[var(--color-border-dark)] hover:bg-[var(--color-header)]"
+                            : unread
+                              ? "border-sky-200/80 bg-sky-50 hover:border-sky-300"
+                              : "border-transparent bg-[var(--color-sheet)] hover:border-[var(--color-border-dark)] hover:bg-[var(--color-header)]"
                         }`}
                         type="button"
                         onClick={() => {
@@ -657,15 +678,40 @@ export function MessagesClient() {
                         <ConversationAvatar conversation={c} sizeClassName="h-11 w-11" viewerId={user.id} />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
-                            <p className="truncate text-sm font-semibold text-[var(--color-text)]">{title}</p>
-                            <span className="shrink-0 text-[11px] text-[var(--color-text-soft)]">
-                              {formatConversationTimestamp(c.last_message_at || c.updated_at)}
-                            </span>
+                            <p
+                              className={`min-w-0 truncate text-sm text-[var(--color-text)] ${
+                                unread ? "font-bold" : "font-normal"
+                              }`}
+                            >
+                              {title}
+                              {unread ? <span className="sr-only"> Unread</span> : null}
+                            </p>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              {unread ? (
+                                <span
+                                  aria-label={`${unreadCount} unread`}
+                                  className="inline-flex min-h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1.5 text-[10px] font-bold text-white"
+                                >
+                                  {unreadCount > 99 ? "99+" : unreadCount || "•"}
+                                </span>
+                              ) : null}
+                              <span
+                                className={`text-[11px] ${
+                                  unread ? "font-semibold text-[var(--color-text)]" : "font-normal text-[var(--color-text-soft)]"
+                                }`}
+                              >
+                                {formatConversationTimestamp(c.last_message_at || c.updated_at)}
+                              </span>
+                            </div>
                           </div>
                           {subtitle ? (
                             <p className="truncate text-xs text-[var(--color-text-muted)]">{subtitle}</p>
                           ) : null}
-                          <p className="mt-0.5 truncate text-xs text-[var(--color-text-soft)]">
+                          <p
+                            className={`mt-0.5 truncate text-xs ${
+                              unread ? "font-medium text-[var(--color-text)]" : "font-normal text-[var(--color-text-soft)]"
+                            }`}
+                          >
                             {c.last_message_preview?.trim() || "No messages yet"}
                           </p>
                         </div>

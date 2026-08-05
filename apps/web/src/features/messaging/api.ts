@@ -50,6 +50,9 @@ export type ConversationListItem = {
   participants: MessageParticipantSummary[];
   last_message_preview: string | null;
   last_message_at: string | null;
+  /** Incoming unread messages for the signed-in viewer (server-authoritative). */
+  unread_count?: number;
+  is_unread?: boolean;
 };
 
 export type MessageRow = {

@@ -35,11 +35,18 @@ export function MessagesHeaderButton({ activeHref = "/dashboard", companyId = nu
     const onSummary = (event: Event) => {
       applySummary((event as CustomEvent<NotificationSummary>).detail);
     };
+    const refresh = () => {
+      void fetchNotificationSummary(scopeCompany)
+        .then(applySummary)
+        .catch(() => setUnread(0));
+    };
     window.addEventListener("timiq:notification-summary", onSummary);
-    void fetchNotificationSummary(scopeCompany)
-      .then(applySummary)
-      .catch(() => setUnread(0));
-    return () => window.removeEventListener("timiq:notification-summary", onSummary);
+    window.addEventListener("timiq:messages-read", refresh);
+    refresh();
+    return () => {
+      window.removeEventListener("timiq:notification-summary", onSummary);
+      window.removeEventListener("timiq:messages-read", refresh);
+    };
   }, [applySummary, scopeCompany]);
 
   const active =

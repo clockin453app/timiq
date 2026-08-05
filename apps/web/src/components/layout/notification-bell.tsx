@@ -84,6 +84,7 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
   const [data, setData] = useState<NotificationSummary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [mobileHub, setMobileHub] = useState(false);
+  const [locallySeenKeys, setLocallySeenKeys] = useState<Set<string>>(() => new Set());
 
   const scopeCompany = isAdministrator(user) ? companyId : null;
 
@@ -135,7 +136,9 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
 
   async function onItemNavigate(it: NotificationSummaryItem) {
     setOpen(false);
+    const itemKey = `${it.kind}:${(it.target_key ?? "").trim()}`;
     if (it.kind === "announcement") {
+      setLocallySeenKeys((prev) => new Set(prev).add(itemKey));
       await postNotificationMarkSeen({
         kind: "announcement",
         mark_all_for_kind: true,
@@ -146,6 +149,7 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
     }
     const key = (it.target_key ?? "").trim();
     if (SEEN_MARK_KINDS.has(it.kind) && key) {
+      setLocallySeenKeys((prev) => new Set(prev).add(itemKey));
       await postNotificationMarkSeen({
         kind: it.kind,
         target_key: key,
@@ -160,6 +164,8 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
     if (!key || !SEEN_MARK_KINDS.has(it.kind)) {
       return;
     }
+    const itemKey = `${it.kind}:${key}`;
+    setLocallySeenKeys((prev) => new Set(prev).add(itemKey));
     await postNotificationMarkSeen({
       kind: it.kind,
       target_key: key,
@@ -251,12 +257,24 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
                         {items.map((it) => {
                           const itemKey = `${it.kind}:${it.target_key ?? ""}`;
                           const when = formatNotificationOccurredAt(it.occurred_at);
-                          const unreadMark = !it.is_seen;
+                          const seen = Boolean(it.is_seen) || locallySeenKeys.has(itemKey);
+                          const unseen = !seen;
                           return (
                             <li key={itemKey} className="border-b border-[var(--color-border)] last:border-b-0">
-                              <div className="flex items-stretch hover:bg-[var(--color-cell)]">
+                              <div
+                                className={`flex items-stretch border-l-4 ${
+                                  unseen
+                                    ? "border-l-sky-500 bg-sky-50/80 hover:bg-sky-50"
+                                    : "border-l-transparent bg-[var(--color-sheet)] hover:bg-[var(--color-cell)]"
+                                }`}
+                              >
                                 <Link
-                                  className="block min-h-11 min-w-0 flex-1 px-3 py-2.5 text-left"
+                                  aria-label={
+                                    unseen
+                                      ? `${it.title}. Unread notification`
+                                      : `${it.title}. Seen notification`
+                                  }
+                                  className="block min-h-11 min-w-0 flex-1 px-3 py-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--color-btn-active-border)]"
                                   href={it.href}
                                   onClick={() => void onItemNavigate(it)}
                                 >
@@ -264,13 +282,21 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
                                     <div className="flex min-w-0 flex-1 items-start gap-2">
                                       <span
                                         className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                                          it.priority === "high" ? "bg-red-500" : "bg-[var(--color-border-dark)]"
+                                          unseen
+                                            ? it.priority === "high"
+                                              ? "bg-red-500"
+                                              : "bg-sky-600"
+                                            : "bg-[var(--color-border-dark)]"
                                         }`}
                                         aria-hidden
                                       />
-                                      <span className="min-w-0 break-words text-sm font-medium text-[var(--color-text)]">
+                                      <span
+                                        className={`min-w-0 break-words text-sm text-[var(--color-text)] ${
+                                          unseen ? "font-bold" : "font-normal"
+                                        }`}
+                                      >
                                         {it.title}
-                                        {unreadMark ? (
+                                        {unseen ? (
                                           <span className="sr-only"> {t("notifications.unread", "Unread")}</span>
                                         ) : null}
                                       </span>
@@ -286,10 +312,18 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
                                       </span>
                                     </div>
                                   </div>
-                                  <p className="mt-0.5 break-words pl-4 text-xs text-[var(--color-text-muted)]">{it.description}</p>
+                                  <p
+                                    className={`mt-0.5 break-words pl-4 text-xs ${
+                                      unseen ? "text-[var(--color-text)]" : "text-[var(--color-text-muted)]"
+                                    }`}
+                                  >
+                                    {it.description}
+                                  </p>
                                   {when ? (
                                     <p
-                                      className="mt-1 pl-4 text-[11px] text-[var(--color-text-soft)]"
+                                      className={`mt-1 pl-4 text-[11px] ${
+                                        unseen ? "text-[var(--color-text-muted)]" : "text-[var(--color-text-soft)]"
+                                      }`}
                                       title={when.exact}
                                       aria-label={when.exact}
                                     >
