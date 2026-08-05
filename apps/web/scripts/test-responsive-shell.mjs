@@ -125,6 +125,7 @@ const wideAudits = [
   ["privacy", read("app/(app)/privacy/privacy-client.tsx"), /w-full min-w-0 max-w-full overflow-x-auto/],
   ["budgets calculator", read("app/(app)/budgets/budgets-calculator-tab.tsx"), /w-full min-w-0 max-w-full overflow-x-auto/],
   ["budgets saved", read("app/(app)/budgets/budgets-saved-tab.tsx"), /w-full min-w-0 max-w-full overflow-x-auto/],
+  ["budgets overview financial", read("app/(app)/budgets/budget-overview-financial.tsx"), /min-w-0 max-w-full/],
   ["budgets billing", read("app/(app)/budgets/budget-billing-tab.tsx"), /min-w-0 max-w-full/],
   ["budgets billing payments", read("app/(app)/budgets/budget-billing-tab.tsx"), /Record payment[\s\S]*min-w-0 max-w-full/],
 ];

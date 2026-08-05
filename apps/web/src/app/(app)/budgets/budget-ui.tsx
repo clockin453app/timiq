@@ -96,7 +96,95 @@ function usageBarTone(isOver: boolean, percentUsed: number): { track: string; fi
   };
 }
 
-/** Premium Overview financial summary — no per-metric cards. */
+/** Progress bar with accessible value (may exceed 100% for over-budget / over-invoiced). */
+export function BudgetUsageProgress(props: {
+  percentUsedNumeric: number;
+  percentUsedDisplay: string;
+  ariaLabel: string;
+  isOver?: boolean;
+}) {
+  const pct = Number.isFinite(props.percentUsedNumeric) ? Math.max(0, props.percentUsedNumeric) : 0;
+  const fill = Math.min(100, pct);
+  const isOver = props.isOver ?? pct > 100;
+  const tone = usageBarTone(isOver, pct);
+  const valueNow = Math.round(pct);
+
+  return (
+    <div className="min-w-0 space-y-1.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-xs text-[var(--color-text-muted)]">{props.ariaLabel}</span>
+        <span className="text-xs font-medium tabular-nums text-[var(--color-text)]">{props.percentUsedDisplay}</span>
+      </div>
+      <div
+        aria-label={props.ariaLabel}
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={valueNow}
+        className={`h-2 w-full overflow-hidden rounded-full ${tone.track}`}
+        role="progressbar"
+      >
+        <div className={`h-full rounded-full ${tone.fill}`} style={{ width: `${fill}%` }} />
+      </div>
+    </div>
+  );
+}
+
+export function BudgetOverviewPanel(props: {
+  title: string;
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={[
+        "min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]",
+        props.className ?? "",
+      ].join(" ")}
+    >
+      <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2.5">
+        <h3 className="text-sm font-semibold text-[var(--color-text)]">{props.title}</h3>
+      </div>
+      <div className="min-w-0 space-y-3 p-3">{props.children}</div>
+    </section>
+  );
+}
+
+export function BudgetMetricRow(props: {
+  label: string;
+  value: string;
+  valueClassName?: string;
+  hint?: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-baseline justify-between gap-3">
+      <div className="min-w-0">
+        <p className="text-xs text-[var(--color-text-muted)]">{props.label}</p>
+        {props.hint ? <p className="mt-0.5 text-[10px] text-[var(--color-text-muted)]">{props.hint}</p> : null}
+      </div>
+      <p
+        className={[
+          "shrink-0 text-sm font-semibold tabular-nums text-[var(--color-text)]",
+          props.valueClassName ?? "",
+        ].join(" ")}
+      >
+        {props.value}
+      </p>
+    </div>
+  );
+}
+
+export function BudgetWarningStrip(props: { children: ReactNode; tone?: "warning" | "danger" }) {
+  const tone = props.tone ?? "warning";
+  const cls =
+    tone === "danger"
+      ? "border-[var(--color-danger-700)] bg-[var(--color-danger-50)] text-[var(--color-danger-700)]"
+      : "border-[var(--color-warning-700)] bg-[var(--color-warning-50)] text-[var(--color-warning-700)]";
+  return (
+    <div className={`rounded-[var(--radius-sm)] border px-2.5 py-2 text-xs ${cls}`}>{props.children}</div>
+  );
+}
+
+/** Legacy single-column cost summary — kept for calculator / older callers. */
 export function BudgetFinancialSummary(props: {
   plannedDisplay: string;
   spentDisplay: string;

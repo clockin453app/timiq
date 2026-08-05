@@ -87,9 +87,13 @@ for (const name of [
   check(`API helper ${name}`, new RegExp(`export async function ${name}\\b`).test(api) || new RegExp(`export function ${name}\\b`).test(api));
 }
 
-// Billing exports deferred; reports tab unchanged for cost exports
+// Billing exports deferred; cost reports remain on Reports tab (Phase 3 adds clearer labels + more exports)
 check("billing CSV/print later note", /Billing CSV and print exports will be added later/.test(billing));
-check("reports tab still has cost Export CSV", /detailTab === \"reports\"[\s\S]*Export CSV/.test(saved));
+check(
+  "reports tab still has cost export",
+  /detailTab === \"reports\"[\s\S]*Export cost CSV/.test(saved) ||
+    /detailTab === \"reports\"[\s\S]*Export CSV/.test(saved),
+);
 
 // VAT helpers
 check(

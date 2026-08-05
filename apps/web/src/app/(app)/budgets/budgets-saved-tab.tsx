@@ -11,14 +11,19 @@ import {
   createBudgetExpense,
   deleteBudgetExpense,
   downloadBudgetReportCsv,
+  downloadFinancialSummaryCsv,
+  downloadInvoiceRegisterCsv,
+  fetchBudgetFinancialSummary,
   getBudgetDetail,
   listBudgetExpenses,
   listBudgetProjects,
   openBudgetReportPrint,
+  openFinancialSummaryPrint,
+  openInvoiceRegisterPrint,
   patchBudget,
   patchBudgetExpense,
-  type BudgetCategoryTotals,
   type BudgetExpenseResponse,
+  type BudgetFinancialSummaryResponse,
   type BudgetProjectDetailResponse,
   type BudgetProjectSummary,
 } from "@/features/budgets/api";
@@ -29,10 +34,8 @@ import { formatHoursFromSeconds } from "@/features/payroll/format";
 import { listLocations, type Location } from "@/features/locations/api";
 import { listWorkplaces, type Workplace } from "@/features/workplaces/api";
 import { BudgetBillingTab } from "./budget-billing-tab";
+import { BudgetOverviewFinancial } from "./budget-overview-financial";
 import {
-  BudgetCategoryBreakdown,
-  BudgetFinancialSummary,
-  BudgetOperationalMetrics,
   budgetStatusBadgeTone,
   budgetUnderlineTabClass,
   expenseCategoryLabel,
@@ -43,19 +46,7 @@ import {
 
 const BUDGET_STATUSES = ["draft", "active", "completed", "archived"] as const;
 
-const CATEGORY_KEYS = [
-  "materials",
-  "tools",
-  "equipment",
-  "subcontractor",
-  "plant_hire",
-  "transport",
-  "other",
-] as const;
-
 type BudgetDetailTab = "overview" | "purchases" | "labour" | "billing" | "reports";
-
-type CategoryEntry = { key: (typeof CATEGORY_KEYS)[number]; amount: number };
 
 function overlayPanelClass() {
   return "w-full max-w-lg rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg";
@@ -88,12 +79,6 @@ function formatHeaderDate(iso: string | null | undefined): string | null {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function categoryAmount(cats: BudgetCategoryTotals, key: (typeof CATEGORY_KEYS)[number]): number {
-  const v = cats[key];
-  const n = Number(v);
-  return Number.isFinite(n) ? n : 0;
-}
-
 function purchaseDateDisplay(row: BudgetExpenseResponse): string {
   if (typeof row.purchase_date === "string") {
     return row.purchase_date;
@@ -114,6 +99,7 @@ export function BudgetsSavedTab() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<BudgetProjectDetailResponse | null>(null);
+  const [financialSummary, setFinancialSummary] = useState<BudgetFinancialSummaryResponse | null>(null);
   const [expenses, setExpenses] = useState<BudgetExpenseResponse[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
@@ -228,9 +214,16 @@ export function BudgetsSavedTab() {
       const [d, ex] = await Promise.all([getBudgetDetail(id), listBudgetExpenses(id)]);
       setDetail(d);
       setExpenses(ex);
+      try {
+        const fin = await fetchBudgetFinancialSummary(id);
+        setFinancialSummary(fin);
+      } catch {
+        setFinancialSummary(null);
+      }
     } catch (err) {
       setDetail(null);
       setExpenses([]);
+      setFinancialSummary(null);
       setDetailError(err instanceof Error ? err.message : "Could not load budget.");
     } finally {
       setDetailLoading(false);
@@ -241,10 +234,31 @@ export function BudgetsSavedTab() {
     if (!selectedId) {
       setDetail(null);
       setExpenses([]);
+      setFinancialSummary(null);
       return;
     }
     void reloadDetail(selectedId);
   }, [selectedId, reloadDetail]);
+
+  useEffect(() => {
+    if (!selectedId || detailTab !== "overview") {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const fin = await fetchBudgetFinancialSummary(selectedId);
+        if (!cancelled) {
+          setFinancialSummary(fin);
+        }
+      } catch {
+        /* keep last good summary; detail error banner covers hard failures */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, detailTab]);
 
   const [cName, setCName] = useState("");
   const [cClient, setCClient] = useState("");
@@ -530,18 +544,46 @@ export function BudgetsSavedTab() {
     openBudgetReportPrint(selectedId);
   }
 
+  async function handleExportFinancialSummaryCsv() {
+    if (!selectedId) {
+      return;
+    }
+    setActionError("");
+    try {
+      await downloadFinancialSummaryCsv(selectedId);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Financial summary export failed.");
+    }
+  }
+
+  function handlePrintFinancialSummary() {
+    if (!selectedId) {
+      return;
+    }
+    openFinancialSummaryPrint(selectedId);
+  }
+
+  async function handleExportInvoiceRegisterCsv() {
+    if (!selectedId) {
+      return;
+    }
+    setActionError("");
+    try {
+      await downloadInvoiceRegisterCsv(selectedId);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : "Invoice register export failed.");
+    }
+  }
+
+  function handlePrintInvoiceRegister() {
+    if (!selectedId) {
+      return;
+    }
+    openInvoiceRegisterPrint(selectedId);
+  }
+
   const totals = detail?.totals;
   const cats = detail?.breakdown_by_category;
-
-  const categoryRows = useMemo(() => {
-    if (!cats) {
-      return { nonZero: [] as CategoryEntry[], zeros: [] as CategoryEntry[] };
-    }
-    const entries = CATEGORY_KEYS.map((key) => ({ key, amount: categoryAmount(cats, key) }));
-    const nonZero = entries.filter((e) => e.amount > 0);
-    const zeros = entries.filter((e) => e.amount === 0);
-    return { nonZero, zeros };
-  }, [cats]);
 
   const sharedFormFields = (
     <>
@@ -715,9 +757,6 @@ export function BudgetsSavedTab() {
 
   if (selectedId) {
     const b = detail?.budget;
-    const isOver = totals ? Number(totals.over_budget_amount) > 0 : false;
-    const pctNum = totals ? Number(totals.budget_used_percent) : NaN;
-    const pctBar = Number.isFinite(pctNum) ? Math.max(0, pctNum) : 0;
     const dateStart = formatHeaderDate(b?.start_date ?? null);
     const dateEnd = formatHeaderDate(b?.end_date ?? null);
     let dateRangeLabel = "No dates set";
@@ -872,97 +911,21 @@ export function BudgetsSavedTab() {
             </div>
 
             {detailTab === "overview" ? (
-              <div className="min-w-0 space-y-1">
-                <BudgetFinancialSummary
-                  isOverBudget={isOver}
-                  percentUsedDisplay={percentDisplay(totals.budget_used_percent)}
-                  percentUsedNumeric={pctBar}
-                  plannedDisplay={moneyDisplay(totals.planned_budget_amount)}
-                  remainingOrOverDisplay={
-                    isOver ? moneyDisplay(totals.over_budget_amount) : moneyDisplay(totals.remaining_budget)
-                  }
-                  spentDisplay={moneyDisplay(totals.total_spent)}
+              financialSummary ? (
+                <BudgetOverviewFinancial
+                  breakdownByCategory={cats}
+                  canEdit={b.status !== "archived"}
+                  hasOperationalSite={hasOperationalSite}
+                  labourHelpOpen={labourHelpOpen}
+                  showZeroCategories={showZeroCategories}
+                  summary={financialSummary}
+                  onEditBudget={openEditFromDetail}
+                  onToggleLabourHelp={() => setLabourHelpOpen((v) => !v)}
+                  onToggleZeroCategories={() => setShowZeroCategories((v) => !v)}
                 />
-
-                <BudgetOperationalMetrics
-                  estimatedLabour={moneyDisplay(totals.estimated_labour_cost)}
-                  finalizedLabour={moneyDisplay(totals.finalized_labour_cost)}
-                  openShiftsHint={
-                    totals.missing_rate_count > 0
-                      ? `${totals.missing_rate_count} employee(s) missing hourly rate`
-                      : undefined
-                  }
-                  openShiftsLabel={`${totals.open_shift_count} open · ${totals.missing_rate_count} missing rate`}
-                  purchases={moneyDisplay(totals.total_expenses)}
-                />
-
-                {cats ? (
-                  <BudgetCategoryBreakdown
-                    rows={
-                      showZeroCategories
-                        ? [...categoryRows.nonZero, ...categoryRows.zeros]
-                        : categoryRows.nonZero.length > 0
-                          ? categoryRows.nonZero
-                          : categoryRows.zeros
-                    }
-                    showZeroToggle={
-                      categoryRows.zeros.length > 0 ? (
-                        <button
-                          className="min-h-[44px] text-xs font-medium text-[var(--color-text-muted)] underline decoration-dotted hover:text-[var(--color-text)]"
-                          type="button"
-                          onClick={() => setShowZeroCategories((v) => !v)}
-                        >
-                          {showZeroCategories ? "Hide zero categories" : "Show zero categories"}
-                        </button>
-                      ) : null
-                    }
-                  />
-                ) : null}
-
-                {!hasOperationalSite ? (
-                  <div className="mt-3 flex flex-col gap-2 rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-3 sm:flex-row sm:items-center sm:justify-between">
-                    <p className="text-sm text-[var(--color-warning-700)]">
-                      Select an operational site to calculate labour accurately.
-                    </p>
-                    {b.status !== "archived" ? (
-                      <Button size="sm" type="button" variant="secondary" onClick={openEditFromDetail}>
-                        Edit budget
-                      </Button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-sm text-[var(--color-text-muted)]">
-                    Labour totals are filtered by the selected operational site.
-                  </p>
-                )}
-
-                {totals.warnings.length > 0 ? (
-                  <div className="mt-3 rounded-[var(--radius-md)] border border-[var(--color-warning-700)] bg-[var(--color-warning-50)] px-3 py-2.5 text-sm text-[var(--color-warning-700)]">
-                    <ul className="list-inside list-disc space-y-1">
-                      {totals.warnings.map((w) => (
-                        <li key={w}>{w}</li>
-                      ))}
-                    </ul>
-                  </div>
-                ) : null}
-
-                {totals.estimate_note ? (
-                  <div className="mt-3 border-t border-[var(--color-border)] pt-3">
-                    <button
-                      aria-expanded={labourHelpOpen}
-                      className="flex min-h-[44px] w-full items-center justify-between gap-3 text-left text-sm font-medium text-[var(--color-text)]"
-                      type="button"
-                      onClick={() => setLabourHelpOpen((v) => !v)}
-                    >
-                      <span>How labour is calculated</span>
-                      <span className="text-[var(--color-text-muted)]">{labourHelpOpen ? "−" : "+"}</span>
-                    </button>
-                    {labourHelpOpen ? (
-                      <p className="mt-2 text-xs leading-relaxed text-[var(--color-text-muted)]">{totals.estimate_note}</p>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
+              ) : (
+                <p className="text-sm text-[var(--color-text-muted)]">Loading financial summary…</p>
+              )
             ) : null}
 
             {detailTab === "purchases" ? (
@@ -1142,21 +1105,98 @@ export function BudgetsSavedTab() {
             ) : null}
 
             {detailTab === "reports" ? (
-              <div className="max-w-xl space-y-4 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-4">
-                <h3 className="text-sm font-semibold text-[var(--color-text)]">Exports</h3>
+              <div className="min-w-0 max-w-full space-y-4">
                 <p className="text-sm text-[var(--color-text-muted)]">
-                  Download a CSV for spreadsheets, or open a print-ready HTML summary (use your browser Print → Save as
-                  PDF). Both include budget summary, category totals, purchase lines, and labour breakdown using the same
-                  server-side figures as this page. They do not include sensitive payroll identifiers.
+                  Exports use the same server-side figures as this budget. Open print views and use your browser Print →
+                  Save as PDF when needed.
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" variant="secondary" onClick={() => void handleExportCsv()}>
-                    Export CSV
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={handlePrint}>
-                    Print report
-                  </Button>
-                </div>
+
+                <section className="min-w-0 max-w-full space-y-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-4">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-[var(--color-text)]">Cost report</h3>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      Budget summary, category totals, purchase lines, and labour breakdown.
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap gap-2">
+                    <Button
+                      aria-label="Export cost CSV"
+                      className="min-h-[44px]"
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void handleExportCsv()}
+                    >
+                      Export cost CSV
+                    </Button>
+                    <Button
+                      aria-label="Print cost report"
+                      className="min-h-[44px]"
+                      type="button"
+                      variant="secondary"
+                      onClick={handlePrint}
+                    >
+                      Print cost report
+                    </Button>
+                  </div>
+                </section>
+
+                <section className="min-w-0 max-w-full space-y-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-4">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-[var(--color-text)]">Project financial summary</h3>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      Cost position, billing position, and profitability in one export.
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap gap-2">
+                    <Button
+                      aria-label="Export financial summary CSV"
+                      className="min-h-[44px]"
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void handleExportFinancialSummaryCsv()}
+                    >
+                      Export financial summary CSV
+                    </Button>
+                    <Button
+                      aria-label="Print financial summary"
+                      className="min-h-[44px]"
+                      type="button"
+                      variant="secondary"
+                      onClick={handlePrintFinancialSummary}
+                    >
+                      Print financial summary
+                    </Button>
+                  </div>
+                </section>
+
+                <section className="min-w-0 max-w-full space-y-3 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-4">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-[var(--color-text)]">Customer invoice register</h3>
+                    <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+                      Customer invoices with Net, VAT, Gross, payments, and outstanding balances.
+                    </p>
+                  </div>
+                  <div className="flex min-w-0 flex-wrap gap-2">
+                    <Button
+                      aria-label="Export invoice CSV"
+                      className="min-h-[44px]"
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void handleExportInvoiceRegisterCsv()}
+                    >
+                      Export invoice CSV
+                    </Button>
+                    <Button
+                      aria-label="Print invoice register"
+                      className="min-h-[44px]"
+                      type="button"
+                      variant="secondary"
+                      onClick={handlePrintInvoiceRegister}
+                    >
+                      Print invoice register
+                    </Button>
+                  </div>
+                </section>
               </div>
             ) : null}
           </>

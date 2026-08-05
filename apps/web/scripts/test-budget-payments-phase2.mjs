@@ -92,6 +92,10 @@ check(
   "no Overview redesign in billing",
   !/Overview redesign/i.test(billing) && !/detailTab === \"overview\"/.test(billing),
 );
-check("reports tab unchanged for cost Export CSV", /detailTab === \"reports\"[\s\S]*Export CSV/.test(saved));
+check(
+  "reports tab still has cost export",
+  /detailTab === \"reports\"[\s\S]*Export cost CSV/.test(saved) ||
+    /detailTab === \"reports\"[\s\S]*Export CSV/.test(saved),
+);
 
 console.log(`${passed} budget payments phase2 checks passed`);

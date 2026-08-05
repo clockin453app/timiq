@@ -410,6 +410,137 @@ export function openBudgetReportPrint(budgetId: string): void {
   );
 }
 
+/* —— Project financial summary + invoice register reports —— */
+
+export type BudgetCostPosition = {
+  planned_budget_amount: string | number;
+  finalized_labour_cost: string | number;
+  estimated_labour_cost: string | number;
+  total_labour_cost: string | number;
+  total_expenses: string | number;
+  forecast_total_cost: string | number;
+  remaining_budget: string | number;
+  over_budget_amount: string | number;
+  budget_used_percent: string | number | null;
+  open_shift_count: number;
+  missing_rate_count: number;
+  warnings: string[];
+  estimate_note: string;
+};
+
+export type BudgetBillingPosition = {
+  contract_value_net: string | number | null;
+  billing_currency: string | null;
+  active_invoiced_net: string | number;
+  vat_invoiced: string | number;
+  gross_invoiced: string | number;
+  remaining_to_invoice: string | number | null;
+  over_invoiced: string | number | null;
+  payments_received_gross: string | number;
+  outstanding_gross: string | number;
+  overdue_outstanding_gross: string | number;
+  draft_count: number;
+  issued_count: number;
+  overdue_count: number;
+  void_count: number;
+  part_paid_count: number;
+  paid_count: number;
+  active_count: number;
+};
+
+export type BudgetProfitability = {
+  forecast_revenue_net: string | number | null;
+  forecast_total_cost: string | number | null;
+  forecast_profit: string | number | null;
+  forecast_margin_percent: string | number | null;
+};
+
+export type InvoiceStatusCounts = {
+  draft: number;
+  issued: number;
+  part_paid: number;
+  paid: number;
+  overdue: number;
+  void: number;
+};
+
+export type BudgetFinancialSummaryResponse = {
+  budget: BudgetProjectSummary;
+  cost_position: BudgetCostPosition;
+  billing_position: BudgetBillingPosition;
+  profitability: BudgetProfitability;
+  invoice_status_counts: InvoiceStatusCounts;
+};
+
+export async function fetchBudgetFinancialSummary(
+  budgetId: string,
+): Promise<BudgetFinancialSummaryResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/financial-summary`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not load financial summary.");
+  }
+  return response.json() as Promise<BudgetFinancialSummaryResponse>;
+}
+
+async function downloadBudgetReportBlob(
+  budgetId: string,
+  pathSuffix: string,
+  downloadName: string,
+  fallback: string,
+): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/${pathSuffix}`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, fallback);
+  }
+  const blob = await response.blob();
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = downloadName;
+  anchor.click();
+  URL.revokeObjectURL(href);
+}
+
+function openBudgetReportPath(budgetId: string, pathSuffix: string): void {
+  window.open(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/${pathSuffix}`,
+    "_blank",
+    "noopener,noreferrer",
+  );
+}
+
+export async function downloadFinancialSummaryCsv(budgetId: string): Promise<void> {
+  await downloadBudgetReportBlob(
+    budgetId,
+    "reports/financial-summary.csv",
+    `financial-summary-${budgetId}.csv`,
+    "Could not export financial summary CSV.",
+  );
+}
+
+export function openFinancialSummaryPrint(budgetId: string): void {
+  openBudgetReportPath(budgetId, "reports/financial-summary.print");
+}
+
+export async function downloadInvoiceRegisterCsv(budgetId: string): Promise<void> {
+  await downloadBudgetReportBlob(
+    budgetId,
+    "reports/invoice-register.csv",
+    `invoice-register-${budgetId}.csv`,
+    "Could not export invoice register CSV.",
+  );
+}
+
+export function openInvoiceRegisterPrint(budgetId: string): void {
+  openBudgetReportPath(budgetId, "reports/invoice-register.print");
+}
+
 /* —— Customer billing (revenue invoices; separate from purchases) —— */
 
 export type InvoiceDisplayStatus =
