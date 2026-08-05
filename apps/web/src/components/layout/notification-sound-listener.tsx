@@ -27,13 +27,13 @@ export function NotificationSoundListener() {
 
   const handleSummary = useCallback((row: NotificationSummary) => {
     if (limited || !readSoundNotificationsEnabled()) {
-      prevMessagesRef.current = navBadgesFromSummary(row.items)["/messages"] ?? 0;
+      prevMessagesRef.current = navBadgesFromSummary(row.items, row.messages_unread_count)["/messages"] ?? 0;
       prevTotalRef.current = row.total_count ?? 0;
       initializedRef.current = true;
       return;
     }
 
-    const messages = navBadgesFromSummary(row.items)["/messages"] ?? 0;
+    const messages = navBadgesFromSummary(row.items, row.messages_unread_count)["/messages"] ?? 0;
     const total = row.total_count ?? 0;
 
     if (!initializedRef.current) {

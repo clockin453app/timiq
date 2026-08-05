@@ -20,11 +20,15 @@ export type NotificationSummaryItem = {
   /** @deprecated Use category */
   group?: string | null;
   is_seen?: boolean;
+  /** UTC ISO timestamp of the underlying event when known. */
+  occurred_at?: string | null;
 };
 
 export type NotificationSummary = {
   total_count: number;
   items: NotificationSummaryItem[];
+  /** Messages nav badge; independent of bell total_count. */
+  messages_unread_count?: number;
 };
 
 function qs(params: Record<string, string | undefined>): string {

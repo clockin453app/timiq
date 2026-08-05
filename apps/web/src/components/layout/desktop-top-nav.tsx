@@ -89,7 +89,7 @@ export function DesktopTopNav({ activeHref }: DesktopTopNavProps) {
       if (!d?.items) {
         return;
       }
-      setNavBadges(navBadgesFromSummary(d.items));
+      setNavBadges(navBadgesFromSummary(d.items, d.messages_unread_count));
     };
     window.addEventListener("timiq:notification-summary", onSummary as EventListener);
     return () => window.removeEventListener("timiq:notification-summary", onSummary as EventListener);

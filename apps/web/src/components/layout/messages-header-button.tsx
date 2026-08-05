@@ -27,7 +27,7 @@ export function MessagesHeaderButton({ activeHref = "/dashboard", companyId = nu
   const scopeCompany = isAdministrator(user) ? companyId : null;
 
   const applySummary = useCallback((row: NotificationSummary) => {
-    const badges = navBadgesFromSummary(row.items);
+    const badges = navBadgesFromSummary(row.items, row.messages_unread_count);
     setUnread(badges["/messages"] ?? 0);
   }, []);
 

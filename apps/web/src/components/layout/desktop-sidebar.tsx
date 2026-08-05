@@ -66,7 +66,7 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
   useEffect(() => {
     const onSummary = (event: Event) => {
       const detail = (event as CustomEvent<NotificationSummary>).detail;
-      if (detail?.items) setNavBadges(navBadgesFromSummary(detail.items));
+      if (detail?.items) setNavBadges(navBadgesFromSummary(detail.items, detail.messages_unread_count));
     };
     window.addEventListener("timiq:notification-summary", onSummary as EventListener);
     return () =>

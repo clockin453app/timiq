@@ -1,14 +1,17 @@
 import type { NotificationSummaryItem } from "./api";
 
 /** Small nav dots for Messages / RAMS / Toolbox / Profile setup (subset of bell summary). */
-export function navBadgesFromSummary(items: NotificationSummaryItem[]): Record<string, number> {
-  let messages = 0;
+export function navBadgesFromSummary(
+  items: NotificationSummaryItem[],
+  messagesUnreadCount?: number | null,
+): Record<string, number> {
+  let messagesFromItems = 0;
   let rams = 0;
   let toolbox = 0;
   const out: Record<string, number> = {};
   for (const it of items) {
     if (it.kind === "message" || it.kind === "announcement") {
-      messages += it.count;
+      messagesFromItems += it.count;
     }
     if (it.kind === "rams_ack") {
       rams += it.count;
@@ -20,6 +23,10 @@ export function navBadgesFromSummary(items: NotificationSummaryItem[]): Record<s
       out["/profile"] = (out["/profile"] ?? 0) + it.count;
     }
   }
+  const messages =
+    typeof messagesUnreadCount === "number" && Number.isFinite(messagesUnreadCount)
+      ? Math.max(0, Math.floor(messagesUnreadCount))
+      : messagesFromItems;
   if (messages > 0) {
     out["/messages"] = messages;
   }

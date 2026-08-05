@@ -11,6 +11,13 @@ import {
   type NotificationSummary,
   type NotificationSummaryItem,
 } from "../../features/notifications/api";
+import {
+  DATE_GROUP_ORDER,
+  dateGroupHeading,
+  formatNotificationOccurredAt,
+  notificationDateGroup,
+  type NotificationDateGroup,
+} from "../../features/notifications/format-occurred-at";
 import { isAdministrator, useCurrentUser } from "../../features/auth";
 import { useT } from "../../lib/i18n";
 import { cn } from "../../lib/cn";
@@ -39,6 +46,7 @@ const SEEN_MARK_KINDS = new Set([
   "leave_request_pending",
   "attendance_late_arrival",
   "attendance_forgot_clock_in",
+  "attendance_missing_clock_in",
   "attendance_forgot_clock_out",
   "message_received",
   "announcement_published",
@@ -53,23 +61,17 @@ const SEEN_MARK_KINDS = new Set([
   "payroll_paid",
 ]);
 
-const GROUP_ORDER = ["account", "messages", "safety", "payroll", "time", "leave", "admin"];
-
-function itemCategory(it: NotificationSummaryItem): string {
-  return (it.category ?? it.group ?? "").trim();
-}
-
-function groupRank(g: string | null | undefined): number {
-  const key = (g ?? "").trim();
-  const idx = GROUP_ORDER.indexOf(key);
-  return idx === -1 ? 99 : idx;
-}
-
-function sortNotificationItems(items: NotificationSummaryItem[]): NotificationSummaryItem[] {
+function sortByOccurredAt(items: NotificationSummaryItem[]): NotificationSummaryItem[] {
   return [...items].sort((a, b) => {
-    const gr = groupRank(itemCategory(a)) - groupRank(itemCategory(b));
-    if (gr !== 0) {
-      return gr;
+    const aTs = a.occurred_at ? Date.parse(a.occurred_at) : Number.NaN;
+    const bTs = b.occurred_at ? Date.parse(b.occurred_at) : Number.NaN;
+    const aMissing = Number.isNaN(aTs);
+    const bMissing = Number.isNaN(bTs);
+    if (aMissing !== bMissing) {
+      return aMissing ? 1 : -1;
+    }
+    if (!aMissing && !bMissing && aTs !== bTs) {
+      return bTs - aTs;
     }
     return a.title.localeCompare(b.title);
   });
@@ -121,26 +123,13 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
 
   const total = data?.total_count ?? 0;
   const badge = total > 99 ? "99+" : total > 0 ? String(total) : "";
-  const sortedItems = data ? sortNotificationItems(data.items) : [];
+  const sortedItems = data ? sortByOccurredAt(data.items) : [];
 
-  function categoryHeading(cat: string): string {
-    switch (cat) {
-      case "account":
-        return t("notifications.category_account", "Account setup");
-      case "messages":
-        return t("notifications.category_messages", "Messages");
-      case "safety":
-        return t("notifications.category_safety", "Safety");
-      case "payroll":
-        return t("notifications.category_payroll", "Payroll");
-      case "time":
-        return t("notifications.category_time", "Time");
-      case "leave":
-        return t("notifications.category_leave", "Leave");
-      case "admin":
-        return t("notifications.category_admin", "Admin");
-      default:
-        return cat || t("notifications.category_admin", "Admin");
+  const grouped: { group: NotificationDateGroup; items: NotificationSummaryItem[] }[] = [];
+  for (const group of DATE_GROUP_ORDER) {
+    const rows = sortedItems.filter((it) => notificationDateGroup(it.occurred_at) === group);
+    if (rows.length > 0) {
+      grouped.push({ group, items: rows });
     }
   }
 
@@ -184,7 +173,11 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
       .map((it) => ({ kind: it.kind, target_key: (it.target_key ?? "").trim() }))
       .filter((it) => it.target_key);
     await postNotificationMarkAllSeen({ company_id: scopeCompany, items: visibleItems }).catch(() => undefined);
-    const empty = { total_count: 0, items: [] };
+    const empty: NotificationSummary = {
+      total_count: 0,
+      items: [],
+      messages_unread_count: data?.messages_unread_count ?? 0,
+    };
     setData(empty);
     window.dispatchEvent(new CustomEvent("timiq:notification-summary", { detail: empty }));
     void load();
@@ -225,7 +218,7 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
               <p className="text-sm font-semibold text-[var(--color-text)]">{t("notifications.title", "Notifications")}</p>
               <div className="flex shrink-0 items-center gap-2">
                 <button
-                  className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                  className="min-h-11 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                   type="button"
                   onClick={() => void load()}
                 >
@@ -233,7 +226,7 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
                 </button>
                 {total > 0 ? (
                   <button
-                    className="text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                    className="min-h-11 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
                     type="button"
                     onClick={() => void onMarkAllSeen()}
                   >
@@ -249,61 +242,77 @@ export function NotificationBell({ companyId = null }: NotificationBellProps) {
                 <p className="px-3 py-3 text-sm text-[var(--color-text-muted)]">{t("notifications.empty", "No notifications")}</p>
               ) : (
                 <ul className="min-w-0">
-                  {sortedItems.map((it, idx) => {
-                    const prev = idx > 0 ? sortedItems[idx - 1] : null;
-                    const cat = itemCategory(it);
-                    const gh = categoryHeading(cat);
-                    const showGroup = gh && (!prev || itemCategory(prev) !== cat);
-                    const itemKey = `${it.kind}:${it.target_key ?? ""}`;
-                    return (
-                      <li key={itemKey} className="border-b border-[var(--color-border)] last:border-b-0">
-                        {showGroup ? (
-                          <p className="px-3 pt-2 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                            {gh}
-                          </p>
-                        ) : null}
-                        <div className="flex items-stretch hover:bg-[var(--color-cell)]">
-                          <Link
-                            className="block min-w-0 flex-1 px-3 py-2.5 text-left"
-                            href={it.href}
-                            onClick={() => void onItemNavigate(it)}
-                          >
-                            <div className="flex items-start justify-between gap-2">
-                              <div className="flex min-w-0 flex-1 items-start gap-2">
-                                <span
-                                  className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
-                                    it.priority === "high" ? "bg-red-500" : "bg-[var(--color-border-dark)]"
-                                  }`}
-                                  aria-hidden
-                                />
-                                <span className="min-w-0 text-sm font-medium text-[var(--color-text)]">{it.title}</span>
-                              </div>
-                              <div className="flex shrink-0 flex-col items-end gap-0.5">
-                                {it.priority === "high" ? (
-                                  <span className="rounded bg-red-100 px-1 py-0.5 text-[10px] font-bold uppercase text-red-900">
-                                    {t("notifications.priority_high", "High")}
-                                  </span>
+                  {grouped.map(({ group, items }) => (
+                    <li key={group} className="min-w-0">
+                      <p className="px-3 pt-2 text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+                        {dateGroupHeading(group)}
+                      </p>
+                      <ul className="min-w-0">
+                        {items.map((it) => {
+                          const itemKey = `${it.kind}:${it.target_key ?? ""}`;
+                          const when = formatNotificationOccurredAt(it.occurred_at);
+                          const unreadMark = !it.is_seen;
+                          return (
+                            <li key={itemKey} className="border-b border-[var(--color-border)] last:border-b-0">
+                              <div className="flex items-stretch hover:bg-[var(--color-cell)]">
+                                <Link
+                                  className="block min-h-11 min-w-0 flex-1 px-3 py-2.5 text-left"
+                                  href={it.href}
+                                  onClick={() => void onItemNavigate(it)}
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="flex min-w-0 flex-1 items-start gap-2">
+                                      <span
+                                        className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                                          it.priority === "high" ? "bg-red-500" : "bg-[var(--color-border-dark)]"
+                                        }`}
+                                        aria-hidden
+                                      />
+                                      <span className="min-w-0 break-words text-sm font-medium text-[var(--color-text)]">
+                                        {it.title}
+                                        {unreadMark ? (
+                                          <span className="sr-only"> {t("notifications.unread", "Unread")}</span>
+                                        ) : null}
+                                      </span>
+                                    </div>
+                                    <div className="flex shrink-0 flex-col items-end gap-0.5">
+                                      {it.priority === "high" ? (
+                                        <span className="rounded bg-red-100 px-1 py-0.5 text-[10px] font-bold uppercase text-red-900">
+                                          {t("notifications.priority_high", "High")}
+                                        </span>
+                                      ) : null}
+                                      <span className="rounded bg-[var(--color-header)] px-1.5 py-0.5 text-xs font-semibold text-[var(--color-text)]">
+                                        {it.count}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <p className="mt-0.5 break-words pl-4 text-xs text-[var(--color-text-muted)]">{it.description}</p>
+                                  {when ? (
+                                    <p
+                                      className="mt-1 pl-4 text-[11px] text-[var(--color-text-soft)]"
+                                      title={when.exact}
+                                      aria-label={when.exact}
+                                    >
+                                      {when.label}
+                                    </p>
+                                  ) : null}
+                                </Link>
+                                {SEEN_MARK_KINDS.has(it.kind) && (it.target_key ?? "").trim() ? (
+                                  <button
+                                    className="min-h-11 shrink-0 px-3 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
+                                    type="button"
+                                    onClick={() => void onDismissItem(it)}
+                                  >
+                                    {t("notifications.dismiss", "Dismiss")}
+                                  </button>
                                 ) : null}
-                                <span className="rounded bg-[var(--color-header)] px-1.5 py-0.5 text-xs font-semibold text-[var(--color-text)]">
-                                  {it.count}
-                                </span>
                               </div>
-                            </div>
-                            <p className="mt-0.5 pl-4 text-xs text-[var(--color-text-muted)]">{it.description}</p>
-                          </Link>
-                          {SEEN_MARK_KINDS.has(it.kind) && (it.target_key ?? "").trim() ? (
-                            <button
-                              className="shrink-0 px-2 text-xs font-medium text-[var(--color-text-muted)] hover:text-[var(--color-text)]"
-                              type="button"
-                              onClick={() => void onDismissItem(it)}
-                            >
-                              {t("notifications.dismiss", "Dismiss")}
-                            </button>
-                          ) : null}
-                        </div>
-                      </li>
-                    );
-                  })}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </li>
+                  ))}
                 </ul>
               )}
             </div>
