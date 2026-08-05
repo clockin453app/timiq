@@ -28,6 +28,7 @@ import { useAdministratorCompanyScope } from "@/features/companies/selected-comp
 import { formatHoursFromSeconds } from "@/features/payroll/format";
 import { listLocations, type Location } from "@/features/locations/api";
 import { listWorkplaces, type Workplace } from "@/features/workplaces/api";
+import { BudgetBillingTab } from "./budget-billing-tab";
 import {
   BudgetCategoryBreakdown,
   BudgetFinancialSummary,
@@ -52,7 +53,7 @@ const CATEGORY_KEYS = [
   "other",
 ] as const;
 
-type BudgetDetailTab = "overview" | "purchases" | "labour" | "reports";
+type BudgetDetailTab = "overview" | "purchases" | "labour" | "billing" | "reports";
 
 type CategoryEntry = { key: (typeof CATEGORY_KEYS)[number]; amount: number };
 
@@ -855,6 +856,7 @@ export function BudgetsSavedTab() {
                   ["overview", "Overview"],
                   ["purchases", "Purchases"],
                   ["labour", "Labour"],
+                  ["billing", "Billing"],
                   ["reports", "Reports"],
                 ] as const
               ).map(([id, label]) => (
@@ -1129,6 +1131,14 @@ export function BudgetsSavedTab() {
                   )}
                 </div>
               </div>
+            ) : null}
+
+            {detailTab === "billing" ? (
+              <BudgetBillingTab
+                archived={b.status === "archived"}
+                budgetId={b.id}
+                defaultCustomerName={b.client_name}
+              />
             ) : null}
 
             {detailTab === "reports" ? (

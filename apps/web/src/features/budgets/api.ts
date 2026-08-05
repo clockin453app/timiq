@@ -409,3 +409,286 @@ export function openBudgetReportPrint(budgetId: string): void {
     "noopener,noreferrer",
   );
 }
+
+/* —— Customer billing (revenue invoices; separate from purchases) —— */
+
+export type InvoiceDisplayStatus = "draft" | "issued" | "overdue" | "void";
+
+export type BillingSummaryResponse = {
+  budget_id: string;
+  company_id: string;
+  contract_value_net: string | number | null;
+  billing_currency: string | null;
+  active_invoiced_net: string | number;
+  vat_invoiced: string | number;
+  gross_invoiced: string | number;
+  remaining_to_invoice: string | number | null;
+  over_invoiced: string | number | null;
+  draft_count: number;
+  issued_count: number;
+  overdue_count: number;
+  void_count: number;
+  active_count: number;
+};
+
+export type InvoiceResponse = {
+  id: string;
+  company_id: string;
+  budget_id: string;
+  client_action_id: string | null;
+  customer_name: string;
+  invoice_number: string | null;
+  invoice_date: string | null;
+  due_date: string | null;
+  status: string;
+  display_status: InvoiceDisplayStatus | string;
+  currency: string;
+  net_amount: string | number;
+  vat_amount: string | number;
+  gross_amount: string | number;
+  description: string | null;
+  reference: string | null;
+  payment_terms: string | null;
+  issued_at: string | null;
+  voided_at: string | null;
+  void_reason: string | null;
+  created_at: string;
+  updated_at: string;
+  has_document: boolean;
+  document_filename: string | null;
+  document_content_type: string | null;
+  document_version: number | null;
+};
+
+export type ContractValueUpdateBody = {
+  contract_value_net?: string | number | null;
+  billing_currency?: string | null;
+};
+
+export type CreateInvoiceBody = {
+  client_action_id: string;
+  customer_name: string;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  due_date?: string | null;
+  currency?: string;
+  net_amount: string;
+  vat_amount?: string;
+  gross_amount: string;
+  description?: string | null;
+  reference?: string | null;
+  payment_terms?: string | null;
+};
+
+export type PatchInvoiceBody = {
+  customer_name?: string | null;
+  invoice_number?: string | null;
+  invoice_date?: string | null;
+  due_date?: string | null;
+  currency?: string | null;
+  net_amount?: string | null;
+  vat_amount?: string | null;
+  gross_amount?: string | null;
+  description?: string | null;
+  reference?: string | null;
+  payment_terms?: string | null;
+};
+
+export type VoidInvoiceBody = {
+  confirm: true;
+  reason: string;
+};
+
+export async function fetchBillingSummary(budgetId: string): Promise<BillingSummaryResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/billing-summary`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not load billing summary.");
+  }
+  return response.json() as Promise<BillingSummaryResponse>;
+}
+
+export async function updateContractValue(
+  budgetId: string,
+  body: ContractValueUpdateBody,
+): Promise<BillingSummaryResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/contract-value`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not update contract value.");
+  }
+  return response.json() as Promise<BillingSummaryResponse>;
+}
+
+export async function listBudgetInvoices(budgetId: string): Promise<InvoiceResponse[]> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not load invoices.");
+  }
+  return response.json() as Promise<InvoiceResponse[]>;
+}
+
+export async function getBudgetInvoice(budgetId: string, invoiceId: string): Promise<InvoiceResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not load invoice.");
+  }
+  return response.json() as Promise<InvoiceResponse>;
+}
+
+export async function createBudgetInvoice(
+  budgetId: string,
+  body: CreateInvoiceBody,
+): Promise<InvoiceResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not create invoice.");
+  }
+  return response.json() as Promise<InvoiceResponse>;
+}
+
+export async function patchBudgetInvoice(
+  budgetId: string,
+  invoiceId: string,
+  body: PatchInvoiceBody,
+): Promise<InvoiceResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not update invoice.");
+  }
+  return response.json() as Promise<InvoiceResponse>;
+}
+
+export async function deleteBudgetInvoice(budgetId: string, invoiceId: string): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}`,
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not delete invoice.");
+  }
+}
+
+export async function issueBudgetInvoice(budgetId: string, invoiceId: string): Promise<InvoiceResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}/issue`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not issue invoice.");
+  }
+  return response.json() as Promise<InvoiceResponse>;
+}
+
+export async function voidBudgetInvoice(
+  budgetId: string,
+  invoiceId: string,
+  body: VoidInvoiceBody,
+): Promise<InvoiceResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}/void`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not void invoice.");
+  }
+  return response.json() as Promise<InvoiceResponse>;
+}
+
+export async function uploadBudgetInvoiceDocument(
+  budgetId: string,
+  invoiceId: string,
+  file: File,
+): Promise<InvoiceResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}/document`,
+    { method: "POST", credentials: "include", body: form },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not upload invoice document.");
+  }
+  return response.json() as Promise<InvoiceResponse>;
+}
+
+export async function fetchBudgetInvoiceDocumentBlob(
+  budgetId: string,
+  invoiceId: string,
+): Promise<{ blob: Blob; filename: string | null; contentType: string | null }> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}/document`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not download invoice document.");
+  }
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition");
+  let filename: string | null = null;
+  if (disposition) {
+    const match = /filename\*?=(?:UTF-8''|")?([^\";]+)"?/i.exec(disposition);
+    if (match?.[1]) {
+      try {
+        filename = decodeURIComponent(match[1].replace(/"/g, "").trim());
+      } catch {
+        filename = match[1].replace(/"/g, "").trim();
+      }
+    }
+  }
+  return {
+    blob,
+    filename,
+    contentType: response.headers.get("Content-Type"),
+  };
+}
+
+export async function downloadBudgetInvoiceDocument(
+  budgetId: string,
+  invoiceId: string,
+  filenameHint?: string | null,
+): Promise<void> {
+  const { blob, filename } = await fetchBudgetInvoiceDocumentBlob(budgetId, invoiceId);
+  const href = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = href;
+  anchor.download = filename || filenameHint || `invoice-${invoiceId}`;
+  anchor.click();
+  URL.revokeObjectURL(href);
+}
