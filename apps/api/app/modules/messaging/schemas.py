@@ -142,6 +142,15 @@ class ConversationListItem(BaseModel):
     participants: list[MessageParticipantSummary] = Field(default_factory=list)
     last_message_preview: str | None
     last_message_at: datetime | None
+    unread_count: int = Field(
+        ge=0,
+        default=0,
+        description="Incoming unread messages for the current viewer (server-authoritative).",
+    )
+    is_unread: bool = Field(
+        default=False,
+        description="True when unread_count > 0 for the current viewer.",
+    )
 
 
 class MessageCreateRequest(BaseModel):

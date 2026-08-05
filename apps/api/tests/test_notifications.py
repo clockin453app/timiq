@@ -2,7 +2,7 @@
 
 import uuid
 from contextlib import ExitStack
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -78,6 +78,64 @@ def test_notification_summary_item_schema_has_category() -> None:
     assert dumped["occurred_at"] == datetime(2026, 8, 5, 12, 0, tzinfo=timezone.utc)
 
 
+def test_messages_unread_count_definition_is_conversation_unread_plus_announcements() -> None:
+    """Document Messages badge meaning (do not change without product approval).
+
+    messages_unread_count =
+      sum(per-conversation unread *message* counts for up to 5 unread conversations)
+      OR conversation-count when more than 5 unread conversations (grouped row)
+      + unread announcement count
+
+    It is independent of bell total_count (which excludes message/message_received).
+    """
+    from app.modules.messaging.service import MessageBellItem
+
+    cid = uuid.uuid4()
+    actor = _admin(cid)
+    conv_a = uuid.uuid4()
+    conv_b = uuid.uuid4()
+    bell_rows = [
+        MessageBellItem(
+            conversation_id=conv_a,
+            count=2,
+            title="A",
+            description="x",
+            href=f"/messages?tab=messages&conversation={conv_a}",
+            target_key=f"message:{conv_a}",
+        ),
+        MessageBellItem(
+            conversation_id=conv_b,
+            count=1,
+            title="B",
+            description="y",
+            href=f"/messages?tab=messages&conversation={conv_b}",
+            target_key=f"message:{conv_b}",
+        ),
+    ]
+    with ExitStack() as stack:
+        _start_patches(
+            stack,
+            [
+                patch("app.modules.notifications.service.count_unread_visible_announcements", return_value=1),
+                patch("app.modules.notifications.service.message_bell_items", return_value=bell_rows),
+                patch("app.modules.notifications.service.notif_seen_repo.list_unseen_records_for_user", return_value=[]),
+                patch("app.modules.notifications.service.sf_repo.count_submissions_for_review", return_value=0),
+                patch("app.modules.notifications.service.tt_repo.count_talks_for_company_by_status", return_value=0),
+                patch("app.modules.notifications.service.leave_repo.count_pending_leave_for_company", return_value=0),
+                patch("app.modules.notifications.service.time_clock_repo.count_open_shifts_for_company_employees", return_value=0),
+                patch("app.modules.notifications.service.payroll_repo.count_rate_missing_payroll_items_for_company", return_value=0),
+                patch("app.modules.notifications.service.notif_seen_repo.has_seen", return_value=False),
+                patch("app.modules.notifications.service.rams_repo.assessment_status_fingerprint_for_company", return_value=(0, None)),
+                patch("app.modules.notifications.service.payroll_repo.pending_payroll_items_fingerprint_for_company", return_value=(0, None)),
+            ],
+        )
+        summary = get_notification_summary(MagicMock(), actor, company_id=None)
+
+    assert summary.messages_unread_count == 2 + 1 + 1  # msgs + announcement
+    assert summary.total_count == 1  # announcement only in bell
+    assert all(i.kind != "message" for i in summary.items)
+
+
 def test_message_kinds_excluded_from_bell_but_counted_for_messages_badge() -> None:
     from app.modules.messaging.service import MessageBellItem
 
@@ -101,6 +159,8 @@ def test_message_kinds_excluded_from_bell_but_counted_for_messages_badge() -> No
     attendance.href = "/live-attendance"
     attendance.priority = "high"
     attendance.created_at = datetime(2026, 8, 5, 9, 0, tzinfo=timezone.utc)
+    attendance.work_date = date(2026, 8, 5)
+    attendance.company_id = cid
 
     bell_item = MessageBellItem(
         conversation_id=conversation_id,

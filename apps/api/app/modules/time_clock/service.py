@@ -534,6 +534,16 @@ def clock_in(
             "selfie_phase": "clock_in",
         },
     )
+    if actor.company_id is not None:
+        from app.modules.attendance_notifications.service import resolve_missing_clock_in_after_clock_in
+
+        resolve_missing_clock_in_after_clock_in(
+            db_session,
+            company_id=actor.company_id,
+            employee_user_id=actor.id,
+            clock_in_at=shift.clock_in_at,
+        )
+        db_session.commit()
     return shift
 
 
@@ -646,6 +656,17 @@ def clock_out(
             "selfie_phase": "clock_out",
         },
     )
+    if actor.company_id is not None and open_shift.clock_in_at is not None:
+        from app.modules.attendance_notifications.service import resolve_forgot_clock_out_after_clock_out
+
+        resolve_forgot_clock_out_after_clock_out(
+            db_session,
+            company_id=actor.company_id,
+            employee_user_id=actor.id,
+            clock_in_at=open_shift.clock_in_at,
+            resolved_at=open_shift.clock_out_at,
+        )
+        db_session.commit()
     return open_shift
 
 

@@ -86,6 +86,10 @@ def _run_with_settings(
             "app.modules.attendance_notifications.service.mark_attendance_missing_clock_in_seen_for_subject",
             side_effect=mark_seen,
         ),
+        patch(
+            "app.modules.attendance_notifications.service.cleanup_expired_attendance_notifications",
+            return_value=SimpleNamespace(matched=0, deleted=0, aggregates=[]),
+        ),
     ):
         result = run_attendance_notification_check_once(
             MagicMock(),
@@ -188,6 +192,10 @@ def test_repeated_check_reuses_dedupe_without_extra_inserts() -> None:
         patch("app.modules.attendance_notifications.service.list_open_shifts_for_company", return_value=[]),
         patch("app.modules.attendance_notifications.service.create_notification_record_once", side_effect=create_record),
         patch("app.modules.attendance_notifications.service.mark_attendance_missing_clock_in_seen_for_subject"),
+        patch(
+            "app.modules.attendance_notifications.service.cleanup_expired_attendance_notifications",
+            return_value=SimpleNamespace(matched=0, deleted=0, aggregates=[]),
+        ),
     ):
         result = run_attendance_notification_check_once(
             MagicMock(),

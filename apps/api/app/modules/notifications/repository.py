@@ -259,6 +259,129 @@ def mark_attendance_missing_clock_in_seen_for_subject(
     return int(result.rowcount or 0)
 
 
+def mark_attendance_forgot_clock_out_seen_for_subject(
+    db: Session,
+    *,
+    company_id: uuid.UUID,
+    subject_user_id: uuid.UUID,
+    work_date: date,
+    seen_at: datetime | None = None,
+) -> int:
+    """Resolve daily forgot-clock-out alerts when the open shift is closed."""
+    when = seen_at or datetime.now(timezone.utc)
+    stmt = (
+        update(NotificationRecord)
+        .where(NotificationRecord.company_id == company_id)
+        .where(NotificationRecord.subject_user_id == subject_user_id)
+        .where(NotificationRecord.work_date == work_date)
+        .where(NotificationRecord.kind == "attendance_forgot_clock_out")
+        .where(NotificationRecord.seen_at.is_(None))
+        .values(seen_at=when)
+    )
+    result = db.execute(stmt)
+    return int(result.rowcount or 0)
+
+
+ATTENDANCE_EXPIRABLE_KINDS = frozenset(
+    {
+        "attendance_missing_clock_in",
+        "attendance_late_arrival",
+        "attendance_forgot_clock_in",
+        "attendance_forgot_clock_out",
+    }
+)
+
+
+@dataclass(frozen=True)
+class AttendanceExpiryAggregate:
+    kind: str
+    work_date: date | None
+    company_id: uuid.UUID | None
+    seen: bool
+    count: int
+
+
+@dataclass
+class AttendanceExpiryCleanupResult:
+    deleted: int = 0
+    matched: int = 0
+    aggregates: list[AttendanceExpiryAggregate] | None = None
+
+
+def _attendance_work_date_from_dedupe_key(dedupe_key: str) -> date | None:
+    """Extract YYYY-MM-DD from known attendance dedupe key shapes; never parse titles."""
+    parts = (dedupe_key or "").split(":")
+    for part in parts:
+        if len(part) == 10 and part[4] == "-" and part[7] == "-":
+            try:
+                return date.fromisoformat(part)
+            except ValueError:
+                continue
+    return None
+
+
+def resolve_attendance_work_date(record: NotificationRecord) -> date | None:
+    if record.work_date is not None:
+        return record.work_date
+    return _attendance_work_date_from_dedupe_key(record.dedupe_key)
+
+
+def delete_expired_attendance_notification_records(
+    db: Session,
+    *,
+    company_id: uuid.UUID,
+    local_today: date,
+    dry_run: bool = False,
+    batch_size: int = 500,
+) -> AttendanceExpiryCleanupResult:
+    """Permanently delete attendance notification rows whose work_date is before local_today.
+
+    Only deletes approved attendance kinds. Never touches messages, payroll, safety, leave, or forms.
+    """
+    from sqlalchemy import delete as sa_delete
+
+    if batch_size < 1:
+        batch_size = 500
+    stmt = (
+        select(NotificationRecord)
+        .where(NotificationRecord.company_id == company_id)
+        .where(NotificationRecord.kind.in_(tuple(ATTENDANCE_EXPIRABLE_KINDS)))
+        .order_by(NotificationRecord.created_at.asc())
+    )
+    rows = list(db.scalars(stmt).all())
+    expired: list[NotificationRecord] = []
+    aggregates: dict[tuple[str, date | None, uuid.UUID | None, bool], int] = {}
+    for row in rows:
+        work_date = resolve_attendance_work_date(row)
+        if work_date is None or work_date >= local_today:
+            continue
+        expired.append(row)
+        key = (row.kind, work_date, row.company_id, row.seen_at is not None)
+        aggregates[key] = aggregates.get(key, 0) + 1
+
+    result = AttendanceExpiryCleanupResult(
+        matched=len(expired),
+        aggregates=[
+            AttendanceExpiryAggregate(kind=k, work_date=wd, company_id=cid, seen=seen, count=n)
+            for (k, wd, cid, seen), n in sorted(
+                aggregates.items(),
+                key=lambda item: (str(item[0][2]), item[0][0], str(item[0][1])),
+            )
+        ],
+    )
+    if dry_run or not expired:
+        return result
+
+    deleted = 0
+    for start in range(0, len(expired), batch_size):
+        chunk = expired[start : start + batch_size]
+        ids = [row.id for row in chunk]
+        db.execute(sa_delete(NotificationRecord).where(NotificationRecord.id.in_(ids)))
+        deleted += len(ids)
+    result.deleted = deleted
+    return result
+
+
 def mark_all_records_seen_for_user(
     db: Session,
     *,

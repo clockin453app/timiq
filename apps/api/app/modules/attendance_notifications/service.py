@@ -30,7 +30,11 @@ from app.modules.companies.repository import get_company_by_id
 from app.modules.companies.service import ensure_company_time_policy
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.notifications.repository import (
+    ATTENDANCE_EXPIRABLE_KINDS,
+    AttendanceExpiryCleanupResult,
     create_notification_record_once,
+    delete_expired_attendance_notification_records,
+    mark_attendance_forgot_clock_out_seen_for_subject,
     mark_attendance_missing_clock_in_seen_for_subject,
 )
 
@@ -54,6 +58,109 @@ class AttendanceNotificationRunResult:
     employees_checked: int = 0
     notifications_created: int = 0
     dry_run_candidates: int = 0
+    expired_matched: int = 0
+    expired_deleted: int = 0
+    expiry_aggregates: list[dict[str, object]] | None = None
+
+
+def resolve_missing_clock_in_after_clock_in(
+    db: Session,
+    *,
+    company_id: uuid.UUID,
+    employee_user_id: uuid.UUID,
+    clock_in_at: datetime,
+) -> int:
+    """Immediately resolve same-day missing-clock-in alerts after a successful clock-in."""
+    policy = ensure_company_time_policy(db, company_id)
+    tz = _zone(policy.timezone_name)
+    when = clock_in_at if clock_in_at.tzinfo is not None else clock_in_at.replace(tzinfo=timezone.utc)
+    work_date = when.astimezone(tz).date()
+    return mark_attendance_missing_clock_in_seen_for_subject(
+        db,
+        company_id=company_id,
+        subject_user_id=employee_user_id,
+        work_date=work_date,
+        seen_at=when.astimezone(timezone.utc),
+    )
+
+
+def resolve_forgot_clock_out_after_clock_out(
+    db: Session,
+    *,
+    company_id: uuid.UUID,
+    employee_user_id: uuid.UUID,
+    clock_in_at: datetime,
+    resolved_at: datetime | None = None,
+) -> int:
+    """Immediately resolve same-day forgot-clock-out alerts after the shift is closed."""
+    policy = ensure_company_time_policy(db, company_id)
+    tz = _zone(policy.timezone_name)
+    when_in = clock_in_at if clock_in_at.tzinfo is not None else clock_in_at.replace(tzinfo=timezone.utc)
+    work_date = when_in.astimezone(tz).date()
+    when = resolved_at or datetime.now(timezone.utc)
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    return mark_attendance_forgot_clock_out_seen_for_subject(
+        db,
+        company_id=company_id,
+        subject_user_id=employee_user_id,
+        work_date=work_date,
+        seen_at=when,
+    )
+
+
+def cleanup_expired_attendance_notifications(
+    db: Session,
+    *,
+    now_utc: datetime | None = None,
+    company_id: uuid.UUID | None = None,
+    dry_run: bool = False,
+    batch_size: int = 500,
+) -> AttendanceExpiryCleanupResult:
+    """Idempotent cleanup of attendance notification rows past their company-local workday."""
+    from sqlalchemy import select
+
+    from app.modules.notifications.models import NotificationRecord
+
+    now = now_utc or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    if company_id is not None:
+        company_ids = [company_id]
+    else:
+        settings_rows = list_active_enabled_settings(db)
+        company_ids = list(dict.fromkeys(row.company_id for row in settings_rows))
+        extra = list(
+            db.scalars(
+                select(NotificationRecord.company_id)
+                .where(NotificationRecord.kind.in_(tuple(ATTENDANCE_EXPIRABLE_KINDS)))
+                .where(NotificationRecord.company_id.is_not(None))
+                .distinct()
+            ).all()
+        )
+        for cid in extra:
+            if cid is not None and cid not in company_ids:
+                company_ids.append(cid)
+
+    total = AttendanceExpiryCleanupResult(deleted=0, matched=0, aggregates=[])
+    for cid in company_ids:
+        policy = ensure_company_time_policy(db, cid)
+        tz = _zone(policy.timezone_name)
+        local_today = now.astimezone(tz).date()
+        part = delete_expired_attendance_notification_records(
+            db,
+            company_id=cid,
+            local_today=local_today,
+            dry_run=dry_run,
+            batch_size=batch_size,
+        )
+        total.deleted += part.deleted
+        total.matched += part.matched
+        if part.aggregates:
+            assert total.aggregates is not None
+            total.aggregates.extend(part.aggregates)
+    return total
 
 
 def _patch_changed_keys(model: BaseModel) -> list[str]:
@@ -446,6 +553,27 @@ def run_attendance_notification_check_once(
         result.companies_checked += 1
         _check_late_and_forgot_in(db, settings=settings, now_utc=now, dry_run=dry_run, result=result)
         _check_forgot_clock_out(db, settings=settings, now_utc=now, dry_run=dry_run, result=result)
+
+    cleanup = cleanup_expired_attendance_notifications(
+        db,
+        now_utc=now,
+        company_id=company_id,
+        dry_run=dry_run,
+    )
+    result.expired_matched = cleanup.matched
+    result.expired_deleted = cleanup.deleted
+    if cleanup.aggregates:
+        result.expiry_aggregates = [
+            {
+                "kind": row.kind,
+                "work_date": row.work_date.isoformat() if row.work_date else None,
+                "company_id": str(row.company_id) if row.company_id else None,
+                "seen": row.seen,
+                "count": row.count,
+            }
+            for row in cleanup.aggregates
+        ]
+
     if not dry_run:
         db.flush()
     return result

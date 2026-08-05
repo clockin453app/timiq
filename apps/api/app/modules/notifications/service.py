@@ -15,6 +15,10 @@ from app.modules.leave import repository as leave_repo
 from app.modules.messaging.repository import count_unread_visible_announcements
 from app.modules.messaging.service import mark_all_unread_announcements_read, message_bell_items
 from app.modules.notifications import repository as notif_seen_repo
+from app.modules.notifications.repository import (
+    ATTENDANCE_EXPIRABLE_KINDS,
+    resolve_attendance_work_date,
+)
 from app.modules.notifications.schemas import (
     NotificationMarkAllSeenRequest,
     NotificationMarkSeenRequest,
@@ -206,6 +210,38 @@ def _default_informational_kinds(actor: User) -> frozenset[str]:
     return frozenset({"announcement"})
 
 
+def _zone_name(name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return ZoneInfo("Europe/London")
+
+
+def _company_local_today(db: Session, company_id: uuid.UUID | None, now_utc: datetime) -> date:
+    if company_id is None:
+        return now_utc.astimezone(_zone_name("Europe/London")).date()
+    policy = ensure_company_time_policy(db, company_id)
+    return now_utc.astimezone(_zone_name(policy.timezone_name)).date()
+
+
+def _attendance_record_is_expired(
+    db: Session,
+    record,
+    *,
+    now_utc: datetime,
+    local_today_cache: dict[uuid.UUID | None, date],
+) -> bool:
+    if record.kind not in ATTENDANCE_EXPIRABLE_KINDS:
+        return False
+    work_date = resolve_attendance_work_date(record)
+    if work_date is None:
+        return False
+    cid = record.company_id
+    if cid not in local_today_cache:
+        local_today_cache[cid] = _company_local_today(db, cid, now_utc)
+    return work_date < local_today_cache[cid]
+
+
 def face_check_setup_notification_item(db: Session, actor: User) -> NotificationSummaryItem | None:
     """Important setup reminder for active employees missing a face reference (not dismissible)."""
     if actor.system_role != SystemRole.EMPLOYEE:
@@ -362,8 +398,12 @@ def get_notification_summary(
     message_rows = message_bell_items(db, user_id=actor.id)
     messages_unread_count = sum(mb.count for mb in message_rows) + unread_ann
 
+    now_utc = datetime.now(timezone.utc)
+    local_today_cache: dict[uuid.UUID | None, date] = {}
     for record in notif_seen_repo.list_unseen_records_for_user(db, user_id=actor.id, company_id=company_id):
         if record.kind in _BELL_HIDDEN_RECORD_KINDS:
+            continue
+        if _attendance_record_is_expired(db, record, now_utc=now_utc, local_today_cache=local_today_cache):
             continue
         items.append(
             _item(

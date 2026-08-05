@@ -679,6 +679,11 @@ def _conversation_to_list_item(db_session: Session, conv: Conversation, viewer_i
         other = pids[0] if pids[1] == viewer_id else pids[1]
         other_name = _peer_display_name(db_session, other)
     participant_summaries = [_participant_summary(db_session, pid) for pid in pids]
+    unread = count_unread_incoming_in_conversation(
+        db_session,
+        conversation_id=conv.id,
+        user_id=viewer_id,
+    )
     return ConversationListItem(
         id=conv.id,
         company_id=conv.company_id,
@@ -691,6 +696,8 @@ def _conversation_to_list_item(db_session: Session, conv: Conversation, viewer_i
         participants=participant_summaries,
         last_message_preview=preview,
         last_message_at=last_at,
+        unread_count=unread,
+        is_unread=unread > 0,
     )
 
 
