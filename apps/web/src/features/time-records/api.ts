@@ -94,15 +94,57 @@ export type AdminManualShiftMutationResponse = {
   payroll_recalculation_required: boolean;
   affected_week_start: string | null;
   affected_company_id: string;
+  idempotent_replay?: boolean;
 };
 
-async function readAdminMutationError(response: Response, fallback: string): Promise<string> {
+export class AdminShiftMutationError extends Error {
+  readonly status: number;
+  readonly code: string | null;
+  readonly existingShiftId: string | null;
+
+  constructor(
+    message: string,
+    opts: { status: number; code?: string | null; existingShiftId?: string | null } = {
+      status: 0,
+    },
+  ) {
+    super(message);
+    this.name = "AdminShiftMutationError";
+    this.status = opts.status;
+    this.code = opts.code ?? null;
+    this.existingShiftId = opts.existingShiftId ?? null;
+  }
+}
+
+async function readAdminMutationError(response: Response, fallback: string): Promise<AdminShiftMutationError> {
+  let code: string | null = null;
+  let existingShiftId: string | null = null;
+  let message = fallback;
   try {
     const body = (await response.json()) as { detail?: unknown };
-    return fastApiDetailToMessage(body.detail, fallback);
+    const detail = body.detail;
+    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
+      const obj = detail as {
+        code?: unknown;
+        message?: unknown;
+        existing_shift_id?: unknown;
+      };
+      if (typeof obj.code === "string" && obj.code.trim()) {
+        code = obj.code.trim();
+      }
+      if (typeof obj.existing_shift_id === "string" && obj.existing_shift_id.trim()) {
+        existingShiftId = obj.existing_shift_id.trim();
+      }
+    }
+    message = fastApiDetailToMessage(detail, fallback);
   } catch {
-    return fallback;
+    message = fallback;
   }
+  return new AdminShiftMutationError(message, {
+    status: response.status,
+    code,
+    existingShiftId,
+  });
 }
 
 export type AdminCreateCompletedShiftBody = {
@@ -113,6 +155,7 @@ export type AdminCreateCompletedShiftBody = {
   break_seconds?: number;
   break_minutes?: number;
   reason: string;
+  client_action_id: string;
 };
 
 export type AdminPatchCompletedShiftBody = {
@@ -141,7 +184,7 @@ export async function adminCreateCompletedShift(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await readAdminMutationError(response, "Could not create shift."));
+    throw await readAdminMutationError(response, "Could not create shift.");
   }
   return response.json() as Promise<AdminManualShiftMutationResponse>;
 }
@@ -157,7 +200,7 @@ export async function adminPatchCompletedShift(
     body: JSON.stringify(body),
   });
   if (!response.ok) {
-    throw new Error(await readAdminMutationError(response, "Could not update shift."));
+    throw await readAdminMutationError(response, "Could not update shift.");
   }
   return response.json() as Promise<AdminManualShiftMutationResponse>;
 }
@@ -171,12 +214,12 @@ export async function adminForceClockOut(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "include",
       body: JSON.stringify(body),
+      credentials: "include",
     },
   );
   if (!response.ok) {
-    throw new Error(await readAdminMutationError(response, "Could not force clock-out."));
+    throw await readAdminMutationError(response, "Could not force clock-out.");
   }
   return response.json() as Promise<AdminManualShiftMutationResponse>;
 }

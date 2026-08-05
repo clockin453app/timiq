@@ -39,6 +39,7 @@ import { formatPayrollWeekUkLabel } from "@/lib/week-label";
 import { FaceCheckCell } from "@/features/face-check/face-check-cell";
 import { FaceCheckReviewModal } from "@/features/face-check/face-check-review-modal";
 import {
+  AdminShiftMutationError,
   adminCreateCompletedShift,
   adminForceClockOut,
   adminPatchCompletedShift,
@@ -132,6 +133,8 @@ export function TimeRecordsClient() {
   const [modalBusy, setModalBusy] = useState(false);
   const [modalError, setModalError] = useState("");
   const [actionBanner, setActionBanner] = useState("");
+  const [createClientActionId, setCreateClientActionId] = useState<string | null>(null);
+  const [duplicateExistingShiftId, setDuplicateExistingShiftId] = useState<string | null>(null);
 
   const [formUserId, setFormUserId] = useState("");
   const [formLocationId, setFormLocationId] = useState("");
@@ -160,7 +163,7 @@ export function TimeRecordsClient() {
     );
   }, [locations, selectedEmployee, editRow]);
 
-  async function loadRecords() {
+  async function loadRecords(): Promise<boolean> {
     setIsLoading(true);
     setLoadError("");
     try {
@@ -175,7 +178,7 @@ export function TimeRecordsClient() {
         if (isAdministrator(user) && !companyScope.companyId) {
           setRows([]);
           setLoadError(t("time_records.select_company", "Select a company to load time records."));
-          return;
+          return false;
         }
         if (filterUserId.trim()) {
           params.user_id = filterUserId.trim();
@@ -189,9 +192,11 @@ export function TimeRecordsClient() {
         const data = await listMyTimeRecords(params);
         setRows(data);
       }
+      return true;
     } catch {
       setRows([]);
       setLoadError(t("time_records.load_error", "Could not load time records."));
+      return false;
     } finally {
       setIsLoading(false);
     }
@@ -293,15 +298,18 @@ export function TimeRecordsClient() {
     setFormBreakMinutes("0");
     setFormReason("");
     setModalError("");
+    setDuplicateExistingShiftId(null);
   }
 
   function openAddModal() {
     resetForm();
+    setCreateClientActionId(crypto.randomUUID());
     setAddOpen(true);
   }
 
   function openEditModal(row: TimeRecordShiftRow) {
     resetForm();
+    setCreateClientActionId(null);
     setFormUserId(row.user_id);
     setFormLocationId(row.location_id);
     setFormClockInLocal(toDatetimeLocalValue(row.clock_in_at));
@@ -312,6 +320,7 @@ export function TimeRecordsClient() {
 
   function openForceModal(row: TimeRecordShiftRow) {
     resetForm();
+    setCreateClientActionId(null);
     setFormClockOutLocal(toDatetimeLocalValue(new Date().toISOString()));
     setFormBreakMinutes("");
     setForceRow(row);
@@ -323,11 +332,16 @@ export function TimeRecordsClient() {
     setForceRow(null);
     setModalBusy(false);
     setModalError("");
+    setDuplicateExistingShiftId(null);
   }
 
   async function submitAdd(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (modalBusy) {
+      return;
+    }
     setModalError("");
+    setDuplicateExistingShiftId(null);
     setActionBanner("");
     const cin = fromDatetimeLocalToIso(formClockInLocal);
     const cout = fromDatetimeLocalToIso(formClockOutLocal);
@@ -346,6 +360,10 @@ export function TimeRecordsClient() {
       setModalError(t("time_records.err_reason_required", "Reason is required."));
       return;
     }
+    const actionId = createClientActionId ?? crypto.randomUUID();
+    if (!createClientActionId) {
+      setCreateClientActionId(actionId);
+    }
     setModalBusy(true);
     try {
       const res = await adminCreateCompletedShift({
@@ -355,16 +373,40 @@ export function TimeRecordsClient() {
         clock_out_at: cout,
         break_minutes: brk,
         reason: formReason.trim(),
+        client_action_id: actionId,
       });
-      setActionBanner(
-        res.payroll_recalculation_required
-          ? payrollRecalcMessage(t, res.affected_week_start)
-          : t("time_records.shift_created", "Shift created."),
-      );
+      const savedMessage = res.idempotent_replay
+        ? t("time_records.shift_already_saved", "Shift was already saved successfully.")
+        : t("time_records.shift_saved", "Shift saved successfully.");
       closeModals();
-      await loadRecords();
+      setCreateClientActionId(null);
+      const refreshed = await loadRecords();
+      if (!refreshed) {
+        setActionBanner(
+          t(
+            "time_records.shift_saved_refresh_failed",
+            "Shift saved successfully, but the list could not be refreshed. Reload the page to view it.",
+          ),
+        );
+      } else {
+        setActionBanner(
+          res.payroll_recalculation_required
+            ? `${savedMessage} ${payrollRecalcMessage(t, res.affected_week_start)}`
+            : savedMessage,
+        );
+      }
     } catch (e) {
-      setModalError(e instanceof Error ? e.message : t("time_records.request_failed", "Request failed."));
+      if (e instanceof AdminShiftMutationError && e.code === "shift_already_exists") {
+        setModalError(
+          t(
+            "time_records.shift_already_exists",
+            "A shift already exists for this employee on this date.",
+          ),
+        );
+        setDuplicateExistingShiftId(e.existingShiftId);
+      } else {
+        setModalError(e instanceof Error ? e.message : t("time_records.request_failed", "Request failed."));
+      }
     } finally {
       setModalBusy(false);
     }
@@ -372,10 +414,11 @@ export function TimeRecordsClient() {
 
   async function submitEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!editRow) {
+    if (!editRow || modalBusy) {
       return;
     }
     setModalError("");
+    setDuplicateExistingShiftId(null);
     setActionBanner("");
     const cin = fromDatetimeLocalToIso(formClockInLocal);
     const cout = fromDatetimeLocalToIso(formClockOutLocal);
@@ -401,15 +444,35 @@ export function TimeRecordsClient() {
         break_minutes: brk,
         reason: formReason.trim(),
       });
-      setActionBanner(
-        res.payroll_recalculation_required
-          ? payrollRecalcMessage(t, res.affected_week_start)
-          : t("time_records.shift_updated", "Shift updated."),
-      );
+      const savedMessage = t("time_records.shift_saved", "Shift saved successfully.");
       closeModals();
-      await loadRecords();
+      const refreshed = await loadRecords();
+      if (!refreshed) {
+        setActionBanner(
+          t(
+            "time_records.shift_saved_refresh_failed",
+            "Shift saved successfully, but the list could not be refreshed. Reload the page to view it.",
+          ),
+        );
+      } else {
+        setActionBanner(
+          res.payroll_recalculation_required
+            ? `${savedMessage} ${payrollRecalcMessage(t, res.affected_week_start)}`
+            : savedMessage,
+        );
+      }
     } catch (e) {
-      setModalError(e instanceof Error ? e.message : t("time_records.request_failed", "Request failed."));
+      if (e instanceof AdminShiftMutationError && e.code === "shift_already_exists") {
+        setModalError(
+          t(
+            "time_records.shift_already_exists",
+            "A shift already exists for this employee on this date.",
+          ),
+        );
+        setDuplicateExistingShiftId(e.existingShiftId);
+      } else {
+        setModalError(e instanceof Error ? e.message : t("time_records.request_failed", "Request failed."));
+      }
     } finally {
       setModalBusy(false);
     }
@@ -757,6 +820,28 @@ export function TimeRecordsClient() {
                     {modalError}
                   </p>
                 ) : null}
+                {duplicateExistingShiftId ? (
+                  <Button
+                    onClick={() => {
+                      const existing = rows.find((r) => r.shift_id === duplicateExistingShiftId);
+                      closeModals();
+                      if (existing) {
+                        openEditModal(existing);
+                      } else {
+                        setActionBanner(
+                          t(
+                            "time_records.open_existing_reload",
+                            "A shift already exists. Reload the page, then open the existing shift to edit it.",
+                          ),
+                        );
+                      }
+                    }}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {t("time_records.open_existing_shift", "Open existing shift")}
+                  </Button>
+                ) : null}
                 <label className="block text-xs font-bold">
                   {t("common.employee", "Employee")}
                   <select
@@ -861,6 +946,28 @@ export function TimeRecordsClient() {
                   <p className="rounded border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-2 py-1 text-xs text-[var(--color-danger-700)]">
                     {modalError}
                   </p>
+                ) : null}
+                {duplicateExistingShiftId ? (
+                  <Button
+                    onClick={() => {
+                      const existing = rows.find((r) => r.shift_id === duplicateExistingShiftId);
+                      closeModals();
+                      if (existing) {
+                        openEditModal(existing);
+                      } else {
+                        setActionBanner(
+                          t(
+                            "time_records.open_existing_reload",
+                            "A shift already exists. Reload the page, then open the existing shift to edit it.",
+                          ),
+                        );
+                      }
+                    }}
+                    type="button"
+                    variant="secondary"
+                  >
+                    {t("time_records.open_existing_shift", "Open existing shift")}
+                  </Button>
                 ) : null}
                 <p className="text-xs text-[var(--color-text-muted)]">
                   {t("time_records.employee_row", "Employee: {{name}}", {

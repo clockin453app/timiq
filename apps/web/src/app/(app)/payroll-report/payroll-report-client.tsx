@@ -71,6 +71,7 @@ import {
   formatMoneyGBP,
 } from "@/features/payroll/format";
 import {
+  AdminShiftMutationError,
   adminPatchCompletedShift,
   listAdminTimeRecords,
   type TimeRecordShiftRow,
@@ -614,6 +615,7 @@ export function PayrollReportClient() {
   const [shiftEditLocationId, setShiftEditLocationId] = useState("");
   const [shiftEditReason, setShiftEditReason] = useState("");
   const [shiftEditError, setShiftEditError] = useState("");
+  const [shiftEditDuplicateId, setShiftEditDuplicateId] = useState<string | null>(null);
   const [shiftEditBusy, setShiftEditBusy] = useState(false);
   const [rowActionMenu, setRowActionMenu] = useState<RowActionMenuState | null>(null);
 
@@ -811,14 +813,14 @@ export function PayrollReportClient() {
     expandedUserIdRef.current = expandedUserId;
   }, [expandedUserId]);
 
-  async function loadReport(options?: { silent?: boolean }) {
+  async function loadReport(options?: { silent?: boolean }): Promise<boolean> {
     const silent = Boolean(options?.silent);
     if (!activeCompanyId) {
       if (!silent) {
         setError(t("payroll.report.select_company_load", "Select a company to load payroll."));
         setReport(null);
       }
-      return;
+      return false;
     }
     if (!silent) {
       setLoading(true);
@@ -836,11 +838,13 @@ export function PayrollReportClient() {
       if (!silent) {
         setError("");
       }
+      return true;
     } catch (err) {
       if (!silent) {
         setReport(null);
         setError(err instanceof Error ? err.message : t("payroll.report.load_error", "Could not load payroll."));
       }
+      return false;
     } finally {
       if (!silent) {
         setLoading(false);
@@ -1008,6 +1012,7 @@ export function PayrollReportClient() {
     setPayrollSaveMessage("");
     setPayrollSaveMessageTone("success");
     setShiftEditError("");
+    setShiftEditDuplicateId(null);
     setShiftEditRow(row);
     setShiftEditClockInLocal(toDatetimeLocalValue(row.clock_in_at));
     setShiftEditClockOutLocal(row.clock_out_at ? toDatetimeLocalValue(row.clock_out_at) : "");
@@ -1019,6 +1024,7 @@ export function PayrollReportClient() {
   function closeShiftEdit() {
     setShiftEditRow(null);
     setShiftEditError("");
+    setShiftEditDuplicateId(null);
     setShiftEditBusy(false);
   }
 
@@ -1056,10 +1062,11 @@ export function PayrollReportClient() {
 
   async function saveShiftEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!shiftEditRow) {
+    if (!shiftEditRow || shiftEditBusy) {
       return;
     }
     setShiftEditError("");
+    setShiftEditDuplicateId(null);
     setPayrollSaveMessage("");
     setPayrollSaveMessageTone("success");
     const clockInAt = fromDatetimeLocalToIso(shiftEditClockInLocal);
@@ -1089,22 +1096,32 @@ export function PayrollReportClient() {
       });
       const userId = shiftEditRow.user_id;
       closeShiftEdit();
-      await reloadShiftRows(userId);
-      await loadReport();
-      if (res.payroll_recalculation_required) {
+      const shiftsOk = await reloadShiftRows(userId);
+      const reportOk = await loadReport();
+      if (!shiftsOk || !reportOk) {
+        setPayrollSaveMessageTone("warning");
+        setPayrollSaveMessage(
+          "Shift saved successfully, but the list could not be refreshed. Reload the page to view it.",
+        );
+      } else if (res.payroll_recalculation_required) {
         setPayrollSaveMessageTone("warning");
         setPayrollSaveMessage(
           t(
             "payroll.report.shift_saved_needs_recalc",
-            "Shift time saved. Payroll was not updated automatically. Recalculate to refresh pending amounts.",
+            "Shift saved successfully. Payroll was not updated automatically. Recalculate to refresh pending amounts.",
           ),
         );
       } else {
         setPayrollSaveMessageTone("success");
-        setPayrollSaveMessage(t("payroll.report.shift_saved", "Shift time saved."));
+        setPayrollSaveMessage(t("payroll.report.shift_saved", "Shift saved successfully."));
       }
     } catch (err) {
-      setShiftEditError(err instanceof Error ? err.message : "Could not update shift.");
+      if (err instanceof AdminShiftMutationError && err.code === "shift_already_exists") {
+        setShiftEditError("A shift already exists for this employee on this date.");
+        setShiftEditDuplicateId(err.existingShiftId);
+      } else {
+        setShiftEditError(err instanceof Error ? err.message : "Could not update shift.");
+      }
     } finally {
       setShiftEditBusy(false);
       setBusyId(null);
@@ -1442,9 +1459,9 @@ export function PayrollReportClient() {
     }
   }
 
-  async function reloadShiftRows(userId: string) {
+  async function reloadShiftRows(userId: string): Promise<boolean> {
     if (!activeCompanyId) {
-      return;
+      return false;
     }
     setShiftRowsByUser((prev) => ({ ...prev, [userId]: "loading" }));
     try {
@@ -1456,10 +1473,12 @@ export function PayrollReportClient() {
         limit: 100,
       });
       setShiftRowsByUser((prev) => ({ ...prev, [userId]: rows }));
+      await reloadExtraHoursForUser(userId);
+      return true;
     } catch {
       setShiftRowsByUser((prev) => ({ ...prev, [userId]: [] }));
+      return false;
     }
-    await reloadExtraHoursForUser(userId);
   }
 
   async function toggleExpandShifts(userId: string) {
@@ -2991,6 +3010,22 @@ export function PayrollReportClient() {
               <form onSubmit={saveShiftEdit}>
                 <div className={payrollModalBody}>
                   {shiftEditError ? <AlertBanner tone="danger">{shiftEditError}</AlertBanner> : null}
+                  {shiftEditDuplicateId ? (
+                    <Button
+                      onClick={() => {
+                        closeShiftEdit();
+                        setPayrollSaveMessageTone("warning");
+                        setPayrollSaveMessage(
+                          "A shift already exists for this employee on this date. Reload and open the existing shift.",
+                        );
+                      }}
+                      size="sm"
+                      type="button"
+                      variant="secondary"
+                    >
+                      Open existing shift
+                    </Button>
+                  ) : null}
                   <div className="rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 timiq-caption">
                     <p>
                       Employee:{" "}
