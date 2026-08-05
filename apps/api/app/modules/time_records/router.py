@@ -215,6 +215,15 @@ def read_time_record_face_review_clock_out_selfie(
     )
 
 
+def _admin_time_adjustment_http_detail(exc: AdminTimeAdjustmentError) -> str | dict:
+    if exc.code:
+        detail: dict = {"code": exc.code, "message": str(exc)}
+        if exc.existing_shift_id is not None:
+            detail["existing_shift_id"] = str(exc.existing_shift_id)
+        return detail
+    return str(exc)
+
+
 @time_records_router.post("/admin/shifts", response_model=AdminManualShiftMutationResponse)
 def admin_create_completed_shift_route(
     body: AdminCreateCompletedShiftRequest,
@@ -222,7 +231,7 @@ def admin_create_completed_shift_route(
     current_user: User = Depends(require_admin_or_administrator),
 ) -> AdminManualShiftMutationResponse:
     try:
-        row, recalc, week_start, company_id = admin_create_completed_shift(
+        row, recalc, week_start, company_id, idempotent_replay = admin_create_completed_shift(
             db_session,
             current_user,
             user_id=body.user_id,
@@ -232,15 +241,17 @@ def admin_create_completed_shift_route(
             break_seconds=body.break_seconds,
             break_minutes=body.break_minutes,
             reason=body.reason,
+            client_action_id=body.client_action_id,
         )
         return AdminManualShiftMutationResponse(
             shift=row,
             payroll_recalculation_required=recalc,
             affected_week_start=week_start,
             affected_company_id=company_id,
+            idempotent_replay=idempotent_replay,
         )
     except AdminTimeAdjustmentError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.http_status, detail=_admin_time_adjustment_http_detail(exc)) from exc
 
 
 @time_records_router.patch("/admin/shifts/{shift_id}", response_model=AdminManualShiftMutationResponse)
@@ -251,7 +262,7 @@ def admin_patch_completed_shift_route(
     current_user: User = Depends(require_admin_or_administrator),
 ) -> AdminManualShiftMutationResponse:
     try:
-        row, recalc, week_start, company_id = admin_patch_completed_shift(
+        row, recalc, week_start, company_id, idempotent_replay = admin_patch_completed_shift(
             db_session,
             current_user,
             shift_id=shift_id,
@@ -267,9 +278,10 @@ def admin_patch_completed_shift_route(
             payroll_recalculation_required=recalc,
             affected_week_start=week_start,
             affected_company_id=company_id,
+            idempotent_replay=idempotent_replay,
         )
     except AdminTimeAdjustmentError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.http_status, detail=_admin_time_adjustment_http_detail(exc)) from exc
 
 
 @time_records_router.post(
@@ -283,7 +295,7 @@ def admin_force_clock_out_route(
     current_user: User = Depends(require_admin_or_administrator),
 ) -> AdminManualShiftMutationResponse:
     try:
-        row, recalc, week_start, company_id = admin_force_clock_out(
+        row, recalc, week_start, company_id, idempotent_replay = admin_force_clock_out(
             db_session,
             current_user,
             shift_id=shift_id,
@@ -297,9 +309,10 @@ def admin_force_clock_out_route(
             payroll_recalculation_required=recalc,
             affected_week_start=week_start,
             affected_company_id=company_id,
+            idempotent_replay=idempotent_replay,
         )
     except AdminTimeAdjustmentError as exc:
-        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.http_status, detail=_admin_time_adjustment_http_detail(exc)) from exc
 
 
 @timesheets_router.get("/me/week", response_model=TimesheetWeekResponse)

@@ -214,6 +214,7 @@ class AdminCreateCompletedShiftRequest(BaseModel):
     break_seconds: int | None = Field(default=None, ge=0)
     break_minutes: int | None = Field(default=None, ge=0)
     reason: str = Field(..., min_length=1, max_length=2000)
+    client_action_id: uuid.UUID | None = None
 
 
 class AdminPatchCompletedShiftRequest(BaseModel):
@@ -237,3 +238,4 @@ class AdminManualShiftMutationResponse(BaseModel):
     payroll_recalculation_required: bool
     affected_week_start: date | None = None
     affected_company_id: uuid.UUID
+    idempotent_replay: bool = False

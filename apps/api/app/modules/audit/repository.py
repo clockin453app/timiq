@@ -158,8 +158,16 @@ def list_audit_events_filtered(
     return rows, total
 
 
-def save_audit_event(db_session: Session, audit_event: AuditEvent) -> AuditEvent:
+def save_audit_event(
+    db_session: Session,
+    audit_event: AuditEvent,
+    *,
+    commit: bool = True,
+) -> AuditEvent:
     db_session.add(audit_event)
-    db_session.commit()
+    if commit:
+        db_session.commit()
+    else:
+        db_session.flush()
     db_session.refresh(audit_event)
     return audit_event

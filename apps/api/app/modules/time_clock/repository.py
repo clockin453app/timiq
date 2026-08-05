@@ -1,7 +1,8 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, func, select, text
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import SystemRole, User
@@ -51,6 +52,77 @@ def has_completed_shift_for_user_on_utc_day(
         .limit(1)
     )
     return db_session.scalar(statement) is not None
+
+
+def resolve_policy_zone(timezone_name: str) -> ZoneInfo:
+    try:
+        return ZoneInfo(timezone_name)
+    except Exception:
+        return ZoneInfo("Europe/London")
+
+
+def local_work_date_for_instant(timezone_name: str, instant_utc: datetime) -> date:
+    if instant_utc.tzinfo is None:
+        instant_utc = instant_utc.replace(tzinfo=timezone.utc)
+    return instant_utc.astimezone(resolve_policy_zone(timezone_name)).date()
+
+
+def local_day_window_utc(timezone_name: str, work_date: date) -> tuple[datetime, datetime]:
+    tz = resolve_policy_zone(timezone_name)
+    start_local = datetime.combine(work_date, time.min, tzinfo=tz)
+    end_local = datetime.combine(work_date + timedelta(days=1), time.min, tzinfo=tz)
+    return start_local.astimezone(timezone.utc), end_local.astimezone(timezone.utc)
+
+
+def acquire_completed_shift_day_lock(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    work_date: date,
+) -> None:
+    """Transaction-scoped advisory lock for one employee local work date."""
+    db_session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:k1), hashtext(:k2))"),
+        {"k1": f"timiq-shift-user:{user_id}", "k2": f"timiq-shift-day:{work_date.isoformat()}"},
+    )
+
+
+def get_completed_shift_for_user_on_local_day(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    timezone_name: str,
+    work_date: date,
+    exclude_shift_id: uuid.UUID | None = None,
+) -> TimeShift | None:
+    day_start, day_end = local_day_window_utc(timezone_name, work_date)
+    statement = (
+        select(TimeShift)
+        .where(TimeShift.user_id == user_id)
+        .where(TimeShift.status == "completed")
+        .where(TimeShift.clock_in_at >= day_start)
+        .where(TimeShift.clock_in_at < day_end)
+        .order_by(TimeShift.created_at.asc(), TimeShift.id.asc())
+        .limit(1)
+    )
+    if exclude_shift_id is not None:
+        statement = statement.where(TimeShift.id != exclude_shift_id)
+    return db_session.scalar(statement)
+
+
+def get_shift_by_company_client_action_id(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    client_action_id: uuid.UUID,
+) -> TimeShift | None:
+    statement = (
+        select(TimeShift)
+        .where(TimeShift.company_id == company_id)
+        .where(TimeShift.client_action_id == client_action_id)
+        .limit(1)
+    )
+    return db_session.scalar(statement)
 
 
 def list_active_assigned_locations_for_user(
@@ -117,16 +189,32 @@ def list_breaks_for_shift(
     return list(db_session.scalars(statement).all())
 
 
-def save_break(db_session: Session, shift_break: TimeShiftBreak) -> TimeShiftBreak:
+def save_break(
+    db_session: Session,
+    shift_break: TimeShiftBreak,
+    *,
+    commit: bool = True,
+) -> TimeShiftBreak:
     db_session.add(shift_break)
-    db_session.commit()
+    if commit:
+        db_session.commit()
+    else:
+        db_session.flush()
     db_session.refresh(shift_break)
     return shift_break
 
 
-def update_break(db_session: Session, shift_break: TimeShiftBreak) -> TimeShiftBreak:
+def update_break(
+    db_session: Session,
+    shift_break: TimeShiftBreak,
+    *,
+    commit: bool = True,
+) -> TimeShiftBreak:
     db_session.add(shift_break)
-    db_session.commit()
+    if commit:
+        db_session.commit()
+    else:
+        db_session.flush()
     db_session.refresh(shift_break)
     return shift_break
 

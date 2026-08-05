@@ -6,6 +6,7 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.modules.audit.service import create_internal_audit_event
@@ -21,11 +22,15 @@ from app.modules.payroll.models import PayrollItem
 from app.modules.payroll.repository import get_period_by_company_week, list_items_for_period
 from app.modules.payroll.service import mark_payroll_period_needs_recalculation
 from app.modules.site_access.repository import get_site_access, list_site_access_for_user
-from app.modules.time_clock.models import TimeShift, TimeShiftBreak
+from app.modules.time_clock.models import TimeShift
 from app.modules.time_clock.repository import (
+    acquire_completed_shift_day_lock,
+    get_completed_shift_for_user_on_local_day,
     get_open_break_for_shift,
     get_open_shift_for_user,
+    get_shift_by_company_client_action_id,
     list_breaks_for_shift,
+    local_work_date_for_instant,
     save_shift,
     update_break,
     update_shift,
@@ -33,9 +38,18 @@ from app.modules.time_clock.repository import (
 
 
 class AdminTimeAdjustmentError(ValueError):
-    def __init__(self, message: str, *, http_status: int = 400) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        http_status: int = 400,
+        code: str | None = None,
+        existing_shift_id: uuid.UUID | None = None,
+    ) -> None:
         super().__init__(message)
         self.http_status = http_status
+        self.code = code
+        self.existing_shift_id = existing_shift_id
 
 
 def _utc_now() -> datetime:
@@ -105,12 +119,14 @@ def _mark_payroll_weeks_needing_recalculation(
     *,
     company_id: uuid.UUID,
     week_starts: set[date],
+    commit: bool = True,
 ) -> None:
     for ws in sorted(week_starts):
         mark_payroll_period_needs_recalculation(
             db_session,
             company_id=company_id,
             week_start=ws,
+            commit=commit,
         )
 
 
@@ -190,6 +206,7 @@ def _audit(
     company_id: uuid.UUID | None,
     subject_user_id: uuid.UUID,
     details: dict,
+    commit: bool = True,
 ) -> None:
     create_internal_audit_event(
         db_session=db_session,
@@ -199,7 +216,53 @@ def _audit(
         entity_id=str(shift_id),
         company_id=company_id,
         details=details,
+        commit=commit,
     )
+
+
+def _reject_duplicate_normal_shift(
+    db_session: Session,
+    *,
+    user_id: uuid.UUID,
+    timezone_name: str,
+    clock_in_at: datetime,
+    exclude_shift_id: uuid.UUID | None = None,
+) -> None:
+    work_date = local_work_date_for_instant(timezone_name, clock_in_at)
+    acquire_completed_shift_day_lock(db_session, user_id=user_id, work_date=work_date)
+    existing = get_completed_shift_for_user_on_local_day(
+        db_session,
+        user_id=user_id,
+        timezone_name=timezone_name,
+        work_date=work_date,
+        exclude_shift_id=exclude_shift_id,
+    )
+    if existing is not None:
+        raise AdminTimeAdjustmentError(
+            "A shift already exists for this employee on this date.",
+            http_status=409,
+            code="shift_already_exists",
+            existing_shift_id=existing.id,
+        )
+
+
+def _payroll_item_status_detail(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    user_id: uuid.UUID,
+    week_start: date,
+) -> str | None:
+    item = _payroll_item_for_user_week(db_session, company_id=company_id, user_id=user_id, week_start=week_start)
+    return item.status if item is not None else None
+
+
+def _commit_core_or_rollback(db_session: Session) -> None:
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        raise
 
 
 def admin_create_completed_shift(
@@ -213,7 +276,8 @@ def admin_create_completed_shift(
     break_seconds: int | None,
     break_minutes: int | None,
     reason: str,
-) -> tuple[object, bool, date | None, uuid.UUID]:
+    client_action_id: uuid.UUID | None = None,
+) -> tuple[object, bool, date | None, uuid.UUID, bool]:
     if actor.system_role == SystemRole.EMPLOYEE:
         raise AdminTimeAdjustmentError("Forbidden.", http_status=403)
 
@@ -232,6 +296,22 @@ def admin_create_completed_shift(
         raise AdminTimeAdjustmentError("You cannot manage this employee.", http_status=403)
     if target.company_id is None:
         raise AdminTimeAdjustmentError("Employee has no company.", http_status=422)
+
+    if client_action_id is not None:
+        existing_by_action = get_shift_by_company_client_action_id(
+            db_session,
+            company_id=target.company_id,
+            client_action_id=client_action_id,
+        )
+        if existing_by_action is not None:
+            location = get_location_by_id(db_session, existing_by_action.location_id)
+            if location is None:
+                raise AdminTimeAdjustmentError("Location not found.", http_status=404)
+            profile = get_employee_profile_by_user_id(db_session, user_id)
+            policy = ensure_company_time_policy(db_session, target.company_id)
+            week_start = _monday_week_start_for_instant(policy.timezone_name, existing_by_action.clock_in_at)
+            row = _shift_to_response_row(db_session, existing_by_action, location, target, profile)
+            return row, True, week_start, target.company_id, True
 
     open_existing = get_open_shift_for_user(db_session, user_id)
     if open_existing is not None:
@@ -260,6 +340,12 @@ def admin_create_completed_shift(
         user_id=user_id,
         week_starts={week_start},
     )
+    _reject_duplicate_normal_shift(
+        db_session,
+        user_id=user_id,
+        timezone_name=policy.timezone_name,
+        clock_in_at=clock_in_at,
+    )
 
     lat, lon, acc, dist = _gps_snapshot_from_location(location)
     worked = _worked_seconds(clock_in_at, clock_out_at, brk)
@@ -271,6 +357,7 @@ def admin_create_completed_shift(
         clock_source="admin_manual",
         manual_reason=reason_n,
         admin_actor_user_id=actor.id,
+        client_action_id=client_action_id,
         clock_in_at=clock_in_at,
         clock_in_latitude=lat,
         clock_in_longitude=lon,
@@ -284,53 +371,79 @@ def admin_create_completed_shift(
         worked_seconds=worked,
         break_seconds=brk,
     )
-    save_shift(db_session, shift)
-    _mark_payroll_weeks_needing_recalculation(
-        db_session,
-        company_id=target.company_id,
-        week_starts={week_start},
-    )
-
-    profile = get_employee_profile_by_user_id(db_session, user_id)
-    row = _shift_to_response_row(db_session, shift, location, target, profile)
-
-    _audit(
-        db_session,
-        actor=actor,
-        action="time_record.shift_created_by_admin",
-        shift_id=shift.id,
-        company_id=target.company_id,
-        subject_user_id=user_id,
-        details={
-            "actor_user_id": str(actor.id),
-            "subject_user_id": str(user_id),
-            "shift_id": str(shift.id),
-            "location_id": str(location_id),
-            "clock_in_at": clock_in_at.isoformat(),
-            "clock_out_at": clock_out_at.isoformat(),
-            "break_seconds": brk,
-            "reason": reason_n,
-            "affected_payroll_week_start": str(week_start),
-            "payroll_item_status": _payroll_item_status_detail(
+    try:
+        save_shift(db_session, shift, commit=False)
+        _mark_payroll_weeks_needing_recalculation(
+            db_session,
+            company_id=target.company_id,
+            week_starts={week_start},
+            commit=False,
+        )
+        profile = get_employee_profile_by_user_id(db_session, user_id)
+        row = _shift_to_response_row(db_session, shift, location, target, profile)
+        _audit(
+            db_session,
+            actor=actor,
+            action="time_record.shift_created_by_admin",
+            shift_id=shift.id,
+            company_id=target.company_id,
+            subject_user_id=user_id,
+            details={
+                "actor_user_id": str(actor.id),
+                "subject_user_id": str(user_id),
+                "shift_id": str(shift.id),
+                "location_id": str(location_id),
+                "clock_in_at": clock_in_at.isoformat(),
+                "clock_out_at": clock_out_at.isoformat(),
+                "break_seconds": brk,
+                "reason": reason_n,
+                "client_action_id": str(client_action_id) if client_action_id else None,
+                "affected_payroll_week_start": str(week_start),
+                "payroll_item_status": _payroll_item_status_detail(
+                    db_session,
+                    company_id=target.company_id,
+                    user_id=user_id,
+                    week_start=week_start,
+                ),
+            },
+            commit=False,
+        )
+        _commit_core_or_rollback(db_session)
+    except IntegrityError as exc:
+        db_session.rollback()
+        if client_action_id is not None:
+            existing_by_action = get_shift_by_company_client_action_id(
                 db_session,
                 company_id=target.company_id,
-                user_id=user_id,
-                week_start=week_start,
-            ),
-        },
-    )
-    return row, True, week_start, target.company_id
+                client_action_id=client_action_id,
+            )
+            if existing_by_action is not None:
+                location = get_location_by_id(db_session, existing_by_action.location_id)
+                if location is None:
+                    raise AdminTimeAdjustmentError("Location not found.", http_status=404) from exc
+                profile = get_employee_profile_by_user_id(db_session, user_id)
+                week_start = _monday_week_start_for_instant(policy.timezone_name, existing_by_action.clock_in_at)
+                row = _shift_to_response_row(db_session, existing_by_action, location, target, profile)
+                return row, True, week_start, target.company_id, True
+        existing = get_completed_shift_for_user_on_local_day(
+            db_session,
+            user_id=user_id,
+            timezone_name=policy.timezone_name,
+            work_date=local_work_date_for_instant(policy.timezone_name, clock_in_at),
+        )
+        if existing is not None:
+            raise AdminTimeAdjustmentError(
+                "A shift already exists for this employee on this date.",
+                http_status=409,
+                code="shift_already_exists",
+                existing_shift_id=existing.id,
+            ) from exc
+        raise
+    except Exception:
+        db_session.rollback()
+        raise
 
-
-def _payroll_item_status_detail(
-    db_session: Session,
-    *,
-    company_id: uuid.UUID,
-    user_id: uuid.UUID,
-    week_start: date,
-) -> str | None:
-    item = _payroll_item_for_user_week(db_session, company_id=company_id, user_id=user_id, week_start=week_start)
-    return item.status if item is not None else None
+    return row, True, week_start, target.company_id, False
 
 
 def admin_patch_completed_shift(
@@ -344,7 +457,7 @@ def admin_patch_completed_shift(
     break_seconds: int | None,
     break_minutes: int | None,
     reason: str,
-) -> tuple[object, bool, date | None, uuid.UUID]:
+) -> tuple[object, bool, date | None, uuid.UUID, bool]:
     if actor.system_role == SystemRole.EMPLOYEE:
         raise AdminTimeAdjustmentError("Forbidden.", http_status=403)
 
@@ -366,7 +479,10 @@ def admin_patch_completed_shift(
     if shift is None:
         raise AdminTimeAdjustmentError("Shift not found.", http_status=404)
     if shift.status != "completed":
-        raise AdminTimeAdjustmentError("Only completed shifts can be edited here. Use force clock-out for open shifts.", http_status=422)
+        raise AdminTimeAdjustmentError(
+            "Only completed shifts can be edited here. Use force clock-out for open shifts.",
+            http_status=422,
+        )
 
     owner = get_user_by_id(db_session, shift.user_id)
     if owner is None:
@@ -410,6 +526,13 @@ def admin_patch_completed_shift(
         user_id=owner.id,
         week_starts={old_week, new_week},
     )
+    _reject_duplicate_normal_shift(
+        db_session,
+        user_id=owner.id,
+        timezone_name=policy.timezone_name,
+        clock_in_at=new_in,
+        exclude_shift_id=shift.id,
+    )
 
     prev_loc = str(shift.location_id)
     prev_in = shift.clock_in_at.isoformat()
@@ -434,47 +557,54 @@ def admin_patch_completed_shift(
     shift.manual_reason = reason_n
     shift.admin_actor_user_id = actor.id
     shift.updated_at = _utc_now()
-    update_shift(db_session, shift)
-    _mark_payroll_weeks_needing_recalculation(
-        db_session,
-        company_id=owner.company_id,
-        week_starts={old_week, new_week},
-    )
 
-    profile = get_employee_profile_by_user_id(db_session, owner.id)
-    row = _shift_to_response_row(db_session, shift, location, owner, profile)
+    try:
+        update_shift(db_session, shift, commit=False)
+        _mark_payroll_weeks_needing_recalculation(
+            db_session,
+            company_id=owner.company_id,
+            week_starts={old_week, new_week},
+            commit=False,
+        )
+        profile = get_employee_profile_by_user_id(db_session, owner.id)
+        row = _shift_to_response_row(db_session, shift, location, owner, profile)
+        primary_week = min(old_week, new_week)
+        _audit(
+            db_session,
+            actor=actor,
+            action="time_record.shift_adjusted_by_admin",
+            shift_id=shift.id,
+            company_id=owner.company_id,
+            subject_user_id=owner.id,
+            details={
+                "actor_user_id": str(actor.id),
+                "subject_user_id": str(owner.id),
+                "shift_id": str(shift.id),
+                "location_id_before": prev_loc,
+                "location_id_after": str(shift.location_id),
+                "clock_in_at_before": prev_in,
+                "clock_in_at_after": shift.clock_in_at.isoformat(),
+                "clock_out_at_before": prev_out,
+                "clock_out_at_after": shift.clock_out_at.isoformat() if shift.clock_out_at else None,
+                "break_seconds_before": prev_brk,
+                "break_seconds_after": brk,
+                "reason": reason_n,
+                "affected_payroll_week_starts": sorted({str(old_week), str(new_week)}),
+                "payroll_item_status_old_week": _payroll_item_status_detail(
+                    db_session, company_id=owner.company_id, user_id=owner.id, week_start=old_week
+                ),
+                "payroll_item_status_new_week": _payroll_item_status_detail(
+                    db_session, company_id=owner.company_id, user_id=owner.id, week_start=new_week
+                ),
+            },
+            commit=False,
+        )
+        _commit_core_or_rollback(db_session)
+    except Exception:
+        db_session.rollback()
+        raise
 
-    primary_week = min(old_week, new_week)
-    _audit(
-        db_session,
-        actor=actor,
-        action="time_record.shift_adjusted_by_admin",
-        shift_id=shift.id,
-        company_id=owner.company_id,
-        subject_user_id=owner.id,
-        details={
-            "actor_user_id": str(actor.id),
-            "subject_user_id": str(owner.id),
-            "shift_id": str(shift.id),
-            "location_id_before": prev_loc,
-            "location_id_after": str(shift.location_id),
-            "clock_in_at_before": prev_in,
-            "clock_in_at_after": shift.clock_in_at.isoformat(),
-            "clock_out_at_before": prev_out,
-            "clock_out_at_after": shift.clock_out_at.isoformat() if shift.clock_out_at else None,
-            "break_seconds_before": prev_brk,
-            "break_seconds_after": brk,
-            "reason": reason_n,
-            "affected_payroll_week_starts": sorted({str(old_week), str(new_week)}),
-            "payroll_item_status_old_week": _payroll_item_status_detail(
-                db_session, company_id=owner.company_id, user_id=owner.id, week_start=old_week
-            ),
-            "payroll_item_status_new_week": _payroll_item_status_detail(
-                db_session, company_id=owner.company_id, user_id=owner.id, week_start=new_week
-            ),
-        },
-    )
-    return row, True, primary_week, owner.company_id
+    return row, True, primary_week, owner.company_id, False
 
 
 def admin_force_clock_out(
@@ -486,7 +616,7 @@ def admin_force_clock_out(
     break_seconds: int | None,
     break_minutes: int | None,
     reason: str,
-) -> tuple[object, bool, date | None, uuid.UUID]:
+) -> tuple[object, bool, date | None, uuid.UUID, bool]:
     if actor.system_role == SystemRole.EMPLOYEE:
         raise AdminTimeAdjustmentError("Forbidden.", http_status=403)
 
@@ -521,7 +651,7 @@ def admin_force_clock_out(
                 http_status=422,
             )
         open_break.ended_at = clock_out_at
-        update_break(db_session, open_break)
+        update_break(db_session, open_break, commit=False)
 
     breaks = list_breaks_for_shift(db_session, shift.id)
     break_sum = 0
@@ -544,6 +674,13 @@ def admin_force_clock_out(
         user_id=owner.id,
         week_starts={week_start},
     )
+    _reject_duplicate_normal_shift(
+        db_session,
+        user_id=owner.id,
+        timezone_name=policy.timezone_name,
+        clock_in_at=shift.clock_in_at,
+        exclude_shift_id=shift.id,
+    )
 
     lat, lon, acc, dist = _gps_snapshot_from_location(location)
     prev_out = shift.clock_out_at.isoformat() if shift.clock_out_at else None
@@ -561,38 +698,45 @@ def admin_force_clock_out(
     shift.manual_reason = reason_n
     shift.admin_actor_user_id = actor.id
     shift.updated_at = _utc_now()
-    update_shift(db_session, shift)
-    _mark_payroll_weeks_needing_recalculation(
-        db_session,
-        company_id=owner.company_id,
-        week_starts={week_start},
-    )
 
-    profile = get_employee_profile_by_user_id(db_session, owner.id)
-    row = _shift_to_response_row(db_session, shift, location, owner, profile)
+    try:
+        update_shift(db_session, shift, commit=False)
+        _mark_payroll_weeks_needing_recalculation(
+            db_session,
+            company_id=owner.company_id,
+            week_starts={week_start},
+            commit=False,
+        )
+        profile = get_employee_profile_by_user_id(db_session, owner.id)
+        row = _shift_to_response_row(db_session, shift, location, owner, profile)
+        _audit(
+            db_session,
+            actor=actor,
+            action="time_record.shift_force_closed_by_admin",
+            shift_id=shift.id,
+            company_id=owner.company_id,
+            subject_user_id=owner.id,
+            details={
+                "actor_user_id": str(actor.id),
+                "subject_user_id": str(owner.id),
+                "shift_id": str(shift.id),
+                "location_id": str(shift.location_id),
+                "clock_in_at": shift.clock_in_at.isoformat(),
+                "clock_out_at_before": prev_out,
+                "clock_out_at_after": shift.clock_out_at.isoformat(),
+                "break_seconds_before": prev_brk,
+                "break_seconds_after": brk,
+                "reason": reason_n,
+                "affected_payroll_week_start": str(week_start),
+                "payroll_item_status": _payroll_item_status_detail(
+                    db_session, company_id=owner.company_id, user_id=owner.id, week_start=week_start
+                ),
+            },
+            commit=False,
+        )
+        _commit_core_or_rollback(db_session)
+    except Exception:
+        db_session.rollback()
+        raise
 
-    _audit(
-        db_session,
-        actor=actor,
-        action="time_record.shift_force_closed_by_admin",
-        shift_id=shift.id,
-        company_id=owner.company_id,
-        subject_user_id=owner.id,
-        details={
-            "actor_user_id": str(actor.id),
-            "subject_user_id": str(owner.id),
-            "shift_id": str(shift.id),
-            "location_id": str(shift.location_id),
-            "clock_in_at": shift.clock_in_at.isoformat(),
-            "clock_out_at_before": prev_out,
-            "clock_out_at_after": shift.clock_out_at.isoformat(),
-            "break_seconds_before": prev_brk,
-            "break_seconds_after": brk,
-            "reason": reason_n,
-            "affected_payroll_week_start": str(week_start),
-            "payroll_item_status": _payroll_item_status_detail(
-                db_session, company_id=owner.company_id, user_id=owner.id, week_start=week_start
-            ),
-        },
-    )
-    return row, True, week_start, owner.company_id
+    return row, True, week_start, owner.company_id, False

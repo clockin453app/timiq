@@ -153,6 +153,8 @@ def create_internal_audit_event(
     entity_id: str | None = None,
     company_id: uuid.UUID | None = None,
     details: dict[str, Any] | None = None,
+    *,
+    commit: bool = True,
 ) -> AuditEvent:
     event = AuditEvent(
         actor_user_id=actor.id,
@@ -162,4 +164,4 @@ def create_internal_audit_event(
         entity_id=entity_id,
         details=details or {},
     )
-    return save_audit_event(db_session, event)
+    return save_audit_event(db_session, event, commit=commit)

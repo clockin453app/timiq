@@ -63,7 +63,15 @@ def test_mark_payroll_period_needs_recalculation_uses_calculated_at_invalidation
     changed = mark_payroll_period_needs_recalculation(MagicMock(), company_id=company_id, week_start=week_start)
 
     assert changed is True
-    mock_invalidate.assert_called_once()
+    mock_invalidate.assert_called_once_with(
+        mock_invalidate.call_args.args[0] if mock_invalidate.call_args.args else MagicMock(),
+        company_id=company_id,
+        week_start=week_start,
+        commit=True,
+    )
+    assert mock_invalidate.call_args.kwargs["commit"] is True
+    assert mock_invalidate.call_args.kwargs["company_id"] == company_id
+    assert mock_invalidate.call_args.kwargs["week_start"] == week_start
 
 
 @patch("app.modules.payroll.service._payroll_period_needs_recalculation", return_value=True)

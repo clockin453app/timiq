@@ -18,6 +18,13 @@ class TimeShift(Base):
             unique=True,
             postgresql_where=text("status = 'open'"),
         ),
+        Index(
+            "uq_time_shifts_company_client_action",
+            "company_id",
+            "client_action_id",
+            unique=True,
+            postgresql_where=text("client_action_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -81,6 +88,10 @@ class TimeShift(Base):
     face_check_status: Mapped[str] = mapped_column(String(32), nullable=True)
     face_match_confidence: Mapped[float] = mapped_column(Float, nullable=True)
     face_check_reason: Mapped[str] = mapped_column(String(120), nullable=True)
+    client_action_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

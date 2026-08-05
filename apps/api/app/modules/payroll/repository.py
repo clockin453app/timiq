@@ -65,6 +65,7 @@ def invalidate_period_calculation_for_company_week(
     *,
     company_id: uuid.UUID,
     week_start: date,
+    commit: bool = True,
 ) -> bool:
     statement = (
         update(PayrollPeriod)
@@ -74,7 +75,10 @@ def invalidate_period_calculation_for_company_week(
         .values(calculated_at=None, calculated_by_user_id=None)
     )
     result = db_session.execute(statement)
-    db_session.commit()
+    if commit:
+        db_session.commit()
+    else:
+        db_session.flush()
     return bool(result.rowcount)
 
 
