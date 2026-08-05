@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.orm import Session
