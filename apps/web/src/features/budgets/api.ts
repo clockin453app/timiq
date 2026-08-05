@@ -412,7 +412,23 @@ export function openBudgetReportPrint(budgetId: string): void {
 
 /* —— Customer billing (revenue invoices; separate from purchases) —— */
 
-export type InvoiceDisplayStatus = "draft" | "issued" | "overdue" | "void";
+export type InvoiceDisplayStatus =
+  | "draft"
+  | "issued"
+  | "part_paid"
+  | "paid"
+  | "overdue"
+  | "void";
+
+export type PaymentMethod = "bank_transfer" | "card" | "cash" | "cheque" | "other";
+
+export const PAYMENT_METHOD_OPTIONS: { value: PaymentMethod; label: string }[] = [
+  { value: "bank_transfer", label: "Bank transfer" },
+  { value: "card", label: "Card" },
+  { value: "cash", label: "Cash" },
+  { value: "cheque", label: "Cheque" },
+  { value: "other", label: "Other" },
+];
 
 export type BillingSummaryResponse = {
   budget_id: string;
@@ -422,10 +438,15 @@ export type BillingSummaryResponse = {
   active_invoiced_net: string | number;
   vat_invoiced: string | number;
   gross_invoiced: string | number;
+  payments_received_gross: string | number;
+  outstanding_gross: string | number;
+  overdue_outstanding_gross: string | number;
   remaining_to_invoice: string | number | null;
   over_invoiced: string | number | null;
   draft_count: number;
   issued_count: number;
+  part_paid_count: number;
+  paid_count: number;
   overdue_count: number;
   void_count: number;
   active_count: number;
@@ -446,6 +467,8 @@ export type InvoiceResponse = {
   net_amount: string | number;
   vat_amount: string | number;
   gross_amount: string | number;
+  payments_received_gross: string | number;
+  outstanding_gross: string | number;
   description: string | null;
   reference: string | null;
   payment_terms: string | null;
@@ -458,6 +481,42 @@ export type InvoiceResponse = {
   document_filename: string | null;
   document_content_type: string | null;
   document_version: number | null;
+};
+
+export type PaymentResponse = {
+  id: string;
+  company_id: string;
+  budget_id: string;
+  invoice_id: string;
+  client_action_id: string | null;
+  payment_date: string;
+  amount: string | number;
+  currency: string;
+  payment_method: PaymentMethod | string;
+  reference: string | null;
+  notes: string | null;
+  created_by_user_id: string | null;
+  created_by_display: string | null;
+  created_at: string;
+  reversed_at: string | null;
+  reversed_by_user_id: string | null;
+  reversal_reason: string | null;
+  is_reversed: boolean;
+};
+
+export type CreatePaymentBody = {
+  client_action_id: string;
+  payment_date: string;
+  amount: string;
+  payment_method: PaymentMethod | string;
+  reference?: string | null;
+  notes?: string | null;
+  currency?: string | null;
+};
+
+export type ReversePaymentBody = {
+  confirm: true;
+  reason: string;
 };
 
 export type ContractValueUpdateBody = {
@@ -691,4 +750,59 @@ export async function downloadBudgetInvoiceDocument(
   anchor.download = filename || filenameHint || `invoice-${invoiceId}`;
   anchor.click();
   URL.revokeObjectURL(href);
+}
+
+export async function listInvoicePayments(
+  budgetId: string,
+  invoiceId: string,
+): Promise<PaymentResponse[]> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}/payments`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not load payments.");
+  }
+  return response.json() as Promise<PaymentResponse[]>;
+}
+
+export async function createInvoicePayment(
+  budgetId: string,
+  invoiceId: string,
+  body: CreatePaymentBody,
+): Promise<PaymentResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}/payments`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not record payment.");
+  }
+  return response.json() as Promise<PaymentResponse>;
+}
+
+export async function reverseInvoicePayment(
+  budgetId: string,
+  invoiceId: string,
+  paymentId: string,
+  body: ReversePaymentBody,
+): Promise<PaymentResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/invoices/${encodeURIComponent(invoiceId)}/payments/${encodeURIComponent(paymentId)}/reverse`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not reverse payment.");
+  }
+  return response.json() as Promise<PaymentResponse>;
 }

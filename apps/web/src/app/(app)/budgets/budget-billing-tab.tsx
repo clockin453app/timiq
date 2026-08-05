@@ -4,20 +4,26 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 
 import { Badge, Button, Input, Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui";
 import {
+  PAYMENT_METHOD_OPTIONS,
   createBudgetInvoice,
+  createInvoicePayment,
   deleteBudgetInvoice,
   downloadBudgetInvoiceDocument,
   fetchBillingSummary,
   fetchBudgetInvoiceDocumentBlob,
   issueBudgetInvoice,
   listBudgetInvoices,
+  listInvoicePayments,
   patchBudgetInvoice,
+  reverseInvoicePayment,
   updateContractValue,
   uploadBudgetInvoiceDocument,
   voidBudgetInvoice,
   type BillingSummaryResponse,
   type InvoiceDisplayStatus,
   type InvoiceResponse,
+  type PaymentMethod,
+  type PaymentResponse,
 } from "@/features/budgets/api";
 import { formatMoney } from "@/features/payroll/format";
 import { isoTodayYmd, moneyDisplay } from "./budget-ui";
@@ -76,23 +82,25 @@ function toMoneyString(n: number): string {
   return round2(n).toFixed(2);
 }
 
-function statusBadgeTone(status: string): "default" | "info" | "warning" | "danger" {
+function displayStatusLabel(status: string): string {
   const s = status.toLowerCase();
-  if (s === "issued") {
-    return "info";
+  if (s === "part_paid") {
+    return "Part paid";
   }
-  if (s === "overdue") {
-    return "danger";
+  if (!s) {
+    return status;
   }
-  if (s === "draft") {
-    return "default";
-  }
-  return "default";
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function paymentMethodLabel(method: string): string {
+  const found = PAYMENT_METHOD_OPTIONS.find((o) => o.value === method);
+  return found?.label || method;
 }
 
 function InvoiceStatusBadge({ status }: { status: string }) {
   const s = status.toLowerCase() as InvoiceDisplayStatus | string;
-  const label = s ? s.charAt(0).toUpperCase() + s.slice(1) : status;
+  const label = displayStatusLabel(s);
   if (s === "void") {
     return (
       <Badge
@@ -109,7 +117,13 @@ function InvoiceStatusBadge({ status }: { status: string }) {
   if (s === "issued") {
     return <Badge tone="info">{label}</Badge>;
   }
-  return <Badge tone={statusBadgeTone(s)}>{label}</Badge>;
+  if (s === "part_paid") {
+    return <Badge tone="warning">{label}</Badge>;
+  }
+  if (s === "paid") {
+    return <Badge tone="success">{label}</Badge>;
+  }
+  return <Badge tone="default">{label}</Badge>;
 }
 
 function dateDisplay(iso: string | null | undefined): string {
@@ -178,6 +192,27 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
   const [previewType, setPreviewType] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState("");
+
+  const [actionSuccess, setActionSuccess] = useState("");
+
+  const [paymentTarget, setPaymentTarget] = useState<InvoiceResponse | null>(null);
+  const [paymentClientActionId, setPaymentClientActionId] = useState(() => newClientActionId());
+  const [paymentDate, setPaymentDate] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("bank_transfer");
+  const [paymentReference, setPaymentReference] = useState("");
+  const [paymentNotes, setPaymentNotes] = useState("");
+  const [paymentError, setPaymentError] = useState("");
+  const paymentSavingRef = useRef(false);
+
+  const [historyTarget, setHistoryTarget] = useState<InvoiceResponse | null>(null);
+  const [historyPayments, setHistoryPayments] = useState<PaymentResponse[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [reverseTarget, setReverseTarget] = useState<PaymentResponse | null>(null);
+  const [reverseReason, setReverseReason] = useState("");
+  const [reverseConfirm, setReverseConfirm] = useState(false);
+  const [reverseError, setReverseError] = useState("");
 
   const currencyHint = summary?.billing_currency || "GBP";
 
@@ -545,10 +580,151 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
 
   async function handleDownload(row: InvoiceResponse) {
     setActionError("");
+    setActionSuccess("");
     try {
       await downloadBudgetInvoiceDocument(budgetId, row.id, row.document_filename);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Could not download document.");
+    }
+  }
+
+  function openRecordPayment(row: InvoiceResponse) {
+    setPaymentTarget(row);
+    setPaymentClientActionId(newClientActionId());
+    setPaymentDate(isoTodayYmd());
+    setPaymentAmount(toMoneyString(moneyNumber(row.outstanding_gross)));
+    setPaymentMethod("bank_transfer");
+    setPaymentReference("");
+    setPaymentNotes("");
+    setPaymentError("");
+    setActionSuccess("");
+    setActionError("");
+  }
+
+  function closeRecordPayment() {
+    setPaymentTarget(null);
+    setPaymentError("");
+    paymentSavingRef.current = false;
+  }
+
+  async function submitPayment(ev: FormEvent) {
+    ev.preventDefault();
+    if (!paymentTarget || archived || paymentSavingRef.current) {
+      return;
+    }
+    setPaymentError("");
+    setActionSuccess("");
+    const amountNum = Number(paymentAmount);
+    if (!paymentDate.trim()) {
+      setPaymentError("Payment date is required.");
+      return;
+    }
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
+      setPaymentError("Payment amount must be greater than zero.");
+      return;
+    }
+    const outstanding = moneyNumber(paymentTarget.outstanding_gross);
+    if (round2(amountNum) > round2(outstanding)) {
+      setPaymentError("Payment exceeds the invoice outstanding balance.");
+      return;
+    }
+
+    paymentSavingRef.current = true;
+    setBusy(true);
+    const startedAt = Date.now();
+    try {
+      const saved = await createInvoicePayment(budgetId, paymentTarget.id, {
+        client_action_id: paymentClientActionId,
+        payment_date: paymentDate.trim(),
+        amount: toMoneyString(amountNum),
+        payment_method: paymentMethod,
+        reference: paymentReference.trim() || null,
+        notes: paymentNotes.trim() || null,
+        currency: (paymentTarget.currency || "GBP").toUpperCase(),
+      });
+      const createdMs = new Date(saved.created_at).getTime();
+      const already =
+        Number.isFinite(createdMs) && createdMs < startedAt - 500;
+      setActionSuccess(
+        already
+          ? "Payment was already recorded successfully."
+          : "Payment recorded successfully.",
+      );
+      closeRecordPayment();
+      await reload();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not record payment.";
+      if (msg.includes("Payment exceeds the invoice outstanding balance.")) {
+        setPaymentError("Payment exceeds the invoice outstanding balance.");
+      } else {
+        setPaymentError(msg);
+      }
+    } finally {
+      paymentSavingRef.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function openPaymentHistory(row: InvoiceResponse) {
+    setHistoryTarget(row);
+    setHistoryPayments([]);
+    setHistoryError("");
+    setHistoryLoading(true);
+    setReverseTarget(null);
+    setReverseReason("");
+    setReverseConfirm(false);
+    setReverseError("");
+    setActionError("");
+    try {
+      const rows = await listInvoicePayments(budgetId, row.id);
+      setHistoryPayments(rows);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : "Could not load payments.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  function closePaymentHistory() {
+    setHistoryTarget(null);
+    setHistoryPayments([]);
+    setHistoryError("");
+    setReverseTarget(null);
+    setReverseReason("");
+    setReverseConfirm(false);
+    setReverseError("");
+  }
+
+  async function submitReverse(ev: FormEvent) {
+    ev.preventDefault();
+    if (!historyTarget || !reverseTarget || busy) {
+      return;
+    }
+    setReverseError("");
+    if (!reverseConfirm) {
+      setReverseError("Confirm must be checked to reverse a payment.");
+      return;
+    }
+    if (!reverseReason.trim()) {
+      setReverseError("A reason is required.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await reverseInvoicePayment(budgetId, historyTarget.id, reverseTarget.id, {
+        confirm: true,
+        reason: reverseReason.trim(),
+      });
+      setReverseTarget(null);
+      setReverseReason("");
+      setReverseConfirm(false);
+      const rows = await listInvoicePayments(budgetId, historyTarget.id);
+      setHistoryPayments(rows);
+      await reload();
+    } catch (err) {
+      setReverseError(err instanceof Error ? err.message : "Could not reverse payment.");
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -604,17 +780,40 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
         </div>
       );
     }
-    if (ds === "issued" || ds === "overdue") {
+
+    const viewDownload = (
+      <>
+        <Button className={btn} size="sm" type="button" variant="ghost" onClick={() => openViewInvoice(row)}>
+          View
+        </Button>
+        {row.has_document ? (
+          <Button className={btn} size="sm" type="button" variant="secondary" onClick={() => void handleDownload(row)}>
+            Download
+          </Button>
+        ) : null}
+      </>
+    );
+
+    const historyBtn = (
+      <Button className={btn} size="sm" type="button" variant="secondary" onClick={() => void openPaymentHistory(row)}>
+        Payment history
+      </Button>
+    );
+
+    if (ds === "void") {
       return (
         <div className="flex min-w-0 flex-wrap gap-1">
-          <Button className={btn} size="sm" type="button" variant="ghost" onClick={() => openViewInvoice(row)}>
-            View
-          </Button>
-          {row.has_document ? (
-            <Button className={btn} size="sm" type="button" variant="secondary" onClick={() => void handleDownload(row)}>
-              Download
-            </Button>
-          ) : null}
+          {historyBtn}
+          {viewDownload}
+        </div>
+      );
+    }
+
+    if (ds === "paid") {
+      return (
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {historyBtn}
+          {viewDownload}
           {!archived ? (
             <Button
               className={btn}
@@ -634,17 +833,41 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
         </div>
       );
     }
-    // void
+
+    if (ds === "issued" || ds === "part_paid" || ds === "overdue") {
+      return (
+        <div className="flex min-w-0 flex-wrap gap-1">
+          {!archived ? (
+            <Button className={btn} size="sm" type="button" onClick={() => openRecordPayment(row)}>
+              Record payment
+            </Button>
+          ) : null}
+          {historyBtn}
+          {viewDownload}
+          {!archived ? (
+            <Button
+              className={btn}
+              size="sm"
+              type="button"
+              variant="danger"
+              onClick={() => {
+                setVoidReason("");
+                setVoidConfirm(false);
+                setVoidError("");
+                setVoidTarget(row);
+              }}
+            >
+              Void
+            </Button>
+          ) : null}
+        </div>
+      );
+    }
+
     return (
       <div className="flex min-w-0 flex-wrap gap-1">
-        <Button className={btn} size="sm" type="button" variant="ghost" onClick={() => openViewInvoice(row)}>
-          View
-        </Button>
-        {row.has_document ? (
-          <Button className={btn} size="sm" type="button" variant="secondary" onClick={() => void handleDownload(row)}>
-            Download
-          </Button>
-        ) : null}
+        {historyBtn}
+        {viewDownload}
       </div>
     );
   }
@@ -662,6 +885,11 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
       {actionError ? (
         <div className="rounded-[var(--radius-md)] border border-[var(--color-danger-700)] bg-[var(--color-danger-50)] px-3 py-2 text-sm text-[var(--color-danger-700)]">
           {actionError}
+        </div>
+      ) : null}
+      {actionSuccess ? (
+        <div className="rounded-[var(--radius-md)] border border-[var(--color-success-700)]/30 bg-[var(--color-success-50)] px-3 py-2 text-sm text-[var(--color-success-700)]">
+          {actionSuccess}
         </div>
       ) : null}
 
@@ -713,6 +941,18 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
               <SummaryCard label="VAT invoiced" value={billingMoney(summary.vat_invoiced, currencyHint)} />
               <SummaryCard label="Gross invoiced" value={billingMoney(summary.gross_invoiced, currencyHint)} />
               <SummaryCard
+                label="Payments received — Gross"
+                value={billingMoney(summary.payments_received_gross, currencyHint)}
+              />
+              <SummaryCard
+                label="Outstanding — Gross"
+                value={billingMoney(summary.outstanding_gross, currencyHint)}
+              />
+              <SummaryCard
+                label="Overdue outstanding — Gross"
+                value={billingMoney(summary.overdue_outstanding_gross, currencyHint)}
+              />
+              <SummaryCard
                 label="Remaining to invoice"
                 value={
                   summary.remaining_to_invoice == null
@@ -730,7 +970,6 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
               <SummaryCard label="Draft count" value={String(summary.draft_count)} />
               <SummaryCard label="Overdue count" value={String(summary.overdue_count)} />
             </div>
-            <p className="text-xs text-[var(--color-text-muted)]">Payment tracking will be handled separately.</p>
           </section>
 
           <section className="min-w-0 max-w-full space-y-3">
@@ -765,6 +1004,8 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
                         <TableHead className="text-right">Net</TableHead>
                         <TableHead className="text-right">VAT</TableHead>
                         <TableHead className="text-right">Gross</TableHead>
+                        <TableHead className="text-right">Paid</TableHead>
+                        <TableHead className="text-right">Outstanding</TableHead>
                         <TableHead>Status</TableHead>
                         <TableHead>Document</TableHead>
                         <TableHead>Actions</TableHead>
@@ -789,6 +1030,12 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
                           </TableCell>
                           <TableCell className="text-right text-sm tabular-nums">
                             {billingMoney(row.gross_amount, row.currency)}
+                          </TableCell>
+                          <TableCell className="text-right text-sm tabular-nums">
+                            {billingMoney(row.payments_received_gross, row.currency)}
+                          </TableCell>
+                          <TableCell className="text-right text-sm tabular-nums">
+                            {billingMoney(row.outstanding_gross, row.currency)}
                           </TableCell>
                           <TableCell>
                             <InvoiceStatusBadge status={row.display_status} />
@@ -833,6 +1080,10 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
                         Net {billingMoney(row.net_amount, row.currency)} · VAT{" "}
                         {billingMoney(row.vat_amount, row.currency)} · Gross{" "}
                         {billingMoney(row.gross_amount, row.currency)}
+                      </p>
+                      <p className="mt-1 text-sm tabular-nums text-[var(--color-text)]">
+                        Paid {billingMoney(row.payments_received_gross, row.currency)} · Outstanding{" "}
+                        {billingMoney(row.outstanding_gross, row.currency)}
                       </p>
                       <p className="mt-1 text-xs text-[var(--color-text-muted)]">
                         Document:{" "}
@@ -1163,6 +1414,203 @@ export function BudgetBillingTab({ budgetId, archived, defaultCustomerName }: Pr
               {uploadError ? <p className="text-sm text-[var(--color-danger-700)]">{uploadError}</p> : null}
               <Button className="min-h-[44px]" disabled={busy || !pendingFile} type="submit">
                 {busy ? "Uploading…" : "Upload"}
+              </Button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {paymentTarget ? (
+        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+          <div className={`${invoiceModalClass()} min-w-0 max-w-full`}>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-base font-semibold text-[var(--color-text)]">Record payment</h3>
+              <Button className="min-h-[44px]" type="button" variant="ghost" onClick={closeRecordPayment}>
+                Close
+              </Button>
+            </div>
+            <div className="mb-3 min-w-0 space-y-1 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 text-sm">
+              <p className="font-medium text-[var(--color-text)]">
+                {paymentTarget.invoice_number || "No number"} · {paymentTarget.customer_name}
+              </p>
+              <p className="tabular-nums text-[var(--color-text-muted)]">
+                Gross {billingMoney(paymentTarget.gross_amount, paymentTarget.currency)}
+              </p>
+              <p className="tabular-nums text-[var(--color-text-muted)]">
+                Received {billingMoney(paymentTarget.payments_received_gross, paymentTarget.currency)}
+              </p>
+              <p className="tabular-nums text-[var(--color-text)]">
+                Outstanding {billingMoney(paymentTarget.outstanding_gross, paymentTarget.currency)}
+              </p>
+            </div>
+            <form className="space-y-3" onSubmit={(ev) => void submitPayment(ev)}>
+              <label className={fieldLabelClass()}>
+                <span className="text-[var(--color-text)]">Payment date</span>
+                <Input
+                  className="mt-1 min-h-[44px]"
+                  onChange={(e) => setPaymentDate(e.target.value)}
+                  required
+                  type="date"
+                  value={paymentDate}
+                />
+              </label>
+              <label className={fieldLabelClass()}>
+                <span className="text-[var(--color-text)]">Amount</span>
+                <Input
+                  className="mt-1 min-h-[44px]"
+                  inputMode="decimal"
+                  onChange={(e) => setPaymentAmount(e.target.value)}
+                  required
+                  value={paymentAmount}
+                />
+              </label>
+              <label className={fieldLabelClass()}>
+                <span className="text-[var(--color-text)]">Payment method</span>
+                <select
+                  className={`${selectClass()} min-h-[44px]`}
+                  onChange={(e) => setPaymentMethod(e.target.value as PaymentMethod)}
+                  value={paymentMethod}
+                >
+                  {PAYMENT_METHOD_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className={fieldLabelClass()}>
+                <span className="text-[var(--color-text)]">Reference</span>
+                <Input
+                  className="mt-1 min-h-[44px]"
+                  onChange={(e) => setPaymentReference(e.target.value)}
+                  value={paymentReference}
+                />
+              </label>
+              <label className={fieldLabelClass()}>
+                <span className="text-[var(--color-text)]">Notes</span>
+                <textarea
+                  className={textareaClass()}
+                  onChange={(e) => setPaymentNotes(e.target.value)}
+                  value={paymentNotes}
+                />
+              </label>
+              {paymentError ? <p className="text-sm text-[var(--color-danger-700)]">{paymentError}</p> : null}
+              <Button className="min-h-[44px]" disabled={busy} type="submit">
+                {busy ? "Saving…" : "Record payment"}
+              </Button>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {historyTarget ? (
+        <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+          <div className={`${invoiceModalClass()} min-w-0 max-w-full sm:max-w-2xl`}>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="min-w-0 truncate text-base font-semibold text-[var(--color-text)]">
+                Payment history · {historyTarget.invoice_number || "No number"}
+              </h3>
+              <Button className="min-h-[44px] shrink-0" type="button" variant="ghost" onClick={closePaymentHistory}>
+                Close
+              </Button>
+            </div>
+            {historyLoading ? <p className="text-sm text-[var(--color-text-muted)]">Loading payments…</p> : null}
+            {historyError ? <p className="text-sm text-[var(--color-danger-700)]">{historyError}</p> : null}
+            {!historyLoading && !historyError && historyPayments.length === 0 ? (
+              <p className="text-sm text-[var(--color-text-muted)]">No payments recorded yet.</p>
+            ) : null}
+            <div className="min-w-0 max-w-full space-y-2">
+              {historyPayments.map((pay) => (
+                <div
+                  key={pay.id}
+                  className="min-w-0 max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] p-3"
+                >
+                  <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+                    <div className="min-w-0 space-y-1">
+                      <p className="text-sm font-semibold tabular-nums text-[var(--color-text)]">
+                        {billingMoney(pay.amount, pay.currency)} · {dateDisplay(pay.payment_date)}
+                      </p>
+                      <p className="text-xs text-[var(--color-text-muted)]">
+                        {paymentMethodLabel(pay.payment_method)}
+                        {pay.reference ? ` · Ref ${pay.reference}` : ""}
+                      </p>
+                      {pay.notes ? (
+                        <p className="text-xs text-[var(--color-text-muted)]">{pay.notes}</p>
+                      ) : null}
+                      {pay.is_reversed || pay.reversed_at ? (
+                        <p className="text-xs font-medium text-[var(--color-danger-700)]">
+                          Reversed{pay.reversal_reason ? `: ${pay.reversal_reason}` : ""}
+                        </p>
+                      ) : (
+                        <Badge tone="success">Active</Badge>
+                      )}
+                    </div>
+                    {!archived && !pay.is_reversed && !pay.reversed_at ? (
+                      <Button
+                        className="min-h-[44px]"
+                        size="sm"
+                        type="button"
+                        variant="danger"
+                        onClick={() => {
+                          setReverseTarget(pay);
+                          setReverseReason("");
+                          setReverseConfirm(false);
+                          setReverseError("");
+                        }}
+                      >
+                        Reverse
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {reverseTarget && historyTarget ? (
+        <div className="fixed inset-0 z-[75] flex items-start justify-center overflow-y-auto bg-black/40 p-4">
+          <div className={`${invoiceModalClass()} min-w-0 max-w-full`}>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-base font-semibold text-[var(--color-text)]">Reverse payment</h3>
+              <Button
+                className="min-h-[44px]"
+                type="button"
+                variant="ghost"
+                onClick={() => {
+                  setReverseTarget(null);
+                  setReverseError("");
+                }}
+              >
+                Close
+              </Button>
+            </div>
+            <p className="mb-3 text-sm text-[var(--color-text-muted)]">
+              Reverse {billingMoney(reverseTarget.amount, reverseTarget.currency)} dated{" "}
+              {dateDisplay(reverseTarget.payment_date)}? This cannot be undone from the UI.
+            </p>
+            <form className="space-y-3" onSubmit={(ev) => void submitReverse(ev)}>
+              <label className="flex min-h-[44px] items-center gap-2 text-sm text-[var(--color-text)]">
+                <input
+                  checked={reverseConfirm}
+                  type="checkbox"
+                  onChange={(e) => setReverseConfirm(e.target.checked)}
+                />
+                I confirm I want to reverse this payment
+              </label>
+              <label className={fieldLabelClass()}>
+                <span className="text-[var(--color-text)]">Reason</span>
+                <textarea
+                  className={textareaClass()}
+                  onChange={(e) => setReverseReason(e.target.value)}
+                  required
+                  value={reverseReason}
+                />
+              </label>
+              {reverseError ? <p className="text-sm text-[var(--color-danger-700)]">{reverseError}</p> : null}
+              <Button className="min-h-[44px]" disabled={busy} type="submit" variant="danger">
+                {busy ? "Reversing…" : "Reverse payment"}
               </Button>
             </form>
           </div>

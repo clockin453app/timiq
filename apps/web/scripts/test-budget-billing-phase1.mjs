@@ -39,25 +39,14 @@ check(
   /Contract value cannot be lower than the active invoiced amount\./.test(billing),
 );
 
-// No payment actions / balances
-check("no Record payment action", !/Record payment/i.test(billing) && !/Record payment/i.test(saved));
-check(
-  "payment tracking deferred note",
-  /Payment tracking will be handled separately\./.test(billing),
-);
-check(
-  "payments not implemented as balances",
-  !/payment received/i.test(billing) &&
-    !/outstanding balance/i.test(billing) &&
-    !/part[\s-]?paid/i.test(billing) &&
-    !/\bpaid\b/i.test(billing.replace(/payment_terms/g, "").replace(/Payment terms/g, "").replace(/Payment tracking will be handled separately\./g, "")),
-);
-
-// client_action_id for create retries
-check("client_action_id in API create", /client_action_id/.test(api) && /createBudgetInvoice/.test(api));
+// Phase 1 invoice lifecycle remains; Phase 2 adds payment recording on non-draft invoices
+check("Draft actions Edit Issue Delete Upload", /Edit/.test(billing) && /Issue/.test(billing) && /Delete/.test(billing) && /Upload document/.test(billing));
+check("Record payment not on Draft branch alone", /ds === \"draft\"[\s\S]*?return \([\s\S]*?<\/div>\s*\);\s*\}/.test(billing));
+check("no Record payment inside draft action block", !/ds === \"draft\"[\s\S]{0,800}Record payment/.test(billing));
+check("client_action_id for create retries", /client_action_id/.test(api) && /createBudgetInvoice/.test(api));
 check("client_action_id generated once per create", /client_action_id/.test(billing) && /randomUUID/.test(billing));
 
-// Status badges
+// Status badges (Phase 1 core statuses)
 check("Draft status badge", /draft/i.test(billing) && /InvoiceStatusBadge/.test(billing));
 check("Issued / Overdue / Void badges", /issued/.test(billing) && /overdue/.test(billing) && /void/.test(billing));
 check("status badge tones", /tone=\"info\"/.test(billing) && /tone=\"danger\"/.test(billing));
@@ -73,7 +62,6 @@ check("Over-invoiced only when > 0", /overInvoiced > 0/.test(billing) || /Over-i
 check("Draft and Overdue counts", /Draft count/.test(billing) && /Overdue count/.test(billing));
 
 // Invoice actions by status
-check("Draft actions Edit Issue Delete Upload", /Edit/.test(billing) && /Issue/.test(billing) && /Delete/.test(billing) && /Upload document/.test(billing));
 check("Void confirm + reason", /voidConfirm/.test(billing) && /confirm: true/.test(billing) && /reason/.test(billing));
 check("issue requires document message", /document is required before issuing/i.test(billing));
 
