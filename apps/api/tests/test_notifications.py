@@ -142,6 +142,7 @@ def test_message_kinds_excluded_from_bell_but_counted_for_messages_badge() -> No
     cid = uuid.uuid4()
     actor = _admin(cid)
     conversation_id = uuid.uuid4()
+    today = date.today()
     record = MagicMock()
     record.kind = "message_received"
     record.dedupe_key = f"message:{conversation_id}:{uuid.uuid4()}:{actor.id}"
@@ -149,7 +150,7 @@ def test_message_kinds_excluded_from_bell_but_counted_for_messages_badge() -> No
     record.description = "You have a new message in TimIQ."
     record.href = f"/messages?tab=messages&conversation={conversation_id}"
     record.priority = "normal"
-    record.created_at = datetime(2026, 8, 5, 10, 0, tzinfo=timezone.utc)
+    record.created_at = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc).replace(hour=10)
 
     attendance = MagicMock()
     attendance.kind = "attendance_missing_clock_in"
@@ -158,8 +159,8 @@ def test_message_kinds_excluded_from_bell_but_counted_for_messages_badge() -> No
     attendance.description = "No clock-in today."
     attendance.href = "/live-attendance"
     attendance.priority = "high"
-    attendance.created_at = datetime(2026, 8, 5, 9, 0, tzinfo=timezone.utc)
-    attendance.work_date = date(2026, 8, 5)
+    attendance.created_at = datetime.combine(today, datetime.min.time(), tzinfo=timezone.utc).replace(hour=9)
+    attendance.work_date = today
     attendance.company_id = cid
 
     bell_item = MessageBellItem(
