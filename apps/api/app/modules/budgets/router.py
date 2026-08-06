@@ -38,8 +38,16 @@ from app.modules.budgets.schemas import (
     BudgetFinancialSummaryResponse,
     BudgetProjectCreateRequest,
     BudgetProjectDetailResponse,
+    BudgetProjectNoteCreateRequest,
+    BudgetProjectNotePatchRequest,
+    BudgetProjectNoteResponse,
     BudgetProjectPatchRequest,
     BudgetProjectSummary,
+    BudgetTaskCreateRequest,
+    BudgetTaskPatchRequest,
+    BudgetTaskReopenRequest,
+    BudgetTaskResponse,
+    BudgetTaskSummaryResponse,
     ContractValueUpdateRequest,
     InvoiceCreateRequest,
     InvoicePatchRequest,
@@ -64,6 +72,23 @@ from app.modules.budgets.saved_budgets import (
     remove_expense,
 )
 from app.modules.budgets.service import labour_cost_budget
+from app.modules.budgets.tasks_notes import (
+    cancel_task,
+    complete_task,
+    create_note,
+    create_task,
+    delete_note,
+    delete_task,
+    get_task,
+    get_task_summary,
+    list_notes,
+    list_tasks,
+    patch_note,
+    patch_task,
+    pin_note,
+    reopen_task,
+    unpin_note,
+)
 
 router = APIRouter(prefix="/api/budgets", tags=["budgets"])
 
@@ -281,6 +306,178 @@ def read_budget_expenses(
     current_user: User = Depends(require_admin_or_administrator),
 ) -> list[BudgetExpenseResponse]:
     return list_expenses_api(db_session, current_user, budget_id)
+
+
+@router.get("/{budget_id}/task-summary", response_model=BudgetTaskSummaryResponse)
+def read_budget_task_summary(
+    budget_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetTaskSummaryResponse:
+    return get_task_summary(db_session, current_user, budget_id)
+
+
+@router.get("/{budget_id}/tasks", response_model=list[BudgetTaskResponse])
+def read_budget_tasks(
+    budget_id: uuid.UUID,
+    status: str | None = Query(default=None),
+    priority: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    assignee_user_id: uuid.UUID | None = Query(default=None),
+    overdue: bool | None = Query(default=None),
+    due_from: str | None = Query(default=None),
+    due_to: str | None = Query(default=None),
+    include_completed: bool = Query(default=False),
+    search: str | None = Query(default=None),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> list[BudgetTaskResponse]:
+    return list_tasks(
+        db_session,
+        current_user,
+        budget_id,
+        status=status,
+        priority=priority,
+        category=category,
+        assignee_user_id=assignee_user_id,
+        overdue=overdue,
+        due_from=_opt_date(due_from),
+        due_to=_opt_date(due_to),
+        include_completed=include_completed,
+        search=search,
+    )
+
+
+@router.post("/{budget_id}/tasks", response_model=BudgetTaskResponse, status_code=status.HTTP_201_CREATED)
+def add_budget_task(
+    budget_id: uuid.UUID,
+    body: BudgetTaskCreateRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetTaskResponse:
+    return create_task(db_session, current_user, budget_id, body)
+
+
+@router.get("/{budget_id}/tasks/{task_id}", response_model=BudgetTaskResponse)
+def read_budget_task(
+    budget_id: uuid.UUID,
+    task_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetTaskResponse:
+    return get_task(db_session, current_user, budget_id, task_id)
+
+
+@router.patch("/{budget_id}/tasks/{task_id}", response_model=BudgetTaskResponse)
+def update_budget_task(
+    budget_id: uuid.UUID,
+    task_id: uuid.UUID,
+    body: BudgetTaskPatchRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetTaskResponse:
+    return patch_task(db_session, current_user, budget_id, task_id, body)
+
+
+@router.delete("/{budget_id}/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_budget_task_route(
+    budget_id: uuid.UUID,
+    task_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> None:
+    delete_task(db_session, current_user, budget_id, task_id)
+
+
+@router.post("/{budget_id}/tasks/{task_id}/complete", response_model=BudgetTaskResponse)
+def complete_budget_task(
+    budget_id: uuid.UUID,
+    task_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetTaskResponse:
+    return complete_task(db_session, current_user, budget_id, task_id)
+
+
+@router.post("/{budget_id}/tasks/{task_id}/reopen", response_model=BudgetTaskResponse)
+def reopen_budget_task(
+    budget_id: uuid.UUID,
+    task_id: uuid.UUID,
+    body: BudgetTaskReopenRequest | None = None,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetTaskResponse:
+    return reopen_task(db_session, current_user, budget_id, task_id, body or BudgetTaskReopenRequest())
+
+
+@router.post("/{budget_id}/tasks/{task_id}/cancel", response_model=BudgetTaskResponse)
+def cancel_budget_task(
+    budget_id: uuid.UUID,
+    task_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetTaskResponse:
+    return cancel_task(db_session, current_user, budget_id, task_id)
+
+
+@router.get("/{budget_id}/notes", response_model=list[BudgetProjectNoteResponse])
+def read_budget_notes(
+    budget_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> list[BudgetProjectNoteResponse]:
+    return list_notes(db_session, current_user, budget_id)
+
+
+@router.post("/{budget_id}/notes", response_model=BudgetProjectNoteResponse, status_code=status.HTTP_201_CREATED)
+def add_budget_note(
+    budget_id: uuid.UUID,
+    body: BudgetProjectNoteCreateRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetProjectNoteResponse:
+    return create_note(db_session, current_user, budget_id, body)
+
+
+@router.patch("/{budget_id}/notes/{note_id}", response_model=BudgetProjectNoteResponse)
+def update_budget_note(
+    budget_id: uuid.UUID,
+    note_id: uuid.UUID,
+    body: BudgetProjectNotePatchRequest,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetProjectNoteResponse:
+    return patch_note(db_session, current_user, budget_id, note_id, body)
+
+
+@router.delete("/{budget_id}/notes/{note_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_budget_note_route(
+    budget_id: uuid.UUID,
+    note_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> None:
+    delete_note(db_session, current_user, budget_id, note_id)
+
+
+@router.post("/{budget_id}/notes/{note_id}/pin", response_model=BudgetProjectNoteResponse)
+def pin_budget_note(
+    budget_id: uuid.UUID,
+    note_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetProjectNoteResponse:
+    return pin_note(db_session, current_user, budget_id, note_id)
+
+
+@router.post("/{budget_id}/notes/{note_id}/unpin", response_model=BudgetProjectNoteResponse)
+def unpin_budget_note(
+    budget_id: uuid.UUID,
+    note_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> BudgetProjectNoteResponse:
+    return unpin_note(db_session, current_user, budget_id, note_id)
 
 
 @router.post("/{budget_id}/expenses", response_model=BudgetExpenseResponse)

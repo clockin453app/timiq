@@ -13,6 +13,8 @@ from app.modules.budgets.models import (
     BudgetInvoiceDocument,
     BudgetInvoicePayment,
     BudgetProject,
+    BudgetProjectNote,
+    BudgetTask,
 )
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
@@ -383,3 +385,155 @@ def save_payment(
         db_session.flush()
     db_session.refresh(row)
     return row
+
+
+def get_budget_task(db_session: Session, task_id: uuid.UUID) -> BudgetTask | None:
+    return db_session.get(BudgetTask, task_id)
+
+
+def get_budget_task_by_client_action_id(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    client_action_id: uuid.UUID,
+) -> BudgetTask | None:
+    statement = (
+        select(BudgetTask)
+        .where(BudgetTask.company_id == company_id)
+        .where(BudgetTask.client_action_id == client_action_id)
+        .limit(1)
+    )
+    return db_session.scalars(statement).first()
+
+
+def list_budget_tasks_for_budget(
+    db_session: Session,
+    *,
+    budget_id: uuid.UUID,
+    status: str | None = None,
+    priority: str | None = None,
+    category: str | None = None,
+    assignee_user_id: uuid.UUID | None = None,
+    due_from: date | None = None,
+    due_to: date | None = None,
+    include_completed: bool = False,
+    search: str | None = None,
+    limit: int = 500,
+) -> list[BudgetTask]:
+    statement = select(BudgetTask).where(BudgetTask.budget_id == budget_id)
+    if status:
+        statement = statement.where(BudgetTask.status == status.strip().lower())
+    elif not include_completed:
+        statement = statement.where(BudgetTask.status.notin_(("completed", "cancelled")))
+    if priority:
+        statement = statement.where(BudgetTask.priority == priority.strip().lower())
+    if category:
+        statement = statement.where(BudgetTask.category == category.strip().lower())
+    if assignee_user_id is not None:
+        statement = statement.where(BudgetTask.assignee_user_id == assignee_user_id)
+    if due_from is not None:
+        statement = statement.where(BudgetTask.due_date.is_not(None)).where(BudgetTask.due_date >= due_from)
+    if due_to is not None:
+        statement = statement.where(BudgetTask.due_date.is_not(None)).where(BudgetTask.due_date <= due_to)
+    if search and search.strip():
+        q = f"%{search.strip()}%"
+        statement = statement.where(
+            or_(
+                BudgetTask.title.ilike(q),
+                BudgetTask.description.ilike(q),
+            ),
+        )
+    statement = statement.order_by(BudgetTask.created_at.desc()).limit(limit)
+    return list(db_session.scalars(statement).all())
+
+
+def save_budget_task(db_session: Session, row: BudgetTask) -> BudgetTask:
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+def delete_budget_task(db_session: Session, task_id: uuid.UUID) -> None:
+    db_session.execute(delete(BudgetTask).where(BudgetTask.id == task_id))
+    db_session.commit()
+
+
+def count_budget_tasks_by_status(
+    db_session: Session,
+    *,
+    budget_id: uuid.UUID,
+) -> dict[str, int]:
+    statement = (
+        select(BudgetTask.status, func.count())
+        .where(BudgetTask.budget_id == budget_id)
+        .group_by(BudgetTask.status)
+    )
+    rows = db_session.execute(statement).all()
+    return {str(status): int(count) for status, count in rows}
+
+
+def count_overdue_budget_tasks(
+    db_session: Session,
+    *,
+    budget_id: uuid.UUID,
+    today_local: date,
+) -> int:
+    statement = (
+        select(func.count())
+        .select_from(BudgetTask)
+        .where(BudgetTask.budget_id == budget_id)
+        .where(BudgetTask.due_date.is_not(None))
+        .where(BudgetTask.due_date < today_local)
+        .where(BudgetTask.status.notin_(("completed", "cancelled")))
+    )
+    return int(db_session.scalar(statement) or 0)
+
+
+def get_budget_project_note(db_session: Session, note_id: uuid.UUID) -> BudgetProjectNote | None:
+    return db_session.get(BudgetProjectNote, note_id)
+
+
+def get_budget_project_note_by_client_action_id(
+    db_session: Session,
+    *,
+    company_id: uuid.UUID,
+    client_action_id: uuid.UUID,
+) -> BudgetProjectNote | None:
+    statement = (
+        select(BudgetProjectNote)
+        .where(BudgetProjectNote.company_id == company_id)
+        .where(BudgetProjectNote.client_action_id == client_action_id)
+        .limit(1)
+    )
+    return db_session.scalars(statement).first()
+
+
+def list_budget_project_notes_for_budget(
+    db_session: Session,
+    *,
+    budget_id: uuid.UUID,
+    limit: int = 500,
+) -> list[BudgetProjectNote]:
+    statement = (
+        select(BudgetProjectNote)
+        .where(BudgetProjectNote.budget_id == budget_id)
+        .order_by(
+            BudgetProjectNote.is_pinned.desc(),
+            BudgetProjectNote.created_at.desc(),
+        )
+        .limit(limit)
+    )
+    return list(db_session.scalars(statement).all())
+
+
+def save_budget_project_note(db_session: Session, row: BudgetProjectNote) -> BudgetProjectNote:
+    db_session.add(row)
+    db_session.commit()
+    db_session.refresh(row)
+    return row
+
+
+def delete_budget_project_note(db_session: Session, note_id: uuid.UUID) -> None:
+    db_session.execute(delete(BudgetProjectNote).where(BudgetProjectNote.id == note_id))
+    db_session.commit()

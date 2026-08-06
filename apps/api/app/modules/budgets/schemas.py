@@ -540,3 +540,214 @@ class BudgetFinancialSummaryResponse(BaseModel):
     billing_position: BudgetBillingPosition
     profitability: BudgetProfitability
     invoice_status_counts: InvoiceStatusCounts
+
+
+TASK_STATUSES = ("to_do", "in_progress", "blocked", "completed", "cancelled")
+TASK_ACTIVE_STATUSES = ("to_do", "in_progress", "blocked")
+TASK_PRIORITIES = ("low", "normal", "high", "urgent")
+TASK_CATEGORIES = ("general", "client", "site", "purchase", "labour", "billing", "compliance")
+NOTE_BODY_MAX = 5000
+
+
+class BudgetTaskCreateRequest(BaseModel):
+    client_action_id: uuid.UUID
+    title: str = Field(..., min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=8000)
+    status: str = Field(default="to_do", max_length=20)
+    priority: str = Field(default="normal", max_length=20)
+    category: str = Field(default="general", max_length=32)
+    due_date: date | None = None
+    assignee_user_id: uuid.UUID | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("title is required.")
+        return s
+
+    @field_validator("description")
+    @classmethod
+    def _description(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        return s or None
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str) -> str:
+        s = v.strip().lower()
+        if s not in ("to_do", "in_progress", "blocked"):
+            raise ValueError("New tasks must start as to_do, in_progress, or blocked.")
+        return s
+
+    @field_validator("priority")
+    @classmethod
+    def _priority(cls, v: str) -> str:
+        s = v.strip().lower()
+        if s not in TASK_PRIORITIES:
+            raise ValueError(f"priority must be one of: {', '.join(TASK_PRIORITIES)}.")
+        return s
+
+    @field_validator("category")
+    @classmethod
+    def _category(cls, v: str) -> str:
+        s = v.strip().lower()
+        if s not in TASK_CATEGORIES:
+            raise ValueError(f"category must be one of: {', '.join(TASK_CATEGORIES)}.")
+        return s
+
+
+class BudgetTaskPatchRequest(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, max_length=8000)
+    status: str | None = Field(default=None, max_length=20)
+    priority: str | None = Field(default=None, max_length=20)
+    category: str | None = Field(default=None, max_length=32)
+    due_date: date | None = None
+    assignee_user_id: uuid.UUID | None = None
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        if not s:
+            raise ValueError("title cannot be empty.")
+        return s
+
+    @field_validator("description")
+    @classmethod
+    def _description(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        return s or None
+
+    @field_validator("status")
+    @classmethod
+    def _status(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip().lower()
+        if s not in TASK_ACTIVE_STATUSES:
+            raise ValueError("Use complete/reopen/cancel endpoints for terminal status changes.")
+        return s
+
+    @field_validator("priority")
+    @classmethod
+    def _priority(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip().lower()
+        if s not in TASK_PRIORITIES:
+            raise ValueError(f"priority must be one of: {', '.join(TASK_PRIORITIES)}.")
+        return s
+
+    @field_validator("category")
+    @classmethod
+    def _category(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip().lower()
+        if s not in TASK_CATEGORIES:
+            raise ValueError(f"category must be one of: {', '.join(TASK_CATEGORIES)}.")
+        return s
+
+
+class BudgetTaskReopenRequest(BaseModel):
+    target_status: str = Field(default="to_do", max_length=20)
+
+    @field_validator("target_status")
+    @classmethod
+    def _target(cls, v: str) -> str:
+        s = v.strip().lower()
+        if s not in ("to_do", "in_progress"):
+            raise ValueError("target_status must be to_do or in_progress.")
+        return s
+
+
+class BudgetTaskResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    company_id: uuid.UUID
+    budget_id: uuid.UUID
+    client_action_id: uuid.UUID | None = None
+    title: str
+    description: str | None = None
+    status: str
+    priority: str
+    category: str
+    due_date: date | None = None
+    assignee_user_id: uuid.UUID | None = None
+    created_by_user_id: uuid.UUID | None = None
+    updated_by_user_id: uuid.UUID | None = None
+    completed_by_user_id: uuid.UUID | None = None
+    completed_at: datetime | None = None
+    cancelled_by_user_id: uuid.UUID | None = None
+    cancelled_at: datetime | None = None
+    created_at: datetime
+    updated_at: datetime
+    is_overdue: bool = False
+
+
+class BudgetTaskSummaryResponse(BaseModel):
+    budget_id: uuid.UUID
+    company_id: uuid.UUID
+    outstanding: int = 0
+    in_progress: int = 0
+    blocked: int = 0
+    overdue: int = 0
+    completed: int = 0
+
+
+class BudgetProjectNoteCreateRequest(BaseModel):
+    client_action_id: uuid.UUID
+    body: str = Field(..., min_length=1, max_length=NOTE_BODY_MAX)
+    is_pinned: bool = False
+
+    @field_validator("body")
+    @classmethod
+    def _body(cls, v: str) -> str:
+        s = v.strip()
+        if not s:
+            raise ValueError("body is required.")
+        if len(s) > NOTE_BODY_MAX:
+            raise ValueError(f"body must be at most {NOTE_BODY_MAX} characters.")
+        return s
+
+
+class BudgetProjectNotePatchRequest(BaseModel):
+    body: str | None = Field(default=None, min_length=1, max_length=NOTE_BODY_MAX)
+    is_pinned: bool | None = None
+
+    @field_validator("body")
+    @classmethod
+    def _body(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        s = v.strip()
+        if not s:
+            raise ValueError("body cannot be empty.")
+        if len(s) > NOTE_BODY_MAX:
+            raise ValueError(f"body must be at most {NOTE_BODY_MAX} characters.")
+        return s
+
+
+class BudgetProjectNoteResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: uuid.UUID
+    company_id: uuid.UUID
+    budget_id: uuid.UUID
+    client_action_id: uuid.UUID | None = None
+    body: str
+    is_pinned: bool = False
+    created_by_user_id: uuid.UUID | None = None
+    updated_by_user_id: uuid.UUID | None = None
+    created_at: datetime
+    updated_at: datetime

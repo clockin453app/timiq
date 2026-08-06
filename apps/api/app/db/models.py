@@ -12,6 +12,8 @@ from app.modules.budgets.models import (
     BudgetInvoiceDocument,
     BudgetInvoicePayment,
     BudgetProject,
+    BudgetProjectNote,
+    BudgetTask,
 )
 from app.modules.companies.models import Company, CompanyTimePolicy
 from app.modules.employee_profiles.models import EmployeeProfile
@@ -63,6 +65,8 @@ __all__ = [
     "BudgetInvoiceDocument",
     "BudgetInvoicePayment",
     "BudgetProject",
+    "BudgetProjectNote",
+    "BudgetTask",
     "Company",
     "CompanyAccountingSettings",
     "AccountingExportRun",
