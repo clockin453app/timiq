@@ -937,3 +937,372 @@ export async function reverseInvoicePayment(
   }
   return response.json() as Promise<PaymentResponse>;
 }
+
+/* —— Budget tasks & project notes —— */
+
+export type TaskStatus = "to_do" | "in_progress" | "blocked" | "completed" | "cancelled";
+export type TaskPriority = "low" | "normal" | "high" | "urgent";
+export type TaskCategory =
+  | "general"
+  | "client"
+  | "site"
+  | "purchase"
+  | "labour"
+  | "billing"
+  | "compliance";
+
+export const TASK_STATUSES: TaskStatus[] = [
+  "to_do",
+  "in_progress",
+  "blocked",
+  "completed",
+  "cancelled",
+];
+export const TASK_PRIORITIES: TaskPriority[] = ["low", "normal", "high", "urgent"];
+export const TASK_CATEGORIES: TaskCategory[] = [
+  "general",
+  "client",
+  "site",
+  "purchase",
+  "labour",
+  "billing",
+  "compliance",
+];
+
+export type BudgetTaskResponse = {
+  id: string;
+  company_id: string;
+  budget_id: string;
+  client_action_id: string | null;
+  title: string;
+  description: string | null;
+  status: TaskStatus | string;
+  priority: TaskPriority | string;
+  category: TaskCategory | string;
+  due_date: string | null;
+  assignee_user_id: string | null;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  completed_by_user_id: string | null;
+  completed_at: string | null;
+  cancelled_by_user_id: string | null;
+  cancelled_at: string | null;
+  created_at: string;
+  updated_at: string;
+  is_overdue: boolean;
+};
+
+export type BudgetTaskSummaryResponse = {
+  budget_id: string;
+  company_id: string;
+  outstanding: number;
+  in_progress: number;
+  blocked: number;
+  overdue: number;
+  completed: number;
+};
+
+export type BudgetProjectNoteResponse = {
+  id: string;
+  company_id: string;
+  budget_id: string;
+  client_action_id: string | null;
+  body: string;
+  is_pinned: boolean;
+  created_by_user_id: string | null;
+  updated_by_user_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CreateBudgetTaskBody = {
+  client_action_id: string;
+  title: string;
+  description?: string | null;
+  status?: TaskStatus | string;
+  priority?: TaskPriority | string;
+  category?: TaskCategory | string;
+  due_date?: string | null;
+  assignee_user_id?: string | null;
+};
+
+export type PatchBudgetTaskBody = {
+  title?: string | null;
+  description?: string | null;
+  status?: TaskStatus | string | null;
+  priority?: TaskPriority | string | null;
+  category?: TaskCategory | string | null;
+  due_date?: string | null;
+  assignee_user_id?: string | null;
+};
+
+export type ReopenBudgetTaskBody = {
+  target_status?: "to_do" | "in_progress" | string;
+};
+
+export type CreateBudgetNoteBody = {
+  client_action_id: string;
+  body: string;
+  is_pinned?: boolean;
+};
+
+export type PatchBudgetNoteBody = {
+  body?: string | null;
+  is_pinned?: boolean | null;
+};
+
+export type ListBudgetTasksParams = {
+  status?: string | null;
+  priority?: string | null;
+  category?: string | null;
+  assigneeUserId?: string | null;
+  overdue?: boolean | null;
+  dueFrom?: string | null;
+  dueTo?: string | null;
+  includeCompleted?: boolean;
+  search?: string | null;
+};
+
+export async function fetchTaskSummary(budgetId: string): Promise<BudgetTaskSummaryResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/task-summary`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not load task summary.");
+  }
+  return response.json() as Promise<BudgetTaskSummaryResponse>;
+}
+
+export async function listBudgetTasks(
+  budgetId: string,
+  params: ListBudgetTasksParams = {},
+): Promise<BudgetTaskResponse[]> {
+  const search = new URLSearchParams();
+  if (params.status) {
+    search.set("status", params.status);
+  }
+  if (params.priority) {
+    search.set("priority", params.priority);
+  }
+  if (params.category) {
+    search.set("category", params.category);
+  }
+  if (params.assigneeUserId) {
+    search.set("assignee_user_id", params.assigneeUserId);
+  }
+  if (params.overdue != null) {
+    search.set("overdue", String(params.overdue));
+  }
+  if (params.dueFrom) {
+    search.set("due_from", params.dueFrom);
+  }
+  if (params.dueTo) {
+    search.set("due_to", params.dueTo);
+  }
+  if (params.includeCompleted != null) {
+    search.set("include_completed", String(params.includeCompleted));
+  }
+  if (params.search) {
+    search.set("search", params.search);
+  }
+  const qs = search.toString();
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/tasks${qs ? `?${qs}` : ""}`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not load tasks.");
+  }
+  return response.json() as Promise<BudgetTaskResponse[]>;
+}
+
+export async function createBudgetTask(
+  budgetId: string,
+  body: CreateBudgetTaskBody,
+): Promise<BudgetTaskResponse> {
+  const response = await fetch(`${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/tasks`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not create task.");
+  }
+  return response.json() as Promise<BudgetTaskResponse>;
+}
+
+export async function getBudgetTask(budgetId: string, taskId: string): Promise<BudgetTaskResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/tasks/${encodeURIComponent(taskId)}`,
+    { method: "GET", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not load task.");
+  }
+  return response.json() as Promise<BudgetTaskResponse>;
+}
+
+export async function patchBudgetTask(
+  budgetId: string,
+  taskId: string,
+  body: PatchBudgetTaskBody,
+): Promise<BudgetTaskResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/tasks/${encodeURIComponent(taskId)}`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not update task.");
+  }
+  return response.json() as Promise<BudgetTaskResponse>;
+}
+
+export async function deleteBudgetTask(budgetId: string, taskId: string): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/tasks/${encodeURIComponent(taskId)}`,
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not delete task.");
+  }
+}
+
+export async function completeBudgetTask(
+  budgetId: string,
+  taskId: string,
+): Promise<BudgetTaskResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/tasks/${encodeURIComponent(taskId)}/complete`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not complete task.");
+  }
+  return response.json() as Promise<BudgetTaskResponse>;
+}
+
+export async function reopenBudgetTask(
+  budgetId: string,
+  taskId: string,
+  body: ReopenBudgetTaskBody = {},
+): Promise<BudgetTaskResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/tasks/${encodeURIComponent(taskId)}/reopen`,
+    {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not reopen task.");
+  }
+  return response.json() as Promise<BudgetTaskResponse>;
+}
+
+export async function cancelBudgetTask(
+  budgetId: string,
+  taskId: string,
+): Promise<BudgetTaskResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/tasks/${encodeURIComponent(taskId)}/cancel`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not cancel task.");
+  }
+  return response.json() as Promise<BudgetTaskResponse>;
+}
+
+export async function listBudgetNotes(budgetId: string): Promise<BudgetProjectNoteResponse[]> {
+  const response = await fetch(`${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/notes`, {
+    method: "GET",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not load project notes.");
+  }
+  return response.json() as Promise<BudgetProjectNoteResponse[]>;
+}
+
+export async function createBudgetNote(
+  budgetId: string,
+  body: CreateBudgetNoteBody,
+): Promise<BudgetProjectNoteResponse> {
+  const response = await fetch(`${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/notes`, {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    await parseError(response, "Could not create project note.");
+  }
+  return response.json() as Promise<BudgetProjectNoteResponse>;
+}
+
+export async function patchBudgetNote(
+  budgetId: string,
+  noteId: string,
+  body: PatchBudgetNoteBody,
+): Promise<BudgetProjectNoteResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/notes/${encodeURIComponent(noteId)}`,
+    {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not update project note.");
+  }
+  return response.json() as Promise<BudgetProjectNoteResponse>;
+}
+
+export async function deleteBudgetNote(budgetId: string, noteId: string): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/notes/${encodeURIComponent(noteId)}`,
+    { method: "DELETE", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not delete project note.");
+  }
+}
+
+export async function pinBudgetNote(
+  budgetId: string,
+  noteId: string,
+): Promise<BudgetProjectNoteResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/notes/${encodeURIComponent(noteId)}/pin`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not pin project note.");
+  }
+  return response.json() as Promise<BudgetProjectNoteResponse>;
+}
+
+export async function unpinBudgetNote(
+  budgetId: string,
+  noteId: string,
+): Promise<BudgetProjectNoteResponse> {
+  const response = await fetch(
+    `${API_URL}/api/budgets/${encodeURIComponent(budgetId)}/notes/${encodeURIComponent(noteId)}/unpin`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) {
+    await parseError(response, "Could not unpin project note.");
+  }
+  return response.json() as Promise<BudgetProjectNoteResponse>;
+}

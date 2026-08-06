@@ -35,6 +35,7 @@ import { listLocations, type Location } from "@/features/locations/api";
 import { listWorkplaces, type Workplace } from "@/features/workplaces/api";
 import { BudgetBillingTab } from "./budget-billing-tab";
 import { BudgetOverviewFinancial } from "./budget-overview-financial";
+import { BudgetTasksNotesTab } from "./budget-tasks-notes-tab";
 import {
   budgetStatusBadgeTone,
   budgetUnderlineTabClass,
@@ -46,7 +47,7 @@ import {
 
 const BUDGET_STATUSES = ["draft", "active", "completed", "archived"] as const;
 
-type BudgetDetailTab = "overview" | "purchases" | "labour" | "billing" | "reports";
+type BudgetDetailTab = "overview" | "purchases" | "labour" | "billing" | "tasks" | "reports";
 
 function overlayPanelClass() {
   return "w-full max-w-lg rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)] p-4 shadow-lg";
@@ -896,6 +897,7 @@ export function BudgetsSavedTab() {
                   ["purchases", "Purchases"],
                   ["labour", "Labour"],
                   ["billing", "Billing"],
+                  ["tasks", "Tasks & notes"],
                   ["reports", "Reports"],
                 ] as const
               ).map(([id, label]) => (
@@ -1102,6 +1104,10 @@ export function BudgetsSavedTab() {
                 budgetId={b.id}
                 defaultCustomerName={b.client_name}
               />
+            ) : null}
+
+            {detailTab === "tasks" ? (
+              <BudgetTasksNotesTab archived={b.status === "archived"} budgetId={b.id} />
             ) : null}
 
             {detailTab === "reports" ? (

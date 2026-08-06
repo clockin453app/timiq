@@ -84,8 +84,11 @@ check("Print invoice register", /Print invoice register/.test(reportsBlock));
 check("reports buttons min-h-[44px]", /min-h-\[44px\]/.test(reportsBlock));
 check("reports aria-labels", /aria-label="Export cost CSV"/.test(reportsBlock));
 
-// No Tasks
-check("no Tasks tab", !/\["tasks"/.test(saved) && !/>\s*Tasks\s*</.test(saved));
+// Tasks & notes tab is Phase 4 (see test-budget-tasks-notes-phase4.mjs)
+check(
+  "Tasks & notes tab after Billing before Reports (Phase 4)",
+  /\["billing", "Billing"\][\s\S]*\["tasks", "Tasks & notes"\][\s\S]*\["reports", "Reports"\]/.test(saved),
+);
 
 // Overflow guards
 check("overview min-w-0", /min-w-0/.test(overview) && /min-w-0 max-w-full/.test(overview));

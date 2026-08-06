@@ -19,7 +19,7 @@ function check(name, cond) {
   passed += 1;
 }
 
-// Tab order: Billing after Labour, before Reports; no Tasks
+// Tab order: Billing after Labour (Tasks & notes is Phase 4 — see test-budget-tasks-notes-phase4.mjs)
 const tabBlock = saved.match(/\(\(\s*\[[\s\S]*?\] as const\s*\)\)\.map\(\(\[id, label\]\)/)?.[0] ?? "";
 check(
   "Billing tab after Labour",
@@ -28,7 +28,6 @@ check(
 );
 check("BudgetDetailTab includes billing", /type BudgetDetailTab =[\s\S]*\"billing\"/.test(saved));
 check("renders BudgetBillingTab", /BudgetBillingTab/.test(saved) && /detailTab === \"billing\"/.test(saved));
-check("no Tasks tab", !/\[\"tasks\"/.test(saved) && !/>\s*Tasks\s*</.test(saved));
 
 // Contract value UX
 check("Not configured when null", /Not configured/.test(billing));

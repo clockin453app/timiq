@@ -87,7 +87,11 @@ check("full-screen-friendly payment modals", /fixed inset-0/.test(billing) && /R
 // Out of scope
 check("no bank feed", !/bank feed/i.test(billing) && !/bank_feed/i.test(billing) && !/bank feed/i.test(api));
 check("no credit note", !/credit note/i.test(billing) && !/credit_note/i.test(billing));
-check("no Tasks tab", !/\[\"tasks\"/.test(saved) && !/>\s*Tasks\s*</.test(saved));
+// Tasks & notes tab is Phase 4 (see test-budget-tasks-notes-phase4.mjs)
+check(
+  "Tasks & notes tab after Billing before Reports (Phase 4)",
+  /\["billing", "Billing"\][\s\S]*\["tasks", "Tasks & notes"\][\s\S]*\["reports", "Reports"\]/.test(saved),
+);
 check(
   "no Overview redesign in billing",
   !/Overview redesign/i.test(billing) && !/detailTab === \"overview\"/.test(billing),
