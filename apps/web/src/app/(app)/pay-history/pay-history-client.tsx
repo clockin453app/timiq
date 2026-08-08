@@ -172,7 +172,7 @@ export function PayHistoryClient() {
         title={t("pay_history.title", "Pay history")}
         description={t(
           "pay_history.page_description",
-          "Approved and paid payroll only. Figures come from the server. Payslips open in a new tab using your signed-in session.",
+          "Paid CIS payroll only. Payslips become available after payroll is marked as paid.",
         )}
       />
       <SheetBody className="space-y-4">
@@ -230,7 +230,7 @@ export function PayHistoryClient() {
             <p className="mt-2 leading-relaxed">
               {t(
                 "pay_history.empty_body",
-                "When payroll for you is approved or marked paid, it will show here. You can open a week for details and print a payslip.",
+                "When payroll for you is marked as paid, it will show here. You can open a week for details and download a payslip.",
               )}
             </p>
           </div>
