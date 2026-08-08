@@ -13,7 +13,6 @@ import {
   Button,
   FormActions,
   FormField,
-  PageHeader,
   Sheet,
   SheetBody,
   Table,
@@ -135,7 +134,58 @@ type PhotoQueuePanelProps = {
   onPick: (files: File[]) => void;
   onRemove: (key: string) => void;
   onClear: () => void;
+  /** Controls (caption + choose/take/clear). Default true. */
+  showControls?: boolean;
+  /** Selected-photo thumbnail gallery. Default true. */
+  showGallery?: boolean;
 };
+
+function PhotoQueueGallery({
+  queued,
+  disabled,
+  onRemove,
+}: {
+  queued: QueuedPhoto[];
+  disabled: boolean;
+  onRemove: (key: string) => void;
+}) {
+  if (queued.length === 0) {
+    return null;
+  }
+  return (
+    <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+      {queued.map((item) => (
+        <li
+          className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)]"
+          key={item.key}
+        >
+          <div className="relative aspect-square bg-[var(--color-cell)]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              alt=""
+              className="h-full w-full object-cover"
+              src={item.previewUrl}
+            />
+          </div>
+          <div className="flex items-start justify-between gap-1 p-1.5">
+            <p className="min-w-0 flex-1 truncate text-[length:var(--text-secondary)] text-[var(--color-text)]" title={item.file.name}>
+              {item.file.name}
+            </p>
+            <button
+              aria-label={`Remove ${item.file.name}`}
+              className="timiq-touch-extend shrink-0 rounded px-1.5 py-0.5 text-[length:var(--text-secondary)] font-semibold text-[var(--color-danger-700)]"
+              disabled={disabled}
+              onClick={() => onRemove(item.key)}
+              type="button"
+            >
+              Remove
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
 function PhotoQueuePanel({
   queued,
@@ -149,6 +199,8 @@ function PhotoQueuePanel({
   onPick,
   onRemove,
   onClear,
+  showControls = true,
+  showGallery = true,
 }: PhotoQueuePanelProps) {
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
@@ -157,118 +209,88 @@ function PhotoQueuePanel({
 
   return (
     <div className="min-w-0 space-y-[var(--space-form-gap)]">
-      <p className="timiq-caption break-words">
-        JPEG, PNG, or WebP · up to {maxAttachments} photos per update · {maxMb} MB each before
-        compression · {room} slot{room === 1 ? "" : "s"} remaining
-      </p>
+      {showControls ? (
+        <>
+          <p className="timiq-caption break-words">
+            JPEG / PNG / WebP · {maxAttachments} max · {maxMb} MB each · {room} slot
+            {room === 1 ? "" : "s"} left
+          </p>
 
-      <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row">
-        <Button
-          className="w-full sm:w-auto"
-          disabled={disabled || room === 0}
-          onClick={() => galleryRef.current?.click()}
-          type="button"
-          variant="secondary"
-        >
-          Choose photos
-        </Button>
-        <Button
-          className="w-full sm:w-auto"
-          disabled={disabled || room === 0}
-          onClick={() => cameraRef.current?.click()}
-          type="button"
-          variant="secondary"
-        >
-          Take photo
-        </Button>
-        {queued.length > 0 ? (
-          <Button
-            className="w-full sm:w-auto"
-            disabled={disabled}
-            onClick={onClear}
-            type="button"
-            variant="ghost"
-          >
-            Clear all
-          </Button>
-        ) : null}
-      </div>
-
-      {/* Gallery / multi-select — no capture so gallery remains available */}
-      <input
-        accept="image/jpeg,image/png,image/webp"
-        className="sr-only"
-        disabled={disabled || room === 0}
-        id={inputId}
-        multiple
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          if (files.length > 0) {
-            onPick(files);
-          }
-        }}
-        ref={galleryRef}
-        type="file"
-      />
-      {/* Camera preference only — separate control so gallery is not blocked */}
-      <input
-        accept="image/jpeg,image/png,image/webp"
-        capture="environment"
-        className="sr-only"
-        disabled={disabled || room === 0}
-        multiple
-        onChange={(e) => {
-          const files = Array.from(e.target.files ?? []);
-          e.target.value = "";
-          if (files.length > 0) {
-            onPick(files);
-          }
-        }}
-        ref={cameraRef}
-        type="file"
-      />
-
-      {notice ? <p className="timiq-caption break-words">{notice}</p> : null}
-      {error ? (
-        <p className="break-words text-[length:var(--text-secondary)] text-[var(--color-danger-700)]" role="alert">
-          {error}
-        </p>
-      ) : null}
-
-      {queued.length > 0 ? (
-        <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
-          {queued.map((item) => (
-            <li
-              className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)]"
-              key={item.key}
+          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row">
+            <Button
+              className="min-h-[44px] w-full sm:w-auto"
+              disabled={disabled || room === 0}
+              onClick={() => galleryRef.current?.click()}
+              type="button"
+              variant="secondary"
             >
-              <div className="relative aspect-square bg-[var(--color-cell)]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  alt=""
-                  className="h-full w-full object-cover"
-                  src={item.previewUrl}
-                />
-              </div>
-              <div className="flex items-start justify-between gap-1 p-1.5">
-                <p className="min-w-0 flex-1 truncate text-[length:var(--text-secondary)] text-[var(--color-text)]" title={item.file.name}>
-                  {item.file.name}
-                </p>
-                <button
-                  aria-label={`Remove ${item.file.name}`}
-                  className="timiq-touch-extend shrink-0 rounded px-1.5 py-0.5 text-[length:var(--text-secondary)] font-semibold text-[var(--color-danger-700)]"
-                  disabled={disabled}
-                  onClick={() => onRemove(item.key)}
-                  type="button"
-                >
-                  Remove
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+              Choose photos
+            </Button>
+            <Button
+              className="min-h-[44px] w-full sm:w-auto"
+              disabled={disabled || room === 0}
+              onClick={() => cameraRef.current?.click()}
+              type="button"
+              variant="secondary"
+            >
+              Take photo
+            </Button>
+            {queued.length > 0 ? (
+              <Button
+                className="min-h-[44px] w-full sm:w-auto"
+                disabled={disabled}
+                onClick={onClear}
+                type="button"
+                variant="ghost"
+              >
+                Clear all
+              </Button>
+            ) : null}
+          </div>
+
+          <input
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            disabled={disabled || room === 0}
+            id={inputId}
+            multiple
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = "";
+              if (files.length > 0) {
+                onPick(files);
+              }
+            }}
+            ref={galleryRef}
+            type="file"
+          />
+          <input
+            accept="image/jpeg,image/png,image/webp"
+            capture="environment"
+            className="sr-only"
+            disabled={disabled || room === 0}
+            multiple
+            onChange={(e) => {
+              const files = Array.from(e.target.files ?? []);
+              e.target.value = "";
+              if (files.length > 0) {
+                onPick(files);
+              }
+            }}
+            ref={cameraRef}
+            type="file"
+          />
+
+          {notice ? <p className="timiq-caption break-words">{notice}</p> : null}
+          {error ? (
+            <p className="break-words text-[length:var(--text-secondary)] text-[var(--color-danger-700)]" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </>
       ) : null}
+
+      {showGallery ? <PhotoQueueGallery disabled={disabled} onRemove={onRemove} queued={queued} /> : null}
     </div>
   );
 }
@@ -294,7 +316,6 @@ export function SiteProgressClient() {
   const [progressStatus, setProgressStatus] = useState("in_progress");
   const [notes, setNotes] = useState("");
   const [percent, setPercent] = useState("");
-  const [moreOpen, setMoreOpen] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<SiteProgressFieldErrors>({});
   const [formError, setFormError] = useState("");
   const [offlineNotice, setOfflineNotice] = useState("");
@@ -924,14 +945,8 @@ export function SiteProgressClient() {
 
   return (
     <Sheet>
-      <PageHeader
-        description={t(
-          "site_progress.page_description_detail",
-          "Log site work with photos in one step. Choose date, site, and photos, then submit. Only locations you are assigned to appear below.",
-        )}
-        title={t("site_progress.page_title", "Site progress")}
-      />
-      <SheetBody className="min-w-0 space-y-[var(--space-section)] scroll-pb-24 md:p-5">
+      <h1 className="sr-only">{t("site_progress.page_title", "Site progress")}</h1>
+      <SheetBody className="min-w-0 space-y-4 scroll-pb-24 md:space-y-[var(--space-section)] md:p-5">
         <div aria-atomic="true" aria-live="polite" className="sr-only">
           {liveStatus}
         </div>
@@ -958,59 +973,128 @@ export function SiteProgressClient() {
           </div>
         ) : null}
 
-        <div className="overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]">
-          <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-[var(--space-card)] py-2.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+        <section
+          aria-labelledby={`${formId}-new-heading`}
+          className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]"
+          data-site-progress-form="new-update"
+        >
+          <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 md:px-[var(--space-card)] md:py-2.5">
+            <h2
+              className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]"
+              id={`${formId}-new-heading`}
+            >
               {t("site_progress.section_new", "New update")}
-            </p>
+            </h2>
           </div>
           <form
-            className={`${uiClasses.formStack} p-[var(--space-card)]`}
+            className={`${uiClasses.formStack} p-3 md:p-[var(--space-card)]`}
+            data-site-progress-form-order="metadata-photos-submit-previews"
             noValidate
             onSubmit={(e) => void handleSubmit(e)}
           >
-            <FormField
-              error={fieldErrors.workDate}
-              htmlFor={`${formId}-work-date`}
-              label={t("site_progress.lbl_work_date", "Work date")}
-              required
-            >
-              <input
-                className="timiq-input w-full min-w-0"
-                id={`${formId}-work-date`}
-                onChange={(e) => {
-                  setWorkDate(e.target.value);
-                  setFieldErrors((prev) => ({ ...prev, workDate: undefined }));
-                }}
+            <div className="grid min-w-0 grid-cols-1 gap-[var(--space-form-gap)] md:grid-cols-2">
+              <FormField
+                error={fieldErrors.workDate}
+                htmlFor={`${formId}-work-date`}
+                label={t("site_progress.lbl_work_date", "Work date")}
                 required
-                type="date"
-                value={workDate}
+              >
+                <input
+                  className="timiq-input min-h-[44px] w-full min-w-0"
+                  id={`${formId}-work-date`}
+                  onChange={(e) => {
+                    setWorkDate(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, workDate: undefined }));
+                  }}
+                  required
+                  type="date"
+                  value={workDate}
+                />
+              </FormField>
+
+              <FormField
+                error={fieldErrors.locationId}
+                htmlFor={`${formId}-location`}
+                label={t("site_progress.lbl_site_location", "Site / location")}
+                required
+              >
+                <select
+                  className="timiq-select min-h-[44px] w-full min-w-0"
+                  id={`${formId}-location`}
+                  onChange={(e) => {
+                    setLocationId(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, locationId: undefined }));
+                  }}
+                  required
+                  value={locationId}
+                >
+                  <option value="">{t("common.select", "Select…")}</option>
+                  {options.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            </div>
+
+            <FormField htmlFor={`${formId}-title`} label={t("site_progress.lbl_title", "Title / summary")}>
+              <input
+                className="timiq-input min-h-[44px] w-full min-w-0"
+                id={`${formId}-title`}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder={t("site_progress.placeholder_title", "e.g. South elevation insulation")}
+                value={title}
               />
             </FormField>
 
-            <FormField
-              error={fieldErrors.locationId}
-              htmlFor={`${formId}-location`}
-              label={t("site_progress.lbl_site_location", "Site / location")}
-              required
-            >
-              <select
-                className="timiq-select w-full min-w-0"
-                id={`${formId}-location`}
-                onChange={(e) => {
-                  setLocationId(e.target.value);
-                  setFieldErrors((prev) => ({ ...prev, locationId: undefined }));
-                }}
-                required
-                value={locationId}
+            <div className="grid min-w-0 grid-cols-1 gap-[var(--space-form-gap)] md:grid-cols-2">
+              <FormField
+                htmlFor={`${formId}-status`}
+                label={t("site_progress.lbl_progress_status", "Progress status")}
               >
-                <option value="">{t("common.select", "Select…")}</option>
-                {options.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </select>
+                <select
+                  className="timiq-select min-h-[44px] w-full min-w-0"
+                  id={`${formId}-status`}
+                  onChange={(e) => setProgressStatus(e.target.value)}
+                  value={progressStatus}
+                >
+                  {WORK_PROGRESS_STATUS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {genericStatusLabel(t, o.value)}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField
+                error={fieldErrors.percent}
+                htmlFor={`${formId}-percent`}
+                label={t("site_progress.lbl_percent_optional", "Percent complete (optional)")}
+              >
+                <input
+                  className="timiq-input min-h-[44px] w-full min-w-0"
+                  id={`${formId}-percent`}
+                  inputMode="numeric"
+                  max={100}
+                  min={0}
+                  onChange={(e) => {
+                    setPercent(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, percent: undefined }));
+                  }}
+                  placeholder={t("site_progress.placeholder_percent", "0–100")}
+                  type="number"
+                  value={percent}
+                />
+              </FormField>
+            </div>
+
+            <FormField htmlFor={`${formId}-notes`} label={t("site_progress.lbl_notes", "Notes / details")}>
+              <textarea
+                className="timiq-input min-h-[5rem] w-full min-w-0"
+                id={`${formId}-notes`}
+                onChange={(e) => setNotes(e.target.value)}
+                value={notes}
+              />
             </FormField>
 
             <FormField
@@ -1033,74 +1117,10 @@ export function SiteProgressClient() {
                 onPick={pickIntoCreateQueue}
                 onRemove={(key) => setCreateQueue((q) => removeQueuedPhoto(q, key))}
                 queued={createQueue}
+                showControls
+                showGallery={false}
               />
             </FormField>
-
-            <FormField htmlFor={`${formId}-notes`} label={t("site_progress.lbl_notes", "Notes / details")}>
-              <textarea
-                className="timiq-input min-h-[5rem] w-full min-w-0"
-                id={`${formId}-notes`}
-                onChange={(e) => setNotes(e.target.value)}
-                value={notes}
-              />
-            </FormField>
-
-            <details
-              className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-[var(--color-header)] px-3 py-2"
-              onToggle={(e) => setMoreOpen((e.target as HTMLDetailsElement).open)}
-              open={moreOpen}
-            >
-              <summary className="cursor-pointer text-[length:var(--text-label)] font-semibold text-[var(--color-text)]">
-                More details
-              </summary>
-              <div className={`${uiClasses.formStack} mt-3`}>
-                <FormField htmlFor={`${formId}-title`} label={t("site_progress.lbl_title", "Title / summary")}>
-                  <input
-                    className="timiq-input w-full min-w-0"
-                    id={`${formId}-title`}
-                    onChange={(e) => setTitle(e.target.value)}
-                    value={title}
-                  />
-                </FormField>
-                <FormField
-                  htmlFor={`${formId}-status`}
-                  label={t("site_progress.lbl_progress_status", "Progress status")}
-                >
-                  <select
-                    className="timiq-select w-full min-w-0"
-                    id={`${formId}-status`}
-                    onChange={(e) => setProgressStatus(e.target.value)}
-                    value={progressStatus}
-                  >
-                    {WORK_PROGRESS_STATUS_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {genericStatusLabel(t, o.value)}
-                      </option>
-                    ))}
-                  </select>
-                </FormField>
-                <FormField
-                  error={fieldErrors.percent}
-                  htmlFor={`${formId}-percent`}
-                  label={t("site_progress.lbl_percent_optional", "Percent complete (optional)")}
-                >
-                  <input
-                    className="timiq-input w-full min-w-0"
-                    id={`${formId}-percent`}
-                    inputMode="numeric"
-                    max={100}
-                    min={0}
-                    onChange={(e) => {
-                      setPercent(e.target.value);
-                      setFieldErrors((prev) => ({ ...prev, percent: undefined }));
-                    }}
-                    placeholder={t("site_progress.placeholder_percent", "0–100")}
-                    type="number"
-                    value={percent}
-                  />
-                </FormField>
-              </div>
-            </details>
 
             {(formBusy || submitPhase === "partial" || submitBarPercent > 0) && submitPhase !== "idle" ? (
               <div className="space-y-2 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2">
@@ -1156,17 +1176,42 @@ export function SiteProgressClient() {
             ) : null}
 
             <Button
-              className="w-full"
+              className="min-h-[44px] w-full"
               disabled={formBusy || options.length === 0}
               type="submit"
               variant="primary"
             >
               {formBusy
-                ? submitPhaseLabel(submitPhase, submitProgress) || t("site_progress.submitting", "Saving…")
-                : t("site_progress.submit_update", "Submit update")}
+                ? submitPhaseLabel(submitPhase, submitProgress) ||
+                  t("site_progress.submitting_pictures", "Submitting…")
+                : t("site_progress.submit_pictures", "Submit pictures")}
             </Button>
+
+            {createQueue.length > 0 ? (
+              <div className="min-w-0 space-y-2" data-site-progress-selected-photos>
+                <h3 className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+                  Selected photos ({createQueue.length})
+                </h3>
+                <PhotoQueuePanel
+                  disabled={formBusy}
+                  existingCount={0}
+                  inputId={`${formId}-photos-gallery`}
+                  maxAttachments={maxAttachments}
+                  maxOriginalBytes={maxOriginalBytes}
+                  onClear={() => {
+                    setCreateQueue((q) => clearQueuedPhotos(q));
+                    setCreatePhotoNotice("");
+                  }}
+                  onPick={pickIntoCreateQueue}
+                  onRemove={(key) => setCreateQueue((q) => removeQueuedPhoto(q, key))}
+                  queued={createQueue}
+                  showControls={false}
+                  showGallery
+                />
+              </div>
+            ) : null}
           </form>
-        </div>
+        </section>
 
         {activeEntryId ? (
           <div

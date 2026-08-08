@@ -233,8 +233,9 @@ check("offline queue validation uses the same thirty-picture maximum", () => {
   assert.match(apiSrc, /WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS = 30/);
 });
 
-check("client exposes photos before create and one Submit update action", () => {
-  assert.match(clientSrc, /Submit update/);
+check("client exposes photos and one Submit pictures action", () => {
+  assert.match(clientSrc, /Submit pictures/);
+  assert.doesNotMatch(clientSrc, /Submit update/);
   assert.match(clientSrc, /createQueue/);
   assert.match(clientSrc, /createMyWorkProgress/);
   assert.match(clientSrc, /processAndUploadPhotosSequentially/);
@@ -247,6 +248,7 @@ check("client exposes photos before create and one Submit update action", () => 
   assert.ok(photosFieldIdx > 0 && photosFieldIdx < historyIdx);
   assert.doesNotMatch(clientSrc, /Submit progress/);
 });
+
 
 check("duplicate submit is blocked while processing", () => {
   assert.match(clientSrc, /submitLockRef/);
@@ -270,14 +272,17 @@ check("existing report can receive additional photos via explicit actions", () =
   assert.doesNotMatch(clientSrc, /onClick=\{\(\) => setActiveEntryId\(row\.id\)\}/);
 });
 
-check("More details collapses optional title/status/percent", () => {
-  assert.match(clientSrc, /More details/);
-  assert.match(clientSrc, /<details/);
+check("Title / status / percent are always visible (no More details accordion)", () => {
+  assert.doesNotMatch(clientSrc, /More details/);
+  assert.doesNotMatch(clientSrc, /<details/);
   assert.match(clientSrc, /progressStatus.*in_progress|useState\("in_progress"\)/);
+  assert.match(clientSrc, /lbl_title/);
+  assert.match(clientSrc, /lbl_progress_status/);
+  assert.match(clientSrc, /lbl_percent_optional/);
 });
 
 check("mobile photo controls and form use density tokens / full-width submit", () => {
-  assert.match(clientSrc, /className="w-full"/);
+  assert.match(clientSrc, /className="min-h-\[44px\] w-full"/);
   assert.match(clientSrc, /timiq-input/);
   assert.match(clientSrc, /timiq-select/);
   assert.match(clientSrc, /grid-cols-2/);
