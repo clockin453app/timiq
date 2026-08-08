@@ -22,3 +22,6 @@ coverage/
 .DS_Store
 .vscode/
 .idea/
+
+# local visual QA artifacts
+.tmp-payroll-a4-samples/

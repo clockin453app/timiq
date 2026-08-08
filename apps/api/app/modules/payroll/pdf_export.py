@@ -1,4 +1,4 @@
-"""ReportLab PDF for company/week payroll reports (no storage paths)."""
+"""ReportLab A4-portrait payroll report — employee → week → days → weekly pay."""
 
 from __future__ import annotations
 
@@ -9,30 +9,34 @@ from io import BytesIO
 from typing import Any
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import cm, mm
+from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as pdf_canvas
 from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-# A4 portrait printable geometry (shared by layout math + footer).
+from app.modules.payroll.hierarchical_report import (
+    PayrollHierarchicalReport,
+    hours_display,
+    money_display,
+)
+
 _PAGE_WIDTH, _PAGE_HEIGHT = A4
-_MARGIN_X = 7 * mm
-_MARGIN_TOP = 9 * mm
-_MARGIN_BOTTOM = 12 * mm
+_MARGIN_X = 12 * mm
+_MARGIN_TOP = 12 * mm
+_MARGIN_BOTTOM = 14 * mm
 _PRINTABLE_WIDTH = _PAGE_WIDTH - (2 * _MARGIN_X)
 
-# Column proportions sum to 100% of printable width.
-_COL_FRACS = (0.16, 0.12, 0.15, 0.07, 0.06, 0.09, 0.08, 0.09, 0.09, 0.09)
-_COL_WIDTHS = [round(_PRINTABLE_WIDTH * frac, 4) for frac in _COL_FRACS]
-# Absorb rounding drift into the Employee column so widths sum exactly.
-_COL_WIDTHS[0] = _PRINTABLE_WIDTH - sum(_COL_WIDTHS[1:])
+# Day | Site | Hours | OT  (~22 / 48 / 15 / 15)
+_DAY_COL_FRACS = (0.22, 0.48, 0.15, 0.15)
+_DAY_COL_WIDTHS = [round(_PRINTABLE_WIDTH * f, 4) for f in _DAY_COL_FRACS]
+_DAY_COL_WIDTHS[1] = _PRINTABLE_WIDTH - _DAY_COL_WIDTHS[0] - _DAY_COL_WIDTHS[2] - _DAY_COL_WIDTHS[3]
 
-_STATUS_STYLES: dict[str, tuple[str, str, str]] = {
-    "completed": ("#166534", "#dcfce7", "#86efac"),
-    "pending": ("#9a3412", "#ffedd5", "#fdba74"),
-    "paid": ("#166534", "#dcfce7", "#86efac"),
+_STATUS_STYLES: dict[str, tuple[str, str]] = {
+    "completed": ("#166534", "#dcfce7"),
+    "pending": ("#9a3412", "#ffedd5"),
+    "paid": ("#166534", "#dcfce7"),
 }
 
 
@@ -40,23 +44,7 @@ def _p(text: str, style: ParagraphStyle) -> Paragraph:
     return Paragraph(html.escape(text or "—").replace("\n", "<br/>"), style)
 
 
-def _money(value: Decimal | float | None) -> str:
-    if value is None:
-        return "—"
-    return f"£{Decimal(value):,.2f}"
-
-
-def _hours(seconds: int) -> str:
-    return f"{seconds / 3600:,.2f}"
-
-
-def _status_key(raw: str) -> str:
-    return str(raw or "").strip().lower()
-
-
 class _NumberedCanvas(pdf_canvas.Canvas):
-    """Footer: TimIQ Payroll Report + Page X of Y."""
-
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._saved_page_states: list[dict[str, Any]] = []
@@ -75,12 +63,277 @@ class _NumberedCanvas(pdf_canvas.Canvas):
 
     def _draw_page_footer(self, page_count: int) -> None:
         self.saveState()
-        self.setFont("Helvetica", 7.5)
+        self.setFont("Helvetica", 8)
         self.setFillColor(colors.HexColor("#6b7280"))
-        y = 6 * mm
+        y = 7 * mm
         self.drawString(_MARGIN_X, y, "TimIQ Payroll Report")
         self.drawRightString(_PAGE_WIDTH - _MARGIN_X, y, f"Page {self._pageNumber} of {page_count}")
         self.restoreState()
+
+
+def build_hierarchical_payroll_pdf(report: PayrollHierarchicalReport) -> bytes:
+    styles = getSampleStyleSheet()
+    title_s = ParagraphStyle(
+        "PRTitle",
+        parent=styles["Heading1"],
+        fontName="Helvetica-Bold",
+        fontSize=14,
+        leading=17,
+        spaceAfter=4,
+        textColor=colors.HexColor("#111827"),
+    )
+    emp_s = ParagraphStyle(
+        "PREmp",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=15,
+        spaceBefore=8,
+        spaceAfter=1,
+        textColor=colors.HexColor("#111827"),
+    )
+    meta_s = ParagraphStyle(
+        "PRMeta",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=12,
+        textColor=colors.HexColor("#374151"),
+    )
+    week_s = ParagraphStyle(
+        "PRWeek",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=13,
+        spaceBefore=5,
+        spaceAfter=3,
+        textColor=colors.HexColor("#111827"),
+    )
+    cell_s = ParagraphStyle(
+        "PRCell",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=12,
+        textColor=colors.HexColor("#111827"),
+    )
+    cell_right = ParagraphStyle("PRCellR", parent=cell_s, alignment=TA_RIGHT)
+    hdr_s = ParagraphStyle(
+        "PRHdr",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=9,
+        leading=11,
+        textColor=colors.HexColor("#111827"),
+        alignment=TA_LEFT,
+    )
+    hdr_right = ParagraphStyle("PRHdrR", parent=hdr_s, alignment=TA_RIGHT)
+    label_s = ParagraphStyle(
+        "PRLabel",
+        parent=styles["Normal"],
+        fontSize=10,
+        leading=12,
+        textColor=colors.HexColor("#4b5563"),
+    )
+    value_s = ParagraphStyle(
+        "PRValue",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=10,
+        leading=12,
+        alignment=TA_RIGHT,
+        textColor=colors.HexColor("#111827"),
+    )
+    notes_s = ParagraphStyle(
+        "PRNotes",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=11,
+        textColor=colors.HexColor("#374151"),
+    )
+    small_s = ParagraphStyle(
+        "PRSmall",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=11,
+        textColor=colors.HexColor("#6b7280"),
+    )
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(
+        buf,
+        pagesize=A4,
+        leftMargin=_MARGIN_X,
+        rightMargin=_MARGIN_X,
+        topMargin=_MARGIN_TOP,
+        bottomMargin=_MARGIN_BOTTOM,
+        title="TimIQ Payroll Report",
+        author="TimIQ",
+    )
+    story: list[Any] = []
+    story.append(_p("TimIQ Payroll Report", title_s))
+    story.append(_p(f"Company: {report.company_name}", meta_s))
+    story.append(_p(f"Period: {report.period_label}", meta_s))
+    story.append(_p(f"Filter: {report.employee_filter_label}", meta_s))
+    story.append(_p(f"Timezone: {report.timezone_name}", meta_s))
+    story.append(_p(f"Generated: {report.generated_label}", small_s))
+    story.append(Spacer(1, 3 * mm))
+
+    # Report-level summary strip
+    summary_rows = [
+        [_p("Total hours", label_s), _p(f"{report.total_hours_seconds / 3600:,.2f}", value_s)],
+        [_p("Employees", label_s), _p(str(report.employee_count), value_s)],
+        [_p("Gross", label_s), _p(money_display(report.total_gross), value_s)],
+        [_p("CIS tax", label_s), _p(money_display(report.total_cis_tax), value_s)],
+        [_p("Net", label_s), _p(money_display(report.total_net), value_s)],
+    ]
+    summary = Table(summary_rows, colWidths=[_PRINTABLE_WIDTH * 0.45, _PRINTABLE_WIDTH * 0.55])
+    summary.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#e5e7eb")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ],
+        ),
+    )
+    story.append(summary)
+    note_body = " · ".join(report.alert_lines) if report.alert_lines else "No additional notes for this report."
+    story.append(Spacer(1, 2 * mm))
+    story.append(_p(f"Notes: {note_body}", notes_s))
+    story.append(Spacer(1, 2 * mm))
+
+    if not report.employees:
+        story.append(_p("No payable payroll rows for this selected range.", meta_s))
+    else:
+        for emp in report.employees:
+            emp_bits: list[Any] = [
+                _p(f"EMPLOYEE: {emp.employee_name}", emp_s),
+                _p(f"ROLE: {emp.role or '—'}", meta_s),
+                Spacer(1, 1 * mm),
+            ]
+            story.append(KeepTogether(emp_bits))
+
+            for week in emp.weeks:
+                week_bits: list[Any] = [_p(week.week_label, week_s)]
+                day_data: list[list[Any]] = [
+                    [
+                        _p("Day", hdr_s),
+                        _p("Site", hdr_s),
+                        _p("Hours", hdr_right),
+                        _p("OT", hdr_right),
+                    ],
+                ]
+                if week.days:
+                    for day in week.days:
+                        site = day.site
+                        if day.role:
+                            site = f"{site}\n({day.role})"
+                        day_data.append(
+                            [
+                                _p(day.day_label, cell_s),
+                                _p(site, cell_s),
+                                _p(hours_display(day.hours), cell_right),
+                                _p(
+                                    hours_display(day.ot_hours) if day.ot_hours is not None else "—",
+                                    cell_right,
+                                ),
+                            ],
+                        )
+                else:
+                    day_data.append(
+                        [
+                            _p("—", cell_s),
+                            _p("No worked days with payable hours", cell_s),
+                            _p("—", cell_right),
+                            _p("—", cell_right),
+                        ],
+                    )
+                days_table = Table(day_data, colWidths=_DAY_COL_WIDTHS, repeatRows=1)
+                days_table.setStyle(
+                    TableStyle(
+                        [
+                            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
+                            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#d1d5db")),
+                            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                            ("TOPPADDING", (0, 0), (-1, -1), 3),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                            ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+                        ],
+                    ),
+                )
+                week_bits.append(days_table)
+                week_bits.append(Spacer(1, 1.5 * mm))
+                week_bits.append(_p("Weekly payroll", week_s))
+                status_key = (week.status or "").strip().lower()
+                status_fg, status_bg = _STATUS_STYLES.get(status_key, ("#111827", "#f3f4f6"))
+                pay_rows = [
+                    [_p("Hours", label_s), _p(hours_display(week.hours), value_s)],
+                    [_p("OT", label_s), _p(hours_display(week.ot_hours), value_s)],
+                    [_p("Gross", label_s), _p(money_display(week.gross), value_s)],
+                    [_p("CIS tax", label_s), _p(money_display(week.cis_tax), value_s)],
+                    [_p("Other deductions", label_s), _p(money_display(week.other_deductions), value_s)],
+                    [_p("Net", label_s), _p(money_display(week.net), value_s)],
+                    [_p("Status", label_s), _p((week.status or "—").strip().title(), value_s)],
+                ]
+                pay_table = Table(pay_rows, colWidths=[_PRINTABLE_WIDTH * 0.45, _PRINTABLE_WIDTH * 0.55])
+                pay_table.setStyle(
+                    TableStyle(
+                        [
+                            ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#d1d5db")),
+                            ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+                            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                            ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+                            ("BACKGROUND", (1, -1), (1, -1), colors.HexColor(status_bg)),
+                            ("TEXTCOLOR", (1, -1), (1, -1), colors.HexColor(status_fg)),
+                        ],
+                    ),
+                )
+                week_bits.append(pay_table)
+                story.append(KeepTogether(week_bits))
+                story.append(Spacer(1, 2 * mm))
+
+            tot_rows = [
+                [_p("Days worked", label_s), _p(str(emp.days_worked), value_s)],
+                [_p("Weeks worked", label_s), _p(str(emp.weeks_worked), value_s)],
+                [_p("Hours", label_s), _p(hours_display(emp.hours), value_s)],
+                [_p("OT", label_s), _p(hours_display(emp.ot_hours), value_s)],
+                [_p("Gross", label_s), _p(money_display(emp.gross), value_s)],
+                [_p("CIS", label_s), _p(money_display(emp.cis_tax), value_s)],
+                [_p("Other deductions", label_s), _p(money_display(emp.other_deductions), value_s)],
+                [_p("Net", label_s), _p(money_display(emp.net), value_s)],
+            ]
+            tot_table = Table(tot_rows, colWidths=[_PRINTABLE_WIDTH * 0.45, _PRINTABLE_WIDTH * 0.55])
+            tot_table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f8fafc")),
+                        ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#9ca3af")),
+                        ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e5e7eb")),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                        ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+                    ],
+                ),
+            )
+            story.append(KeepTogether([_p(report.totals_heading, week_s), tot_table]))
+            story.append(Spacer(1, 5 * mm))
+
+    doc.build(story, canvasmaker=_NumberedCanvas)
+    return buf.getvalue()
+
+
+# Public geometry constants (tests + layout math).
+# Day table columns: Day | Site | Hours | OT
+_COL_WIDTHS = _DAY_COL_WIDTHS
 
 
 def build_payroll_report_pdf(
@@ -99,306 +352,56 @@ def build_payroll_report_pdf(
     employee_filter_label: str | None = None,
     employee_count: int | None = None,
 ) -> bytes:
-    styles = getSampleStyleSheet()
-    title_s = ParagraphStyle(
-        "PayrollReportTitle",
-        parent=styles["Heading1"],
-        fontName="Helvetica-Bold",
-        fontSize=13.5,
-        leading=16,
-        spaceAfter=3,
-        textColor=colors.HexColor("#111827"),
-    )
-    label_s = ParagraphStyle(
-        "PayrollReportLabel",
-        parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=7,
-        leading=9,
-        textColor=colors.HexColor("#4b5563"),
-    )
-    value_s = ParagraphStyle(
-        "PayrollReportValue",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=8,
-        leading=10,
-        textColor=colors.HexColor("#111827"),
-    )
-    body = ParagraphStyle(
-        "PayrollReportBody",
-        parent=styles["Normal"],
-        fontSize=8,
-        leading=10,
-        textColor=colors.HexColor("#1f2937"),
-    )
-    small = ParagraphStyle("PayrollReportSmall", parent=body, fontSize=7.9, leading=9.5)
-    right_small = ParagraphStyle("PayrollReportRightSmall", parent=small, alignment=TA_RIGHT)
-    center_hdr = ParagraphStyle(
-        "PayrollReportCenterHdr",
-        parent=styles["Normal"],
-        fontName="Helvetica-Bold",
-        fontSize=8,
-        leading=9.5,
-        textColor=colors.white,
-        alignment=TA_CENTER,
-    )
-    left_hdr = ParagraphStyle(
-        "PayrollReportLeftHdr",
-        parent=center_hdr,
-        alignment=TA_LEFT,
-    )
-    right_hdr = ParagraphStyle(
-        "PayrollReportRightHdr",
-        parent=center_hdr,
-        alignment=TA_RIGHT,
-    )
-    metric_label = ParagraphStyle(
-        "PayrollReportMetricLabel",
-        parent=label_s,
-        fontSize=6.5,
-        leading=8,
-        alignment=TA_LEFT,
-    )
-    metric_value = ParagraphStyle(
-        "PayrollReportMetricValue",
-        parent=value_s,
-        fontSize=9,
-        leading=11,
-        alignment=TA_LEFT,
-    )
-    notes_s = ParagraphStyle(
-        "PayrollReportNotes",
-        parent=body,
-        fontSize=7.5,
-        leading=9,
-        textColor=colors.HexColor("#374151"),
-    )
-    section_s = ParagraphStyle(
-        "PayrollReportSection",
-        parent=styles["Heading2"],
-        fontName="Helvetica-Bold",
-        fontSize=9,
-        leading=11,
-        spaceBefore=0,
-        spaceAfter=2,
-        textColor=colors.HexColor("#111827"),
-    )
+    """Build PDF from legacy flat rows by converting to hierarchical structure."""
+    from app.modules.payroll.hierarchical_report import build_hierarchical_payroll_report
 
-    buf = BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=_MARGIN_X,
-        rightMargin=_MARGIN_X,
-        topMargin=_MARGIN_TOP,
-        bottomMargin=_MARGIN_BOTTOM,
-        pageCompression=0,
+    del employee_count  # derived from hierarchy
+    shift_rows = [r for r in rows if str(r.get("row_type") or "") == "shift" or (
+        not str(r.get("gross") or "").strip() or str(r.get("gross")) in {"—", "-"}
+    ) and r.get("shift_date")]
+    # Heuristic: if no explicit types, treat rows with empty/dash money as shifts when period looks like a day.
+    if not any(r.get("row_type") for r in rows):
+        shift_rows = []
+        payroll_rows = []
+        for r in rows:
+            period = str(r.get("period") or "")
+            if " to " in period or (r.get("gross") not in (None, "", "—", "-") and str(r.get("gross")).strip()):
+                payroll_rows.append(
+                    {
+                        **r,
+                        "period": period or f"{week_start.isoformat()} to {week_end.isoformat()}",
+                        "row_type": "payroll_week_total",
+                    },
+                )
+            else:
+                shift_rows.append(
+                    {
+                        **r,
+                        "shift_date": r.get("period") or r.get("shift_date") or week_start.isoformat(),
+                        "period": week_start.isoformat(),
+                        "location": r.get("location") or "—",
+                        "row_type": "shift",
+                    },
+                )
+    else:
+        payroll_rows = [r for r in rows if str(r.get("row_type") or "") == "payroll_week_total"]
+        shift_rows = [r for r in rows if str(r.get("row_type") or "") == "shift"]
+
+    report = build_hierarchical_payroll_report(
+        company_name=company_name,
+        period_label=period_label or f"Payroll week: {week_start.isoformat()} to {week_end.isoformat()}",
+        timezone_name=timezone_name,
+        employee_filter_label=employee_filter_label or "All employees",
+        generated_label=datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC"),
+        alert_lines=alert_lines,
+        shift_rows=shift_rows,
+        payroll_rows=payroll_rows,
+        total_hours_seconds=total_hours_seconds,
+        total_gross=total_gross,
+        total_cis_tax=total_cis_tax,
+        total_net=total_net,
     )
-    usable_width = _PRINTABLE_WIDTH
-    gen = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    report_period = period_label or f"Payroll week: {week_start.isoformat()} to {week_end.isoformat()}"
-    filter_text = employee_filter_label or "All employees"
-
-    story: list[Any] = [_p("TimIQ Payroll Report", title_s)]
-
-    # Compact details grid: Company | Filter / Period full / Timezone | Generated
-    label_w = usable_width * 0.14
-    value_w = usable_width * 0.36
-    details = Table(
-        [
-            [
-                _p("Company", label_s),
-                _p(company_name, value_s),
-                _p("Employee filter", label_s),
-                _p(filter_text, value_s),
-            ],
-            [_p("Period", label_s), _p(report_period, value_s), "", ""],
-            [
-                _p("Timezone", label_s),
-                _p(timezone_name or "—", value_s),
-                _p("Generated", label_s),
-                _p(gen, value_s),
-            ],
-        ],
-        colWidths=[label_w, value_w, label_w, value_w],
-    )
-    details.setStyle(
-        TableStyle(
-            [
-                ("SPAN", (1, 1), (3, 1)),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-                ("TOPPADDING", (0, 0), (-1, -1), 1.2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 1.2),
-                ("LINEBELOW", (0, -1), (-1, -1), 0.4, colors.HexColor("#e5e7eb")),
-            ],
-        ),
-    )
-    story.append(details)
-    story.append(Spacer(1, 2.5 * mm))
-
-    # Compact metric strip (2 rows) — not a floating mid-page table.
-    metric_cell_w = usable_width / 3
-    metrics_top = Table(
-        [
-            [
-                [_p("Total hours", metric_label), _p(_hours(total_hours_seconds), metric_value)],
-                [
-                    _p("Employees", metric_label),
-                    _p(str(employee_count) if employee_count is not None else "—", metric_value),
-                ],
-                [_p("Gross pay", metric_label), _p(_money(total_gross), metric_value)],
-            ],
-        ],
-        colWidths=[metric_cell_w, metric_cell_w, metric_cell_w],
-    )
-    metrics_top.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fafafa")),
-                ("LINEAFTER", (0, 0), (1, 0), 0.35, colors.HexColor("#e5e7eb")),
-            ],
-        ),
-    )
-    metrics_bottom = Table(
-        [
-            [
-                [_p("CIS tax", metric_label), _p(_money(total_cis_tax), metric_value)],
-                [_p("Net pay", metric_label), _p(_money(total_net), metric_value)],
-                "",
-            ],
-        ],
-        colWidths=[metric_cell_w, metric_cell_w, metric_cell_w],
-    )
-    metrics_bottom.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 3),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                ("TOPPADDING", (0, 0), (-1, -1), 2),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                ("BACKGROUND", (0, 0), (1, 0), colors.HexColor("#fafafa")),
-                ("LINEAFTER", (0, 0), (0, 0), 0.35, colors.HexColor("#e5e7eb")),
-                ("LINEABOVE", (0, 0), (1, 0), 0.35, colors.HexColor("#e5e7eb")),
-            ],
-        ),
-    )
-    story.append(_p("Summary", label_s))
-    story.append(metrics_top)
-    story.append(metrics_bottom)
-    story.append(Spacer(1, 1.8 * mm))
-
-    note_body = " · ".join(alert_lines) if alert_lines else "No additional notes for this report."
-    notes_line = _p(f"Notes: {note_body}", notes_s)
-    story.append(KeepTogether([notes_line, Spacer(1, 1.2 * mm), _p("Payroll rows", section_s)]))
-
-    hdr = [
-        [
-            _p("Employee", left_hdr),
-            _p("Role", left_hdr),
-            _p("Period / date", left_hdr),
-            _p("Hours", right_hdr),
-            _p("OT h", right_hdr),
-            _p("Gross", right_hdr),
-            _p("CIS tax", right_hdr),
-            _p("Net", right_hdr),
-            _p("Other ded.", right_hdr),
-            _p("Status", center_hdr),
-        ],
-    ]
-
-    def _status_cell(raw: str) -> Any:
-        label = str(raw or "—")
-        text_c, bg_c, border_c = _STATUS_STYLES.get(
-            _status_key(label),
-            ("#111827", "#f3f4f6", "#9ca3af"),
-        )
-        status_style = ParagraphStyle(
-            f"PayrollStatus_{_status_key(label) or 'default'}",
-            parent=small,
-            fontName="Helvetica-Bold",
-            fontSize=7.5,
-            leading=9,
-            textColor=colors.HexColor(text_c),
-            alignment=TA_CENTER,
-        )
-        badge = Table([[_p(label, status_style)]], colWidths=[_COL_WIDTHS[9] - 2])
-        badge.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg_c)),
-                    ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor(border_c)),
-                    ("LEFTPADDING", (0, 0), (-1, -1), 2),
-                    ("RIGHTPADDING", (0, 0), (-1, -1), 2),
-                    ("TOPPADDING", (0, 0), (-1, -1), 1),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                ],
-            ),
-        )
-        return badge
-
-    data_rows = [
-        [
-            _p(str(r["employee"]), small),
-            _p(str(r["role"]), small),
-            _p(str(r.get("period", "—")), small),
-            _p(str(r["hours"]), right_small),
-            _p(str(r["ot_hours"]), right_small),
-            _p(str(r["gross"]), right_small),
-            _p(str(r["cis_tax"]), right_small),
-            _p(str(r["net"]), right_small),
-            _p(str(r["other_deductions"]), right_small),
-            _status_cell(str(r["status"])),
-        ]
-        for r in rows
-    ]
-    if not data_rows:
-        data_rows = [[_p("No payable payroll rows for this selected range.", body), "", "", "", "", "", "", "", "", ""]]
-
-    assert abs(sum(_COL_WIDTHS) - usable_width) < 0.05
-    table = Table(hdr + data_rows, colWidths=_COL_WIDTHS, repeatRows=1)
-    style_cmds: list[tuple[Any, ...]] = [
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1f2937")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 8),
-        ("FONTSIZE", (0, 1), (-1, -1), 7.9),
-        ("LINEBELOW", (0, 0), (-1, -1), 0.3, colors.HexColor("#e5e7eb")),
-        ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor("#9ca3af")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (0, 0), (2, -1), "LEFT"),
-        ("ALIGN", (3, 0), (8, -1), "RIGHT"),
-        ("ALIGN", (9, 0), (9, -1), "CENTER"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 3),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-        ("TOPPADDING", (0, 0), (-1, -1), 2.8),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2.8),
-    ]
-    for i in range(1, len(data_rows) + 1):
-        if i % 2 == 0:
-            style_cmds.append(("BACKGROUND", (0, i), (-1, i), colors.HexColor("#f9fafb")))
-        if i > 1:
-            prev_emp = str(rows[i - 2]["employee"])
-            curr_emp = str(rows[i - 1]["employee"])
-            if prev_emp != curr_emp:
-                style_cmds.append(("LINEABOVE", (0, i), (-1, i), 0.7, colors.HexColor("#9ca3af")))
-    table.setStyle(TableStyle(style_cmds))
-    if not rows:
-        table.setStyle(TableStyle([("SPAN", (0, 1), (-1, 1)), ("ALIGN", (0, 1), (-1, 1), "CENTER")]))
-    # Do not KeepTogether the full table — allow natural page fragmentation.
-    story.append(table)
-    doc.build(story, canvasmaker=_NumberedCanvas)
-    return buf.getvalue()
+    return build_hierarchical_payroll_pdf(report)
 
 
 def build_payroll_item_payslip_pdf(

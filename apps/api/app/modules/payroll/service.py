@@ -2639,6 +2639,8 @@ def _range_shift_rows(
             policy=shift_policy,
         )
         rounded = int(metrics.rounded_seconds or 0)
+        if rounded <= 0:
+            continue
         actual = int(metrics.actual_seconds or 0)
         total_rounded_seconds += rounded
         employee_ids.add(owner.id)
@@ -2653,6 +2655,7 @@ def _range_shift_rows(
         out.append(
             {
                 "row_type": "shift",
+                "user_id": str(owner.id),
                 "employee": name or owner.email or "Employee",
                 "employee_email": owner.email or "",
                 "role": (getattr(profile, "job_title", None) or "").strip() or "—",
@@ -2711,6 +2714,7 @@ def _range_payroll_total_rows(
             week_rows.append(
                 {
                     "row_type": "payroll_week_total",
+                    "user_id": str(item.user_id),
                     "employee": (name or email or "Employee"),
                     "employee_email": email or "",
                     "role": job_title or "—",
@@ -3386,17 +3390,24 @@ def _payroll_report_alert_lines(alerts: PayrollReportAlerts) -> list[str]:
     return lines
 
 
-def export_print_html(
+def _totals_heading_for_range(date_from: date, date_to: date) -> str:
+    if date_from.year == date_to.year and date_from.month == date_to.month:
+        return "Employee month total"
+    return "Employee period total"
+
+
+def _build_report_document_for_week(
     db_session: Session,
     actor: User,
     *,
     company_id: uuid.UUID,
     week_start: date,
-    user_id: uuid.UUID | None = None,
-) -> str:
+    user_id: uuid.UUID | None,
+):
+    from app.modules.payroll.hierarchical_report import build_hierarchical_payroll_report
+
     company = get_company_by_id(db_session, company_id)
     company_name = company.name if company else "Company"
-    name = html.escape(company_name)
     report = get_payroll_report(
         db_session,
         actor,
@@ -3406,33 +3417,31 @@ def export_print_html(
         auto_recalculate_if_safe=False,
     )
     week_end = _week_end_display(week_start)
-    period_label = f"Payroll week: {week_start.isoformat()} to {week_end.isoformat()}"
-    tz_name = report.period.timezone_name if report.period.total_items else ""
-    filter_label = _employee_filter_label(
-        db_session,
-        company_id=company_id,
-        employee_user_id=user_id,
-    )
-    gen = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
-    alert_lines = _payroll_report_alert_lines(report.alerts)
-    notes_text = (
-        "Notes: " + (" · ".join(alert_lines) if alert_lines else "No additional notes for this report.")
-    )
-
+    tz_name = (report.period.timezone_name or "").strip()
+    if not tz_name:
+        policy = ensure_company_time_policy(db_session, company_id)
+        tz_name = policy.timezone_name
+    shift_rows: list[dict] = []
+    total_shift_seconds = 0
+    # Production always passes a live session. Unit tests may pass None with a mocked report.
+    if db_session is not None:
+        shift_rows, total_shift_seconds, _employee_ids = _range_shift_rows(
+            db_session,
+            company_id=company_id,
+            date_from=week_start,
+            date_to=week_end,
+            employee_user_id=user_id,
+        )
     by_id: dict[uuid.UUID, PayrollItem] = {}
-    if report.items:
+    if report.items and db_session is not None:
         pid = report.items[0].period_id
         by_id = {i.id: i for i in list_items_for_period(db_session, pid)}
-
-    total_seconds = 0
+    payroll_rows: list[dict] = []
     gross_sum = Decimal(0)
     cis_sum = Decimal(0)
     net_sum = Decimal(0)
     has_gross = has_cis = has_net = False
-    employee_ids: set[uuid.UUID] = set()
-    rows_html: list[str] = []
-    period_cell = html.escape(f"{week_start.isoformat()} to {week_end.isoformat()}")
-    prev_emp: str | None = None
+    total_seconds = 0
     for row in report.items:
         item = by_id.get(row.id)
         eff_cis = _effective_tax_amount_for_item(item) if item is not None else None
@@ -3440,8 +3449,6 @@ def export_print_html(
         emp_label = (row.employee_name or row.employee_email or "").strip() or "—"
         jt = (row.employee_job_title or "").strip() or "—"
         total_seconds += row.rounded_total_seconds
-        if row.user_id is not None:
-            employee_ids.add(row.user_id)
         if row.gross_amount is not None:
             gross_sum += Decimal(str(row.gross_amount))
             has_gross = True
@@ -3451,290 +3458,70 @@ def export_print_html(
         if eff_net is not None:
             net_sum += eff_net
             has_net = True
-        cis_txt = "—" if eff_cis is None else f"{eff_cis:.2f}"
-        net_txt = "—" if eff_net is None else f"{eff_net:.2f}"
-        status_raw = (row.status or "").strip()
-        status_key = status_raw.lower()
-        status_cls = (
-            f"status status-{status_key}"
-            if status_key in {"completed", "pending", "paid"}
-            else "status"
+        payroll_rows.append(
+            {
+                "row_type": "payroll_week_total",
+                "user_id": str(row.user_id) if row.user_id else "",
+                "employee": emp_label,
+                "employee_email": row.employee_email or "",
+                "role": jt,
+                "period": f"{week_start.isoformat()} to {week_end.isoformat()}",
+                "hours": f"{row.rounded_total_seconds / 3600:.2f}",
+                "ot_hours": f"{row.overtime_seconds / 3600:.2f}",
+                "gross": "—" if row.gross_amount is None else f"{row.gross_amount:.2f}",
+                "cis_tax": "—" if eff_cis is None else f"{eff_cis:.2f}",
+                "net": "—" if eff_net is None else f"{eff_net:.2f}",
+                "other_deductions": f"{row.other_deductions_amount:.2f}",
+                "status": row.status,
+            },
         )
-        group_cls = " emp-group" if prev_emp is not None and prev_emp != emp_label else ""
-        prev_emp = emp_label
-        rows_html.append(
-            f'<tr class="{group_cls.strip()}">'
-            f'<td class="text">{html.escape(emp_label)}</td>'
-            f'<td class="text">{html.escape(jt)}</td>'
-            f'<td class="text">{period_cell}</td>'
-            f'<td class="num">{row.rounded_total_seconds / 3600:.2f}</td>'
-            f'<td class="num">{row.overtime_seconds / 3600:.2f}</td>'
-            f'<td class="num">{row.gross_amount if row.gross_amount is not None else "—"}</td>'
-            f'<td class="num">{cis_txt}</td>'
-            f'<td class="num">{net_txt}</td>'
-            f'<td class="num">{html.escape(str(row.other_deductions_amount))}</td>'
-            f'<td class="status-cell"><span class="{status_cls}">{html.escape(status_raw)}</span></td>'
-            "</tr>",
-        )
-    if not rows_html:
-        rows_html.append(
-            '<tr><td colspan="10" class="empty">No payable payroll rows for this selected range.</td></tr>',
-        )
+    hours_seconds = total_shift_seconds or total_seconds
+    from app.modules.payroll.hierarchical_report import format_week_label
 
-    def _money_html(value: Decimal | None, present: bool) -> str:
-        if not present or value is None:
-            return "—"
-        return f"£{value:,.2f}"
+    filter_label = (
+        _employee_filter_label(
+            db_session,
+            company_id=company_id,
+            employee_user_id=user_id,
+        )
+        if db_session is not None
+        else ("All employees" if user_id is None else "Selected employee")
+    )
+    return build_hierarchical_payroll_report(
+        company_name=company_name,
+        period_label=format_week_label(week_start, week_end),
+        timezone_name=tz_name,
+        employee_filter_label=filter_label,
+        generated_label=datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC"),
+        alert_lines=_payroll_report_alert_lines(report.alerts),
+        shift_rows=shift_rows,
+        payroll_rows=payroll_rows,
+        total_hours_seconds=hours_seconds,
+        total_gross=gross_sum if has_gross else None,
+        total_cis_tax=cis_sum if has_cis else None,
+        total_net=net_sum if has_net else None,
+        totals_heading="Employee period total",
+    ), report
 
-    hours_txt = f"{total_seconds / 3600:,.2f}"
-    emp_count_txt = str(len(employee_ids)) if employee_ids else "—"
-    notes_esc = html.escape(notes_text)
-    html_out = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/>
-<title>TimIQ Payroll Report — {name}</title>
-<style>
-  :root {{ color-scheme: light; }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    margin: 0;
-    padding: 20px 12px;
-    color: #111827;
-    background: #e5e7eb;
-    font-family: system-ui, -apple-system, Segoe UI, sans-serif;
-  }}
-  .report-canvas {{
-    margin: 0 auto;
-    width: min(210mm, 100%);
-    max-width: 210mm;
-    min-height: 297mm;
-    background: #fff;
-    border: 1px solid #d1d5db;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
-    padding: 10mm 7mm 12mm;
-  }}
-  .details h1 {{
-    margin: 0 0 6px;
-    font-size: 18px;
-    line-height: 1.2;
-    font-weight: 700;
-    color: #111827;
-  }}
-  .kv {{
-    display: grid;
-    grid-template-columns: 6.5rem minmax(0, 1fr) 6.5rem minmax(0, 1fr);
-    gap: 2px 8px;
-    font-size: 11px;
-    line-height: 1.3;
-    padding-bottom: 6px;
-    border-bottom: 1px solid #e5e7eb;
-  }}
-  .kv .period {{ grid-column: 2 / -1; }}
-  .kv dt {{
-    margin: 0;
-    color: #4b5563;
-    font-weight: 500;
-  }}
-  .kv dd {{
-    margin: 0;
-    color: #111827;
-    font-weight: 600;
-  }}
-  .summary {{
-    margin-top: 8px;
-  }}
-  .summary h2 {{
-    margin: 0 0 4px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #4b5563;
-  }}
-  .metrics {{
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0;
-    background: #fafafa;
-    border-top: 1px solid #e5e7eb;
-    border-bottom: 1px solid #e5e7eb;
-  }}
-  .metric {{
-    padding: 4px 6px;
-    border-right: 1px solid #e5e7eb;
-  }}
-  .metric:nth-child(3n) {{ border-right: 0; }}
-  .metric .label {{
-    display: block;
-    font-size: 10px;
-    color: #4b5563;
-    font-weight: 500;
-  }}
-  .metric .value {{
-    display: block;
-    font-size: 13px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    color: #111827;
-  }}
-  .notes {{
-    margin: 6px 0 0;
-    padding: 3px 0;
-    border-bottom: 1px solid #e5e7eb;
-    font-size: 10px;
-    line-height: 1.3;
-    color: #374151;
-  }}
-  .rows-heading {{
-    margin: 6px 0 3px;
-    font-size: 12px;
-    font-weight: 600;
-  }}
-  table.payroll {{
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-  }}
-  table.payroll thead {{ display: table-header-group; }}
-  table.payroll th, table.payroll td {{
-    border-bottom: 1px solid #e5e7eb;
-    padding: 3px 3.5px;
-    font-size: 9.5px;
-    vertical-align: middle;
-    word-wrap: break-word;
-  }}
-  table.payroll th {{
-    background: #1f2937;
-    color: #fff;
-    font-weight: 700;
-    font-size: 9px;
-  }}
-  table.payroll th.text, table.payroll td.text {{ text-align: left; }}
-  table.payroll th.num, table.payroll td.num {{
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }}
-  table.payroll th.status-col, table.payroll td.status-cell {{ text-align: center; }}
-  table.payroll col.c-emp {{ width: 16%; }}
-  table.payroll col.c-role {{ width: 12%; }}
-  table.payroll col.c-period {{ width: 15%; }}
-  table.payroll col.c-hours {{ width: 7%; }}
-  table.payroll col.c-ot {{ width: 6%; }}
-  table.payroll col.c-gross {{ width: 9%; }}
-  table.payroll col.c-cis {{ width: 8%; }}
-  table.payroll col.c-net {{ width: 9%; }}
-  table.payroll col.c-other {{ width: 9%; }}
-  table.payroll col.c-status {{ width: 9%; }}
-  table.payroll tbody tr:nth-child(even) td {{ background: #f9fafb; }}
-  table.payroll tbody tr.emp-group td {{ border-top: 1.2px solid #9ca3af; }}
-  table.payroll td.empty {{ text-align: center; color: #4b5563; }}
-  .status {{
-    display: inline-block;
-    border: 1px solid #9ca3af;
-    background: #f3f4f6;
-    color: #111827;
-    font-weight: 600;
-    font-size: 8.5px;
-    line-height: 1.2;
-    padding: 1px 4px;
-  }}
-  .status-completed, .status-paid {{
-    color: #166534;
-    background: #dcfce7;
-    border-color: #86efac;
-  }}
-  .status-pending {{
-    color: #9a3412;
-    background: #ffedd5;
-    border-color: #fdba74;
-  }}
-  .hint {{
-    margin-top: 12px;
-    font-size: 11px;
-    color: #6b7280;
-  }}
-  @media (max-width: 720px) {{
-    body {{ padding: 8px; }}
-    .report-canvas {{ width: 100%; max-width: none; min-height: 0; overflow-x: auto; }}
-    .kv {{ grid-template-columns: 6rem minmax(0, 1fr); }}
-    .kv .period {{ grid-column: 2; }}
-  }}
-  @page {{
-    size: A4 portrait;
-    margin: 9mm 7mm 10mm 7mm;
-  }}
-  @media print {{
-    body {{
-      background: #fff;
-      padding: 0;
-      margin: 0;
-    }}
-    .report-canvas {{
-      width: 100%;
-      max-width: none;
-      min-height: 0;
-      margin: 0;
-      border: 0;
-      box-shadow: none;
-      padding: 0;
-    }}
-    .hint {{ display: none; }}
-    table.payroll {{ break-inside: auto; page-break-inside: auto; }}
-    table.payroll tr {{ break-inside: avoid; page-break-inside: avoid; }}
-    table.payroll thead {{ display: table-header-group; }}
-    .rows-heading {{ break-after: avoid; page-break-after: avoid; }}
-    .notes {{ break-after: avoid; page-break-after: avoid; }}
-  }}
-</style>
-</head>
-<body>
-  <main class="report-canvas">
-    <header class="details" aria-labelledby="report-title">
-      <h1 id="report-title">TimIQ Payroll Report</h1>
-      <dl class="kv">
-        <dt>Company</dt><dd>{html.escape(company_name)}</dd>
-        <dt>Employee filter</dt><dd>{html.escape(filter_label)}</dd>
-        <dt>Period</dt><dd class="period">{html.escape(period_label)}</dd>
-        <dt>Timezone</dt><dd>{html.escape(tz_name or "—")}</dd>
-        <dt>Generated</dt><dd>{html.escape(gen)}</dd>
-      </dl>
-    </header>
-    <section class="summary" aria-labelledby="summary-title">
-      <h2 id="summary-title">Summary</h2>
-      <div class="metrics">
-        <div class="metric"><span class="label">Total hours</span><span class="value">{hours_txt}</span></div>
-        <div class="metric"><span class="label">Employees</span><span class="value">{emp_count_txt}</span></div>
-        <div class="metric"><span class="label">Gross pay</span><span class="value">{_money_html(gross_sum if has_gross else None, has_gross)}</span></div>
-        <div class="metric"><span class="label">CIS tax</span><span class="value">{_money_html(cis_sum if has_cis else None, has_cis)}</span></div>
-        <div class="metric"><span class="label">Net pay</span><span class="value">{_money_html(net_sum if has_net else None, has_net)}</span></div>
-      </div>
-    </section>
-    <p class="notes" id="notes-title">{notes_esc}</p>
-    <h2 class="rows-heading">Payroll rows</h2>
-    <table class="payroll">
-      <colgroup>
-        <col class="c-emp"/><col class="c-role"/><col class="c-period"/>
-        <col class="c-hours"/><col class="c-ot"/><col class="c-gross"/>
-        <col class="c-cis"/><col class="c-net"/><col class="c-other"/><col class="c-status"/>
-      </colgroup>
-      <thead>
-        <tr>
-          <th class="text" scope="col">Employee</th>
-          <th class="text" scope="col">Role</th>
-          <th class="text" scope="col">Period / date</th>
-          <th class="num" scope="col">Hours</th>
-          <th class="num" scope="col">OT h</th>
-          <th class="num" scope="col">Gross</th>
-          <th class="num" scope="col">CIS tax</th>
-          <th class="num" scope="col">Net</th>
-          <th class="num" scope="col">Other ded.</th>
-          <th class="status-col" scope="col">Status</th>
-        </tr>
-      </thead>
-      <tbody>
-        {"".join(rows_html)}
-      </tbody>
-    </table>
-    <p class="hint">Use browser Print → Save as PDF for a PDF copy. Prefer Download PDF for the paginated TimIQ export.</p>
-  </main>
-</body></html>"""
+
+def export_print_html(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID,
+    week_start: date,
+    user_id: uuid.UUID | None = None,
+) -> str:
+    from app.modules.payroll.print_html import render_hierarchical_payroll_print_html
+
+    doc, report = _build_report_document_for_week(
+        db_session,
+        actor,
+        company_id=company_id,
+        week_start=week_start,
+        user_id=user_id,
+    )
+    html_out = render_hierarchical_payroll_print_html(doc)
     period_entity = str(report.period.id) if report.period.total_items else None
     create_internal_audit_event(
         db_session=db_session,
@@ -3764,6 +3551,9 @@ def export_pdf_report(
     date_to: date | None = None,
     employee_user_id: uuid.UUID | None = None,
 ) -> bytes:
+    from app.modules.payroll.hierarchical_report import build_hierarchical_payroll_report
+    from app.modules.payroll.pdf_export import build_hierarchical_payroll_pdf
+
     assert_payroll_admin_or_administrator(actor)
     assert_payroll_company_scope(actor, company_id)
     company = get_company_by_id(db_session, company_id)
@@ -3792,55 +3582,33 @@ def export_pdf_report(
             alert_lines.append(PARTIAL_RANGE_PAYROLL_NOTE)
         if payroll_rows:
             alert_lines.append("Stored pay totals are shown only for complete payroll weeks fully inside this range.")
-        pdf_rows = [
-            {
-                "employee": row["employee"],
-                "role": row["role"],
-                "period": row["shift_date"],
-                "hours": row["hours"],
-                "ot_hours": row["ot_hours"] or "—",
-                "gross": "—",
-                "cis_tax": "—",
-                "net": "—",
-                "other_deductions": "—",
-                "status": row["status"],
-            }
-            for row in shift_rows
-        ]
-        pdf_rows.extend(
-            {
-                "employee": row["employee"],
-                "role": row["role"],
-                "period": row["period"],
-                "hours": row["hours"],
-                "ot_hours": row["ot_hours"],
-                "gross": row["gross"] or "—",
-                "cis_tax": row["cis_tax"] or "—",
-                "net": row["net"] or "—",
-                "other_deductions": row["other_deductions"] or "—",
-                "status": row["status"],
-            }
-            for row in payroll_rows
-        )
-        body = build_payroll_report_pdf(
+        doc = build_hierarchical_payroll_report(
             company_name=company_name,
-            week_start=date_from,
-            week_end=date_to,
+            period_label=(
+                f"{date_from.day} {date_from.strftime('%b')}–{date_to.day} {date_to.strftime('%b')} {date_to.year}"
+                if date_from.year == date_to.year
+                else (
+                    f"{date_from.day} {date_from.strftime('%b')} {date_from.year}–"
+                    f"{date_to.day} {date_to.strftime('%b')} {date_to.year}"
+                )
+            ),
             timezone_name=policy.timezone_name,
-            rows=pdf_rows,
-            total_hours_seconds=total_shift_seconds,
-            total_gross=gross_total,
-            total_cis_tax=cis_total,
-            total_net=net_total,
-            alert_lines=alert_lines,
-            period_label=f"Date range: {date_from.isoformat()} to {date_to.isoformat()} · {policy.timezone_name}",
             employee_filter_label=_employee_filter_label(
                 db_session,
                 company_id=company_id,
                 employee_user_id=employee_user_id,
             ),
-            employee_count=len(employee_ids),
+            generated_label=datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC"),
+            alert_lines=alert_lines,
+            shift_rows=shift_rows,
+            payroll_rows=payroll_rows,
+            total_hours_seconds=total_shift_seconds,
+            total_gross=gross_total,
+            total_cis_tax=cis_total,
+            total_net=net_total,
+            totals_heading=_totals_heading_for_range(date_from, date_to),
         )
+        body = build_hierarchical_payroll_pdf(doc)
         create_internal_audit_event(
             db_session=db_session,
             actor=actor,
@@ -3860,70 +3628,14 @@ def export_pdf_report(
 
     if week_start is None:
         raise PayrollError("week_start is required.")
-    report = get_payroll_report(
+    doc, report = _build_report_document_for_week(
         db_session,
         actor,
         company_id=company_id,
         week_start=week_start,
         user_id=user_id,
-        auto_recalculate_if_safe=False,
     )
-    week_end = _week_end_display(week_start)
-    tz_name = report.period.timezone_name if report.period.total_items else ""
-
-    by_id: dict[uuid.UUID, PayrollItem] = {}
-    if report.items:
-        pid = report.items[0].period_id
-        by_id = {i.id: i for i in list_items_for_period(db_session, pid)}
-
-    pdf_rows: list[dict[str, Any]] = []
-    total_seconds = 0
-    gross_sum = Decimal(0)
-    cis_sum = Decimal(0)
-    net_sum = Decimal(0)
-    has_gross = has_cis = has_net = False
-    for row in report.items:
-        item = by_id.get(row.id)
-        eff_cis = _effective_tax_amount_for_item(item) if item is not None else None
-        eff_net = _effective_net_amount_for_item(item) if item is not None else None
-        emp_label = (row.employee_name or row.employee_email or "").strip() or "—"
-        jt = (row.employee_job_title or "").strip() or "—"
-        total_seconds += row.rounded_total_seconds
-        if row.gross_amount is not None:
-            gross_sum += Decimal(str(row.gross_amount))
-            has_gross = True
-        if eff_cis is not None:
-            cis_sum += eff_cis
-            has_cis = True
-        if eff_net is not None:
-            net_sum += eff_net
-            has_net = True
-        pdf_rows.append(
-            {
-                "employee": emp_label,
-                "role": jt,
-                "hours": f"{row.rounded_total_seconds / 3600:.2f}",
-                "ot_hours": f"{row.overtime_seconds / 3600:.2f}",
-                "gross": "—" if row.gross_amount is None else f"{row.gross_amount:.2f}",
-                "cis_tax": "—" if eff_cis is None else f"{eff_cis:.2f}",
-                "net": "—" if eff_net is None else f"{eff_net:.2f}",
-                "other_deductions": f"{row.other_deductions_amount:.2f}",
-                "status": row.status,
-            },
-        )
-
-    body = build_payroll_report_pdf(
-        company_name=company_name,
-        week_start=week_start,
-        week_end=week_end,
-        timezone_name=tz_name,
-        rows=pdf_rows,
-        total_hours_seconds=total_seconds,
-        total_gross=gross_sum if has_gross else None,
-        total_cis_tax=cis_sum if has_cis else None,
-        total_net=net_sum if has_net else None,
-        alert_lines=_payroll_report_alert_lines(report.alerts),
-    )
+    body = build_hierarchical_payroll_pdf(doc)
     period_entity = str(report.period.id) if report.period.total_items else None
     create_internal_audit_event(
         db_session=db_session,
