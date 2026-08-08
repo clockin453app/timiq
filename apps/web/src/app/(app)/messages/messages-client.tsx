@@ -37,6 +37,7 @@ import {
   participantEmail,
   senderLabel,
   threadHeaderSubtitle,
+  threadHeaderSubtitleCompact,
 } from "@/features/messaging/display";
 import { ConversationAvatar } from "@/features/messaging/conversation-avatar";
 import { segmentBtnClass } from "../budgets/budget-ui";
@@ -84,6 +85,10 @@ function inputClass() {
 
 function textareaClass() {
   return "mt-1.5 min-h-[88px] w-full max-w-full rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 py-2.5 text-base text-[var(--color-text)] md:text-sm";
+}
+
+function composerTextareaClass() {
+  return "min-h-[48px] max-h-[8rem] w-full max-w-full resize-y overflow-y-auto rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-input)] px-2.5 py-2.5 text-base text-[var(--color-text)] md:min-h-[72px] md:max-h-[12rem] md:text-sm";
 }
 
 function formatTs(iso: string | null): string {
@@ -140,6 +145,9 @@ export function MessagesClient() {
   const scrollIntentRef = useRef<ThreadScrollIntent | null>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const prevMsgCountRef = useRef(0);
+  const conversationButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const lastOpenedConvIdRef = useRef<string | null>(null);
+  const mobileThreadHeadingRef = useRef<HTMLHeadingElement | null>(null);
 
   const effectiveCompanyId = useMemo(() => resolveCompanyId(user, companyOverride), [user, companyOverride]);
   const activeConv = useMemo(
@@ -147,6 +155,24 @@ export function MessagesClient() {
     [conversations, selectedConvId],
   );
   const mgmt = canAccessManagement(user);
+  const mobileThreadOpen = tab === "messages" && Boolean(selectedConvId);
+
+  useEffect(() => {
+    if (!selectedConvId) {
+      return;
+    }
+    lastOpenedConvIdRef.current = selectedConvId;
+  }, [selectedConvId]);
+
+  useEffect(() => {
+    if (!mobileThreadOpen) {
+      return;
+    }
+    const id = window.requestAnimationFrame(() => {
+      mobileThreadHeadingRef.current?.focus();
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [mobileThreadOpen, selectedConvId]);
 
   const participantLookup = useMemo(
     () => buildParticipantLookup(colleagues, conversations),
@@ -168,6 +194,19 @@ export function MessagesClient() {
     },
     [router, pathname],
   );
+
+  const goBackToConversationList = useCallback(() => {
+    const restoreId = selectedConvId || lastOpenedConvIdRef.current;
+    setSelectedConvId(null);
+    replaceMessagesQuery("messages", null);
+    window.requestAnimationFrame(() => {
+      if (!restoreId) {
+        return;
+      }
+      conversationButtonRefs.current.get(restoreId)?.focus();
+    });
+  }, [selectedConvId, replaceMessagesQuery]);
+
 
   useEffect(() => {
     if (!isAdministrator(user)) {
@@ -612,23 +651,53 @@ export function MessagesClient() {
     <Sheet
       className={
         tab === "messages"
-          ? `grid ${messagesSheetHeightClass} grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden`
+          ? cn(
+              "grid overflow-hidden",
+              messagesSheetHeightClass,
+              mobileThreadOpen
+                ? "max-md:grid-rows-[minmax(0,1fr)] md:grid-rows-[auto_auto_minmax(0,1fr)]"
+                : "grid-rows-[auto_auto_minmax(0,1fr)]",
+            )
           : undefined
       }
     >
-      <PageHeader
-        description="Company news and internal messages. Conversations refresh automatically while this page is open."
-        title="Messages"
-      />
+      <div className={cn(mobileThreadOpen && "max-md:hidden")}>
+        <PageHeader
+          description="Company news and internal messages. Conversations refresh automatically while this page is open."
+          title="Messages"
+        />
+      </div>
       {tab === "messages" ? (
         <>
-          <div className="timiq-mobile-form-pad flex min-h-0 flex-col gap-3 px-3 md:px-5">
+          <div
+            className={cn(
+              "timiq-mobile-form-pad flex min-h-0 flex-col gap-3 px-3 md:px-5",
+              mobileThreadOpen && "max-md:hidden",
+            )}
+          >
             {tabSwitcher}
             {companyScopeFilter}
           </div>
-          <div className="timiq-mobile-form-pad min-h-0 overflow-hidden px-3 pb-4 md:px-5 md:pb-5">
-            <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-1 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-sheet)] md:grid-cols-[20rem_minmax(0,1fr)]">
-            <aside className="flex max-h-[28vh] min-h-0 flex-col overflow-hidden border-b border-[var(--color-border-dark)] md:h-full md:max-h-none md:w-80 md:border-b-0 md:border-r">
+          <div
+            className={cn(
+              "timiq-mobile-form-pad min-h-0 overflow-hidden px-3 pb-4 md:px-5 md:pb-5",
+              mobileThreadOpen && "max-md:px-0 max-md:pb-0",
+            )}
+          >
+            <div
+              className={cn(
+                "grid h-full min-h-0 w-full min-w-0 grid-cols-1 overflow-hidden bg-[var(--color-sheet)] md:grid-cols-[20rem_minmax(0,1fr)] md:rounded-[var(--radius-md)] md:border md:border-[var(--color-border-dark)]",
+                !mobileThreadOpen && "rounded-[var(--radius-md)] border border-[var(--color-border-dark)]",
+              )}
+            >
+            <aside
+              className={cn(
+                "flex min-h-0 flex-col overflow-hidden border-[var(--color-border-dark)] md:h-full md:w-80 md:border-b-0 md:border-r",
+                selectedConvId ? "max-md:hidden" : "h-full border-b-0",
+                "md:flex",
+              )}
+              data-messages-pane="list"
+            >
               <div className="flex flex-wrap gap-2 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] p-3">
                 <Button type="button" variant="secondary" onClick={() => void loadConversations()}>
                   Refresh
@@ -660,6 +729,13 @@ export function MessagesClient() {
                   return (
                     <li key={c.id}>
                       <button
+                        ref={(el) => {
+                          if (el) {
+                            conversationButtonRefs.current.set(c.id, el);
+                          } else {
+                            conversationButtonRefs.current.delete(c.id);
+                          }
+                        }}
                         aria-current={selected ? "true" : undefined}
                         aria-label={ariaLabel}
                         className={`flex w-full min-h-11 items-start gap-3 rounded-[var(--radius-md)] border px-3 py-2.5 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-btn-active-border)] ${
@@ -669,13 +745,14 @@ export function MessagesClient() {
                               ? "border-sky-200/80 bg-sky-50 hover:border-sky-300"
                               : "border-transparent bg-[var(--color-sheet)] hover:border-[var(--color-border-dark)] hover:bg-[var(--color-header)]"
                         }`}
+                        data-conversation-id={c.id}
                         type="button"
                         onClick={() => {
                           setSelectedConvId(c.id);
                           replaceMessagesQuery("messages", c.id);
                         }}
                       >
-                        <ConversationAvatar conversation={c} sizeClassName="h-11 w-11" viewerId={user.id} />
+                        <ConversationAvatar conversation={c} sizeClassName="h-11 w-11 shrink-0" viewerId={user.id} />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-start justify-between gap-2">
                             <p
@@ -725,51 +802,93 @@ export function MessagesClient() {
               ) : null}
             </aside>
 
-            <div className="grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+            <div
+              className={cn(
+                "grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden",
+                !selectedConvId && "max-md:hidden",
+              )}
+              data-messages-pane="thread"
+            >
               {selectedConvId ? (
                 <>
                   {activeConv ? (
-                    <div className="flex shrink-0 items-center gap-3 border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-3">
-                      <ConversationAvatar conversation={activeConv} sizeClassName="h-11 w-11" viewerId={user.id} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-semibold text-[var(--color-text)]">
-                          {conversationListTitle(activeConv, user.id)}
-                        </p>
-                        {threadHeaderSubtitle(activeConv, user.id) ? (
-                          <p className="truncate text-xs text-[var(--color-text-muted)]">
-                            {threadHeaderSubtitle(activeConv, user.id)}
-                          </p>
-                        ) : null}
+                    <div className="shrink-0 border-b border-[var(--color-border-dark)] bg-[var(--color-header)]">
+                      <div className="flex items-center gap-2 px-2 py-2 md:hidden">
+                        <Button
+                          aria-label="Back to messages"
+                          className="min-h-[44px] shrink-0 px-3"
+                          type="button"
+                          variant="secondary"
+                          onClick={goBackToConversationList}
+                        >
+                          ← Messages
+                        </Button>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {showJumpToLatest ? (
+                      <div className="flex min-w-0 items-start gap-2 px-3 pb-3 pt-1 md:items-center md:gap-3 md:py-3">
+                        <ConversationAvatar
+                          conversation={activeConv}
+                          sizeClassName="h-10 w-10 shrink-0 md:h-11 md:w-11"
+                          viewerId={user.id}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <h2
+                            ref={mobileThreadHeadingRef}
+                            className="truncate text-sm font-semibold text-[var(--color-text)] outline-none"
+                            tabIndex={-1}
+                          >
+                            {conversationListTitle(activeConv, user.id)}
+                          </h2>
+                          {threadHeaderSubtitleCompact(activeConv, user.id) ? (
+                            <p className="truncate text-xs text-[var(--color-text-muted)] md:hidden">
+                              {threadHeaderSubtitleCompact(activeConv, user.id)}
+                            </p>
+                          ) : null}
+                          {threadHeaderSubtitle(activeConv, user.id) ? (
+                            <p className="hidden truncate text-xs text-[var(--color-text-muted)] md:block">
+                              {threadHeaderSubtitle(activeConv, user.id)}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex max-w-[40%] shrink-0 flex-wrap items-center justify-end gap-1.5 sm:max-w-none">
+                          {showJumpToLatest ? (
+                            <Button
+                              aria-label={t("messaging.new_messages_button", "New messages")}
+                              className="min-h-[44px] px-2.5 text-xs sm:px-3 sm:text-sm"
+                              type="button"
+                              variant="secondary"
+                              onClick={() => {
+                                applyThreadScrollIntent("jump-to-latest");
+                              }}
+                            >
+                              <span className="sm:hidden">New</span>
+                              <span className="hidden sm:inline">
+                                {t("messaging.new_messages_button", "New messages")}
+                              </span>
+                            </Button>
+                          ) : null}
                           <Button
+                            aria-label="Reload thread"
+                            className="min-h-[44px] px-2.5 text-xs sm:px-3 sm:text-sm"
                             type="button"
                             variant="secondary"
                             onClick={() => {
-                              applyThreadScrollIntent("jump-to-latest");
+                              stickToBottomRef.current = true;
+                              void loadMessages(selectedConvId, { intent: "reload" });
                             }}
                           >
-                            {t("messaging.new_messages_button", "New messages")}
+                            <span className="sm:hidden">Reload</span>
+                            <span className="hidden sm:inline">Reload thread</span>
                           </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          variant="secondary"
-                          onClick={() => {
-                            stickToBottomRef.current = true;
-                            void loadMessages(selectedConvId, { intent: "reload" });
-                          }}
-                        >
-                          Reload thread
-                        </Button>
+                        </div>
                       </div>
                     </div>
                   ) : null}
 
                   <div
                     ref={threadScrollRef}
+                    aria-live="polite"
                     className="min-h-0 overflow-y-auto overscroll-contain bg-[var(--color-page)] px-3 py-4"
+                    role="log"
                     onScroll={() => {
                       const box = threadScrollRef.current;
                       if (!box) {
@@ -803,11 +922,11 @@ export function MessagesClient() {
                               <UserAvatar
                                 email={participantEmail(m.sender_user_id, participantLookup)}
                                 name={label}
-                                sizeClassName="h-8 w-8"
+                                sizeClassName="h-8 w-8 shrink-0"
                                 userId={m.sender_user_id}
                               />
                             ) : null}
-                            <div className={`max-w-[min(88%,34rem)] ${mine ? "items-end" : "items-start"} flex flex-col`}>
+                            <div className={`max-w-[min(88%,34rem)] ${mine ? "items-end" : "items-start"} flex min-w-0 flex-col`}>
                               <div
                                 className={`rounded-2xl px-3 py-2 text-sm shadow-sm ${
                                   mine
@@ -831,17 +950,22 @@ export function MessagesClient() {
                   </div>
 
                   <form
-                    className="flex flex-col gap-2 border-t border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 max-md:pb-1 sm:flex-row sm:items-end"
+                    className="flex shrink-0 flex-row items-end gap-2 border-t border-[var(--color-border-dark)] bg-[var(--color-sheet)] p-3 max-md:pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]"
                     onSubmit={sendMessage}
                   >
+                    <label className="sr-only" htmlFor="msg-composer-input">
+                      Write a message
+                    </label>
                     <textarea
-                      className={`${textareaClass()} min-h-[72px] flex-1`}
+                      className={`${composerTextareaClass()} min-w-0 flex-1`}
+                      id="msg-composer-input"
                       maxLength={4000}
                       placeholder="Write a message…"
+                      rows={2}
                       value={msgInput}
                       onChange={(ev) => setMsgInput(ev.target.value)}
                     />
-                    <Button className="sm:mb-0.5" disabled={!msgInput.trim()} type="submit">
+                    <Button className="min-h-[44px] shrink-0" disabled={!msgInput.trim()} type="submit">
                       Send
                     </Button>
                   </form>

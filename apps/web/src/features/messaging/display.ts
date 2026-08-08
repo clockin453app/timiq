@@ -54,6 +54,11 @@ export function conversationListTitle(conv: ConversationListItem, viewerId: stri
   return directConversationTitle(conv, viewerId);
 }
 
+export function groupParticipantCountLabel(conv: ConversationListItem): string {
+  const n = Math.max(0, conv.participant_count ?? 0);
+  return `${n} participant${n === 1 ? "" : "s"}`;
+}
+
 export function conversationListSubtitle(conv: ConversationListItem, viewerId: string): string | null {
   if (conv.conversation_type === "group") {
     const names = (conv.participants ?? [])
@@ -61,11 +66,11 @@ export function conversationListSubtitle(conv: ConversationListItem, viewerId: s
       .map((p) => p.display_name?.trim() || p.email?.trim() || "")
       .filter(Boolean);
     if (names.length === 0) {
-      return `${conv.participant_count} participants`;
+      return groupParticipantCountLabel(conv);
     }
     const shown = names.slice(0, 4).join(", ");
     const suffix = names.length > 4 ? ` +${names.length - 4} more` : "";
-    return `${conv.participant_count} participants · ${shown}${suffix}`;
+    return `${groupParticipantCountLabel(conv)} · ${shown}${suffix}`;
   }
   const other = otherParticipant(conv, viewerId);
   const title = directConversationTitle(conv, viewerId);
@@ -75,6 +80,19 @@ export function conversationListSubtitle(conv: ConversationListItem, viewerId: s
   return null;
 }
 
+/** Compact thread subtitle for narrow screens (count only for groups). */
+export function threadHeaderSubtitleCompact(
+  conv: ConversationListItem,
+  viewerId: string,
+): string | null {
+  if (conv.conversation_type === "group") {
+    return groupParticipantCountLabel(conv);
+  }
+  const other = otherParticipant(conv, viewerId);
+  return other?.email?.trim() || null;
+}
+
+/** Fuller thread subtitle for desktop (may include participant names). */
 export function threadHeaderSubtitle(conv: ConversationListItem, viewerId: string): string | null {
   if (conv.conversation_type === "group") {
     return conversationListSubtitle(conv, viewerId);
