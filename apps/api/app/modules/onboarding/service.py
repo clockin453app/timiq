@@ -1,6 +1,4 @@
-import base64
 import html
-import json
 import uuid
 from datetime import date, datetime, timezone
 from typing import Any
@@ -903,27 +901,20 @@ def _assert_can_print_onboarding_submission(actor: User, submission: OnboardingS
         raise OnboardingPermissionError("You do not have permission to print this submission.")
 
 
-def _signature_image_data_url(signature_path: str | None) -> tuple[str | None, str | None]:
-    if not signature_path:
-        return None, None
-    try:
-        backend = get_storage_backend()
-        if not backend.exists(signature_path):
-            return None, "Signature file unavailable"
-        data = backend.read_bytes(signature_path)
-    except Exception:
-        return None, "Signature file unavailable"
-    if len(data) >= 8 and data[:8] == b"\x89PNG\r\n\x1a\n":
-        media = "image/png"
-    elif len(data) >= 3 and data[:3] == b"\xff\xd8\xff":
-        media = "image/jpeg"
-    else:
-        return None, "Signature file unavailable"
-    encoded = base64.b64encode(data).decode("ascii")
-    return f"data:{media};base64,{encoded}", None
+def _read_signature_bytes_for_export(signature_path: str) -> bytes | None:
+    backend = get_storage_backend()
+    if not backend.exists(signature_path):
+        return None
+    return backend.read_bytes(signature_path)
 
 
-def render_submission_print_html(db_session: Session, actor: User, submission_id: uuid.UUID) -> str:
+def _build_export_document_for_actor(
+    db_session: Session,
+    actor: User,
+    submission_id: uuid.UUID,
+):
+    from app.modules.onboarding.presentation import build_onboarding_export_document
+
     bundle = get_submission_with_user_and_profile(db_session, submission_id)
     if bundle is None:
         raise OnboardingNotFoundError("Submission not found.")
@@ -931,7 +922,6 @@ def render_submission_print_html(db_session: Session, actor: User, submission_id
     _assert_can_print_onboarding_submission(actor, submission, owner)
     docs = list_documents_for_submission(db_session, submission.id)
     company = get_company_by_id(db_session, submission.company_id) if submission.company_id else None
-    company_esc = html.escape(company.name if company else "Company")
 
     name_parts: list[str] = []
     if profile is not None:
@@ -939,53 +929,78 @@ def render_submission_print_html(db_session: Session, actor: User, submission_id
             name_parts.append(profile.first_name)
         if profile.last_name:
             name_parts.append(profile.last_name)
-    employee_name = html.escape(" ".join(name_parts).strip() or (owner.email or "Employee"))
-
+    employee_name = " ".join(name_parts).strip() or (owner.email or "Employee")
     form = dict(submission.form_payload or {})
+    contract_raw = form.get("contract_version") or ONBOARDING_CONTRACT_VERSION
+
+    def _read(path: str) -> bytes | None:
+        return _read_signature_bytes_for_export(path)
+
+    export_doc = build_onboarding_export_document(
+        submission=submission,
+        company_name=company.name if company else "Company",
+        employee_name=employee_name,
+        employee_email=owner.email or "",
+        documents=docs,
+        generated_at=_utc_now(),
+        format_datetime=_format_document_datetime,
+        contract_accepted_display=_contract_accepted_display(form),
+        contract_version_display=_contract_version_display(contract_raw),
+        read_signature_bytes=_read,
+    )
+    return export_doc, submission, owner
+
+
+def render_submission_print_html(db_session: Session, actor: User, submission_id: uuid.UUID) -> str:
+    from app.modules.onboarding.presentation import signature_data_url
+
+    export_doc, submission, owner = _build_export_document_for_actor(db_session, actor, submission_id)
+
+    company_esc = html.escape(export_doc.company_name)
+    employee_name = html.escape(export_doc.employee_name)
+    email_esc = html.escape(export_doc.employee_email)
+
     form_rows: list[str] = []
-    for key in sorted(form.keys()):
-        raw = form[key]
-        if isinstance(raw, (dict, list)):
-            val = html.escape(json.dumps(raw, ensure_ascii=False))
-        else:
-            val = html.escape(str(raw))
-        form_rows.append(f"<tr><th>{html.escape(str(key))}</th><td>{val}</td></tr>")
+    for _key, label, value in export_doc.form_rows:
+        form_rows.append(
+            f"<tr><th>{html.escape(label)}</th><td>{html.escape(value)}</td></tr>",
+        )
 
     doc_rows: list[str] = []
-    for d in docs:
+    for d in export_doc.documents:
         doc_rows.append(
             "<tr>"
-            f"<td>{html.escape(d.doc_type)}</td>"
+            f"<td>{html.escape(d.doc_type_label)}</td>"
             f"<td>{html.escape(d.original_filename)}</td>"
             f"<td>{html.escape(d.content_type)}</td>"
             f"<td>{d.file_size_bytes}</td>"
             "</tr>",
         )
 
-    signature_data_url, signature_error = _signature_image_data_url(submission.signature_image_path)
-    sig_mode = html.escape((submission.signature_mode or "").strip() or "—")
-    typed_raw = (submission.signature_typed_text or "").strip() or str(form.get("signature_name", "")).strip()
+    data_url = signature_data_url(export_doc.signature_image_bytes, export_doc.signature_media_type)
+    sig_mode = html.escape(export_doc.signature_mode)
+    typed_raw = export_doc.signatory_name
     typed = html.escape(typed_raw)
-    contract_raw = submission.form_payload.get("contract_version") or ONBOARDING_CONTRACT_VERSION
-    contract = html.escape(_contract_version_display(contract_raw))
-    accepted_label = _contract_accepted_display(form)
-    submitted_label = html.escape(_format_document_datetime(submission.submitted_at))
-    generated_label = html.escape(_format_document_datetime(_utc_now()))
+    contract = html.escape(export_doc.contract_version)
+    accepted_label = html.escape(export_doc.contract_accepted)
+    submitted_label = html.escape(export_doc.submitted_display)
+    generated_label = html.escape(export_doc.generated_display)
+    title_esc = html.escape(export_doc.document_title)
     signature_body = ""
-    if signature_data_url:
+    if data_url:
         signature_body = (
             '<div class="signature-image-wrap">'
-            f'<img class="signature-image" src="{signature_data_url}" alt="Employee signature"/>'
+            f'<img class="signature-image" src="{data_url}" alt="Employee signature"/>'
             "</div>"
         )
-    elif signature_error:
-        signature_body = f'<p class="signature-missing">{html.escape(signature_error)}</p>'
+    elif export_doc.signature_error:
+        signature_body = f'<p class="signature-missing">{html.escape(export_doc.signature_error)}</p>'
     else:
         signature_body = '<p class="signature-missing">Not provided</p>'
     typed_line = f"<p><strong>Typed / signatory name:</strong> {typed}</p>" if typed_raw else ""
 
     html_out = f"""<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"/><title>Starter form — {employee_name}</title>
+<html lang="en"><head><meta charset="utf-8"/><title>{title_esc} — {employee_name}</title>
 <style>
 * {{ box-sizing: border-box; }}
 body {{ background: #f5f7fb; color: #111827; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; padding: 28px; }}
@@ -1011,16 +1026,16 @@ th {{ background: #f8fafc; width: 28%; }}
 <header class="header">
   <div>
     <h1>{company_esc}</h1>
-    <p><strong>Employee:</strong> {employee_name} ({html.escape(owner.email or "")})</p>
+    <p><strong>Employee:</strong> {employee_name} ({email_esc})</p>
   </div>
   <div>
-    <div class="title">Starter Form / Onboarding Contract</div>
+    <div class="title">{title_esc}</div>
   </div>
 </header>
 <section class="meta-grid">
   <div class="meta-item"><span class="label">Company</span><span class="value">{company_esc}</span></div>
-  <div class="meta-item"><span class="label">Employee</span><span class="value">{employee_name} ({html.escape(owner.email or "")})</span></div>
-  <div class="meta-item"><span class="label">Status</span><span class="value">{html.escape(submission.status)}</span></div>
+  <div class="meta-item"><span class="label">Employee</span><span class="value">{employee_name} ({email_esc})</span></div>
+  <div class="meta-item"><span class="label">Status</span><span class="value">{html.escape(export_doc.status)}</span></div>
   <div class="meta-item"><span class="label">Submitted</span><span class="value">{submitted_label}</span></div>
   <div class="meta-item"><span class="label">Contract accepted</span><span class="value">{accepted_label}</span></div>
   <div class="meta-item"><span class="label">Contract version</span><span class="value">{contract}</span></div>
@@ -1059,6 +1074,33 @@ th {{ background: #f8fafc; width: 28%; }}
         },
     )
     return html_out
+
+
+def export_submission_pdf_bytes(
+    db_session: Session,
+    actor: User,
+    submission_id: uuid.UUID,
+) -> tuple[bytes, str]:
+    from app.modules.onboarding.pdf_export import build_onboarding_submission_pdf, onboarding_pdf_filename
+
+    export_doc, submission, owner = _build_export_document_for_actor(db_session, actor, submission_id)
+    pdf = build_onboarding_submission_pdf(export_doc)
+    if not pdf.startswith(b"%PDF"):
+        raise OnboardingValidationError("PDF could not be generated.")
+    filename = onboarding_pdf_filename(export_doc.employee_name, _utc_now())
+    create_internal_audit_event(
+        db_session=db_session,
+        actor=actor,
+        action="onboarding.submission_pdf_downloaded",
+        entity_type="onboarding_submission",
+        entity_id=str(submission.id),
+        company_id=submission.company_id,
+        details={
+            "export_type": "pdf",
+            "subject_user_id": str(owner.id),
+        },
+    )
+    return pdf, filename
 
 
 def resolve_document_download(

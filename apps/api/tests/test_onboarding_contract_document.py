@@ -63,7 +63,8 @@ def test_print_document_embeds_drawn_signature_and_header() -> None:
 
     html, _storage = _render(submission, owner)
 
-    assert "Starter Form / Onboarding Contract" in html
+    assert "Employee onboarding form" in html
+    assert "Starter Form / Onboarding Contract" not in html
     assert "Demo Company" in html
     assert "Petre Rotaru" in html
     assert "employee@timiq.local" in html
@@ -77,6 +78,7 @@ def test_print_document_embeds_drawn_signature_and_header() -> None:
     assert "Typed Employee" in html
     assert "data:image/png;base64," in html
     assert "Submitted / accepted" not in html
+    assert "Signatory name" in html or "signature_name" not in html.split("Form responses")[-1]
 
 
 def test_print_document_handles_missing_signature_file_safely() -> None:

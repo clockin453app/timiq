@@ -4,7 +4,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 
-from app.core.storage.file_response import protected_file_response
+from app.core.storage.file_response import content_disposition_attachment, protected_file_response
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db_session
@@ -29,6 +29,7 @@ from app.modules.onboarding.service import (
     download_document_file,
     download_profile_photo_file,
     download_signature_image,
+    export_submission_pdf_bytes,
     get_or_create_my_submission,
     get_review_submission_detail,
     list_review_submissions,
@@ -306,8 +307,33 @@ def get_onboarding_submission_print(
     return Response(
         content=body,
         media_type="text/html; charset=utf-8",
-        headers={"Content-Disposition": f'inline; filename="onboarding-{submission_id}.html"'},
+        headers={
+            "Content-Disposition": f'inline; filename="onboarding-{submission_id}.html"',
+            "Cache-Control": "private, no-store",
+        },
     )
+
+
+@router.get("/submissions/{submission_id}/pdf")
+def get_onboarding_submission_pdf(
+    submission_id: uuid.UUID,
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        raw, filename = export_submission_pdf_bytes(db_session, current_user, submission_id)
+    except OnboardingNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+    except OnboardingPermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc)) from None
+    except OnboardingValidationError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(exc)) from None
+    headers = {
+        "Content-Disposition": content_disposition_attachment(filename),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+    }
+    return Response(content=raw, media_type="application/pdf", headers=headers)
 
 
 @router.get("/documents/{document_id}/file")
