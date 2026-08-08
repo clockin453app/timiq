@@ -1,5 +1,5 @@
 /**
- * Site Progress mobile form order — metadata and Submit before photo previews.
+ * Site Progress mobile form order + compact rhythm — metadata and Submit before photo previews.
  */
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -71,6 +71,17 @@ for (const w of ["320", "360", "375", "390", "430"]) {
     /grid-cols-1/.test(clientSrc) && /grid-cols-2/.test(clientSrc) && /min-h-\[44px\]/.test(clientSrc),
   );
 }
-check("desktop side-by-side metadata at md", /md:grid-cols-2/.test(clientSrc));
+check("desktop date/site side-by-side at md only", /md:grid-cols-2/.test(clientSrc));
+check("work date and site stay single-column below md", /grid min-w-0 grid-cols-1 gap-2\.5 md:grid-cols-2/.test(clientSrc));
+check("progress/percent share a row from 390px (~65/35)", /min-\[390px\]:grid-cols-\[minmax\(0,1\.85fr\)_minmax\(0,1fr\)\]/.test(clientSrc));
+check("compact form row rhythm (~8–10px)", /space-y-2\.5/.test(clientSrc));
+check("compact New update label (no tall header bar)", !/border-b border-\[var\(--color-border-dark\)\] bg-\[var\(--color-header\)\] px-3 py-2 md:px-\[var\(--space-card\)\]/.test(clientSrc));
+check("notes start compact (~68px)", /min-h-\[68px\]/.test(clientSrc));
+check("concise photo formats line", /JPEG, PNG or WebP · Up to \{maxAttachments\} photos · \{maxMb\} MB each/.test(clientSrc));
+check("choose/take side-by-side from 360px", /min-\[360px\]:grid-cols-2/.test(clientSrc));
+check("Clear selected photos text action", /Clear selected photos/.test(clientSrc));
+check("no Clear all primary-style control", !/Clear all/.test(clientSrc));
+check("gallery 3-col from 390px", /min-\[390px\]:grid-cols-3/.test(clientSrc));
+check("44px touch targets retained", /min-h-\[44px\]/.test(clientSrc));
 
 console.log(`${passed} site progress mobile form-order checks passed`);

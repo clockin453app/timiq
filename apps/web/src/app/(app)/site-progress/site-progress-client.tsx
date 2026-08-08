@@ -69,7 +69,6 @@ import {
 } from "@/features/work-progress/upload-queue";
 import { todayLocalDateString } from "@/lib/datetime-local";
 import { genericStatusLabel, useT } from "@/lib/i18n";
-import { uiClasses } from "@/lib/ui-classes";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -134,10 +133,12 @@ type PhotoQueuePanelProps = {
   onPick: (files: File[]) => void;
   onRemove: (key: string) => void;
   onClear: () => void;
-  /** Controls (caption + choose/take/clear). Default true. */
+  /** Controls (caption + choose/take). Default true. */
   showControls?: boolean;
   /** Selected-photo thumbnail gallery. Default true. */
   showGallery?: boolean;
+  /** Compact text clear under photo actions (not a third primary). Default true. */
+  showClearAction?: boolean;
 };
 
 function PhotoQueueGallery({
@@ -153,7 +154,7 @@ function PhotoQueueGallery({
     return null;
   }
   return (
-    <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4">
+    <ul className="grid grid-cols-2 gap-1.5 min-[390px]:grid-cols-3 md:grid-cols-4 md:gap-2">
       {queued.map((item) => (
         <li
           className="min-w-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-header)]"
@@ -167,7 +168,7 @@ function PhotoQueueGallery({
               src={item.previewUrl}
             />
           </div>
-          <div className="flex items-start justify-between gap-1 p-1.5">
+          <div className="flex items-center justify-between gap-1 px-1.5 py-1">
             <p className="min-w-0 flex-1 truncate text-[length:var(--text-secondary)] text-[var(--color-text)]" title={item.file.name}>
               {item.file.name}
             </p>
@@ -201,24 +202,30 @@ function PhotoQueuePanel({
   onClear,
   showControls = true,
   showGallery = true,
+  showClearAction = true,
 }: PhotoQueuePanelProps) {
   const galleryRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const room = Math.max(0, maxAttachments - existingCount);
+  const selectedOrExisting = queued.length + existingCount;
   const maxMb = Math.round(maxOriginalBytes / (1024 * 1024));
 
   return (
-    <div className="min-w-0 space-y-[var(--space-form-gap)]">
+    <div className="min-w-0 space-y-2">
       {showControls ? (
         <>
-          <p className="timiq-caption break-words">
-            JPEG / PNG / WebP · {maxAttachments} max · {maxMb} MB each · {room} slot
-            {room === 1 ? "" : "s"} left
+          <p className="timiq-caption break-words leading-snug">
+            JPEG, PNG or WebP · Up to {maxAttachments} photos · {maxMb} MB each
           </p>
+          {selectedOrExisting > 0 || room === 0 ? (
+            <p className="timiq-caption break-words leading-snug text-[var(--color-text-muted)]">
+              {room} slot{room === 1 ? "" : "s"} left
+            </p>
+          ) : null}
 
-          <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row">
+          <div className="grid w-full min-w-0 grid-cols-1 gap-2 min-[360px]:grid-cols-2">
             <Button
-              className="min-h-[44px] w-full sm:w-auto"
+              className="min-h-[44px] w-full"
               disabled={disabled || room === 0}
               onClick={() => galleryRef.current?.click()}
               type="button"
@@ -227,7 +234,7 @@ function PhotoQueuePanel({
               Choose photos
             </Button>
             <Button
-              className="min-h-[44px] w-full sm:w-auto"
+              className="min-h-[44px] w-full"
               disabled={disabled || room === 0}
               onClick={() => cameraRef.current?.click()}
               type="button"
@@ -235,18 +242,18 @@ function PhotoQueuePanel({
             >
               Take photo
             </Button>
-            {queued.length > 0 ? (
-              <Button
-                className="min-h-[44px] w-full sm:w-auto"
-                disabled={disabled}
-                onClick={onClear}
-                type="button"
-                variant="ghost"
-              >
-                Clear all
-              </Button>
-            ) : null}
           </div>
+
+          {showClearAction && queued.length > 0 ? (
+            <button
+              className="timiq-touch-extend self-start text-left text-[length:var(--text-secondary)] font-medium text-[var(--color-text-muted)] underline-offset-2 hover:underline disabled:opacity-50"
+              disabled={disabled}
+              onClick={onClear}
+              type="button"
+            >
+              Clear selected photos
+            </button>
+          ) : null}
 
           <input
             accept="image/jpeg,image/png,image/webp"
@@ -281,7 +288,7 @@ function PhotoQueuePanel({
             type="file"
           />
 
-          {notice ? <p className="timiq-caption break-words">{notice}</p> : null}
+          {notice ? <p className="timiq-caption break-words leading-snug">{notice}</p> : null}
           {error ? (
             <p className="break-words text-[length:var(--text-secondary)] text-[var(--color-danger-700)]" role="alert">
               {error}
@@ -978,21 +985,20 @@ export function SiteProgressClient() {
           className="min-w-0 rounded-[var(--radius-md)] border border-[var(--color-border-dark)] bg-[var(--color-cell)]"
           data-site-progress-form="new-update"
         >
-          <div className="border-b border-[var(--color-border-dark)] bg-[var(--color-header)] px-3 py-2 md:px-[var(--space-card)] md:py-2.5">
+          <form
+            className="space-y-2.5 p-3 md:space-y-3 md:p-[var(--space-card)]"
+            data-site-progress-form-order="metadata-photos-submit-previews"
+            noValidate
+            onSubmit={(e) => void handleSubmit(e)}
+          >
             <h2
               className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]"
               id={`${formId}-new-heading`}
             >
               {t("site_progress.section_new", "New update")}
             </h2>
-          </div>
-          <form
-            className={`${uiClasses.formStack} p-3 md:p-[var(--space-card)]`}
-            data-site-progress-form-order="metadata-photos-submit-previews"
-            noValidate
-            onSubmit={(e) => void handleSubmit(e)}
-          >
-            <div className="grid min-w-0 grid-cols-1 gap-[var(--space-form-gap)] md:grid-cols-2">
+
+            <div className="grid min-w-0 grid-cols-1 gap-2.5 md:grid-cols-2 md:gap-3">
               <FormField
                 error={fieldErrors.workDate}
                 htmlFor={`${formId}-work-date`}
@@ -1048,7 +1054,7 @@ export function SiteProgressClient() {
               />
             </FormField>
 
-            <div className="grid min-w-0 grid-cols-1 gap-[var(--space-form-gap)] md:grid-cols-2">
+            <div className="grid min-w-0 grid-cols-1 gap-2.5 min-[390px]:grid-cols-[minmax(0,1.85fr)_minmax(0,1fr)] md:gap-3">
               <FormField
                 htmlFor={`${formId}-status`}
                 label={t("site_progress.lbl_progress_status", "Progress status")}
@@ -1069,7 +1075,7 @@ export function SiteProgressClient() {
               <FormField
                 error={fieldErrors.percent}
                 htmlFor={`${formId}-percent`}
-                label={t("site_progress.lbl_percent_optional", "Percent complete (optional)")}
+                label={t("site_progress.lbl_percent_optional", "Percent")}
               >
                 <input
                   className="timiq-input min-h-[44px] w-full min-w-0"
@@ -1090,9 +1096,10 @@ export function SiteProgressClient() {
 
             <FormField htmlFor={`${formId}-notes`} label={t("site_progress.lbl_notes", "Notes / details")}>
               <textarea
-                className="timiq-input min-h-[5rem] w-full min-w-0"
+                className="timiq-input min-h-[68px] w-full min-w-0 resize-y [field-sizing:content]"
                 id={`${formId}-notes`}
                 onChange={(e) => setNotes(e.target.value)}
+                rows={2}
                 value={notes}
               />
             </FormField>
@@ -1117,6 +1124,7 @@ export function SiteProgressClient() {
                 onPick={pickIntoCreateQueue}
                 onRemove={(key) => setCreateQueue((q) => removeQueuedPhoto(q, key))}
                 queued={createQueue}
+                showClearAction={false}
                 showControls
                 showGallery={false}
               />
@@ -1188,10 +1196,23 @@ export function SiteProgressClient() {
             </Button>
 
             {createQueue.length > 0 ? (
-              <div className="min-w-0 space-y-2" data-site-progress-selected-photos>
-                <h3 className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
-                  Selected photos ({createQueue.length})
-                </h3>
+              <div className="min-w-0 space-y-1.5" data-site-progress-selected-photos>
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <h3 className="text-[10px] font-bold uppercase tracking-wider text-[var(--color-text-soft)]">
+                    Selected photos ({createQueue.length})
+                  </h3>
+                  <button
+                    className="timiq-touch-extend shrink-0 text-[length:var(--text-secondary)] font-medium text-[var(--color-text-muted)] underline-offset-2 hover:underline disabled:opacity-50"
+                    disabled={formBusy}
+                    onClick={() => {
+                      setCreateQueue((q) => clearQueuedPhotos(q));
+                      setCreatePhotoNotice("");
+                    }}
+                    type="button"
+                  >
+                    Clear selected photos
+                  </button>
+                </div>
                 <PhotoQueuePanel
                   disabled={formBusy}
                   existingCount={0}
@@ -1205,6 +1226,7 @@ export function SiteProgressClient() {
                   onPick={pickIntoCreateQueue}
                   onRemove={(key) => setCreateQueue((q) => removeQueuedPhoto(q, key))}
                   queued={createQueue}
+                  showClearAction={false}
                   showControls={false}
                   showGallery
                 />
