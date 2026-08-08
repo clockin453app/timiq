@@ -19,6 +19,7 @@ import { isAdministrator, RoleGuard, useCurrentUser } from "@/features/auth";
 import { listCompanies, type Company } from "@/features/companies/api";
 import {
   approveOnboarding,
+  downloadOnboardingSubmissionPdf,
   fetchOnboardingDocumentBlob,
   fetchOnboardingProfilePhotoBlob,
   fetchOnboardingSignatureBlob,
@@ -70,6 +71,8 @@ function OnboardingReviewAdminBody() {
 
   const [detailPhotoUrl, setDetailPhotoUrl] = useState<string | null>(null);
   const detailPhotoRevokeRef = useRef<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const pdfLockRef = useRef(false);
 
   const loadCompanies = useCallback(async () => {
     if (!adminAllCompanies) {
@@ -196,6 +199,25 @@ function OnboardingReviewAdminBody() {
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch (err) {
       setDetailError(err instanceof Error ? err.message : t("onboarding.signature_error"));
+    }
+  }
+
+  async function downloadPdf(submissionId: string) {
+    if (pdfLockRef.current || pdfBusy) {
+      return;
+    }
+    pdfLockRef.current = true;
+    setPdfBusy(true);
+    setDetailError("");
+    try {
+      await downloadOnboardingSubmissionPdf(submissionId);
+    } catch (err) {
+      setDetailError(
+        err instanceof Error ? err.message : t("onboarding.pdf_download_failed", "PDF could not be generated. Please try again."),
+      );
+    } finally {
+      pdfLockRef.current = false;
+      setPdfBusy(false);
     }
   }
 
@@ -344,7 +366,23 @@ function OnboardingReviewAdminBody() {
                 <span className="capitalize text-[var(--color-text)]">{genericStatusLabel(t, detail.status)}</span>
               </p>
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={() => openOnboardingSubmissionPrintWindow(detail.id)}>
+                <Button
+                  className="min-h-[44px]"
+                  disabled={pdfBusy}
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void downloadPdf(detail.id)}
+                >
+                  {pdfBusy
+                    ? t("onboarding.preparing_pdf", "Preparing PDF…")
+                    : t("onboarding.download_pdf", "Download PDF")}
+                </Button>
+                <Button
+                  className="min-h-[44px]"
+                  type="button"
+                  variant="secondary"
+                  onClick={() => openOnboardingSubmissionPrintWindow(detail.id)}
+                >
                   {t("onboarding.print_export")}
                 </Button>
               </div>

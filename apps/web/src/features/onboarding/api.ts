@@ -330,3 +330,53 @@ export function openOnboardingSubmissionPrintWindow(submissionId: string): void 
   const url = `${API_URL}/api/onboarding/submissions/${encodeURIComponent(submissionId)}/print`;
   window.open(url, "_blank", "noopener,noreferrer");
 }
+
+function filenameFromContentDisposition(header: string | null, fallback: string): string {
+  if (!header) return fallback;
+  const utf = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(header);
+  if (utf?.[1]) {
+    try {
+      return decodeURIComponent(utf[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      /* keep fallback */
+    }
+  }
+  const plain = /filename\s*=\s*"([^"]+)"/i.exec(header) || /filename\s*=\s*([^;]+)/i.exec(header);
+  if (plain?.[1]) {
+    return plain[1].trim().replace(/^"|"$/g, "") || fallback;
+  }
+  return fallback;
+}
+
+export async function downloadOnboardingSubmissionPdf(submissionId: string): Promise<void> {
+  const response = await fetch(
+    `${API_URL}/api/onboarding/submissions/${encodeURIComponent(submissionId)}/pdf`,
+    {
+      method: "GET",
+      credentials: "include",
+    },
+  );
+  if (!response.ok) {
+    throw new Error(
+      await parseErrorMessage(response, "PDF could not be generated. Please try again."),
+    );
+  }
+  const blob = await response.blob();
+  if (!blob.type.includes("pdf") && blob.size < 5) {
+    throw new Error("PDF could not be generated. Please try again.");
+  }
+  const fallback = `TimIQ_Onboarding_${submissionId}.pdf`;
+  const filename = filenameFromContentDisposition(
+    response.headers.get("Content-Disposition"),
+    fallback,
+  );
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

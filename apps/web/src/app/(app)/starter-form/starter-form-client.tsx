@@ -22,6 +22,7 @@ import {
   clearSignature,
   deleteOnboardingDocument,
   deleteOnboardingProfilePhoto,
+  downloadOnboardingSubmissionPdf,
   fetchOnboardingDocumentBlob,
   fetchOnboardingProfilePhotoBlob,
   fetchOnboardingSignatureBlob,
@@ -83,6 +84,8 @@ export function StarterFormClient() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const pdfLockRef = useRef(false);
   const [profilePhotoPreviewUrl, setProfilePhotoPreviewUrl] = useState<string | null>(null);
   const profilePhotoPreviewRevokeRef = useRef<string | null>(null);
   const [signaturePreviewUrl, setSignaturePreviewUrl] = useState<string | null>(null);
@@ -715,7 +718,38 @@ export function StarterFormClient() {
 
             {detail.status !== "draft" ? (
               <div className="mt-3 flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={() => openOnboardingSubmissionPrintWindow(detail.id)}>
+                <Button
+                  className="min-h-[44px]"
+                  disabled={pdfBusy}
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    if (pdfLockRef.current || pdfBusy) return;
+                    pdfLockRef.current = true;
+                    setPdfBusy(true);
+                    setError("");
+                    void downloadOnboardingSubmissionPdf(detail.id)
+                      .catch((err) => {
+                        setError(
+                          err instanceof Error
+                            ? err.message
+                            : "PDF could not be generated. Please try again.",
+                        );
+                      })
+                      .finally(() => {
+                        pdfLockRef.current = false;
+                        setPdfBusy(false);
+                      });
+                  }}
+                >
+                  {pdfBusy ? "Preparing PDF…" : "Download PDF"}
+                </Button>
+                <Button
+                  className="min-h-[44px]"
+                  type="button"
+                  variant="secondary"
+                  onClick={() => openOnboardingSubmissionPrintWindow(detail.id)}
+                >
                   Print my submitted form
                 </Button>
               </div>
