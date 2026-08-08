@@ -464,7 +464,11 @@ def get_payroll_item_summary(db_session: Session, actor: User, item_id: uuid.UUI
         rate_missing=item.rate_missing,
         ytd_taxable_pay=ytd_pay,
         ytd_cis_deducted=ytd_cis,
-        can_open_payslip=True,
+        can_open_payslip=(
+            item.status == "paid"
+            if actor.system_role == SystemRole.EMPLOYEE
+            else item.status in ("approved", "paid")
+        ),
         national_insurance_number=ni_val,
         utr_number=utr_val,
     )
@@ -2267,7 +2271,7 @@ def list_my_pay_history(db_session: Session, actor: User) -> list[PayHistoryEntr
                 rate_missing=i.rate_missing,
                 company_name=company_names[i.company_id],
                 payment_mode=normalize_payroll_payment_mode(i.payment_mode),
-                can_open_payslip=True,
+                can_open_payslip=i.status == "paid",
                 effective_cis_tax_amount=eff_cis,
                 effective_net_amount=eff_net,
                 timezone_name=period.timezone_name,

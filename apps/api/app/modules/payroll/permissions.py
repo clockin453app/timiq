@@ -10,14 +10,25 @@ class PayrollPermissionError(ValueError):
 
 
 def assert_actor_can_view_payroll_item(actor: User, item: PayrollItem, owner: User) -> None:
-    """Employee: own approved/paid item only. Admin: manageable employee. Administrator: any."""
-    if item.status not in ("approved", "paid"):
-        raise PayrollPermissionError("This payroll item is not available.")
+    """Employee payslip/pay-week: own paid item only.
+
+    Management (Admin / Administrator) may still preview approved or paid items when
+    company/ownership rules allow — employee release requires status == paid.
+    """
     if actor.system_role == SystemRole.ADMINISTRATOR:
+        if item.status not in ("approved", "paid"):
+            raise PayrollPermissionError("This payroll item is not available.")
         return
+    if actor.system_role == SystemRole.ADMIN:
+        if item.status not in ("approved", "paid"):
+            raise PayrollPermissionError("This payroll item is not available.")
+        if can_manage_user(actor, owner):
+            return
+        raise PayrollPermissionError("You cannot view this payroll item.")
+    # Employee (and any other self-service role): paid-only release for own item.
+    if item.status != "paid":
+        raise PayrollPermissionError("This payroll item is not available.")
     if actor.id == item.user_id:
-        return
-    if actor.system_role == SystemRole.ADMIN and can_manage_user(actor, owner):
         return
     raise PayrollPermissionError("You cannot view this payroll item.")
 

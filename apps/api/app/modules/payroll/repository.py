@@ -272,10 +272,11 @@ def list_items_for_user_pay_history(
     db_session: Session,
     user_id: uuid.UUID,
 ) -> list[PayrollItem]:
+    """Employee CIS Pay History: paid payroll only (approved-but-unpaid stays on Timesheets)."""
     statement = (
         select(PayrollItem)
         .where(PayrollItem.user_id == user_id)
-        .where(PayrollItem.status.in_(("approved", "paid")))
+        .where(PayrollItem.status == "paid")
         .order_by(PayrollItem.updated_at.desc())
     )
     return list(db_session.scalars(statement).all())
