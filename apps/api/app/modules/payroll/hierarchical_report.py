@@ -358,3 +358,17 @@ def employee_summary_badge(report: PayrollHierarchicalReport, emp: PayrollEmploy
             return emp.weeks[0].week_start.strftime("%b %Y").upper()
         return "MONTH"
     return "Period summary"
+
+
+def is_single_week_report(report: PayrollHierarchicalReport) -> bool:
+    """True when the report spans at most one distinct payroll week.
+
+    Uses week_start values from the hierarchical model (not display strings),
+    so a cross-month week like 27 Jul–2 Aug still counts as a single week.
+    """
+    week_starts = {
+        week.week_start
+        for emp in report.employees
+        for week in emp.weeks
+    }
+    return len(week_starts) <= 1

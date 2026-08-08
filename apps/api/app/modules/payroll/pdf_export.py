@@ -22,6 +22,7 @@ from reportlab.platypus import (
     Spacer,
     Table,
     TableStyle,
+    HRFlowable,
 )
 
 from app.modules.payroll.hierarchical_report import (
@@ -30,6 +31,7 @@ from app.modules.payroll.hierarchical_report import (
     PayrollWeekBlock,
     employee_summary_badge,
     hours_display,
+    is_single_week_report,
     money_display,
     status_display,
 )
@@ -337,7 +339,7 @@ def _employee_summary_table(
     return [head, Spacer(1, 1.5 * mm), metrics, Spacer(1, 2 * mm)]
 
 
-def _week_unit(week: PayrollWeekBlock, s: dict[str, ParagraphStyle]) -> KeepTogether:
+def _week_unit_bits(week: PayrollWeekBlock, s: dict[str, ParagraphStyle]) -> list[Any]:
     day_data: list[list[Any]] = [
         [
             _p("Day", s["hdr"]),
@@ -405,18 +407,62 @@ def _week_unit(week: PayrollWeekBlock, s: dict[str, ParagraphStyle]) -> KeepToge
         ("ALIGN", (2, 0), (-1, last - 2), "RIGHT"),
     ]
     days_table.setStyle(TableStyle(style_cmds))
-    return KeepTogether(
-        [
-            _p(week.week_label, s["week"]),
-            days_table,
-            Spacer(1, 1.8 * mm),
-        ],
-    )
+    return [
+        _p(week.week_label, s["week"]),
+        days_table,
+        Spacer(1, 1.8 * mm),
+    ]
+
+
+def _week_unit(week: PayrollWeekBlock, s: dict[str, ParagraphStyle]) -> KeepTogether:
+    return KeepTogether(_week_unit_bits(week, s))
+
+
+def _employee_divider() -> list[Any]:
+    return [
+        Spacer(1, 1.5 * mm),
+        HRFlowable(
+            width="100%",
+            thickness=0.7,
+            color=colors.HexColor("#9ca3af"),
+            spaceBefore=0,
+            spaceAfter=0,
+        ),
+        Spacer(1, 2 * mm),
+    ]
+
+
+def _employee_story_bits(
+    report: PayrollHierarchicalReport,
+    emp: PayrollEmployeeBlock,
+    s: dict[str, ParagraphStyle],
+    *,
+    keep_whole_block: bool,
+) -> list[Any]:
+    """Build flowables for one employee.
+
+    When keep_whole_block is True (single-week packing), wrap identity + summary +
+    all weeks in one KeepTogether so the block does not split mid-page.
+    """
+    header = _employee_summary_table(report, emp, s)
+    if not emp.weeks:
+        return [KeepTogether(header)]
+    if keep_whole_block:
+        bits: list[Any] = [*header]
+        for week in emp.weeks:
+            bits.extend(_week_unit_bits(week, s))
+        return [KeepTogether(bits)]
+    first_bits = [*header, *_week_unit_bits(emp.weeks[0], s)]
+    out: list[Any] = [KeepTogether(first_bits)]
+    for week in emp.weeks[1:]:
+        out.append(_week_unit(week, s))
+    return out
 
 
 def build_hierarchical_payroll_pdf(report: PayrollHierarchicalReport) -> bytes:
     s = _styles()
     assert _BODY_PT >= _MIN_BODY_PT
+    single_week = is_single_week_report(report)
 
     buf = BytesIO()
     doc = SimpleDocTemplate(
@@ -431,7 +477,7 @@ def build_hierarchical_payroll_pdf(report: PayrollHierarchicalReport) -> bytes:
     )
     story: list[Any] = []
 
-    # Compact report header (page 1 only — not repeated per employee).
+    # Compact report header (page 1 — not repeated per employee).
     story.append(_p("TimIQ Payroll Report", s["title"]))
     story.append(_p(f"Company: {report.company_name}", s["meta"]))
     story.append(_p(f"Period: {report.period_label}", s["meta"]))
@@ -447,22 +493,18 @@ def build_hierarchical_payroll_pdf(report: PayrollHierarchicalReport) -> bytes:
     if not report.employees:
         story.append(Spacer(1, 2 * mm))
         story.append(_p("No payable payroll rows for this selected range.", s["meta"]))
-    else:
+    elif single_week:
+        # Single payroll week: pack complete employee blocks onto shared pages.
+        story.append(Spacer(1, 2 * mm))
         for emp_index, emp in enumerate(report.employees):
-            # Explicit employee page boundary.
+            if emp_index > 0:
+                story.extend(_employee_divider())
+            story.extend(_employee_story_bits(report, emp, s, keep_whole_block=True))
+    else:
+        # Multi-week / monthly: each employee begins on a fresh page.
+        for emp in report.employees:
             story.append(PageBreak())
-            emp_flow: list[Any] = []
-            emp_flow.extend(_employee_summary_table(report, emp, s))
-            if emp.weeks:
-                # Keep heading+summary with first week so heading never orphans alone.
-                first = _week_unit(emp.weeks[0], s)
-                story.append(KeepTogether([*emp_flow, first]))
-                for week in emp.weeks[1:]:
-                    story.append(_week_unit(week, s))
-            else:
-                story.append(KeepTogether(emp_flow))
-            # Marker used by tests / debug (not user-facing).
-            _ = emp_index
+            story.extend(_employee_story_bits(report, emp, s, keep_whole_block=False))
 
     doc.build(story, canvasmaker=_NumberedCanvas)
     return buf.getvalue()

@@ -16,6 +16,7 @@ from app.modules.payroll.hierarchical_report import (
     build_hierarchical_payroll_report,
     format_short_day,
     format_week_label,
+    is_single_week_report,
 )
 from app.modules.payroll.pdf_export import (
     _BODY_PT,
@@ -196,11 +197,12 @@ def test_pdf_column_widths_fit_printable_area() -> None:
     assert _BODY_PT >= _MIN_BODY_PT
 
 
-def test_pdf_source_is_portrait_employee_pages() -> None:
+def test_pdf_source_is_portrait_adaptive_pages() -> None:
     source = inspect.getsource(pdf_export.build_hierarchical_payroll_pdf)
     module = inspect.getsource(pdf_export)
     assert "pagesize=A4" in source
     assert "PageBreak" in source
+    assert "is_single_week_report" in source
     assert "landscape" not in module.lower()
     assert "EMPLOYEE:" in module
     assert "fontSize=7.9" not in module
@@ -212,6 +214,8 @@ def test_print_html_compact_employee_pages() -> None:
     assert "size: A4 portrait" in source
     assert "landscape" not in source
     assert "EMPLOYEE:" in source
+    assert "report-single-week" in source
+    assert "report-multi-week" in source
     assert "page-break-before: always" in source
     assert "employee-summary" in source
     assert "week-foot" in source
@@ -233,6 +237,7 @@ def test_print_html_render_sample() -> None:
     assert "employee-summary" in html
     assert "week-foot" in html
     assert "£760.00" in html
+    assert "report-single-week" in html
     assert "Weekly payroll" not in html
     assert "Employee period total" not in html
     assert "2026-07-27 to 2026-08-02" not in html
@@ -328,3 +333,113 @@ def test_service_export_helpers_reference_hierarchy() -> None:
     pdf_src = inspect.getsource(payroll_service.export_pdf_report)
     assert "build_hierarchical_payroll_pdf" in pdf_src
     assert "pdf_rows.extend" not in pdf_src
+
+
+def test_is_single_week_detection_including_cross_month() -> None:
+    # Cross-month week 27 Jul–2 Aug is still one payroll week.
+    shifts = [
+        _shift("Petre Rotaru", "2026-07-27", "Kennington", "8.50"),
+        _shift("Petre Rotaru", "2026-08-01", "Kennington", "6.00"),
+    ]
+    doc = _build_report(shifts, [_pay("Petre Rotaru")])
+    assert is_single_week_report(doc) is True
+
+    multi_shifts, multi_pays = _four_week_employee(weeks=4, days_per_week=3)
+    multi = _build_report(multi_shifts, multi_pays, totals_heading="Employee month total")
+    assert is_single_week_report(multi) is False
+
+
+def _single_week_employees(count: int, *, days: int = 5, long_sites: bool = False):
+    shifts, pays = [], []
+    hours = ["8.50", "8.50", "8.50", "6.50", "6.00", "7.00", "4.00"]
+    ws = date(2026, 8, 3)  # Mon 3 Aug week
+    for i in range(count):
+        name = f"Worker {i:02d}"
+        uid = f"u{i}"
+        for j, d in enumerate(_week_days(ws, days)):
+            site = (
+                "Battersea Power Station Loading Bay North"
+                if long_sites and j % 2
+                else "Kennington"
+            )
+            shifts.append(
+                _shift(name, d.isoformat(), site, hours[j % len(hours)], user_id=uid, week_start=ws.isoformat()),
+            )
+        pays.append(
+            _pay(
+                name,
+                user_id=uid,
+                period=_period(ws),
+                hours=f"{sum(Decimal(hours[j % len(hours)]) for j in range(days)):.2f}",
+            ),
+        )
+    return shifts, pays
+
+
+def test_single_week_three_employees_share_page() -> None:
+    shifts, pays = _single_week_employees(3, days=5)
+    doc = _build_report(shifts, pays, period_label="W32 · 3–9 Aug 2026")
+    assert is_single_week_report(doc) is True
+    body = build_hierarchical_payroll_pdf(doc)
+    reader = PdfReader(BytesIO(body))
+    # No forced page-per-employee: normally 1–2 pages, not 3+.
+    assert 1 <= len(reader.pages) <= 2
+    per_page = [(page.extract_text() or "").count("EMPLOYEE:") for page in reader.pages]
+    assert max(per_page) >= 2
+    assert sum(per_page) == 3
+    html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+    assert 'class="report-canvas report-single-week"' in html
+
+
+def test_single_week_five_employees_pack_without_forced_breaks() -> None:
+    shifts, pays = _single_week_employees(5, days=4)
+    doc = _build_report(shifts, pays, period_label="W32 · 3–9 Aug 2026")
+    assert is_single_week_report(doc) is True
+    source = inspect.getsource(pdf_export.build_hierarchical_payroll_pdf)
+    # Forced break only in multi-week branch.
+    assert "elif single_week:" in source
+    body = build_hierarchical_payroll_pdf(doc)
+    reader = PdfReader(BytesIO(body))
+    # Pack as many as fit; 5 short blocks should be 1–2 pages, not 5+.
+    assert 1 <= len(reader.pages) <= 2
+    names_seen = 0
+    for page in reader.pages:
+        names_seen += (page.extract_text() or "").count("EMPLOYEE:")
+    assert names_seen == 5
+
+
+def test_single_week_source_does_not_unconditionally_pagebreak() -> None:
+    source = inspect.getsource(pdf_export.build_hierarchical_payroll_pdf)
+    assert "if not report.employees:" in source
+    assert "elif single_week:" in source
+    assert "story.append(PageBreak())" in source
+    # PageBreak only inside multi-week else branch, not before every employee blindly.
+    multi_branch = source.split("else:", 1)[-1]
+    assert "PageBreak()" in multi_branch
+    single_branch = source.split("elif single_week:", 1)[1].split("else:", 1)[0]
+    assert "PageBreak()" not in single_branch
+
+
+def test_monthly_four_employees_still_one_per_page() -> None:
+    shifts, pays = [], []
+    for i in range(4):
+        name = f"Worker {i:02d}"
+        uid = f"u{i}"
+        s, p = _four_week_employee(weeks=4, days_per_week=4)
+        for row in s:
+            row["employee"] = name
+            row["user_id"] = uid
+            row["employee_email"] = f"{uid}@ex.com"
+        for row in p:
+            row["employee"] = name
+            row["user_id"] = uid
+            row["employee_email"] = f"{uid}@ex.com"
+        shifts.extend(s)
+        pays.extend(p)
+    doc = _build_report(shifts, pays, totals_heading="Employee month total", period_label="Jul–Aug 2026")
+    assert is_single_week_report(doc) is False
+    body = build_hierarchical_payroll_pdf(doc)
+    reader = PdfReader(BytesIO(body))
+    assert 5 <= len(reader.pages) <= 6
+    html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+    assert "report-multi-week" in html

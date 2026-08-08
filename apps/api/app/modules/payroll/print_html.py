@@ -8,6 +8,7 @@ from app.modules.payroll.hierarchical_report import (
     PayrollHierarchicalReport,
     employee_summary_badge,
     hours_display,
+    is_single_week_report,
     money_display,
     status_display,
 )
@@ -18,6 +19,8 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
     notes_text = "Notes: " + (
         " · ".join(report.alert_lines) if report.alert_lines else "No additional notes for this report."
     )
+    single_week = is_single_week_report(report)
+    report_mode = "report-single-week" if single_week else "report-multi-week"
     sections: list[str] = []
     for emp in report.employees:
         week_html: list[str] = []
@@ -140,13 +143,27 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
     font-weight: 700;
   }}
   .notes {{ margin: 4px 0 8px; color: #374151; font-size: 8px; }}
-  .employee-block {{
+  /* Multi-week / monthly: one employee per printed page. */
+  .report-multi-week .employee-block {{
     break-before: page;
     page-break-before: always;
     margin: 0 0 8px;
     padding-top: 2px;
   }}
-  .employee-block:first-of-type {{ break-before: page; page-break-before: always; }}
+  /* Single-week: pack employees; keep each block intact. */
+  .report-single-week .employee-block {{
+    break-before: auto;
+    page-break-before: auto;
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin: 0 0 10px;
+    padding-top: 2px;
+    border-top: 1px solid #9ca3af;
+  }}
+  .report-single-week .employee-block:first-of-type {{
+    border-top: 0;
+    padding-top: 0;
+  }}
   .employee-head {{
     display: flex;
     justify-content: space-between;
@@ -247,14 +264,20 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
     body {{ background: #fff; padding: 0; font-size: 9px; }}
     .report-canvas {{ width: 100%; max-width: none; border: 0; padding: 0; box-shadow: none; }}
     .hint {{ display: none; }}
-    .employee-block {{ break-before: page; page-break-before: always; }}
+    .report-multi-week .employee-block {{ break-before: page; page-break-before: always; }}
+    .report-single-week .employee-block {{
+      break-before: auto;
+      page-break-before: auto;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }}
     .week-block {{ break-inside: avoid; page-break-inside: avoid; }}
     .employee-head, .employee-summary {{ break-after: avoid; page-break-after: avoid; }}
   }}
 </style>
 </head>
 <body>
-<main class="report-canvas">
+<main class="report-canvas {report_mode}">
   <h1>TimIQ Payroll Report</h1>
   <div class="meta">
     <div><strong>Company:</strong> {name}</div>
@@ -272,6 +295,6 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
   </div>
   <p class="notes">{html.escape(notes_text)}</p>
   {body_sections}
-  <p class="hint">Use your browser Print dialog for a paper or PDF copy. Report is A4 portrait · one employee per page.</p>
+  <p class="hint">Use your browser Print dialog for a paper or PDF copy. Report is A4 portrait · adaptive employee pagination.</p>
 </main>
 </body></html>"""
