@@ -1,4 +1,4 @@
-"""Print-ready HTML for hierarchical payroll reports (A4 portrait)."""
+"""Print-ready HTML for hierarchical payroll reports (A4 portrait, employee pages)."""
 
 from __future__ import annotations
 
@@ -6,8 +6,10 @@ import html
 
 from app.modules.payroll.hierarchical_report import (
     PayrollHierarchicalReport,
+    employee_summary_badge,
     hours_display,
     money_display,
+    status_display,
 )
 
 
@@ -39,12 +41,22 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
                 day_rows.append(
                     '<tr><td colspan="4" class="empty">No worked days with payable hours</td></tr>',
                 )
-            status_raw = (week.status or "—").strip() or "—"
-            status_key = status_raw.lower()
+            status_raw = status_display(week.status)
+            status_key = (week.status or "—").strip().lower()
             status_cls = (
                 f"status status-{status_key}"
                 if status_key in {"completed", "pending", "paid"}
                 else "status"
+            )
+            days_count = len(week.days)
+            band1 = (
+                f"Days {days_count} · Hours {hours_display(week.hours)} · "
+                f"OT {hours_display(week.ot_hours)} · Status "
+                f'<span class="{status_cls}">{html.escape(status_raw)}</span>'
+            )
+            band2 = (
+                f"Gross {money_display(week.gross)} · CIS {money_display(week.cis_tax)} · "
+                f"Other {money_display(week.other_deductions)} · Net {money_display(week.net)}"
             )
             week_html.append(
                 f"""
@@ -52,44 +64,39 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
   <h3>{html.escape(week.week_label)}</h3>
   <table class="days">
     <thead><tr><th>Day</th><th>Site</th><th class="num">Hours</th><th class="num">OT</th></tr></thead>
-    <tbody>{"".join(day_rows)}</tbody>
+    <tbody>
+      {"".join(day_rows)}
+      <tr class="week-foot band1"><td colspan="4">{band1}</td></tr>
+      <tr class="week-foot band2"><td colspan="4">{band2}</td></tr>
+    </tbody>
   </table>
-  <div class="weekly-pay">
-    <h4>Weekly payroll</h4>
-    <dl>
-      <div><dt>Hours</dt><dd>{hours_display(week.hours)}</dd></div>
-      <div><dt>OT</dt><dd>{hours_display(week.ot_hours)}</dd></div>
-      <div><dt>Gross</dt><dd>{money_display(week.gross)}</dd></div>
-      <div><dt>CIS tax</dt><dd>{money_display(week.cis_tax)}</dd></div>
-      <div><dt>Other deductions</dt><dd>{money_display(week.other_deductions)}</dd></div>
-      <div><dt>Net</dt><dd>{money_display(week.net)}</dd></div>
-      <div><dt>Status</dt><dd><span class="{status_cls}">{html.escape(status_raw.title() if status_raw != "—" else status_raw)}</span></dd></div>
-    </dl>
-  </div>
 </section>
 """,
             )
+        badge = html.escape(employee_summary_badge(report, emp))
         sections.append(
             f"""
 <article class="employee-block">
-  <header>
-    <h2>EMPLOYEE: {html.escape(emp.employee_name)}</h2>
-    <p class="role">ROLE: {html.escape(emp.role or "—")}</p>
+  <header class="employee-head">
+    <div class="emp-title">
+      <h2>EMPLOYEE: {html.escape(emp.employee_name)}</h2>
+      <p class="role">ROLE: {html.escape(emp.role or "—")}</p>
+    </div>
+    <div class="period-badge">{badge}</div>
   </header>
-  {"".join(week_html)}
-  <section class="employee-total">
-    <h3>{html.escape(report.totals_heading)}</h3>
-    <dl>
-      <div><dt>Days worked</dt><dd>{emp.days_worked}</dd></div>
-      <div><dt>Weeks worked</dt><dd>{emp.weeks_worked}</dd></div>
-      <div><dt>Hours</dt><dd>{hours_display(emp.hours)}</dd></div>
-      <div><dt>OT</dt><dd>{hours_display(emp.ot_hours)}</dd></div>
-      <div><dt>Gross</dt><dd>{money_display(emp.gross)}</dd></div>
-      <div><dt>CIS</dt><dd>{money_display(emp.cis_tax)}</dd></div>
-      <div><dt>Other deductions</dt><dd>{money_display(emp.other_deductions)}</dd></div>
-      <div><dt>Net</dt><dd>{money_display(emp.net)}</dd></div>
-    </dl>
+  <section class="employee-summary" aria-label="Employee summary">
+    <div class="metrics">
+      <div><span>Days</span><strong>{emp.days_worked}</strong></div>
+      <div><span>Weeks</span><strong>{emp.weeks_worked}</strong></div>
+      <div><span>Hours</span><strong>{hours_display(emp.hours)}</strong></div>
+      <div><span>OT</span><strong>{hours_display(emp.ot_hours)}</strong></div>
+      <div><span>Gross</span><strong>{money_display(emp.gross)}</strong></div>
+      <div><span>CIS</span><strong>{money_display(emp.cis_tax)}</strong></div>
+      <div><span>Other ded.</span><strong>{money_display(emp.other_deductions)}</strong></div>
+      <div><span>Net</span><strong>{money_display(emp.net)}</strong></div>
+    </div>
   </section>
+  {"".join(week_html)}
 </article>
 """,
         )
@@ -103,12 +110,12 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
   * {{ box-sizing: border-box; }}
   body {{
     margin: 0;
-    padding: 16px 12px;
+    padding: 12px 8px;
     color: #111827;
     background: #e5e7eb;
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    font-size: 11px;
-    line-height: 1.35;
+    font-size: 9px;
+    line-height: 1.3;
   }}
   .report-canvas {{
     margin: 0 auto;
@@ -116,57 +123,96 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
     max-width: 210mm;
     background: #fff;
     border: 1px solid #d1d5db;
-    padding: 12mm;
+    padding: 11mm;
   }}
-  h1 {{ margin: 0 0 8px; font-size: 16px; }}
-  .meta {{ margin: 0 0 10px; font-size: 11px; color: #374151; }}
+  h1 {{ margin: 0 0 4px; font-size: 13px; }}
+  .meta {{ margin: 0 0 6px; font-size: 8.5px; color: #374151; }}
   .meta div {{ margin: 1px 0; }}
-  .summary, .employee-total .dl, .weekly-pay dl, dl {{
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 2px 12px;
-    margin: 0;
-  }}
   .summary {{
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
     background: #f8fafc;
     border: 1px solid #e5e7eb;
-    padding: 8px 10px;
-    margin-bottom: 8px;
+    padding: 4px 6px;
+    margin-bottom: 4px;
+    font-size: 8px;
+    font-weight: 700;
   }}
-  .summary div, .weekly-pay dl div, .employee-total dl div {{
-    display: contents;
-  }}
-  dt {{ color: #4b5563; font-weight: 500; }}
-  dd {{ margin: 0; text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }}
-  .notes {{ margin: 8px 0 12px; color: #374151; font-size: 10px; }}
+  .notes {{ margin: 4px 0 8px; color: #374151; font-size: 8px; }}
   .employee-block {{
-    break-inside: avoid-page;
-    page-break-inside: auto;
-    margin: 0 0 18px;
-    padding-top: 4px;
-    border-top: 2px solid #111827;
+    break-before: page;
+    page-break-before: always;
+    margin: 0 0 8px;
+    padding-top: 2px;
   }}
-  .employee-block h2 {{ margin: 10px 0 2px; font-size: 13px; }}
-  .role {{ margin: 0 0 8px; color: #374151; font-size: 11px; }}
+  .employee-block:first-of-type {{ break-before: page; page-break-before: always; }}
+  .employee-head {{
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    align-items: flex-start;
+    break-after: avoid;
+    page-break-after: avoid;
+  }}
+  .employee-block h2 {{ margin: 0 0 1px; font-size: 11px; }}
+  .role {{ margin: 0; color: #374151; font-size: 8.5px; }}
+  .period-badge {{
+    font-size: 9px;
+    font-weight: 700;
+    color: #111827;
+    white-space: nowrap;
+  }}
+  .employee-summary {{
+    margin: 4px 0 6px;
+    border: 1px solid #9ca3af;
+    background: #fff;
+  }}
+  .employee-summary .metrics {{
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }}
+  .employee-summary .metrics div {{
+    border: 1px solid #e5e7eb;
+    padding: 2px 4px;
+    text-align: center;
+  }}
+  .employee-summary span {{
+    display: block;
+    color: #4b5563;
+    font-size: 7.5px;
+    font-weight: 600;
+  }}
+  .employee-summary strong {{
+    display: block;
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+  }}
   .week-block {{
     break-inside: avoid;
     page-break-inside: avoid;
-    margin: 0 0 12px;
+    margin: 0 0 6px;
   }}
-  .week-block h3 {{ margin: 0 0 4px; font-size: 12px; }}
+  .week-block h3 {{
+    margin: 0 0 2px;
+    font-size: 9px;
+    break-after: avoid;
+    page-break-after: avoid;
+  }}
   table.days {{
     width: 100%;
     border-collapse: collapse;
     table-layout: fixed;
-    margin: 0 0 6px;
+    margin: 0;
+    border: 1px solid #9ca3af;
   }}
   table.days th, table.days td {{
     border: 1px solid #d1d5db;
-    padding: 4px 5px;
+    padding: 1.5px 3px;
     vertical-align: top;
-    font-size: 10.5px;
+    font-size: 8.5px;
   }}
-  table.days th {{ background: #f3f4f6; text-align: left; font-size: 10px; }}
+  table.days th {{ background: #f3f4f6; text-align: left; font-size: 8px; }}
   table.days th.num, table.days td.num {{
     text-align: right;
     font-variant-numeric: tabular-nums;
@@ -174,33 +220,36 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
   }}
   table.days td.site {{ width: 48%; word-wrap: break-word; overflow-wrap: anywhere; }}
   table.days td:first-child {{ width: 22%; }}
-  .muted {{ color: #6b7280; font-size: 9.5px; }}
-  .weekly-pay, .employee-total {{
-    border: 1px solid #d1d5db;
-    padding: 6px 8px;
-    background: #fff;
+  table.days tr.week-foot td {{
+    background: #f8fafc;
+    font-size: 8px;
+    border-top: 1px solid #6b7280;
   }}
-  .weekly-pay h4, .employee-total h3 {{ margin: 0 0 4px; font-size: 11px; }}
-  .employee-total {{ background: #f8fafc; border-color: #9ca3af; margin-top: 8px; }}
+  table.days tr.week-foot.band1 td {{
+    font-weight: 700;
+    background: #f3f4f6;
+  }}
+  .muted {{ color: #6b7280; font-size: 8px; }}
   .status {{
     display: inline-block;
     border: 1px solid #9ca3af;
     background: #f3f4f6;
     font-weight: 700;
-    font-size: 10px;
-    padding: 1px 5px;
+    font-size: 8px;
+    padding: 0 4px;
   }}
   .status-completed, .status-paid {{ color: #166534; background: #dcfce7; border-color: #86efac; }}
   .status-pending {{ color: #9a3412; background: #ffedd5; border-color: #fdba74; }}
   .empty {{ text-align: center; color: #6b7280; }}
-  .hint {{ margin-top: 12px; color: #6b7280; font-size: 10px; }}
-  @page {{ size: A4 portrait; margin: 12mm; }}
+  .hint {{ margin-top: 8px; color: #6b7280; font-size: 8px; }}
+  @page {{ size: A4 portrait; margin: 11mm; }}
   @media print {{
-    body {{ background: #fff; padding: 0; }}
+    body {{ background: #fff; padding: 0; font-size: 9px; }}
     .report-canvas {{ width: 100%; max-width: none; border: 0; padding: 0; box-shadow: none; }}
     .hint {{ display: none; }}
+    .employee-block {{ break-before: page; page-break-before: always; }}
     .week-block {{ break-inside: avoid; page-break-inside: avoid; }}
-    .employee-block > header {{ break-after: avoid; page-break-after: avoid; }}
+    .employee-head, .employee-summary {{ break-after: avoid; page-break-after: avoid; }}
   }}
 </style>
 </head>
@@ -215,14 +264,14 @@ def render_hierarchical_payroll_print_html(report: PayrollHierarchicalReport) ->
     <div><strong>Generated:</strong> {html.escape(report.generated_label)}</div>
   </div>
   <div class="summary" aria-label="Report summary">
-    <div><dt>Total hours</dt><dd>{report.total_hours_seconds / 3600:,.2f}</dd></div>
-    <div><dt>Employees</dt><dd>{report.employee_count}</dd></div>
-    <div><dt>Gross</dt><dd>{money_display(report.total_gross)}</dd></div>
-    <div><dt>CIS tax</dt><dd>{money_display(report.total_cis_tax)}</dd></div>
-    <div><dt>Net</dt><dd>{money_display(report.total_net)}</dd></div>
+    <div>Hours {report.total_hours_seconds / 3600:,.2f}</div>
+    <div>Employees {report.employee_count}</div>
+    <div>Gross {money_display(report.total_gross)}</div>
+    <div>CIS {money_display(report.total_cis_tax)}</div>
+    <div>Net {money_display(report.total_net)}</div>
   </div>
   <p class="notes">{html.escape(notes_text)}</p>
   {body_sections}
-  <p class="hint">Use your browser Print dialog for a paper or PDF copy. Report is A4 portrait.</p>
+  <p class="hint">Use your browser Print dialog for a paper or PDF copy. Report is A4 portrait · one employee per page.</p>
 </main>
 </body></html>"""

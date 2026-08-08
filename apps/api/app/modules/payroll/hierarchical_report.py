@@ -342,3 +342,19 @@ def hours_display(value: Decimal | None) -> str:
     if value is None:
         return "—"
     return f"{value:,.2f}"
+
+
+def status_display(value: str | None) -> str:
+    text = (value or "—").strip() or "—"
+    if text == "—":
+        return text
+    return text.replace("_", " ").title()
+
+
+def employee_summary_badge(report: PayrollHierarchicalReport, emp: PayrollEmployeeBlock) -> str:
+    """Compact month/period badge shown beside the employee role."""
+    if "month" in (report.totals_heading or "").lower():
+        if emp.weeks:
+            return emp.weeks[0].week_start.strftime("%b %Y").upper()
+        return "MONTH"
+    return "Period summary"
