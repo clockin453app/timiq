@@ -58,6 +58,8 @@ const form = loadTsModule("src/features/work-progress/site-progress-form.ts", {
       ["image/jpeg", "image/png", "image/webp"].includes((file.type || "").toLowerCase()),
   },
   "../../lib/datetime-local": loadTsModule("src/lib/datetime-local.ts"),
+  "../../config/api": { API_URL: "http://localhost" },
+  "../../lib/api-error-detail": { fastApiDetailToMessage: (d, f) => f },
 });
 
 const dt = loadTsModule("src/lib/datetime-local.ts");
@@ -83,7 +85,14 @@ check("todayLocalDateString uses browser local calendar (not UTC slice)", () => 
 
 check("work date and site are required", () => {
   const errors = form.validateSiteProgressRequiredFields(
-    { workDate: "", locationId: "", percent: "" },
+    {
+      workDate: "",
+      locationId: "",
+      workCategory: "insulation",
+      elevation: "north",
+      elevationCustom: "",
+      level: "0",
+    },
     { allowedLocationIds: ["loc-1"] },
   );
   assert.equal(errors.workDate, "Enter a valid work date.");
@@ -92,37 +101,94 @@ check("work date and site are required", () => {
 
 check("unauthorized / revoked site is rejected", () => {
   const errors = form.validateSiteProgressRequiredFields(
-    { workDate: "2026-07-31", locationId: "gone", percent: "" },
+    {
+      workDate: "2026-07-31",
+      locationId: "gone",
+      workCategory: "insulation",
+      elevation: "north",
+      elevationCustom: "",
+      level: "0",
+    },
     { allowedLocationIds: ["loc-1"] },
   );
   assert.match(errors.locationId, /no longer available/i);
 });
 
-check("empty optional fields remain accepted", () => {
+check("classification fields are required", () => {
   const errors = form.validateSiteProgressRequiredFields(
-    { workDate: "2026-07-31", locationId: "loc-1", percent: "" },
+    {
+      workDate: "2026-07-31",
+      locationId: "loc-1",
+      workCategory: "",
+      elevation: "",
+      elevationCustom: "",
+      level: "",
+    },
+    { allowedLocationIds: ["loc-1"] },
+  );
+  assert.equal(errors.workCategory, "Select a work category.");
+  assert.equal(errors.elevation, "Select an elevation.");
+  assert.equal(errors.level, "Select a level.");
+});
+
+check("custom elevation requires a name (max 100)", () => {
+  const missing = form.validateSiteProgressRequiredFields(
+    {
+      workDate: "2026-07-31",
+      locationId: "loc-1",
+      workCategory: "insulation",
+      elevation: "custom",
+      elevationCustom: "",
+      level: "3",
+    },
+    { allowedLocationIds: ["loc-1"] },
+  );
+  assert.match(missing.elevationCustom, /elevation name/i);
+  const tooLong = form.validateSiteProgressRequiredFields(
+    {
+      workDate: "2026-07-31",
+      locationId: "loc-1",
+      workCategory: "insulation",
+      elevation: "custom",
+      elevationCustom: "x".repeat(101),
+      level: "3",
+    },
+    { allowedLocationIds: ["loc-1"] },
+  );
+  assert.match(tooLong.elevationCustom, /100/);
+});
+
+check("buildCreateBody sends classification fields without title/status/percent", () => {
+  const errors = form.validateSiteProgressRequiredFields(
+    {
+      workDate: "2026-07-31",
+      locationId: "loc-1",
+      workCategory: "insulation",
+      elevation: "north_east",
+      elevationCustom: "",
+      level: "3",
+    },
     { allowedLocationIds: ["loc-1"] },
   );
   assert.equal(Object.keys(errors).length, 0);
   const body = form.buildCreateBody({
     workDate: "2026-07-31",
     locationId: "loc-1",
-    title: "",
-    progressStatus: "in_progress",
+    workCategory: "insulation",
+    elevation: "custom",
+    elevationCustom: " Block A ",
+    level: "3",
     notes: "",
-    percent: "",
   });
-  assert.equal(body.title, "");
+  assert.equal(body.work_category, "insulation");
+  assert.equal(body.elevation, "custom");
+  assert.equal(body.elevation_custom, "Block A");
+  assert.equal(body.level, 3);
   assert.equal(body.notes, null);
-  assert.equal(body.percent_complete, null);
-});
-
-check("percent must be 0–100 when provided", () => {
-  const errors = form.validateSiteProgressRequiredFields(
-    { workDate: "2026-07-31", locationId: "loc-1", percent: "140" },
-    { allowedLocationIds: ["loc-1"] },
-  );
-  assert.match(errors.percent, /0 and 100/);
+  assert.equal(body.workplace_id, null);
+  assert.equal("title" in body, false);
+  assert.equal("progress_status" in body, false);
+  assert.equal("percent_complete" in body, false);
 });
 
 check("single permitted site is preselected; stale site cleared", () => {
@@ -272,13 +338,16 @@ check("existing report can receive additional photos via explicit actions", () =
   assert.doesNotMatch(clientSrc, /onClick=\{\(\) => setActiveEntryId\(row\.id\)\}/);
 });
 
-check("Title / status / percent are always visible (no More details accordion)", () => {
+check("Work category / elevation / level are always visible (no More details accordion)", () => {
   assert.doesNotMatch(clientSrc, /More details/);
   assert.doesNotMatch(clientSrc, /<details/);
-  assert.match(clientSrc, /progressStatus.*in_progress|useState\("in_progress"\)/);
-  assert.match(clientSrc, /lbl_title/);
-  assert.match(clientSrc, /lbl_progress_status/);
-  assert.match(clientSrc, /lbl_percent_optional/);
+  assert.match(clientSrc, /lbl_work_category/);
+  assert.match(clientSrc, /lbl_elevation/);
+  assert.match(clientSrc, /lbl_level/);
+  assert.match(clientSrc, /WORK_CATEGORY_OPTIONS/);
+  assert.match(clientSrc, /ELEVATION_OPTIONS/);
+  assert.match(clientSrc, /LEVEL_OPTIONS/);
+  assert.match(clientSrc, /formatClassificationSummary/);
 });
 
 check("mobile photo controls and form use density tokens / full-width submit", () => {
@@ -320,6 +389,16 @@ const reviewSrc = fs.readFileSync(
 check("work progress review client remains present (not gutted)", () => {
   assert.match(reviewSrc, /permanent/);
   assert.ok(reviewSrc.length > 1000);
+});
+
+check("admin review title column prefers classification summary", () => {
+  assert.match(reviewSrc, /formatReviewTitleType/);
+  const apiSrc = fs.readFileSync(path.join(webRoot, "src/features/work-progress/api.ts"), "utf8");
+  assert.match(apiSrc, /WORK_CATEGORY_OPTIONS/);
+  assert.match(apiSrc, /ELEVATION_OPTIONS/);
+  assert.match(apiSrc, /export function formatReviewTitleType/);
+  assert.match(apiSrc, /work_category/);
+  assert.match(apiSrc, /elevation_custom/);
 });
 
 // eslint-disable-next-line no-console

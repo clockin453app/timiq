@@ -30,6 +30,7 @@ import {
   bulkDeleteWorkProgressAttachments,
   bulkDownloadWorkProgressAttachments,
   fetchWorkProgressFileBlob,
+  formatReviewTitleType,
   listWorkProgressEmployeeFilterOptions,
   listWorkProgressReview,
   listWorkProgressReviewGallery,
@@ -920,7 +921,7 @@ function WorkProgressPicturesBody() {
                           </TableCell>
                           <TableCell className={`${DENSE_CELL} max-w-[14rem]`}>
                             <span className="inline-flex max-w-full items-center gap-1">
-                              <TruncateText className="min-w-0" value={row.title} />
+                              <TruncateText className="min-w-0" value={formatReviewTitleType(row)} />
                               {row.status === "archived" ? (
                                 <span className="shrink-0 text-[10px] font-bold uppercase text-[var(--color-text-muted)]">
                                   Archived

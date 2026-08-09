@@ -5,6 +5,7 @@ import { fastApiDetailToMessage } from "../../lib/api-error-detail";
 export const WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS = 30;
 export const WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES = 25 * 1024 * 1024;
 
+/** Legacy status labels for older history rows that predate classification fields. */
 export const WORK_PROGRESS_STATUS_OPTIONS = [
   { value: "in_progress", label: "In progress" },
   { value: "blocked", label: "Blocked" },
@@ -12,6 +13,113 @@ export const WORK_PROGRESS_STATUS_OPTIONS = [
   { value: "complete", label: "Complete" },
   { value: "on_hold", label: "On hold" },
 ] as const;
+
+export const WORK_CATEGORY_OPTIONS = [
+  { value: "dpc", label: "DPC" },
+  { value: "brickwork_ties", label: "Brickwork ties" },
+  { value: "brickwork_level", label: "Brickwork level" },
+  { value: "blockwork_level", label: "Blockwork level" },
+  { value: "blockwork_ties", label: "Blockwork ties" },
+  { value: "firebreaks", label: "Firebreaks" },
+  { value: "fire_barrier", label: "Fire barrier" },
+  { value: "insulation", label: "Insulation" },
+  { value: "cavity", label: "Cavity" },
+  { value: "weep_holes", label: "Weep holes" },
+  { value: "pointing", label: "Pointing" },
+  { value: "grc_stone", label: "GRC stone" },
+  { value: "mastic", label: "Mastic" },
+  { value: "foundation_foam_glass", label: "Foundation foam glass" },
+] as const;
+
+export const ELEVATION_OPTIONS = [
+  { value: "north", label: "North" },
+  { value: "north_east", label: "North-East" },
+  { value: "east", label: "East" },
+  { value: "south_east", label: "South-East" },
+  { value: "south", label: "South" },
+  { value: "south_west", label: "South-West" },
+  { value: "west", label: "West" },
+  { value: "north_west", label: "North-West" },
+  { value: "front", label: "Front" },
+  { value: "rear", label: "Rear" },
+  { value: "left", label: "Left" },
+  { value: "right", label: "Right" },
+  { value: "internal", label: "Internal" },
+  { value: "external", label: "External" },
+  { value: "courtyard", label: "Courtyard" },
+  { value: "street", label: "Street" },
+  { value: "garden", label: "Garden" },
+  { value: "custom", label: "Custom / site-defined" },
+] as const;
+
+export const ELEVATION_CUSTOM_VALUE = "custom";
+export const ELEVATION_CUSTOM_MAX_LEN = 100;
+export const LEVEL_MIN = 0;
+export const LEVEL_MAX = 20;
+
+export const LEVEL_OPTIONS = Array.from({ length: LEVEL_MAX - LEVEL_MIN + 1 }, (_, i) => {
+  const value = LEVEL_MIN + i;
+  const padded = String(value).padStart(2, "0");
+  return { value, label: `Level ${padded}`, optionText: padded };
+});
+
+export type WorkCategoryValue = (typeof WORK_CATEGORY_OPTIONS)[number]["value"];
+export type ElevationValue = (typeof ELEVATION_OPTIONS)[number]["value"];
+
+export type WorkProgressClassificationFields = {
+  work_category: string | null;
+  elevation: string | null;
+  elevation_custom: string | null;
+  level: number | null;
+  work_category_label: string | null;
+  elevation_display: string | null;
+  level_display: string | null;
+};
+
+export function formatLevelDisplay(level: number | null | undefined): string | null {
+  if (level == null || Number.isNaN(level)) {
+    return null;
+  }
+  return String(level).padStart(2, "0");
+}
+
+/** History / detail line for classified rows. */
+export function formatClassificationSummary(
+  row: Pick<
+    WorkProgressClassificationFields,
+    "work_category" | "work_category_label" | "elevation_display" | "level" | "level_display"
+  >,
+): string | null {
+  if (!row.work_category) {
+    return null;
+  }
+  const category = row.work_category_label || row.work_category;
+  const elevation = row.elevation_display || "—";
+  const level = row.level_display ?? formatLevelDisplay(row.level) ?? "—";
+  return `Category: ${category} / Elevation: ${elevation} / Level: ${level}`;
+}
+
+/** Admin review "Title / type" cell: classification summary when present, else legacy title. */
+export function formatReviewTitleType(
+  row: Pick<
+    WorkProgressClassificationFields,
+    "work_category" | "work_category_label" | "elevation_display" | "level_display" | "level"
+  > & { title: string },
+): string {
+  if (row.work_category) {
+    const category = row.work_category_label || row.work_category;
+    const parts = [category];
+    if (row.elevation_display) {
+      parts.push(row.elevation_display);
+    }
+    const level = row.level_display ?? formatLevelDisplay(row.level);
+    if (level) {
+      parts.push(`Level ${level}`);
+    }
+    return parts.join(" / ");
+  }
+  return row.title;
+}
 
 export type WorkProgressLocationOption = {
   id: string;
@@ -52,6 +160,13 @@ export type WorkProgressEntryDetail = {
   progress_status: string;
   notes: string | null;
   percent_complete: number | null;
+  work_category: string | null;
+  elevation: string | null;
+  elevation_custom: string | null;
+  level: number | null;
+  work_category_label: string | null;
+  elevation_display: string | null;
+  level_display: string | null;
   status: string;
   reviewed_at: string | null;
   review_note: string | null;
@@ -66,6 +181,13 @@ export type WorkProgressListItem = {
   title: string;
   progress_status: string;
   percent_complete: number | null;
+  work_category: string | null;
+  elevation: string | null;
+  elevation_custom: string | null;
+  level: number | null;
+  work_category_label: string | null;
+  elevation_display: string | null;
+  level_display: string | null;
   status: string;
   location_name: string;
   workplace_name: string | null;
@@ -83,11 +205,11 @@ export type WorkProgressCreateBody = {
   work_date: string;
   location_id: string;
   workplace_id?: string | null;
-  /** Optional; empty string is accepted by the API. */
-  title?: string;
-  progress_status: string;
+  work_category: string;
+  elevation: string;
+  elevation_custom: string | null;
+  level: number;
   notes?: string | null;
-  percent_complete?: number | null;
 };
 
 export type WorkProgressReviewListItem = {
@@ -102,6 +224,13 @@ export type WorkProgressReviewListItem = {
   work_date: string;
   title: string;
   progress_status: string;
+  work_category: string | null;
+  elevation: string | null;
+  elevation_custom: string | null;
+  level: number | null;
+  work_category_label: string | null;
+  elevation_display: string | null;
+  level_display: string | null;
   status: string;
   attachment_count: number;
   created_at: string;

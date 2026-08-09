@@ -26,9 +26,9 @@ function idx(needle) {
 // Markers inside the New update form (first occurrences in create form)
 const workDate = idx('id={`${formId}-work-date`}');
 const location = idx('id={`${formId}-location`}');
-const title = idx('id={`${formId}-title`}');
-const status = idx('id={`${formId}-status`}');
-const percent = idx('id={`${formId}-percent`}');
+const workCategory = idx('id={`${formId}-work-category`}');
+const elevation = idx('id={`${formId}-elevation`}');
+const level = idx('id={`${formId}-level`}');
 const notes = idx('id={`${formId}-notes`}');
 const photosLabel = idx('label="Photos"');
 const showGalleryFalse = idx("showGallery={false}");
@@ -40,11 +40,13 @@ const galleryAfterSubmit = Math.max(showGalleryTrue, showGalleryTrueAlt);
 const history = idx("Your history");
 
 check("work date before site", workDate < location);
-check("site before title", location < title);
-check("title before notes", title < notes);
-check("title before photos", title < photosLabel);
-check("status before photos", status < photosLabel);
-check("percent before photos", percent < photosLabel);
+check("site before work category", location < workCategory);
+check("work category before elevation", workCategory < elevation);
+check("elevation before level", elevation < level);
+check("level before notes", level < notes);
+check("work category before photos", workCategory < photosLabel);
+check("elevation before photos", elevation < photosLabel);
+check("level before photos", level < photosLabel);
 check("notes before photos", notes < photosLabel);
 check("photo controls before submit", photosLabel < submitPictures && showGalleryFalse < submitPictures);
 check("submit before selected previews", submitPictures < selectedPhotos);
@@ -73,7 +75,11 @@ for (const w of ["320", "360", "375", "390", "430"]) {
 }
 check("desktop date/site side-by-side at md only", /md:grid-cols-2/.test(clientSrc));
 check("work date and site stay single-column below md", /grid min-w-0 grid-cols-1 gap-2\.5 md:grid-cols-2/.test(clientSrc));
-check("progress/percent share a row from 390px (~65/35)", /min-\[390px\]:grid-cols-\[minmax\(0,1\.85fr\)_minmax\(0,1fr\)\]/.test(clientSrc));
+check(
+  "elevation/level share a row from 390px (~70/30)",
+  /min-\[390px\]:grid-cols-\[minmax\(0,7fr\)_minmax\(0,3fr\)\]/.test(clientSrc),
+);
+check("custom elevation name is conditional", /elevation === ELEVATION_CUSTOM_VALUE/.test(clientSrc));
 check("compact form row rhythm (~8–10px)", /space-y-2\.5/.test(clientSrc));
 check("compact New update label (no tall header bar)", !/border-b border-\[var\(--color-border-dark\)\] bg-\[var\(--color-header\)\] px-3 py-2 md:px-\[var\(--space-card\)\]/.test(clientSrc));
 check("notes start compact (~68px)", /min-h-\[68px\]/.test(clientSrc));
@@ -83,5 +89,7 @@ check("Clear selected photos text action", /Clear selected photos/.test(clientSr
 check("no Clear all primary-style control", !/Clear all/.test(clientSrc));
 check("gallery 3-col from 390px", /min-\[390px\]:grid-cols-3/.test(clientSrc));
 check("44px touch targets retained", /min-h-\[44px\]/.test(clientSrc));
+check("legacy title/status/percent fields removed from create form", !/formId\}-title`/.test(clientSrc) && !/formId\}-status`/.test(clientSrc) && !/formId\}-percent`/.test(clientSrc));
+check("classification history helper wired", /formatClassificationSummary/.test(clientSrc));
 
 console.log(`${passed} site progress mobile form-order checks passed`);

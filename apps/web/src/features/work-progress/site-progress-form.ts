@@ -4,21 +4,34 @@
  */
 
 import { isValidLocalDateString } from "../../lib/datetime-local";
+import {
+  ELEVATION_CUSTOM_MAX_LEN,
+  ELEVATION_CUSTOM_VALUE,
+  ELEVATION_OPTIONS,
+  LEVEL_MAX,
+  LEVEL_MIN,
+  WORK_CATEGORY_OPTIONS,
+  type WorkProgressCreateBody,
+} from "./api";
 import { isSupportedSiteProgressMime } from "./image-compression";
 
 export type SiteProgressFormValues = {
   workDate: string;
   locationId: string;
-  title: string;
-  progressStatus: string;
+  workCategory: string;
+  elevation: string;
+  elevationCustom: string;
+  level: string;
   notes: string;
-  percent: string;
 };
 
 export type SiteProgressFieldErrors = {
   workDate?: string;
   locationId?: string;
-  percent?: string;
+  workCategory?: string;
+  elevation?: string;
+  elevationCustom?: string;
+  level?: string;
   photos?: string;
 };
 
@@ -31,6 +44,9 @@ export type QueuedPhoto = {
   /** Stable id for idempotent server retries across partial failures. */
   uploadId: string;
 };
+
+const WORK_CATEGORY_VALUES = new Set<string>(WORK_CATEGORY_OPTIONS.map((o) => o.value));
+const ELEVATION_VALUES = new Set<string>(ELEVATION_OPTIONS.map((o) => o.value));
 
 export function createPhotoUploadId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -60,7 +76,10 @@ export function resolveAllowedLocationId(
 }
 
 export function validateSiteProgressRequiredFields(
-  values: Pick<SiteProgressFormValues, "workDate" | "locationId" | "percent">,
+  values: Pick<
+    SiteProgressFormValues,
+    "workDate" | "locationId" | "workCategory" | "elevation" | "elevationCustom" | "level"
+  >,
   options: { allowedLocationIds: readonly string[] },
 ): SiteProgressFieldErrors {
   const { allowedLocationIds } = options;
@@ -76,10 +95,29 @@ export function validateSiteProgressRequiredFields(
   ) {
     errors.locationId = "That site is no longer available for your account.";
   }
-  if (values.percent.trim() !== "") {
-    const n = Number.parseInt(values.percent, 10);
-    if (Number.isNaN(n) || n < 0 || n > 100) {
-      errors.percent = "Percent complete must be between 0 and 100.";
+  if (!values.workCategory.trim()) {
+    errors.workCategory = "Select a work category.";
+  } else if (!WORK_CATEGORY_VALUES.has(values.workCategory)) {
+    errors.workCategory = "Select a valid work category.";
+  }
+  if (!values.elevation.trim()) {
+    errors.elevation = "Select an elevation.";
+  } else if (!ELEVATION_VALUES.has(values.elevation)) {
+    errors.elevation = "Select a valid elevation.";
+  } else if (values.elevation === ELEVATION_CUSTOM_VALUE) {
+    const custom = values.elevationCustom.trim();
+    if (!custom) {
+      errors.elevationCustom = "Enter an elevation name.";
+    } else if (custom.length > ELEVATION_CUSTOM_MAX_LEN) {
+      errors.elevationCustom = `Elevation name must be ${ELEVATION_CUSTOM_MAX_LEN} characters or fewer.`;
+    }
+  }
+  if (!values.level.trim()) {
+    errors.level = "Select a level.";
+  } else {
+    const n = Number.parseInt(values.level, 10);
+    if (Number.isNaN(n) || n < LEVEL_MIN || n > LEVEL_MAX) {
+      errors.level = `Level must be between ${LEVEL_MIN} and ${LEVEL_MAX}.`;
     }
   }
   return errors;
@@ -174,22 +212,20 @@ export function clearQueuedPhotos(current: readonly QueuedPhoto[]): QueuedPhoto[
   return [];
 }
 
-export function parseOptionalPercent(percent: string): number | null {
-  if (percent.trim() === "") {
-    return null;
-  }
-  return Number.parseInt(percent, 10);
-}
-
-export function buildCreateBody(values: SiteProgressFormValues) {
+export function buildCreateBody(values: SiteProgressFormValues): WorkProgressCreateBody {
+  const elevationCustom =
+    values.elevation === ELEVATION_CUSTOM_VALUE
+      ? values.elevationCustom.trim() || null
+      : null;
   return {
     work_date: values.workDate,
     location_id: values.locationId,
-    workplace_id: null as string | null,
-    title: values.title.trim(),
-    progress_status: values.progressStatus,
+    workplace_id: null,
+    work_category: values.workCategory,
+    elevation: values.elevation,
+    elevation_custom: elevationCustom,
+    level: Number.parseInt(values.level, 10),
     notes: values.notes.trim() || null,
-    percent_complete: parseOptionalPercent(values.percent),
   };
 }
 

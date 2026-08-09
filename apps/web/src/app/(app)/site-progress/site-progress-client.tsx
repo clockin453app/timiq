@@ -30,12 +30,17 @@ import {
   isNavigatorOffline,
 } from "@/features/offline";
 import {
+  ELEVATION_CUSTOM_MAX_LEN,
+  ELEVATION_CUSTOM_VALUE,
+  ELEVATION_OPTIONS,
+  LEVEL_OPTIONS,
+  WORK_CATEGORY_OPTIONS,
   WORK_PROGRESS_FALLBACK_MAX_ATTACHMENTS,
   WORK_PROGRESS_FALLBACK_MAX_ORIGINAL_BYTES,
-  WORK_PROGRESS_STATUS_OPTIONS,
   createMyWorkProgress,
   fetchWorkProgressFileBlob,
   fetchWorkProgressMeOptions,
+  formatClassificationSummary,
   getMyWorkProgressDetail,
   listMyWorkProgress,
   workProgressFileUrl,
@@ -68,7 +73,7 @@ import {
   processAndUploadPhotosSequentially,
 } from "@/features/work-progress/upload-queue";
 import { todayLocalDateString } from "@/lib/datetime-local";
-import { genericStatusLabel, useT } from "@/lib/i18n";
+import { useT } from "@/lib/i18n";
 
 function formatDate(iso: string) {
   const d = new Date(iso);
@@ -99,6 +104,25 @@ function isImageAttachment(a: WorkProgressAttachmentMeta) {
 function displayTitle(title: string) {
   const trimmed = title.trim();
   return trimmed || "Untitled update";
+}
+
+function historyTitleCell(row: Pick<
+  WorkProgressListItem,
+  | "title"
+  | "work_category"
+  | "work_category_label"
+  | "elevation_display"
+  | "level"
+  | "level_display"
+>) {
+  return formatClassificationSummary(row) ?? displayTitle(row.title);
+}
+
+function historyStatusCell(row: Pick<WorkProgressListItem, "work_category" | "progress_status">) {
+  if (row.work_category) {
+    return "—";
+  }
+  return row.progress_status;
 }
 
 function AttachmentThumb({ att }: { att: WorkProgressAttachmentMeta }) {
@@ -319,10 +343,11 @@ export function SiteProgressClient() {
 
   const [workDate, setWorkDate] = useState(() => todayLocalDateString());
   const [locationId, setLocationId] = useState("");
-  const [title, setTitle] = useState("");
-  const [progressStatus, setProgressStatus] = useState("in_progress");
+  const [workCategory, setWorkCategory] = useState("");
+  const [elevation, setElevation] = useState("");
+  const [elevationCustom, setElevationCustom] = useState("");
+  const [level, setLevel] = useState("");
   const [notes, setNotes] = useState("");
-  const [percent, setPercent] = useState("");
   const [fieldErrors, setFieldErrors] = useState<SiteProgressFieldErrors>({});
   const [formError, setFormError] = useState("");
   const [offlineNotice, setOfflineNotice] = useState("");
@@ -443,7 +468,31 @@ export function SiteProgressClient() {
     }
     if (errors.locationId) {
       document.getElementById(`${formId}-location`)?.focus();
+      return;
     }
+    if (errors.workCategory) {
+      document.getElementById(`${formId}-work-category`)?.focus();
+      return;
+    }
+    if (errors.elevation) {
+      document.getElementById(`${formId}-elevation`)?.focus();
+      return;
+    }
+    if (errors.elevationCustom) {
+      document.getElementById(`${formId}-elevation-custom`)?.focus();
+      return;
+    }
+    if (errors.level) {
+      document.getElementById(`${formId}-level`)?.focus();
+    }
+  }
+
+  function resetClassificationFields() {
+    setWorkCategory("");
+    setElevation("");
+    setElevationCustom("");
+    setLevel("");
+    setNotes("");
   }
 
   function pickIntoCreateQueue(files: File[]) {
@@ -549,7 +598,7 @@ export function SiteProgressClient() {
     setPartialEntryId(null);
     setSubmitDetailLines([]);
 
-    const values = { workDate, locationId, title, progressStatus, notes, percent };
+    const values = { workDate, locationId, workCategory, elevation, elevationCustom, level, notes };
     const requiredErrors = validateSiteProgressRequiredFields(values, { allowedLocationIds });
     const photoErrors = validateQueuedPhotos(
       createQueue.map((q) => q.file),
@@ -591,10 +640,7 @@ export function SiteProgressClient() {
         );
         if (prepareFailures.length === 0) {
           setCreateQueue((q) => clearQueuedPhotos(q));
-          setTitle("");
-          setNotes("");
-          setPercent("");
-          setProgressStatus("in_progress");
+          resetClassificationFields();
         } else {
           setCreateQueue((q) => retainFailedPhotoFiles(q, prepareFailures.map((f) => f.file)));
         }
@@ -613,10 +659,7 @@ export function SiteProgressClient() {
         setSubmitPhase("success");
         setSubmitBarPercent(100);
         setSuccessMessage("Update submitted.");
-        setTitle("");
-        setNotes("");
-        setPercent("");
-        setProgressStatus("in_progress");
+        resetClassificationFields();
         setCreateQueue((q) => clearQueuedPhotos(q));
         await loadList();
         queueMicrotask(() => {
@@ -667,10 +710,7 @@ export function SiteProgressClient() {
             ? "Update submitted."
             : formatBatchUploadResult(okCount, totalCount, 0),
         );
-        setTitle("");
-        setNotes("");
-        setPercent("");
-        setProgressStatus("in_progress");
+        resetClassificationFields();
         setCreateQueue((q) => clearQueuedPhotos(q));
         setSubmitDetailLines([]);
         queueMicrotask(() => {
@@ -708,9 +748,7 @@ export function SiteProgressClient() {
             "Network unavailable — update and photos saved on this device and queued for sync.",
           );
           setCreateQueue((q) => clearQueuedPhotos(q));
-          setTitle("");
-          setNotes("");
-          setPercent("");
+          resetClassificationFields();
           setSubmitPhase("idle");
         } catch {
           setSubmitPhase("idle");
@@ -1044,55 +1082,168 @@ export function SiteProgressClient() {
               </FormField>
             </div>
 
-            <FormField htmlFor={`${formId}-title`} label={t("site_progress.lbl_title", "Title / summary")}>
-              <input
-                className="timiq-input min-h-[44px] w-full min-w-0"
-                id={`${formId}-title`}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder={t("site_progress.placeholder_title", "e.g. South elevation insulation")}
-                value={title}
-              />
+            <FormField
+              error={fieldErrors.workCategory}
+              htmlFor={`${formId}-work-category`}
+              label={t("site_progress.lbl_work_category", "Work category")}
+              required
+            >
+              <select
+                className="timiq-select min-h-[44px] w-full min-w-0"
+                id={`${formId}-work-category`}
+                onChange={(e) => {
+                  setWorkCategory(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, workCategory: undefined }));
+                }}
+                required
+                value={workCategory}
+              >
+                <option value="">{t("common.select", "Select…")}</option>
+                {WORK_CATEGORY_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
             </FormField>
 
-            <div className="grid min-w-0 grid-cols-1 gap-2.5 min-[390px]:grid-cols-[minmax(0,1.85fr)_minmax(0,1fr)] md:gap-3">
-              <FormField
-                htmlFor={`${formId}-status`}
-                label={t("site_progress.lbl_progress_status", "Progress status")}
-              >
-                <select
-                  className="timiq-select min-h-[44px] w-full min-w-0"
-                  id={`${formId}-status`}
-                  onChange={(e) => setProgressStatus(e.target.value)}
-                  value={progressStatus}
+            {elevation === ELEVATION_CUSTOM_VALUE ? (
+              <div className="grid min-w-0 grid-cols-1 gap-2.5">
+                <FormField
+                  error={fieldErrors.elevation}
+                  htmlFor={`${formId}-elevation`}
+                  label={t("site_progress.lbl_elevation", "Elevation")}
+                  required
                 >
-                  {WORK_PROGRESS_STATUS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {genericStatusLabel(t, o.value)}
-                    </option>
-                  ))}
-                </select>
-              </FormField>
-              <FormField
-                error={fieldErrors.percent}
-                htmlFor={`${formId}-percent`}
-                label={t("site_progress.lbl_percent_optional", "Percent")}
-              >
-                <input
-                  className="timiq-input min-h-[44px] w-full min-w-0"
-                  id={`${formId}-percent`}
-                  inputMode="numeric"
-                  max={100}
-                  min={0}
-                  onChange={(e) => {
-                    setPercent(e.target.value);
-                    setFieldErrors((prev) => ({ ...prev, percent: undefined }));
-                  }}
-                  placeholder={t("site_progress.placeholder_percent", "0–100")}
-                  type="number"
-                  value={percent}
-                />
-              </FormField>
-            </div>
+                  <select
+                    className="timiq-select min-h-[44px] w-full min-w-0"
+                    id={`${formId}-elevation`}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setElevation(next);
+                      if (next !== ELEVATION_CUSTOM_VALUE) {
+                        setElevationCustom("");
+                      }
+                      setFieldErrors((prev) => ({
+                        ...prev,
+                        elevation: undefined,
+                        elevationCustom: next === ELEVATION_CUSTOM_VALUE ? prev.elevationCustom : undefined,
+                      }));
+                    }}
+                    required
+                    value={elevation}
+                  >
+                    <option value="">{t("common.select", "Select…")}</option>
+                    {ELEVATION_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField
+                  error={fieldErrors.elevationCustom}
+                  htmlFor={`${formId}-elevation-custom`}
+                  label={t("site_progress.lbl_elevation_name", "Elevation name")}
+                  required
+                >
+                  <input
+                    className="timiq-input min-h-[44px] w-full min-w-0"
+                    id={`${formId}-elevation-custom`}
+                    maxLength={ELEVATION_CUSTOM_MAX_LEN}
+                    onChange={(e) => {
+                      setElevationCustom(e.target.value);
+                      setFieldErrors((prev) => ({ ...prev, elevationCustom: undefined }));
+                    }}
+                    required
+                    value={elevationCustom}
+                  />
+                </FormField>
+                <FormField
+                  error={fieldErrors.level}
+                  htmlFor={`${formId}-level`}
+                  label={t("site_progress.lbl_level", "Level")}
+                  required
+                >
+                  <select
+                    className="timiq-select min-h-[44px] w-full min-w-0"
+                    id={`${formId}-level`}
+                    onChange={(e) => {
+                      setLevel(e.target.value);
+                      setFieldErrors((prev) => ({ ...prev, level: undefined }));
+                    }}
+                    required
+                    value={level}
+                  >
+                    <option value="">{t("common.select", "Select…")}</option>
+                    {LEVEL_OPTIONS.map((o) => (
+                      <option key={o.value} value={String(o.value)}>
+                        {o.optionText}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+              </div>
+            ) : (
+              <div className="grid min-w-0 grid-cols-1 gap-2.5 min-[390px]:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] md:gap-3">
+                <FormField
+                  error={fieldErrors.elevation}
+                  htmlFor={`${formId}-elevation`}
+                  label={t("site_progress.lbl_elevation", "Elevation")}
+                  required
+                >
+                  <select
+                    className="timiq-select min-h-[44px] w-full min-w-0"
+                    id={`${formId}-elevation`}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setElevation(next);
+                      if (next !== ELEVATION_CUSTOM_VALUE) {
+                        setElevationCustom("");
+                      }
+                      setFieldErrors((prev) => ({
+                        ...prev,
+                        elevation: undefined,
+                        elevationCustom: next === ELEVATION_CUSTOM_VALUE ? prev.elevationCustom : undefined,
+                      }));
+                    }}
+                    required
+                    value={elevation}
+                  >
+                    <option value="">{t("common.select", "Select…")}</option>
+                    {ELEVATION_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+                <FormField
+                  error={fieldErrors.level}
+                  htmlFor={`${formId}-level`}
+                  label={t("site_progress.lbl_level", "Level")}
+                  required
+                >
+                  <select
+                    className="timiq-select min-h-[44px] w-full min-w-0"
+                    id={`${formId}-level`}
+                    onChange={(e) => {
+                      setLevel(e.target.value);
+                      setFieldErrors((prev) => ({ ...prev, level: undefined }));
+                    }}
+                    required
+                    value={level}
+                  >
+                    <option value="">{t("common.select", "Select…")}</option>
+                    {LEVEL_OPTIONS.map((o) => (
+                      <option key={o.value} value={String(o.value)}>
+                        {o.optionText}
+                      </option>
+                    ))}
+                  </select>
+                </FormField>
+              </div>
+            )}
 
             <FormField htmlFor={`${formId}-notes`} label={t("site_progress.lbl_notes", "Notes / details")}>
               <textarea
@@ -1280,7 +1431,7 @@ export function SiteProgressClient() {
                 <>
                   <p className="text-[var(--color-text-muted)]">
                     {formatDate(activeDetail.work_date)} — {activeDetail.location_name} —{" "}
-                    {displayTitle(activeDetail.title)}
+                    {formatClassificationSummary(activeDetail) ?? displayTitle(activeDetail.title)}
                   </p>
                   <p className="text-[var(--color-text-muted)]">
                     Uploaded: {activeDetail.attachments.length} / {maxAttachments}
@@ -1415,7 +1566,11 @@ export function SiteProgressClient() {
                         >
                           <TableCell>{formatDate(row.work_date)}</TableCell>
                           <TableCell>{row.location_name}</TableCell>
-                          <TableCell className="max-w-[10rem] truncate">{displayTitle(row.title)}</TableCell>
+                          <TableCell className="max-w-[14rem]">
+                            <span className="line-clamp-2 break-words" title={historyTitleCell(row)}>
+                              {historyTitleCell(row)}
+                            </span>
+                          </TableCell>
                           <TableCell>
                             <div className="grid grid-cols-2 gap-1 sm:flex sm:flex-wrap">
                               {(row.attachments ?? []).slice(0, 4).map((a) => (
@@ -1436,7 +1591,7 @@ export function SiteProgressClient() {
                               {(row.attachments ?? []).length} file(s)
                             </p>
                           </TableCell>
-                          <TableCell>{row.progress_status}</TableCell>
+                          <TableCell>{historyStatusCell(row)}</TableCell>
                           <TableCell>
                             <div className="flex min-w-0 flex-col gap-1 sm:flex-row">
                               <Button
