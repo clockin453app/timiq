@@ -45,6 +45,10 @@ class WorkProgressEntry(Base):
     progress_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
     notes: Mapped[str] = mapped_column(Text, nullable=True)
     percent_complete: Mapped[int] = mapped_column(Integer, nullable=True)
+    work_category: Mapped[str] = mapped_column(String(64), nullable=True)
+    elevation: Mapped[str] = mapped_column(String(64), nullable=True)
+    elevation_custom: Mapped[str] = mapped_column(String(100), nullable=True)
+    level: Mapped[int] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,

@@ -13,7 +13,17 @@ from app.core.storage.factory import get_storage_backend
 from app.modules.audit.models import AuditEvent
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
-from app.modules.auth.service import can_manage_user
+from app.modules.work_progress.classification import (
+    CLASSIFIED_PROGRESS_STATUS,
+    ELEVATION_CUSTOM,
+    ELEVATION_CUSTOM_MAX_LEN,
+    ELEVATION_LABELS,
+    ELEVATION_VALUES,
+    LEVEL_MAX,
+    LEVEL_MIN,
+    WORK_CATEGORY_LABELS,
+    WORK_CATEGORY_VALUES,
+)
 from app.modules.employee_profiles.repository import get_employee_profile_by_user_id
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
 from app.modules.work_progress.image_processing import (
@@ -87,6 +97,79 @@ STATUS_REVIEWED = "reviewed"
 STATUS_ARCHIVED = "archived"
 
 STORED_JPEG_MEDIA = "image/jpeg"
+
+
+def _format_level_display(level: int | None) -> str | None:
+    if level is None:
+        return None
+    return f"{level:02d}"
+
+
+def _elevation_display(elevation: str | None, elevation_custom: str | None) -> str | None:
+    if elevation is None:
+        return None
+    if elevation == ELEVATION_CUSTOM:
+        custom = (elevation_custom or "").strip()
+        return custom or None
+    return ELEVATION_LABELS.get(elevation)
+
+
+def _classification_fields(row: WorkProgressEntry) -> dict[str, object]:
+    category = getattr(row, "work_category", None)
+    elevation = getattr(row, "elevation", None)
+    elevation_custom = getattr(row, "elevation_custom", None)
+    level = getattr(row, "level", None)
+    return {
+        "work_category": category,
+        "elevation": elevation,
+        "elevation_custom": elevation_custom,
+        "level": level,
+        "work_category_label": WORK_CATEGORY_LABELS.get(category) if category else None,
+        "elevation_display": _elevation_display(elevation, elevation_custom),
+        "level_display": _format_level_display(level),
+    }
+
+
+def _validate_classification(body: WorkProgressCreateRequest) -> tuple[str, str, str | None, int]:
+    category = body.work_category.strip()
+    elevation = body.elevation.strip()
+    if category not in WORK_CATEGORY_VALUES:
+        raise WorkProgressValidationError("Invalid work category.")
+    if elevation not in ELEVATION_VALUES:
+        raise WorkProgressValidationError("Invalid elevation.")
+    if body.level < LEVEL_MIN or body.level > LEVEL_MAX:
+        raise WorkProgressValidationError("Level must be between 0 and 20.")
+    custom: str | None = None
+    if elevation == ELEVATION_CUSTOM:
+        custom = (body.elevation_custom or "").strip()
+        if not custom:
+            raise WorkProgressValidationError("Elevation name is required for Custom / site-defined.")
+        if len(custom) > ELEVATION_CUSTOM_MAX_LEN:
+            raise WorkProgressValidationError(
+                f"Elevation name must be at most {ELEVATION_CUSTOM_MAX_LEN} characters."
+            )
+    elif body.elevation_custom and body.elevation_custom.strip():
+        raise WorkProgressValidationError("Elevation name is only allowed for Custom / site-defined.")
+    return category, elevation, custom, body.level
+
+
+def _actor_can_manage_company_work_progress(actor: User, entry: WorkProgressEntry) -> bool:
+    """Review/delete scope: Administrator any; company Admin any entry in their company.
+
+    Aligns with review list visibility (company-wide). Does not use can_manage_user so
+    Admin-authored Site Progress submissions remain deletable by company Admin.
+    """
+    if actor.system_role == SystemRole.ADMINISTRATOR:
+        return True
+    if actor.system_role == SystemRole.ADMIN:
+        return actor.company_id is not None and entry.company_id == actor.company_id
+    return False
+
+
+def _actor_can_access_work_progress_entry(actor: User, entry: WorkProgressEntry, owner: User) -> bool:
+    if actor.id == owner.id:
+        return True
+    return _actor_can_manage_company_work_progress(actor, entry)
 
 
 class WorkProgressError(ValueError):
@@ -288,6 +371,7 @@ def _entry_to_list_item(
         created_at=row.created_at,
         updated_at=row.updated_at,
         attachments=[WorkProgressAttachmentPublic.model_validate(a) for a in atts],
+        **_classification_fields(row),
     )
 
 
@@ -328,6 +412,7 @@ def _build_detail(
         attachments=[WorkProgressAttachmentPublic.model_validate(a) for a in attachments],
         created_at=row.created_at,
         updated_at=row.updated_at,
+        **_classification_fields(row),
     )
 
 
@@ -361,8 +446,7 @@ def create_my_entry(
 ) -> WorkProgressEntryDetailResponse:
     if user.company_id is None:
         raise WorkProgressValidationError("Your account is not assigned to a company.")
-    if body.progress_status not in ALLOWED_PROGRESS_STATUSES:
-        raise WorkProgressValidationError("Invalid progress status.")
+    category, elevation, elevation_custom, level = _validate_classification(body)
     allowed = _allowed_location_ids(db_session, user)
     if body.location_id not in allowed:
         raise WorkProgressValidationError("That location is not available for your account.")
@@ -384,10 +468,14 @@ def create_my_entry(
         workplace_id=workplace_id,
         location_id=body.location_id,
         work_date=body.work_date,
-        title=body.title.strip(),
-        progress_status=body.progress_status,
+        title="",
+        progress_status=CLASSIFIED_PROGRESS_STATUS,
         notes=body.notes.strip() if body.notes else None,
-        percent_complete=body.percent_complete,
+        percent_complete=None,
+        work_category=category,
+        elevation=elevation,
+        elevation_custom=elevation_custom,
+        level=level,
         status=STATUS_SUBMITTED,
         reviewed_at=None,
         reviewed_by_user_id=None,
@@ -409,7 +497,9 @@ def create_my_entry(
         details={
             "work_date": str(row.work_date),
             "location_id": str(row.location_id),
-            "title": row.title,
+            "work_category": category,
+            "elevation": elevation,
+            "level": level,
         },
     )
     return _build_detail(db_session, row, [])
@@ -519,7 +609,7 @@ def resolve_attachment_access(
     if owner is None:
         raise WorkProgressNotFoundError()
 
-    if actor.id != owner.id and not can_manage_user(actor, owner):
+    if actor.id != owner.id and not _actor_can_access_work_progress_entry(actor, entry, owner):
         raise WorkProgressPermissionError()
     return att, entry, owner
 
@@ -585,7 +675,7 @@ def _assert_review_access(db_session: Session, actor: User, entry_id: uuid.UUID)
     if pair is None:
         raise WorkProgressNotFoundError()
     entry, owner = pair
-    if not can_manage_user(actor, owner):
+    if not _actor_can_manage_company_work_progress(actor, entry):
         raise WorkProgressPermissionError()
     return entry, owner
 
@@ -696,6 +786,7 @@ def list_review(
                 status=row.status,
                 attachment_count=attachment_counts.get(row.id, 0),
                 created_at=row.created_at,
+                **_classification_fields(row),
             )
         )
     return WorkProgressReviewListResponse(items=items, total=total)
@@ -786,15 +877,17 @@ def list_review_attachment_gallery(
 def _ordered_bulk_attachment_rows(
     db_session: Session,
     file_ids: list[uuid.UUID],
+    *,
+    require_all: bool = True,
 ) -> list[tuple[WorkProgressAttachment, WorkProgressEntry]]:
     unique_ids = list(dict.fromkeys(file_ids))
     want = set(unique_ids)
     rows = list_attachments_by_ids_with_entries(db_session, list(want))
     found = {att.id for att, _ in rows}
-    if found != want or len(rows) != len(want):
+    if require_all and (found != want or len(rows) != len(want)):
         raise WorkProgressNotFoundError()
     by_id = {att.id: (att, ent) for att, ent in rows}
-    return [by_id[fid] for fid in unique_ids]
+    return [by_id[fid] for fid in unique_ids if fid in by_id]
 
 
 def _assert_bulk_attachment_scope(
@@ -807,7 +900,7 @@ def _assert_bulk_attachment_scope(
         owner = get_user_by_id(db_session, entry.user_id)
         if owner is None:
             raise WorkProgressNotFoundError()
-        if not can_manage_user(actor, owner):
+        if not _actor_can_manage_company_work_progress(actor, entry):
             raise WorkProgressNotFoundError()
         out.append((att, entry, owner))
     return out
@@ -924,7 +1017,15 @@ def bulk_delete_review_attachments(
             f"Bulk deletion is limited to {MAX_BULK_ATTACHMENT_IDS} pictures."
         )
 
-    ordered = _ordered_bulk_attachment_rows(db_session, unique_ids)
+    # Missing/stale attachment IDs are treated as already deleted (idempotent retry).
+    ordered = _ordered_bulk_attachment_rows(db_session, unique_ids, require_all=False)
+    if not ordered:
+        return {
+            "deleted_count": 0,
+            "storage_cleanup_ok": 0,
+            "storage_cleanup_failed": 0,
+            "warning": None,
+        }
     triples = _assert_bulk_attachment_scope(db_session, actor, ordered)
 
     attachments = [att for att, _, _ in triples]

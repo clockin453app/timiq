@@ -170,22 +170,22 @@ def test_mixed_company_bulk_scope_is_opaque() -> None:
     actor = _user(SystemRole.ADMIN, company_id)
     other_owner = _user(SystemRole.EMPLOYEE, uuid.uuid4())
     attachment = SimpleNamespace(id=uuid.uuid4())
-    entry = SimpleNamespace(user_id=other_owner.id)
+    entry = SimpleNamespace(user_id=other_owner.id, company_id=other_owner.company_id)
     with patch("app.modules.work_progress.service.get_user_by_id", return_value=other_owner):
         with pytest.raises(WorkProgressNotFoundError):
             _assert_bulk_attachment_scope(MagicMock(), actor, [(attachment, entry)])
 
 
-def test_invalid_bulk_id_stops_before_database_or_storage_mutation() -> None:
+def test_bulk_delete_treats_missing_ids_as_already_deleted() -> None:
     company_id = uuid.uuid4()
     actor = _user(SystemRole.ADMIN, company_id)
     db = MagicMock()
     with (
-        patch("app.modules.work_progress.service._ordered_bulk_attachment_rows", side_effect=WorkProgressNotFoundError()),
+        patch("app.modules.work_progress.service._ordered_bulk_attachment_rows", return_value=[]),
         patch("app.modules.work_progress.service.get_storage_backend") as storage,
     ):
-        with pytest.raises(WorkProgressNotFoundError):
-            bulk_delete_review_attachments(db, actor, [uuid.uuid4()])
+        result = bulk_delete_review_attachments(db, actor, [uuid.uuid4()])
+    assert result["deleted_count"] == 0
     db.delete.assert_not_called()
     storage.assert_not_called()
 

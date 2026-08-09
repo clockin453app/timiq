@@ -423,8 +423,11 @@ def test_permanent_delete_route_registered_and_not_shadowed() -> None:
 
 def test_route_rejects_employee_with_403_and_no_side_effects() -> None:
     """Real require_admin_or_administrator dependency must block employees at the route."""
+    from app.db.session import get_db_session
+
     employee = _user(role=SystemRole.EMPLOYEE, company_id=uuid.uuid4())
     app.dependency_overrides[require_active_user] = lambda: employee
+    app.dependency_overrides[get_db_session] = lambda: MagicMock()
     client = TestClient(app)
     try:
         with (

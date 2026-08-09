@@ -38,6 +38,13 @@ class WorkProgressEntryListItem(BaseModel):
     title: str
     progress_status: str
     percent_complete: int | None
+    work_category: str | None = None
+    elevation: str | None = None
+    elevation_custom: str | None = None
+    level: int | None = None
+    work_category_label: str | None = None
+    elevation_display: str | None = None
+    level_display: str | None = None
     status: str
     location_name: str
     workplace_name: str | None
@@ -59,6 +66,13 @@ class WorkProgressEntryDetailResponse(BaseModel):
     progress_status: str
     notes: str | None
     percent_complete: int | None
+    work_category: str | None = None
+    elevation: str | None = None
+    elevation_custom: str | None = None
+    level: int | None = None
+    work_category_label: str | None = None
+    elevation_display: str | None = None
+    level_display: str | None = None
     status: str
     reviewed_at: datetime | None
     review_note: str | None
@@ -76,10 +90,15 @@ class WorkProgressCreateRequest(BaseModel):
     work_date: date
     location_id: uuid.UUID
     workplace_id: uuid.UUID | None = None
-    """Optional summary. Empty string is stored as-is (column is non-null)."""
-    title: str = Field(default="", max_length=300)
-    progress_status: str = Field(..., min_length=1, max_length=32)
     notes: str | None = Field(default=None, max_length=8000)
+    work_category: str = Field(..., min_length=1, max_length=64)
+    elevation: str = Field(..., min_length=1, max_length=64)
+    elevation_custom: str | None = Field(default=None, max_length=100)
+    level: int = Field(..., ge=0, le=20)
+    """Legacy free-text title kept optional for older clients; new UI leaves it empty."""
+    title: str = Field(default="", max_length=300)
+    """Legacy progress_status; ignored when classification fields are accepted."""
+    progress_status: str | None = Field(default=None, max_length=32)
     percent_complete: int | None = Field(default=None, ge=0, le=100)
 
 
@@ -95,6 +114,13 @@ class WorkProgressReviewListItem(BaseModel):
     work_date: date
     title: str
     progress_status: str
+    work_category: str | None = None
+    elevation: str | None = None
+    elevation_custom: str | None = None
+    level: int | None = None
+    work_category_label: str | None = None
+    elevation_display: str | None = None
+    level_display: str | None = None
     status: str
     attachment_count: int
     created_at: datetime

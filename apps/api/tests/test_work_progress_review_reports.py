@@ -208,8 +208,11 @@ def test_local_object_byte_size_and_replace(tmp_path) -> None:
 
 
 def test_thumbnail_route_404_for_missing(client: TestClient) -> None:
+    from app.db.session import get_db_session
+
     user = _user(role=SystemRole.EMPLOYEE, company_id=uuid.uuid4())
     app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db_session] = lambda: MagicMock()
     try:
         with patch(
             "app.modules.work_progress.router.download_work_progress_thumbnail",
