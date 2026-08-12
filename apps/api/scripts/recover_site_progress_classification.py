@@ -4,7 +4,11 @@ Source of truth:
   audit_events.action = 'work_progress.submitted'
   details.work_category / elevation / level / elevation_custom
 
-Default mode is DRY-RUN. Never guesses values. Never touches legacy titled rows.
+Architecture (transaction-safe):
+  SCAN  — read-only Session; emit immutable RecoveryCandidate dataclasses; close Session
+  APPLY — CLEAN Session (no ORM WorkProgressEntry from scan); guarded UPDATE … RETURNING;
+          recovery audit from RETURNING values; single commit; close Session
+  VERIFY — NEW independent Session; SELECT and compare (never same-session proof)
 
 Usage:
   python -m scripts.recover_site_progress_classification --dry-run
@@ -25,7 +29,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import create_engine, func, select, text
+from sqlalchemy import create_engine, func, select, text, update
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import require_database_url
@@ -48,9 +53,10 @@ from app.modules.work_progress.models import WorkProgressAttachment, WorkProgres
 SUBMIT_ACTION = "work_progress.submitted"
 RECOVERY_ACTION = "work_progress.classification_recovered_from_audit"
 ROLLBACK_ACTION = "work_progress.classification_recovery_rolled_back"
+RECOVERY_SCRIPT_VERSION = "session-integrity-v2"
 
 
-@dataclass
+@dataclass(frozen=True)
 class RecoveryCandidate:
     entry_id: str
     company_id: str
@@ -72,6 +78,7 @@ class RecoveryCandidate:
     after_elevation_custom: str | None
     after_level: int
     status: str  # recoverable | already_restored | ambiguous | conflict | invalid | skipped_legacy
+    updated_at: str | None = None
 
 
 @dataclass
@@ -85,6 +92,18 @@ class DryRunReport:
     generated_at: str
 
 
+@dataclass(frozen=True)
+class AppliedRow:
+    entry_id: str
+    work_category: str
+    elevation: str
+    elevation_custom: str | None
+    level: int
+    source_audit_id: str
+    company_id: str
+    updated_at: str | None
+
+
 def _display_name(profile: EmployeeProfile | None, email: str) -> str:
     if profile is None:
         return email
@@ -93,6 +112,7 @@ def _display_name(profile: EmployeeProfile | None, email: str) -> str:
 
 
 def _parse_level(raw: Any) -> int | None:
+    """Parse level; never treat integer 0 as missing."""
     if raw is None or isinstance(raw, bool):
         return None
     if isinstance(raw, int):
@@ -103,6 +123,10 @@ def _parse_level(raw: Any) -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def _classify_row(session: Session, entry: WorkProgressEntry) -> RecoveryCandidate:
@@ -139,6 +163,7 @@ def _classify_row(session: Session, entry: WorkProgressEntry) -> RecoveryCandida
         "after_elevation": "",
         "after_elevation_custom": None,
         "after_level": -1,
+        "updated_at": entry.updated_at.isoformat() if entry.updated_at else None,
     }
 
     if entry.progress_status != CLASSIFIED_PROGRESS_STATUS:
@@ -204,6 +229,7 @@ def _classify_row(session: Session, entry: WorkProgressEntry) -> RecoveryCandida
 
 
 def scan_candidates(session: Session) -> DryRunReport:
+    """Read-only scan. Caller must not reuse loaded ORM entries for APPLY."""
     entries = list(session.scalars(select(WorkProgressEntry)).all())
     recoverable: list[RecoveryCandidate] = []
     already_restored: list[RecoveryCandidate] = []
@@ -234,7 +260,7 @@ def scan_candidates(session: Session) -> DryRunReport:
         conflicts=conflicts,
         invalid=invalid,
         legacy_skipped=legacy_skipped,
-        generated_at=datetime.now(timezone.utc).isoformat(),
+        generated_at=_utc_now().isoformat(),
     )
 
 
@@ -294,6 +320,7 @@ def gate_exact_18(report: DryRunReport) -> bool:
 def write_snapshot(report: DryRunReport, path: Path) -> None:
     payload = {
         "generated_at": report.generated_at,
+        "recovery_script_version": RECOVERY_SCRIPT_VERSION,
         "allowlist": [asdict(c) for c in report.recoverable],
         "legacy_skipped_ids": [c.entry_id for c in report.legacy_skipped],
         "counts": {
@@ -310,75 +337,175 @@ def write_snapshot(report: DryRunReport, path: Path) -> None:
     print(f"snapshot_written={path}")
 
 
-def apply_recovery(session: Session, report: DryRunReport, actor: User) -> int:
-    if not gate_exact_18(report):
-        raise SystemExit("SAFETY GATE FAILED: dry-run is not exactly 18/0/0/0 — refusing APPLY")
+def _make_session_factory(engine: Engine) -> sessionmaker[Session]:
+    return sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=True)
 
-    applied = 0
-    for candidate in report.recoverable:
-        entry_id = uuid.UUID(candidate.entry_id)
-        # Atomic conditional update: only when all classification columns are still NULL.
-        result = session.execute(
-            text(
-                """
-                UPDATE work_progress_entries
-                SET work_category = :work_category,
-                    elevation = :elevation,
-                    elevation_custom = :elevation_custom,
-                    level = :level
-                WHERE id = :id
-                  AND work_category IS NULL
-                  AND elevation IS NULL
-                  AND elevation_custom IS NULL
-                  AND level IS NULL
-                  AND progress_status = :classified
-                """
-            ),
-            {
-                "id": entry_id,
-                "work_category": candidate.after_work_category,
-                "elevation": candidate.after_elevation,
-                "elevation_custom": candidate.after_elevation_custom,
-                "level": candidate.after_level,
-                "classified": CLASSIFIED_PROGRESS_STATUS,
-            },
-        )
-        if result.rowcount != 1:
-            session.rollback()
-            raise SystemExit(f"Conflict during apply for {candidate.entry_id} — aborting")
 
-        create_internal_audit_event(
-            db_session=session,
-            actor=actor,
-            action=RECOVERY_ACTION,
-            entity_type="work_progress_entry",
-            entity_id=str(entry_id),
-            company_id=uuid.UUID(candidate.company_id),
-            details={
-                "source_audit_id": candidate.audit_id,
-                "work_category": candidate.after_work_category,
-                "elevation": candidate.after_elevation,
-                "elevation_custom": candidate.after_elevation_custom,
-                "level": candidate.after_level,
-                "before": {
-                    "work_category": None,
-                    "elevation": None,
-                    "elevation_custom": None,
-                    "level": None,
+def apply_recovery_clean(
+    session: Session,
+    candidates: list[RecoveryCandidate],
+    actor: User,
+    *,
+    require_exact_18: bool = True,
+) -> list[AppliedRow]:
+    """APPLY using a clean Session that must NOT hold scan ORM WorkProgressEntry instances.
+
+    Uses guarded UPDATE … RETURNING. Audits use persisted RETURNING values.
+    Commits once. On any failure rolls back the entire batch.
+    """
+    if require_exact_18 and len(candidates) != 18:
+        raise SystemExit(f"SAFETY GATE FAILED: expected 18 candidates, got {len(candidates)}")
+    if any(c.status != "recoverable" for c in candidates):
+        raise SystemExit("SAFETY GATE FAILED: APPLY requires only recoverable candidates")
+
+    # Hard rule: no WorkProgressEntry may already be in this Session's identity map.
+    for obj in session.identity_map.values():
+        if isinstance(obj, WorkProgressEntry):
+            raise SystemExit(
+                "SAFETY GATE FAILED: APPLY Session already holds WorkProgressEntry ORM "
+                "instances — refuse mixed scan/apply Session"
+            )
+
+    applied: list[AppliedRow] = []
+    now = _utc_now()
+
+    try:
+        for candidate in candidates:
+            entry_id = uuid.UUID(candidate.entry_id)
+            # Explicit null-safe level check (level 0 is valid).
+            if candidate.after_level is None or candidate.after_level < LEVEL_MIN or candidate.after_level > LEVEL_MAX:
+                raise SystemExit(f"Invalid level for {candidate.entry_id}")
+
+            result = session.execute(
+                update(WorkProgressEntry)
+                .where(WorkProgressEntry.id == entry_id)
+                .where(WorkProgressEntry.company_id == uuid.UUID(candidate.company_id))
+                .where(WorkProgressEntry.work_category.is_(None))
+                .where(WorkProgressEntry.elevation.is_(None))
+                .where(WorkProgressEntry.elevation_custom.is_(None))
+                .where(WorkProgressEntry.level.is_(None))
+                .where(WorkProgressEntry.progress_status == CLASSIFIED_PROGRESS_STATUS)
+                .values(
+                    work_category=candidate.after_work_category,
+                    elevation=candidate.after_elevation,
+                    elevation_custom=candidate.after_elevation_custom,
+                    level=candidate.after_level,
+                    updated_at=now,
+                )
+                .returning(
+                    WorkProgressEntry.id,
+                    WorkProgressEntry.work_category,
+                    WorkProgressEntry.elevation,
+                    WorkProgressEntry.elevation_custom,
+                    WorkProgressEntry.level,
+                    WorkProgressEntry.updated_at,
+                ),
+                execution_options={"synchronize_session": False},
+            )
+            row = result.mappings().first()
+            if row is None:
+                session.rollback()
+                raise SystemExit(
+                    f"Conflict during apply for {candidate.entry_id} — guarded UPDATE matched 0 rows; aborting"
+                )
+
+            persisted_cat = row["work_category"]
+            persisted_elev = row["elevation"]
+            persisted_custom = row["elevation_custom"]
+            persisted_level = row["level"]
+            if (
+                persisted_cat != candidate.after_work_category
+                or persisted_elev != candidate.after_elevation
+                or (persisted_custom or None) != (candidate.after_elevation_custom or None)
+                or persisted_level != candidate.after_level
+            ):
+                session.rollback()
+                raise SystemExit(
+                    f"RETURNING mismatch for {candidate.entry_id}: "
+                    f"got ({persisted_cat},{persisted_elev},{persisted_custom},{persisted_level})"
+                )
+
+            create_internal_audit_event(
+                db_session=session,
+                actor=actor,
+                action=RECOVERY_ACTION,
+                entity_type="work_progress_entry",
+                entity_id=str(entry_id),
+                company_id=uuid.UUID(candidate.company_id),
+                details={
+                    "source_audit_id": candidate.audit_id,
+                    "recovery_script_version": RECOVERY_SCRIPT_VERSION,
+                    "work_category": persisted_cat,
+                    "elevation": persisted_elev,
+                    "elevation_custom": persisted_custom,
+                    "level": persisted_level,
+                    "before": {
+                        "work_category": candidate.before_work_category,
+                        "elevation": candidate.before_elevation,
+                        "elevation_custom": candidate.before_elevation_custom,
+                        "level": candidate.before_level,
+                    },
                 },
-            },
-            commit=False,
-        )
-        applied += 1
+                commit=False,
+            )
+            applied.append(
+                AppliedRow(
+                    entry_id=str(entry_id),
+                    work_category=persisted_cat,
+                    elevation=persisted_elev,
+                    elevation_custom=persisted_custom,
+                    level=persisted_level,
+                    source_audit_id=candidate.audit_id,
+                    company_id=candidate.company_id,
+                    updated_at=row["updated_at"].isoformat() if row["updated_at"] else None,
+                )
+            )
 
-    session.commit()
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+
     return applied
 
 
+def verify_recovered_independent(
+    session: Session,
+    candidates: list[RecoveryCandidate],
+) -> tuple[int, list[str]]:
+    """Fresh-session verification against source audit proposed values. Returns (exact_count, mismatches)."""
+    mismatches: list[str] = []
+    exact = 0
+    for candidate in candidates:
+        entry = session.get(WorkProgressEntry, uuid.UUID(candidate.entry_id))
+        if entry is None:
+            mismatches.append(f"{candidate.entry_id}: missing")
+            continue
+        ok = (
+            entry.work_category == candidate.after_work_category
+            and entry.elevation == candidate.after_elevation
+            and (entry.elevation_custom or None) == (candidate.after_elevation_custom or None)
+            and entry.level == candidate.after_level
+            and entry.title == candidate.title
+            and entry.progress_status == candidate.progress_status
+            and entry.percent_complete == candidate.percent_complete
+        )
+        if ok:
+            exact += 1
+        else:
+            mismatches.append(
+                f"{candidate.entry_id}: db=({entry.work_category},{entry.elevation},{entry.level}) "
+                f"expected=({candidate.after_work_category},{candidate.after_elevation},{candidate.after_level})"
+            )
+    return exact, mismatches
+
+
 def rollback_recovery(session: Session, snapshot_path: Path, actor: User) -> int:
+    """Conflict-safe rollback: only clear if current values still exactly match recovery write."""
     payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
     allowlist = payload.get("allowlist") or []
     reverted = 0
+    now = _utc_now()
     for item in allowlist:
         entry_id = uuid.UUID(item["entry_id"])
         expected_cat = item["after_work_category"]
@@ -392,23 +519,26 @@ def rollback_recovery(session: Session, snapshot_path: Path, actor: User) -> int
                 SET work_category = NULL,
                     elevation = NULL,
                     elevation_custom = NULL,
-                    level = NULL
+                    level = NULL,
+                    updated_at = :updated_at
                 WHERE id = :id
                   AND work_category IS NOT DISTINCT FROM :work_category
                   AND elevation IS NOT DISTINCT FROM :elevation
                   AND elevation_custom IS NOT DISTINCT FROM :elevation_custom
                   AND level IS NOT DISTINCT FROM :level
+                RETURNING id
                 """
             ),
             {
-                "id": entry_id,
+                "id": str(entry_id),
                 "work_category": expected_cat,
                 "elevation": expected_elev,
                 "elevation_custom": expected_custom,
                 "level": expected_level,
+                "updated_at": now,
             },
         )
-        if result.rowcount != 1:
+        if result.mappings().first() is None:
             session.rollback()
             raise SystemExit(
                 f"Rollback refused for {entry_id}: current values differ from recovery snapshot"
@@ -422,6 +552,7 @@ def rollback_recovery(session: Session, snapshot_path: Path, actor: User) -> int
             company_id=uuid.UUID(item["company_id"]),
             details={
                 "source_audit_id": item.get("audit_id"),
+                "recovery_script_version": RECOVERY_SCRIPT_VERSION,
                 "reverted_from": {
                     "work_category": expected_cat,
                     "elevation": expected_elev,
@@ -460,12 +591,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     engine = create_engine(require_database_url())
-    SessionLocal = sessionmaker(
-        bind=engine, autocommit=False, autoflush=False, expire_on_commit=False
-    )
+    SessionLocal = _make_session_factory(engine)
 
-    with SessionLocal() as session:
-        if args.dry_run:
+    if args.dry_run:
+        with SessionLocal() as session:
             try:
                 session.execute(text("SET TRANSACTION READ ONLY"))
             except Exception:
@@ -480,28 +609,75 @@ def main(argv: list[str] | None = None) -> int:
                 return 2
             return 0
 
-        if args.apply:
-            if args.snapshot is None:
-                raise SystemExit("--snapshot is required for --apply")
-            report = scan_candidates(session)
+    if args.apply:
+        if args.snapshot is None:
+            raise SystemExit("--snapshot is required for --apply")
+
+        # --- SCAN (read Session) ---
+        with SessionLocal() as scan_session:
+            try:
+                scan_session.execute(text("SET TRANSACTION READ ONLY"))
+            except Exception:
+                pass
+            report = scan_candidates(scan_session)
             print_dry_run(report)
             if not gate_exact_18(report):
                 print("SAFETY GATE FAILED — refusing APPLY")
                 return 2
             write_snapshot(report, args.snapshot)
-            actor = _system_actor(session)
-            applied = apply_recovery(session, report, actor)
-            print(f"applied={applied}")
-            report2 = scan_candidates(session)
+            candidates = list(report.recoverable)
+        # scan_session closed — ORM identity map discarded
+
+        # --- APPLY (clean Session) ---
+        with SessionLocal() as apply_session:
+            actor = _system_actor(apply_session)
+            actor_id = actor.id
+            # Re-load actor by id only (User is fine; must not load WorkProgressEntry)
+            actor = apply_session.get(User, actor_id)
+            if actor is None:
+                raise SystemExit("Actor vanished")
+            applied = apply_recovery_clean(apply_session, candidates, actor, require_exact_18=True)
+            print(f"applied={len(applied)}")
+        # apply_session closed after commit
+
+        # --- VERIFY (independent Session #1) ---
+        with SessionLocal() as verify_session:
+            exact, mismatches = verify_recovered_independent(verify_session, candidates)
+            print(f"independent_verify_exact={exact}/{len(candidates)}")
+            if mismatches:
+                for m in mismatches:
+                    print(f"MISMATCH {m}")
+                return 3
+        # verify_session closed
+
+        # --- VERIFY again (independent Session #2) ---
+        with SessionLocal() as verify2:
+            exact2, mismatches2 = verify_recovered_independent(verify2, candidates)
+            print(f"second_independent_verify_exact={exact2}/{len(candidates)}")
+            if mismatches2 or exact2 != len(candidates):
+                for m in mismatches2:
+                    print(f"MISMATCH2 {m}")
+                return 3
+
+        # Idempotent dry-run in yet another Session
+        with SessionLocal() as idem_session:
+            try:
+                idem_session.execute(text("SET TRANSACTION READ ONLY"))
+            except Exception:
+                pass
+            report2 = scan_candidates(idem_session)
             print(
                 f"post_apply_recoverable={len(report2.recoverable)} "
                 f"post_apply_already_restored={len(report2.already_restored)}"
             )
-            return 0 if applied == 18 else 3
+            if len(report2.recoverable) != 0 or len(report2.already_restored) != 18:
+                return 3
+        return 0
 
-        if args.rollback:
-            if args.snapshot is None:
-                raise SystemExit("--snapshot is required for --rollback")
+    if args.rollback:
+        if args.snapshot is None:
+            raise SystemExit("--snapshot is required for --rollback")
+        with SessionLocal() as session:
             actor = _system_actor(session)
             reverted = rollback_recovery(session, args.snapshot, actor)
             print(f"reverted={reverted}")
