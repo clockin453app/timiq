@@ -21,7 +21,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui";
-import { ChevronDown, MapPin } from "lucide-react";
+import { CheckSquare, ChevronDown, FileDown, MapPin, Trash2, X } from "lucide-react";
 import { isAdministrator, RoleGuard, useCurrentUser } from "@/features/auth";
 import { listCompanies, type Company } from "@/features/companies/api";
 import { listLocations, type Location } from "@/features/locations/api";
@@ -47,7 +47,9 @@ import {
   type WorkProgressReviewGalleryItem,
   type WorkProgressReviewListItem,
 } from "@/features/work-progress/api";
+import { buildWorkProgressZipDownloadFilename } from "@/features/work-progress/zip-download-filename";
 import { useT } from "@/lib/i18n";
+
 
 const SUBMISSION_PAGE_SIZE = 25;
 const COMPACT_ACTION_BTN =
@@ -675,7 +677,23 @@ function WorkProgressPicturesBody() {
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       anchor.href = url;
-      anchor.download = "work-progress-pictures.zip";
+      const siteLabel = locations.find((row) => row.id === locationId)?.name || null;
+      const employeeOpt =
+        employees.find((row) => row.user_id === employeeId) ||
+        filteredEmployees.find((row) => row.user_id === employeeId);
+      const employeeLabel = employeeOpt
+        ? employeeOpt.display_name?.trim() || employeeOpt.email
+        : null;
+      // Browser-visible name only; free-text search intentionally omitted.
+      anchor.download = buildWorkProgressZipDownloadFilename({
+        siteLabel,
+        workCategory: workCategory || null,
+        elevation: elevation || null,
+        level: level === "" ? null : Number(level),
+        employeeLabel: employeeId ? employeeLabel : null,
+        dateFrom: dateFrom || null,
+        dateTo: dateTo || null,
+      });
       anchor.click();
       URL.revokeObjectURL(url);
     } catch (error) {
@@ -1124,10 +1142,48 @@ function WorkProgressPicturesBody() {
             <p className="text-xs text-[var(--color-text-muted)]">Selected: {selectedIds.size} · ZIP limited to 48 pictures</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button onClick={selectCurrentPage} size="sm" type="button" variant="secondary">Select current page ({pictures.length})</Button>
-            <Button onClick={() => setSelectedIds(new Set())} size="sm" type="button" variant="secondary">Clear selection</Button>
-            <Button disabled={busy || selectedIds.size === 0 || selectedIds.size > WORK_PROGRESS_ZIP_MAX_FILES} onClick={() => void downloadZip()} size="sm" type="button" variant="secondary">Download ZIP</Button>
-            <Button disabled={busy || selectedIds.size === 0} onClick={() => void deletePictures()} size="sm" type="button" variant="secondary">Delete selected</Button>
+            <Button
+              className="inline-flex items-center gap-1.5"
+              onClick={selectCurrentPage}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              <CheckSquare aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[var(--color-success-700)]" />
+              Select current page ({pictures.length})
+            </Button>
+            <Button
+              className="inline-flex items-center gap-1.5"
+              onClick={() => setSelectedIds(new Set())}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              <X aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[var(--color-text-muted)]" />
+              Clear selection
+            </Button>
+            <Button
+              className="inline-flex items-center gap-1.5"
+              disabled={busy || selectedIds.size === 0 || selectedIds.size > WORK_PROGRESS_ZIP_MAX_FILES}
+              onClick={() => void downloadZip()}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              <FileDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+              Download ZIP
+            </Button>
+            <Button
+              className="inline-flex items-center gap-1.5"
+              disabled={busy || selectedIds.size === 0}
+              onClick={() => void deletePictures()}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              <Trash2 aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[var(--color-danger-700)]" />
+              Delete selected
+            </Button>
           </div>
         </header>
         {shownSubmission ? (
