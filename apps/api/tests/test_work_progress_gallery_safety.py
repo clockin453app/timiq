@@ -219,7 +219,18 @@ def test_zip_valid_request_returns_readable_archive() -> None:
     actor = _user(role=SystemRole.ADMIN, company_id=company_id)
     owner = _user(role=SystemRole.EMPLOYEE, company_id=company_id)
     att = SimpleNamespace(id=uuid.uuid4(), storage_path="work-progress-files/a.jpg", original_filename="a.jpg")
-    entry = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, work_date="2026-07-29", user_id=owner.id)
+    entry = SimpleNamespace(
+        id=uuid.uuid4(),
+        company_id=company_id,
+        location_id=uuid.uuid4(),
+        work_date="2026-07-29",
+        user_id=owner.id,
+        work_category="mastic",
+        elevation="internal",
+        elevation_custom=None,
+        level=0,
+        title="",
+    )
     backend = MagicMock()
     backend.object_byte_size.return_value = 4
     backend.exists.return_value = True
@@ -229,10 +240,16 @@ def test_zip_valid_request_returns_readable_archive() -> None:
         patch("app.modules.work_progress.service._assert_bulk_attachment_scope", return_value=[(att, entry, owner)]),
         patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
         patch("app.modules.work_progress.service.create_internal_audit_event"),
+        patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
+        patch("app.modules.work_progress.service._location_name", return_value="Kennington"),
     ):
         result = bulk_download_review_attachments_zip(MagicMock(), actor, [att.id])
     with zipfile.ZipFile(io.BytesIO(result)) as archive:
-        assert archive.read(archive.namelist()[0]) == b"data"
+        name = archive.namelist()[0]
+        assert archive.read(name) == b"data"
+        assert name.startswith("Kennington/Mastic/Internal/Level 00/")
+        assert name.endswith("/a.jpg")
+        assert ".." not in name
 
 
 def test_zip_actual_bytes_over_limit_are_rejected() -> None:
@@ -259,7 +276,18 @@ def test_zip_generation_semaphore_serializes_body_reads() -> None:
     company_id = uuid.uuid4()
     actor = _user(role=SystemRole.ADMIN, company_id=company_id)
     owner = _user(role=SystemRole.EMPLOYEE, company_id=company_id)
-    entry = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, work_date="2026-07-29", user_id=owner.id)
+    entry = SimpleNamespace(
+        id=uuid.uuid4(),
+        company_id=company_id,
+        location_id=uuid.uuid4(),
+        work_date="2026-07-29",
+        user_id=owner.id,
+        work_category=None,
+        elevation=None,
+        elevation_custom=None,
+        level=None,
+        title="Legacy",
+    )
     active = 0
     peak = 0
     guard = threading.Lock()
@@ -293,11 +321,18 @@ def test_zip_generation_semaphore_serializes_body_reads() -> None:
         ):
             bulk_download_review_attachments_zip(MagicMock(), actor, [att.id])
 
-    threads = [threading.Thread(target=run, args=(i,)) for i in range(2)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
+    with (
+        patch(
+            "app.modules.work_progress.service.get_employee_profile_by_user_id",
+            return_value=SimpleNamespace(first_name="Pat", last_name="Lee"),
+        ),
+        patch("app.modules.work_progress.service._location_name", return_value="Site"),
+    ):
+        threads = [threading.Thread(target=run, args=(i,)) for i in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
     assert peak == 1
 
 

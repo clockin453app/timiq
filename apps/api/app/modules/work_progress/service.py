@@ -4,7 +4,7 @@ import threading
 import uuid
 import zipfile
 from datetime import date, datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from sqlalchemy.orm import Session
 
@@ -1038,12 +1038,15 @@ def bulk_download_review_attachments_zip(
             extra={"max_total_bytes": MAX_ZIP_TOTAL_BYTES},
         )
 
+    from app.modules.work_progress.zip_export import build_work_progress_zip_arcname
+
     _ZIP_GENERATION_SEMAPHORE.acquire()
     try:
         actual_total = 0
+        used_arcnames: set[str] = set()
         with io.BytesIO() as buf:
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for att, entry, _ in triples:
+                for att, entry, owner in triples:
                     if not backend.exists(att.storage_path):
                         raise WorkProgressNotFoundError()
                     try:
@@ -1058,8 +1061,23 @@ def bulk_download_review_attachments_zip(
                             http_status=413,
                             extra={"max_total_bytes": MAX_ZIP_TOTAL_BYTES},
                         )
-                    safe = Path(att.original_filename or "file").name.replace("/", "_").replace("\\", "_")
-                    arcname = f"{entry.work_date}_{att.id.hex[:8]}_{safe}"
+                    profile = get_employee_profile_by_user_id(db_session, entry.user_id)
+                    arcname = build_work_progress_zip_arcname(
+                        site_name=_location_name(db_session, entry.location_id),
+                        work_category=getattr(entry, "work_category", None),
+                        elevation=getattr(entry, "elevation", None),
+                        elevation_custom=getattr(entry, "elevation_custom", None),
+                        level=getattr(entry, "level", None),
+                        legacy_title=getattr(entry, "title", None),
+                        employee_name=_display_name(profile),
+                        employee_email=owner.email if owner else None,
+                        work_date=entry.work_date,
+                        original_filename=att.original_filename,
+                        used_arcnames=used_arcnames,
+                    )
+                    # ZIP-slip final guard: refuse absolute / parent paths.
+                    if ".." in PurePosixPath(arcname).parts or PurePosixPath(arcname).is_absolute():
+                        raise WorkProgressValidationError("Unsafe ZIP member path blocked.")
                     zf.writestr(arcname, raw)
                     del raw
             zip_bytes = buf.getvalue()
