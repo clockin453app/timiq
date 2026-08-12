@@ -29,6 +29,7 @@ from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import require_database_url
+from app.db import models as _models  # noqa: F401 — register full metadata for FK resolution
 from app.modules.audit.models import AuditEvent
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
@@ -315,37 +316,50 @@ def apply_recovery(session: Session, report: DryRunReport, actor: User) -> int:
 
     applied = 0
     for candidate in report.recoverable:
-        entry = session.get(WorkProgressEntry, uuid.UUID(candidate.entry_id))
-        if entry is None:
-            raise SystemExit(f"Missing entry during apply: {candidate.entry_id}")
-        if not (
-            entry.work_category is None
-            and entry.elevation is None
-            and entry.elevation_custom is None
-            and entry.level is None
-        ):
+        entry_id = uuid.UUID(candidate.entry_id)
+        # Atomic conditional update: only when all classification columns are still NULL.
+        result = session.execute(
+            text(
+                """
+                UPDATE work_progress_entries
+                SET work_category = :work_category,
+                    elevation = :elevation,
+                    elevation_custom = :elevation_custom,
+                    level = :level
+                WHERE id = :id
+                  AND work_category IS NULL
+                  AND elevation IS NULL
+                  AND elevation_custom IS NULL
+                  AND level IS NULL
+                  AND progress_status = :classified
+                """
+            ),
+            {
+                "id": entry_id,
+                "work_category": candidate.after_work_category,
+                "elevation": candidate.after_elevation,
+                "elevation_custom": candidate.after_elevation_custom,
+                "level": candidate.after_level,
+                "classified": CLASSIFIED_PROGRESS_STATUS,
+            },
+        )
+        if result.rowcount != 1:
+            session.rollback()
             raise SystemExit(f"Conflict during apply for {candidate.entry_id} — aborting")
-
-        entry.work_category = candidate.after_work_category
-        entry.elevation = candidate.after_elevation
-        entry.elevation_custom = candidate.after_elevation_custom
-        entry.level = candidate.after_level
-        session.add(entry)
-        session.flush()
 
         create_internal_audit_event(
             db_session=session,
             actor=actor,
             action=RECOVERY_ACTION,
             entity_type="work_progress_entry",
-            entity_id=str(entry.id),
-            company_id=entry.company_id,
+            entity_id=str(entry_id),
+            company_id=uuid.UUID(candidate.company_id),
             details={
                 "source_audit_id": candidate.audit_id,
-                "work_category": entry.work_category,
-                "elevation": entry.elevation,
-                "elevation_custom": entry.elevation_custom,
-                "level": entry.level,
+                "work_category": candidate.after_work_category,
+                "elevation": candidate.after_elevation,
+                "elevation_custom": candidate.after_elevation_custom,
+                "level": candidate.after_level,
                 "before": {
                     "work_category": None,
                     "elevation": None,
@@ -367,35 +381,45 @@ def rollback_recovery(session: Session, snapshot_path: Path, actor: User) -> int
     reverted = 0
     for item in allowlist:
         entry_id = uuid.UUID(item["entry_id"])
-        entry = session.get(WorkProgressEntry, entry_id)
-        if entry is None:
-            raise SystemExit(f"Missing entry during rollback: {entry_id}")
         expected_cat = item["after_work_category"]
         expected_elev = item["after_elevation"]
         expected_custom = item.get("after_elevation_custom")
         expected_level = item["after_level"]
-        if (
-            entry.work_category != expected_cat
-            or entry.elevation != expected_elev
-            or (entry.elevation_custom or None) != (expected_custom or None)
-            or entry.level != expected_level
-        ):
+        result = session.execute(
+            text(
+                """
+                UPDATE work_progress_entries
+                SET work_category = NULL,
+                    elevation = NULL,
+                    elevation_custom = NULL,
+                    level = NULL
+                WHERE id = :id
+                  AND work_category IS NOT DISTINCT FROM :work_category
+                  AND elevation IS NOT DISTINCT FROM :elevation
+                  AND elevation_custom IS NOT DISTINCT FROM :elevation_custom
+                  AND level IS NOT DISTINCT FROM :level
+                """
+            ),
+            {
+                "id": entry_id,
+                "work_category": expected_cat,
+                "elevation": expected_elev,
+                "elevation_custom": expected_custom,
+                "level": expected_level,
+            },
+        )
+        if result.rowcount != 1:
+            session.rollback()
             raise SystemExit(
                 f"Rollback refused for {entry_id}: current values differ from recovery snapshot"
             )
-        entry.work_category = None
-        entry.elevation = None
-        entry.elevation_custom = None
-        entry.level = None
-        session.add(entry)
-        session.flush()
         create_internal_audit_event(
             db_session=session,
             actor=actor,
             action=ROLLBACK_ACTION,
             entity_type="work_progress_entry",
-            entity_id=str(entry.id),
-            company_id=entry.company_id,
+            entity_id=str(entry_id),
+            company_id=uuid.UUID(item["company_id"]),
             details={
                 "source_audit_id": item.get("audit_id"),
                 "reverted_from": {
