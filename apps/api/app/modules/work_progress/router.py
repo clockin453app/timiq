@@ -162,6 +162,9 @@ def get_work_progress_review_list(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     title_search: str | None = Query(default=None, max_length=300),
+    work_category: str | None = Query(default=None, max_length=64),
+    elevation: str | None = Query(default=None, max_length=64),
+    level: int | None = Query(default=None, ge=0, le=20),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db_session: Session = Depends(get_db_session),
@@ -179,6 +182,9 @@ def get_work_progress_review_list(
             date_from=date_from,
             date_to=date_to,
             title_search=title_search,
+            work_category=work_category,
+            elevation=elevation,
+            level=level,
             limit=limit,
             offset=offset,
         )
@@ -212,6 +218,9 @@ def get_work_progress_review_export_csv(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     title_search: str | None = Query(default=None, max_length=300),
+    work_category: str | None = Query(default=None, max_length=64),
+    elevation: str | None = Query(default=None, max_length=64),
+    level: int | None = Query(default=None, ge=0, le=20),
     db_session: Session = Depends(get_db_session),
     current_user: User = Depends(require_admin_or_administrator),
 ):
@@ -226,6 +235,9 @@ def get_work_progress_review_export_csv(
             date_from=date_from,
             date_to=date_to,
             title_search=title_search,
+            work_category=work_category,
+            elevation=elevation,
+            level=level,
         )
     except WorkProgressPermissionError as exc:
         raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
@@ -247,9 +259,24 @@ def get_work_progress_review_report_pdf(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     title_search: str | None = Query(default=None, max_length=300),
+    work_category: str | None = Query(default=None, max_length=64),
+    elevation: str | None = Query(default=None, max_length=64),
+    level: int | None = Query(default=None, ge=0, le=20),
     current_user: User = Depends(require_admin_or_administrator),
 ):
-    del company_id, user_id, location_id, status, date_from, date_to, title_search, current_user
+    del (
+        company_id,
+        user_id,
+        location_id,
+        status,
+        date_from,
+        date_to,
+        title_search,
+        work_category,
+        elevation,
+        level,
+        current_user,
+    )
     raise HTTPException(status_code=http_status.HTTP_410_GONE, detail=PDF_RETIRED_DETAIL)
 
 
@@ -264,6 +291,9 @@ def get_work_progress_review_attachment_gallery(
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     title_search: str | None = Query(default=None, max_length=300),
+    work_category: str | None = Query(default=None, max_length=64),
+    elevation: str | None = Query(default=None, max_length=64),
+    level: int | None = Query(default=None, ge=0, le=20),
     limit: int = Query(default=48, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db_session: Session = Depends(get_db_session),
@@ -282,6 +312,9 @@ def get_work_progress_review_attachment_gallery(
             date_from=date_from,
             date_to=date_to,
             title_search=title_search,
+            work_category=work_category,
+            elevation=elevation,
+            level=level,
             limit=limit,
             offset=offset,
         )

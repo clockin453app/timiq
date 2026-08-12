@@ -153,6 +153,23 @@ def _validate_classification(body: WorkProgressCreateRequest) -> tuple[str, str,
     return category, elevation, custom, body.level
 
 
+def _normalize_review_classification_filters(
+    *,
+    work_category: str | None,
+    elevation: str | None,
+    level: int | None,
+) -> tuple[str | None, str | None, int | None]:
+    category = work_category.strip() if work_category and work_category.strip() else None
+    elev = elevation.strip() if elevation and elevation.strip() else None
+    if category is not None and category not in WORK_CATEGORY_VALUES:
+        raise WorkProgressValidationError("Invalid work category filter.")
+    if elev is not None and elev not in ELEVATION_VALUES:
+        raise WorkProgressValidationError("Invalid elevation filter.")
+    if level is not None and (level < LEVEL_MIN or level > LEVEL_MAX):
+        raise WorkProgressValidationError("Level filter must be between 0 and 20.")
+    return category, elev, level
+
+
 def _actor_can_manage_company_work_progress(actor: User, entry: WorkProgressEntry) -> bool:
     """Review/delete scope: Administrator any; company Admin any entry in their company.
 
@@ -738,6 +755,9 @@ def list_review(
     title_search: str | None,
     limit: int,
     offset: int,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
 ) -> WorkProgressReviewListResponse:
     company_filter, user_id, location_id, status_f, d_from, d_to = _resolve_review_list_filters(
         db_session,
@@ -748,6 +768,11 @@ def list_review(
         status_filter=status_filter,
         date_from=date_from,
         date_to=date_to,
+    )
+    category, elev, lvl = _normalize_review_classification_filters(
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
     )
 
     rows, total = list_review_entries(
@@ -762,6 +787,9 @@ def list_review(
         title_search=title_search,
         limit=limit,
         offset=offset,
+        work_category=category,
+        elevation=elev,
+        level=lvl,
     )
 
     attachment_counts = count_attachments_for_entry_ids(db_session, [row.id for row in rows])
@@ -807,6 +835,9 @@ def list_review_attachment_gallery(
     title_search: str | None,
     limit: int,
     offset: int,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
 ) -> WorkProgressReviewAttachmentGalleryResponse:
     company_filter, uid, loc_id, status_f, d_from, d_to = _resolve_review_list_filters(
         db_session,
@@ -817,6 +848,11 @@ def list_review_attachment_gallery(
         status_filter=status_filter,
         date_from=date_from,
         date_to=date_to,
+    )
+    category, elev, lvl = _normalize_review_classification_filters(
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
     )
 
     if entry_id is not None:
@@ -838,6 +874,9 @@ def list_review_attachment_gallery(
         date_from=d_from,
         date_to=d_to,
         title_search=title_search,
+        work_category=category,
+        elevation=elev,
+        level=lvl,
     )
     page = list_review_attachments_page(
         db_session,
@@ -852,6 +891,9 @@ def list_review_attachment_gallery(
         title_search=title_search,
         limit=limit,
         offset=offset,
+        work_category=category,
+        elevation=elev,
+        level=lvl,
     )
 
     items: list[WorkProgressReviewAttachmentGalleryItem] = []
@@ -1326,6 +1368,9 @@ def export_review_entries_csv(
     date_from: date | None,
     date_to: date | None,
     title_search: str | None,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
 ) -> tuple[str, str]:
     if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
         raise WorkProgressPermissionError("You do not have permission to export work progress reviews.")
@@ -1340,6 +1385,11 @@ def export_review_entries_csv(
         date_from=date_from,
         date_to=date_to,
     )
+    category, elev, lvl = _normalize_review_classification_filters(
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
+    )
     entries = list_review_entries_for_export(
         db_session,
         company_id_filter=company_filter,
@@ -1349,6 +1399,9 @@ def export_review_entries_csv(
         date_from=d_from,
         date_to=d_to,
         title_search=title_search,
+        work_category=category,
+        elevation=elev,
+        level=lvl,
     )
     entry_ids = [e.id for e in entries]
     att_counts = count_attachments_for_entry_ids(db_session, entry_ids)

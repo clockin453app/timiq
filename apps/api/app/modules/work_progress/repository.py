@@ -1,7 +1,8 @@
+import re
 import uuid
 from datetime import date, datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.modules.auth.models import User
@@ -9,6 +10,12 @@ from app.modules.companies.models import Company
 from app.modules.employee_profiles.models import EmployeeProfile
 from app.modules.locations.models import Location
 from app.modules.site_access.models import EmployeeLocationAccess
+from app.modules.work_progress.classification import (
+    ELEVATION_OPTIONS,
+    LEVEL_MAX,
+    LEVEL_MIN,
+    WORK_CATEGORY_OPTIONS,
+)
 from app.modules.work_progress.models import WorkProgressAttachment, WorkProgressEntry
 from app.modules.workplaces.models import Workplace
 
@@ -73,6 +80,47 @@ def list_entries_for_user(
     return rows, total
 
 
+def _escape_ilike(term: str) -> str:
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _classification_values_matching_search(
+    options: tuple[tuple[str, str], ...],
+    needle: str,
+) -> list[str]:
+    """Match controlled values by exact label/value first, else substring on label/value."""
+    n = needle.strip().lower()
+    if not n:
+        return []
+    exact = [value for value, label in options if label.lower() == n or value == n]
+    if exact:
+        return exact
+    return [
+        value
+        for value, label in options
+        if n in label.lower() or n in value.replace("_", " ") or n in value
+    ]
+
+
+def _levels_matching_search(needle: str) -> list[int]:
+    n = needle.strip().lower()
+    if not n:
+        return []
+    match = re.fullmatch(r"level\s*0*(\d{1,2})", n)
+    if match:
+        value = int(match.group(1))
+        return [value] if LEVEL_MIN <= value <= LEVEL_MAX else []
+    if re.fullmatch(r"\d{1,2}", n):
+        value = int(n)
+        return [value] if LEVEL_MIN <= value <= LEVEL_MAX else []
+    # Partial "level 0" style already covered by fullmatch with optional spaces.
+    padded = re.fullmatch(r"0*(\d{1,2})", n)
+    if padded and n.startswith("0") and len(n) == 2:
+        value = int(padded.group(1))
+        return [value] if LEVEL_MIN <= value <= LEVEL_MAX else []
+    return []
+
+
 def _apply_review_entry_filters(
     stmt,
     *,
@@ -85,6 +133,9 @@ def _apply_review_entry_filters(
     title_search: str | None,
     entry_id_filter: uuid.UUID | None = None,
     include_archived: bool = False,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
 ):
     if entry_id_filter is not None:
         stmt = stmt.where(WorkProgressEntry.id == entry_id_filter)
@@ -102,9 +153,30 @@ def _apply_review_entry_filters(
         stmt = stmt.where(WorkProgressEntry.work_date >= date_from)
     if date_to is not None:
         stmt = stmt.where(WorkProgressEntry.work_date <= date_to)
+    if work_category is not None:
+        stmt = stmt.where(WorkProgressEntry.work_category == work_category)
+    if elevation is not None:
+        stmt = stmt.where(WorkProgressEntry.elevation == elevation)
+    if level is not None:
+        stmt = stmt.where(WorkProgressEntry.level == level)
     if title_search and title_search.strip():
-        term = f"%{title_search.strip().replace('%', '\\%').replace('_', '\\_')}%"
-        stmt = stmt.where(WorkProgressEntry.title.ilike(term))
+        raw = title_search.strip()
+        term = f"%{_escape_ilike(raw)}%"
+        clauses = [
+            WorkProgressEntry.title.ilike(term, escape="\\"),
+            WorkProgressEntry.elevation_custom.ilike(term, escape="\\"),
+            WorkProgressEntry.progress_status.ilike(term, escape="\\"),
+        ]
+        matching_categories = _classification_values_matching_search(WORK_CATEGORY_OPTIONS, raw)
+        if matching_categories:
+            clauses.append(WorkProgressEntry.work_category.in_(matching_categories))
+        matching_elevations = _classification_values_matching_search(ELEVATION_OPTIONS, raw)
+        if matching_elevations:
+            clauses.append(WorkProgressEntry.elevation.in_(matching_elevations))
+        matching_levels = _levels_matching_search(raw)
+        if matching_levels:
+            clauses.append(WorkProgressEntry.level.in_(matching_levels))
+        stmt = stmt.where(or_(*clauses))
     return stmt
 
 
@@ -121,6 +193,9 @@ def list_review_entries(
     limit: int,
     offset: int,
     include_archived: bool = False,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
 ) -> tuple[list[WorkProgressEntry], int]:
     count_stmt = _apply_review_entry_filters(
         select(func.count()).select_from(WorkProgressEntry),
@@ -132,6 +207,9 @@ def list_review_entries(
         date_from=date_from,
         date_to=date_to,
         title_search=title_search,
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
     )
     total = int(db_session.scalar(count_stmt) or 0)
 
@@ -145,6 +223,9 @@ def list_review_entries(
         date_from=date_from,
         date_to=date_to,
         title_search=title_search,
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
     )
     stmt = stmt.order_by(WorkProgressEntry.work_date.desc(), WorkProgressEntry.created_at.desc()).limit(
         limit
@@ -166,6 +247,9 @@ def list_review_entries_for_export(
     date_from: date | None,
     date_to: date | None,
     title_search: str | None,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
 ) -> list[WorkProgressEntry]:
     stmt = _apply_review_entry_filters(
         select(WorkProgressEntry),
@@ -176,6 +260,9 @@ def list_review_entries_for_export(
         date_from=date_from,
         date_to=date_to,
         title_search=title_search,
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
     )
     stmt = stmt.order_by(WorkProgressEntry.work_date.desc(), WorkProgressEntry.created_at.desc()).limit(
         MAX_REVIEW_EXPORT_ROWS,
@@ -230,6 +317,9 @@ def count_review_attachments(
     title_search: str | None,
     include_archived: bool = False,
     entry_id_filter: uuid.UUID | None = None,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
 ) -> int:
     stmt = (
         select(func.count())
@@ -247,6 +337,9 @@ def count_review_attachments(
         date_from=date_from,
         date_to=date_to,
         title_search=title_search,
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
     )
     return int(db_session.scalar(stmt) or 0)
 
@@ -265,6 +358,9 @@ def list_review_attachments_page(
     offset: int,
     include_archived: bool = False,
     entry_id_filter: uuid.UUID | None = None,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
 ) -> list[tuple[WorkProgressAttachment, WorkProgressEntry]]:
     stmt = (
         select(WorkProgressAttachment, WorkProgressEntry)
@@ -281,6 +377,9 @@ def list_review_attachments_page(
         date_from=date_from,
         date_to=date_to,
         title_search=title_search,
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
     )
     stmt = stmt.order_by(WorkProgressAttachment.created_at.desc()).limit(limit).offset(offset)
     rows = db_session.execute(stmt).all()
