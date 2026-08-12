@@ -112,13 +112,15 @@ export function formatReviewTitleType(
     if (row.elevation_display) {
       parts.push(row.elevation_display);
     }
+    // Never treat integer 0 as missing: format first, then check the display string.
     const level = row.level_display ?? formatLevelDisplay(row.level);
-    if (level) {
+    if (level != null && level !== "") {
       parts.push(`Level ${level}`);
     }
     return parts.join(" / ");
   }
-  return row.title;
+  const legacy = row.title?.trim();
+  return legacy ? legacy : "—";
 }
 
 export type WorkProgressLocationOption = {
