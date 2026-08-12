@@ -25,8 +25,11 @@ function check(name, cond) {
 check("large Filters card removed", !/uppercase tracking-wider text-\[var\(--color-text-soft\)\]">Filters</.test(client));
 check("no pale multi-row Filters section card", !/section className="rounded-\[var\(--radius-md\)\] border border-\[var\(--color-border-dark\)\] bg-\[var\(--color-header\)\] p-3"/.test(client));
 check("compact FilterToolbar used", /FilterToolbar/.test(client) && /data-testid="filter-toolbar"/.test(toolbar));
-check("FilterSearch used for title/type", /FilterSearch/.test(client) && /Search title\/type/.test(client));
+check("FilterSearch used for category/elevation", /FilterSearch/.test(client) && /Search category\/elevation/.test(client));
 check("title search maps to titleSearch / title_search", /setTitleSearch/.test(client) && /title_search: titleSearch\.trim\(\)/.test(client));
+check("work category filter in panel and API", /work-progress-work-category-filter/.test(client) && /work_category: workCategory/.test(client) && /setWorkCategory/.test(client));
+check("elevation filter in panel and API", /work-progress-elevation-filter/.test(client) && /elevation: elevation/.test(client) && /setElevation/.test(client));
+check("level filter maps Level label to int", /work-progress-level-filter/.test(client) && /level: level === "" \? undefined : Number\(level\)/.test(client) && /LEVEL_OPTIONS/.test(client));
 check("Site filter present with MapPin", /MapPin/.test(client) && /setLocationId/.test(client) && /All sites/.test(client));
 check("location_id still in baseFilters", /location_id: locationId \|\| undefined/.test(client));
 check("employee filtering preserved", /setEmployeeId/.test(client) && /user_id: employeeId/.test(client));
@@ -36,16 +39,17 @@ check("activeFilterCount counts non-defaults", /activeFilterCount/.test(client) 
 {
   const start = client.indexOf("const activeFilterCount = useMemo");
   const end = client.indexOf("function clearFilters", start);
-  const body = client.slice(start, end > start ? end : start + 500);
-  check("active count includes title/site/employee/dates/archived",
-    /titleSearch/.test(body) && /locationId/.test(body) && /employeeId/.test(body) && /dateFrom/.test(body) && /dateTo/.test(body) && /includeArchived/.test(body));
+  const body = client.slice(start, end > start ? end : start + 800);
+  check("active count includes title/site/employee/dates/archived/classification",
+    /titleSearch/.test(body) && /locationId/.test(body) && /employeeId/.test(body) && /dateFrom/.test(body) && /dateTo/.test(body) && /includeArchived/.test(body) && /workCategory/.test(body) && /elevation/.test(body) && /level/.test(body));
   check("company not counted in activeFilterCount", !/companyId/.test(body));
 }
 check("Clear restores defaults", /function clearFilters/.test(client) && /FilterClearAction/.test(client));
 {
   const start = client.indexOf("function clearFilters()");
   const end = client.indexOf("const selectClass", start);
-  const body = client.slice(start, end > start ? end : start + 400);
+  const body = client.slice(start, end > start ? end : start + 500);
+  check("clear resets classification filters", /setWorkCategory\(""\)/.test(body) && /setElevation\(""\)/.test(body) && /setLevel\(""\)/.test(body));
   check("clear does not reset companyId", /setIncludeArchived\(false\)/.test(body) && !/setCompanyId/.test(body));
 }
 check("pagination resets via clearForFilterChange", /function updateFilter[\s\S]*clearForFilterChange/.test(client) && /setSubmissionOffset\(0\)/.test(client) && /setPictureOffset\(0\)/.test(client));

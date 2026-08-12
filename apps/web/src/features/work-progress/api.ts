@@ -365,9 +365,24 @@ export type WorkProgressReviewQuery = {
   date_from?: string;
   date_to?: string;
   title_search?: string;
+  work_category?: string;
+  elevation?: string;
+  level?: number;
   limit?: number;
   offset?: number;
 };
+
+function appendClassificationReviewQuery(search: URLSearchParams, params?: WorkProgressReviewQuery): void {
+  if (params?.work_category?.trim()) {
+    search.set("work_category", params.work_category.trim());
+  }
+  if (params?.elevation?.trim()) {
+    search.set("elevation", params.elevation.trim());
+  }
+  if (params?.level != null && Number.isFinite(params.level)) {
+    search.set("level", String(params.level));
+  }
+}
 
 export type WorkProgressReviewGalleryItem = {
   attachment: WorkProgressAttachmentMeta;
@@ -449,6 +464,7 @@ export async function listWorkProgressReview(params?: WorkProgressReviewQuery): 
   if (params?.title_search?.trim()) {
     search.set("title_search", params.title_search.trim());
   }
+  appendClassificationReviewQuery(search, params);
   if (params?.limit != null) {
     search.set("limit", String(params.limit));
   }
@@ -489,6 +505,7 @@ export async function downloadWorkProgressReviewCsv(params?: WorkProgressReviewQ
   if (params?.title_search?.trim()) {
     search.set("title_search", params.title_search.trim());
   }
+  appendClassificationReviewQuery(search, params);
   const q = search.toString();
   const response = await fetch(
     `${API_URL}/api/work-progress/review/export.csv${q ? `?${q}` : ""}`,
@@ -534,6 +551,7 @@ function appendReviewQuery(search: URLSearchParams, params?: WorkProgressReviewQ
   if (params?.title_search?.trim()) {
     search.set("title_search", params.title_search.trim());
   }
+  appendClassificationReviewQuery(search, params);
 }
 
 export async function listWorkProgressReviewGallery(

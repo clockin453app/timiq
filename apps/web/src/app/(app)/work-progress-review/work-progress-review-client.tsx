@@ -29,12 +29,15 @@ import {
   archiveWorkProgressReviewEntry,
   bulkDeleteWorkProgressAttachments,
   bulkDownloadWorkProgressAttachments,
+  ELEVATION_OPTIONS,
   fetchWorkProgressFileBlob,
   formatReviewTitleType,
+  LEVEL_OPTIONS,
   listWorkProgressEmployeeFilterOptions,
   listWorkProgressReview,
   listWorkProgressReviewGallery,
   permanentDeleteWorkProgressSubmission,
+  WORK_CATEGORY_OPTIONS,
   WORK_PROGRESS_GALLERY_PAGE_SIZE,
   WORK_PROGRESS_SELECTION_MAX,
   WORK_PROGRESS_ZIP_MAX_FILES,
@@ -194,6 +197,9 @@ function WorkProgressPicturesBody() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [titleSearch, setTitleSearch] = useState("");
+  const [workCategory, setWorkCategory] = useState("");
+  const [elevation, setElevation] = useState("");
+  const [level, setLevel] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
 
   const [submissions, setSubmissions] = useState<WorkProgressReviewListItem[]>([]);
@@ -242,9 +248,24 @@ function WorkProgressPicturesBody() {
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
       title_search: titleSearch.trim() || undefined,
+      work_category: workCategory || undefined,
+      elevation: elevation || undefined,
+      level: level === "" ? undefined : Number(level),
       include_archived: includeArchived,
     }),
-    [administrator, companyId, dateFrom, dateTo, employeeId, includeArchived, locationId, titleSearch],
+    [
+      administrator,
+      companyId,
+      dateFrom,
+      dateTo,
+      elevation,
+      employeeId,
+      includeArchived,
+      level,
+      locationId,
+      titleSearch,
+      workCategory,
+    ],
   );
 
   const clearForFilterChange = useCallback(() => {
@@ -437,9 +458,12 @@ function WorkProgressPicturesBody() {
     if (dateFrom) count += 1;
     if (dateTo) count += 1;
     if (titleSearch.trim()) count += 1;
+    if (workCategory) count += 1;
+    if (elevation) count += 1;
+    if (level !== "") count += 1;
     if (includeArchived) count += 1;
     return count;
-  }, [dateFrom, dateTo, employeeId, includeArchived, locationId, titleSearch]);
+  }, [dateFrom, dateTo, elevation, employeeId, includeArchived, level, locationId, titleSearch, workCategory]);
 
   function clearFilters() {
     clearForFilterChange();
@@ -449,6 +473,9 @@ function WorkProgressPicturesBody() {
     setDateFrom("");
     setDateTo("");
     setTitleSearch("");
+    setWorkCategory("");
+    setElevation("");
+    setLevel("");
     setIncludeArchived(false);
   }
 
@@ -534,6 +561,54 @@ function WorkProgressPicturesBody() {
           />
         </label>
       </div>
+      <label className="block text-xs font-semibold text-[var(--color-text)]">
+        Work category
+        <select
+          className={`mt-1 ${selectClass}`}
+          data-testid="work-progress-work-category-filter"
+          onChange={(event) => updateFilter(() => setWorkCategory(event.target.value))}
+          value={workCategory}
+        >
+          <option value="">All work categories</option>
+          {WORK_CATEGORY_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-xs font-semibold text-[var(--color-text)]">
+        Elevation
+        <select
+          className={`mt-1 ${selectClass}`}
+          data-testid="work-progress-elevation-filter"
+          onChange={(event) => updateFilter(() => setElevation(event.target.value))}
+          value={elevation}
+        >
+          <option value="">All elevations</option>
+          {ELEVATION_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-xs font-semibold text-[var(--color-text)]">
+        Level
+        <select
+          className={`mt-1 ${selectClass}`}
+          data-testid="work-progress-level-filter"
+          onChange={(event) => updateFilter(() => setLevel(event.target.value))}
+          value={level}
+        >
+          <option value="">All levels</option>
+          {LEVEL_OPTIONS.map((option) => (
+            <option key={option.value} value={String(option.value)}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <label className="flex min-h-11 items-center gap-2 text-sm font-semibold text-[var(--color-text)]">
         <input
           checked={includeArchived}
@@ -809,9 +884,9 @@ function WorkProgressPicturesBody() {
               >
                 <FilterSearch
                   className="min-w-0 flex-1 md:min-w-[12rem]"
-                  label="Search title or type"
+                  label="Search category or elevation"
                   onChange={(value) => updateFilter(() => setTitleSearch(value))}
-                  placeholder="Search title/type…"
+                  placeholder="Search category/elevation…"
                   value={titleSearch}
                 />
                 <div className="flex w-full min-w-0 items-center gap-2 md:w-auto md:shrink-0">
