@@ -9,7 +9,7 @@ from io import BytesIO
 from typing import Any
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
@@ -26,13 +26,22 @@ from reportlab.platypus import (
 )
 
 from app.modules.payroll.hierarchical_report import (
+    REPORT_HEADER_TINT,
+    REPORT_MUTED,
+    REPORT_NAVY,
+    REPORT_NET,
+    REPORT_SLATE,
+    STATUS_BADGE_COLORS,
     PayrollEmployeeBlock,
     PayrollHierarchicalReport,
     PayrollWeekBlock,
+    employee_identity_lines,
+    employee_role_line,
     employee_summary_badge,
     hours_display,
     is_single_week_report,
     money_display,
+    status_badge_kind,
     status_display,
 )
 
@@ -47,12 +56,6 @@ _DAY_COL_FRACS = (0.22, 0.48, 0.15, 0.15)
 _DAY_COL_WIDTHS = [round(_PRINTABLE_WIDTH * f, 4) for f in _DAY_COL_FRACS]
 _DAY_COL_WIDTHS[1] = _PRINTABLE_WIDTH - _DAY_COL_WIDTHS[0] - _DAY_COL_WIDTHS[2] - _DAY_COL_WIDTHS[3]
 
-_STATUS_STYLES: dict[str, tuple[str, str]] = {
-    "completed": ("#166534", "#dcfce7"),
-    "pending": ("#9a3412", "#ffedd5"),
-    "paid": ("#166534", "#dcfce7"),
-}
-
 # Body text target: ~8.5–9.5pt (never below ~8.5 for readability).
 _BODY_PT = 9.0
 _MIN_BODY_PT = 8.5
@@ -60,6 +63,10 @@ _MIN_BODY_PT = 8.5
 
 def _p(text: str, style: ParagraphStyle) -> Paragraph:
     return Paragraph(html.escape(text or "—").replace("\n", "<br/>"), style)
+
+
+def _p_html(markup: str, style: ParagraphStyle) -> Paragraph:
+    return Paragraph(markup, style)
 
 
 class _NumberedCanvas(pdf_canvas.Canvas):
@@ -113,11 +120,50 @@ def _styles() -> dict[str, ParagraphStyle]:
             "PREmp",
             parent=base["Normal"],
             fontName="Helvetica-Bold",
-            fontSize=11,
-            leading=13,
+            fontSize=12,
+            leading=14,
             spaceBefore=0,
             spaceAfter=0,
-            textColor=colors.HexColor("#111827"),
+            textColor=colors.HexColor(REPORT_NAVY),
+        ),
+        "emp_kicker": ParagraphStyle(
+            "PREmpKicker",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=8,
+            leading=9.5,
+            spaceBefore=0,
+            spaceAfter=0,
+            textColor=colors.HexColor(REPORT_MUTED),
+        ),
+        "emp_email": ParagraphStyle(
+            "PREmpEmail",
+            parent=base["Normal"],
+            fontName="Helvetica",
+            fontSize=8.5,
+            leading=10.5,
+            spaceBefore=0,
+            spaceAfter=0,
+            textColor=colors.HexColor(REPORT_MUTED),
+        ),
+        "emp_role": ParagraphStyle(
+            "PREmpRole",
+            parent=base["Normal"],
+            fontName="Helvetica",
+            fontSize=8,
+            leading=10,
+            spaceBefore=0,
+            spaceAfter=0,
+            textColor=colors.HexColor(REPORT_SLATE),
+        ),
+        "emp_badge": ParagraphStyle(
+            "PREmpBadge",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=8.5,
+            leading=10.5,
+            alignment=TA_RIGHT,
+            textColor=colors.HexColor(REPORT_SLATE),
         ),
         "emp_cont": ParagraphStyle(
             "PREmpCont",
@@ -202,6 +248,48 @@ def _styles() -> dict[str, ParagraphStyle]:
             alignment=TA_CENTER,
             textColor=colors.HexColor("#111827"),
         ),
+        "metric_v_gross": ParagraphStyle(
+            "PRMetricGross",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=9,
+            leading=11,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor(REPORT_NAVY),
+        ),
+        "metric_v_muted": ParagraphStyle(
+            "PRMetricMuted",
+            parent=base["Normal"],
+            fontName="Helvetica",
+            fontSize=9,
+            leading=11,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor(REPORT_SLATE),
+        ),
+        "metric_v_net": ParagraphStyle(
+            "PRMetricNet",
+            parent=base["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=9,
+            leading=11,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor(REPORT_NET),
+        ),
+        "money_cell": ParagraphStyle(
+            "PRMoneyCell",
+            parent=base["Normal"],
+            fontSize=8,
+            leading=9.5,
+            textColor=colors.HexColor("#111827"),
+        ),
+        "money_cell_r": ParagraphStyle(
+            "PRMoneyCellR",
+            parent=base["Normal"],
+            fontSize=8,
+            leading=9.5,
+            alignment=TA_RIGHT,
+            textColor=colors.HexColor("#111827"),
+        ),
         "footer": ParagraphStyle(
             "PRWeekFoot",
             parent=base["Normal"],
@@ -261,34 +349,99 @@ def _compact_report_summary(report: PayrollHierarchicalReport, s: dict[str, Para
     return table
 
 
+def _money_pair(label: str, amount: str, *, amount_color: str, strong: bool, right: bool, s: dict[str, ParagraphStyle]) -> Paragraph:
+    weight_open, weight_close = ("<b>", "</b>") if strong else ("", "")
+    markup = (
+        f'<font color="{REPORT_MUTED}">{html.escape(label)}</font> '
+        f'<font color="{amount_color}">{weight_open}{html.escape(amount)}{weight_close}</font>'
+    )
+    return _p_html(markup, s["money_cell_r"] if right else s["money_cell"])
+
+
+def _status_badge(status: str) -> Table:
+    kind = status_badge_kind(status)
+    bg, fg, border = STATUS_BADGE_COLORS[kind]
+    label = status_display(status)
+    badge_style = ParagraphStyle(
+        f"PRStatusBadge_{kind}",
+        fontName="Helvetica-Bold",
+        fontSize=8,
+        leading=10,
+        alignment=TA_CENTER,
+        textColor=colors.HexColor(fg),
+    )
+    badge = Table([[Paragraph(html.escape(label), badge_style)]])
+    badge.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(bg)),
+                ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor(border)),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 0.5),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0.5),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ],
+        ),
+    )
+    wrap = Table([[badge]])
+    wrap.setStyle(
+        TableStyle(
+            [
+                ("ALIGN", (0, 0), (-1, -1), "RIGHT"),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+            ],
+        ),
+    )
+    return wrap
+
+
 def _employee_summary_table(
     report: PayrollHierarchicalReport,
     emp: PayrollEmployeeBlock,
     s: dict[str, ParagraphStyle],
 ) -> list[Any]:
     badge = employee_summary_badge(report, emp)
+    primary, email_line = employee_identity_lines(emp)
+    identity_rows: list[list[Any]] = [
+        [_p("EMPLOYEE", s["emp_kicker"])],
+        [_p(primary, s["emp"])],
+    ]
+    if email_line:
+        identity_rows.append([_p(email_line, s["emp_email"])])
+    identity_rows.append([_p(employee_role_line(emp), s["emp_role"])])
+    identity = Table(identity_rows, colWidths=[_PRINTABLE_WIDTH * 0.72])
+    identity.setStyle(
+        TableStyle(
+            [
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), 0),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 0.4),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ],
+        ),
+    )
     head = Table(
-        [
-            [
-                _p(f"EMPLOYEE: {emp.employee_name}", s["emp"]),
-                _p(badge, s["metric_v"]),
-            ],
-            [
-                _p(f"ROLE: {emp.role or '—'}", s["meta"]),
-                _p("", s["meta"]),
-            ],
-        ],
+        [[identity, _p(badge, s["emp_badge"])]],
         colWidths=[_PRINTABLE_WIDTH * 0.72, _PRINTABLE_WIDTH * 0.28],
     )
     head.setStyle(
         TableStyle(
             [
+                ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(REPORT_HEADER_TINT)),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("ALIGN", (1, 0), (1, 0), "RIGHT"),
-                ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
-                ("TOPPADDING", (0, 0), (-1, -1), 0),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+                ("LEFTPADDING", (0, 0), (0, -1), 5),
+                ("LEFTPADDING", (1, 0), (1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 3),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
             ],
         ),
     )
@@ -313,10 +466,10 @@ def _employee_summary_table(
                 _p("Net", s["metric"]),
             ],
             [
-                _p(money_display(emp.gross), s["metric_v"]),
-                _p(money_display(emp.cis_tax), s["metric_v"]),
-                _p(money_display(emp.other_deductions), s["metric_v"]),
-                _p(money_display(emp.net), s["metric_v"]),
+                _p(money_display(emp.gross), s["metric_v_gross"]),
+                _p(money_display(emp.cis_tax), s["metric_v_muted"]),
+                _p(money_display(emp.other_deductions), s["metric_v_muted"]),
+                _p(money_display(emp.net), s["metric_v_net"]),
             ],
         ],
         colWidths=[_PRINTABLE_WIDTH * 0.25] * 4,
@@ -326,6 +479,7 @@ def _employee_summary_table(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
                 ("BACKGROUND", (0, 2), (-1, 2), colors.HexColor("#f3f4f6")),
+                ("BACKGROUND", (3, 3), (3, 3), colors.HexColor("#ecfdf5")),
                 ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor("#9ca3af")),
                 ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
                 ("LEFTPADDING", (0, 0), (-1, -1), 3),
@@ -336,7 +490,7 @@ def _employee_summary_table(
             ],
         ),
     )
-    return [head, Spacer(1, 1.5 * mm), metrics, Spacer(1, 2 * mm)]
+    return [head, Spacer(1, 1.2 * mm), metrics, Spacer(1, 1.6 * mm)]
 
 
 def _week_unit_bits(week: PayrollWeekBlock, s: dict[str, ParagraphStyle]) -> list[Any]:
@@ -372,45 +526,66 @@ def _week_unit_bits(week: PayrollWeekBlock, s: dict[str, ParagraphStyle]) -> lis
         )
 
     days_count = len(week.days)
-    status = status_display(week.status)
-    band1 = (
+    metrics_band = (
         f"Days {days_count} · Hours {hours_display(week.hours)} · "
-        f"OT {hours_display(week.ot_hours)} · Status {status}"
+        f"OT {hours_display(week.ot_hours)}"
     )
-    band2 = (
-        f"Gross {money_display(week.gross)} · CIS {money_display(week.cis_tax)} · "
-        f"Other {money_display(week.other_deductions)} · Net {money_display(week.net)}"
+    money_w = _PRINTABLE_WIDTH / 4
+    money_row = Table(
+        [
+            [
+                _money_pair("Gross", money_display(week.gross), amount_color=REPORT_NAVY, strong=True, right=False, s=s),
+                _money_pair("CIS", money_display(week.cis_tax), amount_color=REPORT_SLATE, strong=False, right=False, s=s),
+                _money_pair("Other", money_display(week.other_deductions), amount_color=REPORT_SLATE, strong=False, right=False, s=s),
+                _money_pair("Net", money_display(week.net), amount_color=REPORT_NET, strong=True, right=True, s=s),
+            ],
+        ],
+        colWidths=[money_w] * 4,
     )
-    day_data.append([_p(band1, s["footer_b"]), "", "", ""])
-    day_data.append([_p(band2, s["footer"]), "", "", ""])
+    money_row.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (2, 0), colors.HexColor("#f8fafc")),
+                ("BACKGROUND", (3, 0), (3, 0), colors.HexColor("#ecfdf5")),
+                ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                ("TOPPADDING", (0, 0), (-1, -1), 1),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ],
+        ),
+    )
+    day_data.append([_p(metrics_band, s["footer_b"]), "", "", _status_badge(week.status)])
+    day_data.append([money_row, "", "", ""])
 
     last = len(day_data) - 1
-    status_key = (week.status or "").strip().lower()
-    status_fg, status_bg = _STATUS_STYLES.get(status_key, ("#111827", "#f3f4f6"))
-
     days_table = Table(day_data, colWidths=_DAY_COL_WIDTHS)
     style_cmds: list[tuple[Any, ...]] = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f3f4f6")),
         ("BOX", (0, 0), (-1, -1), 0.45, colors.HexColor("#9ca3af")),
         ("INNERGRID", (0, 0), (-1, last - 2), 0.3, colors.HexColor("#d1d5db")),
         ("LINEABOVE", (0, last - 1), (-1, last - 1), 0.6, colors.HexColor("#6b7280")),
-        ("SPAN", (0, last - 1), (-1, last - 1)),
+        ("SPAN", (0, last - 1), (2, last - 1)),
         ("SPAN", (0, last), (-1, last)),
-        ("BACKGROUND", (0, last - 1), (-1, last), colors.HexColor("#f8fafc")),
-        ("BACKGROUND", (0, last - 1), (-1, last - 1), colors.HexColor(status_bg)),
-        ("TEXTCOLOR", (0, last - 1), (-1, last - 1), colors.HexColor(status_fg)),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("BACKGROUND", (0, last - 1), (-1, last - 1), colors.HexColor("#f3f4f6")),
+        ("VALIGN", (0, 0), (-1, last - 2), "TOP"),
+        ("VALIGN", (0, last - 1), (-1, last), "MIDDLE"),
+        ("ALIGN", (3, last - 1), (3, last - 1), "RIGHT"),
         ("LEFTPADDING", (0, 0), (-1, -1), 3),
         ("RIGHTPADDING", (0, 0), (-1, -1), 3),
         ("TOPPADDING", (0, 0), (-1, -1), 1.5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5),
         ("ALIGN", (2, 0), (-1, last - 2), "RIGHT"),
+        ("LEFTPADDING", (0, last), (-1, last), 0),
+        ("RIGHTPADDING", (0, last), (-1, last), 0),
+        ("TOPPADDING", (0, last), (-1, last), 0),
+        ("BOTTOMPADDING", (0, last), (-1, last), 0),
     ]
     days_table.setStyle(TableStyle(style_cmds))
     return [
         _p(week.week_label, s["week"]),
         days_table,
-        Spacer(1, 1.8 * mm),
+        Spacer(1, 1.5 * mm),
     ]
 
 
@@ -420,7 +595,7 @@ def _week_unit(week: PayrollWeekBlock, s: dict[str, ParagraphStyle]) -> KeepToge
 
 def _employee_divider() -> list[Any]:
     return [
-        Spacer(1, 1.5 * mm),
+        Spacer(1, 1.2 * mm),
         HRFlowable(
             width="100%",
             thickness=0.7,
@@ -428,7 +603,7 @@ def _employee_divider() -> list[Any]:
             spaceBefore=0,
             spaceAfter=0,
         ),
-        Spacer(1, 2 * mm),
+        Spacer(1, 1.6 * mm),
     ]
 
 

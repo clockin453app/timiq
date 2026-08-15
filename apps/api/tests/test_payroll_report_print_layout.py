@@ -14,9 +14,13 @@ from app.modules.payroll import print_html as print_html_mod
 from app.modules.payroll import service as payroll_service
 from app.modules.payroll.hierarchical_report import (
     build_hierarchical_payroll_report,
+    employee_identity_lines,
     format_short_day,
     format_week_label,
     is_single_week_report,
+    money_display,
+    status_badge_kind,
+    status_display,
 )
 from app.modules.payroll.pdf_export import (
     _BODY_PT,
@@ -179,8 +183,10 @@ def test_pdf_a4_portrait_and_compact_content() -> None:
     assert height > width
     assert abs(width - 595.28) < 2.0
     text = "\n".join((p.extract_text() or "") for p in reader.pages)
-    assert "EMPLOYEE: Petre Rotaru" in text
-    assert "ROLE: Foreman" in text
+    assert "EMPLOYEE" in text
+    assert "Petre Rotaru" in text
+    assert "Foreman" in text
+    assert "u1@ex.com" in text
     assert "Kennington" in text
     assert "760.00" in text
     assert "Paid" in text or "PAID" in text.upper()
@@ -204,7 +210,7 @@ def test_pdf_source_is_portrait_adaptive_pages() -> None:
     assert "PageBreak" in source
     assert "is_single_week_report" in source
     assert "landscape" not in module.lower()
-    assert "EMPLOYEE:" in module
+    assert "EMPLOYEE" in module
     assert "fontSize=7.9" not in module
     assert "Employee period total" not in source
 
@@ -213,7 +219,9 @@ def test_print_html_compact_employee_pages() -> None:
     source = inspect.getsource(print_html_mod.render_hierarchical_payroll_print_html)
     assert "size: A4 portrait" in source
     assert "landscape" not in source
-    assert "EMPLOYEE:" in source
+    assert "EMPLOYEE" in source
+    assert "emp-kicker" in source
+    assert "status-badge" in source
     assert "report-single-week" in source
     assert "report-multi-week" in source
     assert "page-break-before: always" in source
@@ -231,7 +239,10 @@ def test_print_html_render_sample() -> None:
     ]
     doc = _build_report(shifts, [_pay("Petre Rotaru")])
     html = print_html_mod.render_hierarchical_payroll_print_html(doc)
-    assert "EMPLOYEE: Petre Rotaru" in html
+    assert 'class="emp-kicker">EMPLOYEE</p>' in html
+    assert "Petre Rotaru" in html
+    assert "u1@ex.com" in html
+    assert "Foreman" in html
     assert "Mon 27 Jul" in html
     assert "Sat 1 Aug" in html
     assert "employee-summary" in html
@@ -257,7 +268,7 @@ def test_four_week_employee_targets_one_page() -> None:
     reader = PdfReader(BytesIO(body))
     # Cover + one employee page expected (2), employee content on last page alone.
     assert len(reader.pages) <= 2
-    emp_pages = [p for p in reader.pages if "EMPLOYEE: Petre Rotaru" in (p.extract_text() or "")]
+    emp_pages = [p for p in reader.pages if "Petre Rotaru" in (p.extract_text() or "") and "EMPLOYEE" in (p.extract_text() or "")]
     assert len(emp_pages) == 1
 
 
@@ -274,7 +285,7 @@ def test_five_week_employee_page_budget() -> None:
     body = build_hierarchical_payroll_pdf(doc)
     reader = PdfReader(BytesIO(body))
     # Prefer 1 employee page (+ cover); allow 2 employee pages for readability.
-    emp_pages = [p for p in reader.pages if "EMPLOYEE: Petre Rotaru" in (p.extract_text() or "")]
+    emp_pages = [p for p in reader.pages if "Petre Rotaru" in (p.extract_text() or "") and "EMPLOYEE" in (p.extract_text() or "")]
     assert 1 <= len(emp_pages) <= 2
     assert len(reader.pages) <= 3
 
@@ -384,7 +395,7 @@ def test_single_week_three_employees_share_page() -> None:
     reader = PdfReader(BytesIO(body))
     # No forced page-per-employee: normally 1–2 pages, not 3+.
     assert 1 <= len(reader.pages) <= 2
-    per_page = [(page.extract_text() or "").count("EMPLOYEE:") for page in reader.pages]
+    per_page = [(page.extract_text() or "").count("EMPLOYEE") for page in reader.pages]
     assert max(per_page) >= 2
     assert sum(per_page) == 3
     html = print_html_mod.render_hierarchical_payroll_print_html(doc)
@@ -404,7 +415,7 @@ def test_single_week_five_employees_pack_without_forced_breaks() -> None:
     assert 1 <= len(reader.pages) <= 2
     names_seen = 0
     for page in reader.pages:
-        names_seen += (page.extract_text() or "").count("EMPLOYEE:")
+        names_seen += (page.extract_text() or "").count("EMPLOYEE")
     assert names_seen == 5
 
 
@@ -443,3 +454,252 @@ def test_monthly_four_employees_still_one_per_page() -> None:
     assert 5 <= len(reader.pages) <= 6
     html = print_html_mod.render_hierarchical_payroll_print_html(doc)
     assert "report-multi-week" in html
+
+
+def _payroll_data_snapshot(doc):
+    return {
+        "company": doc.company_name,
+        "period": doc.period_label,
+        "employee_count": doc.employee_count,
+        "total_hours_seconds": doc.total_hours_seconds,
+        "total_gross": None if doc.total_gross is None else str(doc.total_gross),
+        "total_cis": None if doc.total_cis_tax is None else str(doc.total_cis_tax),
+        "total_net": None if doc.total_net is None else str(doc.total_net),
+        "employees": [
+            {
+                "user_key": emp.user_key,
+                "employee_name": emp.employee_name,
+                "employee_email": emp.employee_email,
+                "role": emp.role,
+                "days_worked": emp.days_worked,
+                "weeks_worked": emp.weeks_worked,
+                "hours": str(emp.hours),
+                "ot_hours": str(emp.ot_hours),
+                "gross": None if emp.gross is None else str(emp.gross),
+                "cis_tax": None if emp.cis_tax is None else str(emp.cis_tax),
+                "other_deductions": None if emp.other_deductions is None else str(emp.other_deductions),
+                "net": None if emp.net is None else str(emp.net),
+                "weeks": [
+                    {
+                        "week_start": week.week_start.isoformat(),
+                        "week_end": week.week_end.isoformat(),
+                        "week_label": week.week_label,
+                        "hours": str(week.hours),
+                        "ot_hours": str(week.ot_hours),
+                        "gross": None if week.gross is None else str(week.gross),
+                        "cis_tax": None if week.cis_tax is None else str(week.cis_tax),
+                        "other_deductions": None if week.other_deductions is None else str(week.other_deductions),
+                        "net": None if week.net is None else str(week.net),
+                        "status": week.status,
+                        "days": [
+                            {
+                                "work_date": day.work_date.isoformat(),
+                                "day_label": day.day_label,
+                                "site": day.site,
+                                "hours": str(day.hours),
+                                "ot_hours": None if day.ot_hours is None else str(day.ot_hours),
+                                "role": day.role,
+                            }
+                            for day in week.days
+                        ],
+                    }
+                    for week in emp.weeks
+                ],
+            }
+            for emp in doc.employees
+        ],
+    }
+
+
+def test_employee_identity_name_and_email_hierarchy() -> None:
+    doc = _build_report(
+        [_shift("Marius Mrotaru", "2026-08-10", "Kennington", "8.00", week_start="2026-08-10")],
+        [_pay("Marius Mrotaru", period="2026-08-10 to 2026-08-16")],
+    )
+    emp = doc.employees[0]
+    primary, email_line = employee_identity_lines(emp)
+    assert primary == "Marius Mrotaru"
+    assert email_line == "u1@ex.com"
+    html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+    assert 'class="emp-kicker">EMPLOYEE</p>' in html
+    assert 'class="emp-name">Marius Mrotaru</h2>' in html
+    assert 'class="emp-email">u1@ex.com</p>' in html
+    assert 'class="emp-role">Foreman</p>' in html
+    text = "\n".join((p.extract_text() or "") for p in PdfReader(BytesIO(build_hierarchical_payroll_pdf(doc))).pages)
+    assert "EMPLOYEE" in text
+    assert "Marius Mrotaru" in text
+    assert "u1@ex.com" in text
+    assert "Foreman" in text
+
+
+def test_employee_email_omitted_when_unavailable() -> None:
+    shifts = [_shift("Petre Rotaru", "2026-08-10", "Kennington", "8.00", week_start="2026-08-10")]
+    pays = [_pay("Petre Rotaru", period="2026-08-10 to 2026-08-16")]
+    for row in (*shifts, *pays):
+        row["employee_email"] = ""
+    doc = _build_report(shifts, pays)
+    primary, email_line = employee_identity_lines(doc.employees[0])
+    assert primary == "Petre Rotaru"
+    assert email_line is None
+    html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+    assert 'class="emp-email"' not in html
+    assert "Petre Rotaru" in html
+
+
+def test_employee_email_only_identity_is_primary() -> None:
+    shifts = [_shift("only@site.test", "2026-08-10", "Kennington", "8.00", week_start="2026-08-10")]
+    pays = [_pay("only@site.test", period="2026-08-10 to 2026-08-16")]
+    for row in (*shifts, *pays):
+        row["employee"] = "only@site.test"
+        row["employee_email"] = "only@site.test"
+    doc = _build_report(shifts, pays)
+    primary, email_line = employee_identity_lines(doc.employees[0])
+    assert primary == "only@site.test"
+    assert email_line is None
+    html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+    assert 'class="emp-name">only@site.test</h2>' in html
+    assert 'class="emp-email"' not in html
+
+
+def test_status_badges_paid_approved_pending_and_neutral() -> None:
+    cases = [
+        ("paid", "Paid", "status-badge-paid"),
+        ("approved", "Approved", "status-badge-approved"),
+        ("pending", "Pending", "status-badge-pending"),
+        ("completed", "Completed", "status-badge-neutral"),
+        ("rejected", "Rejected", "status-badge-danger"),
+    ]
+    for stored, label, css in cases:
+        assert status_display(stored) == label
+        assert status_badge_kind(stored) == css.replace("status-badge-", "")
+        shifts = [_shift("Petre Rotaru", "2026-08-10", "Kennington", "8.00", week_start="2026-08-10")]
+        pays = [_pay("Petre Rotaru", period="2026-08-10 to 2026-08-16", status=stored)]
+        doc = _build_report(shifts, pays)
+        assert doc.employees[0].weeks[0].status == stored
+        html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+        assert f'class="status-badge {css}"' in html
+        assert f">{label}</span>" in html
+        text = "\n".join((p.extract_text() or "") for p in PdfReader(BytesIO(build_hierarchical_payroll_pdf(doc))).pages)
+        assert label in text
+
+
+def test_money_visual_hierarchy_and_large_amounts() -> None:
+    matrices = [
+        {"gross": "1578.50", "cis": "0.00", "other": "0.00", "net": "1578.50"},
+        {"gross": "1578.50", "cis": "315.70", "other": "0.00", "net": "1262.80"},
+        {"gross": "1578.50", "cis": "315.70", "other": "25.00", "net": "1237.80"},
+        {"gross": "0.00", "cis": "0.00", "other": "0.00", "net": "0.00"},
+        {"gross": "12345.67", "cis": "2469.13", "other": "10.00", "net": "9866.54"},
+    ]
+    for money in matrices:
+        pays = [
+            _pay(
+                "Petre Rotaru",
+                period="2026-08-10 to 2026-08-16",
+                gross=money["gross"],
+                cis=money["cis"],
+                other=money["other"],
+                net=money["net"],
+            ),
+        ]
+        doc = _build_report([_shift("Petre Rotaru", "2026-08-10", "Kennington", "8.00", week_start="2026-08-10")], pays)
+        emp = doc.employees[0]
+        week = emp.weeks[0]
+        assert money_display(week.gross) == f"£{Decimal(money['gross']):,.2f}"
+        assert money_display(week.cis_tax) == f"£{Decimal(money['cis']):,.2f}"
+        assert money_display(week.other_deductions) == f"£{Decimal(money['other']):,.2f}"
+        assert money_display(week.net) == f"£{Decimal(money['net']):,.2f}"
+        html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+        assert "money-gross" in html and "money-cis" in html and "money-other" in html and "money-net" in html
+        assert f"£{Decimal(money['gross']):,.2f}" in html
+        assert f"£{Decimal(money['net']):,.2f}" in html
+        text = "\n".join((p.extract_text() or "") for p in PdfReader(BytesIO(build_hierarchical_payroll_pdf(doc))).pages)
+        compact = text.replace(",", "")
+        assert money["gross"].split(".")[0] in compact
+        assert money["net"].split(".")[0] in compact
+
+
+def test_print_pdf_visual_parity_for_identity_status_and_money() -> None:
+    pays = [_pay("Petre Rotaru", status="approved", gross="1578.50", cis="0.00", other="0.00", net="1578.50")]
+    doc = _build_report([_shift("Petre Rotaru", "2026-08-10", "Kennington", "8.50", week_start="2026-08-10")], pays)
+    html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+    text = "\n".join((p.extract_text() or "") for p in PdfReader(BytesIO(build_hierarchical_payroll_pdf(doc))).pages)
+    for token in ("EMPLOYEE", "Petre Rotaru", "u1@ex.com", "Foreman", "Approved", "£1,578.50", "Days", "Gross", "CIS", "Net"):
+        assert token in html
+        assert token in text or token.replace(",", "") in text.replace(",", "")
+    assert "status-badge-approved" in html
+    assert "money-net" in html
+
+
+def test_long_name_and_email_do_not_clip_identity() -> None:
+    long_name = "Alexandru-Constantin Papadopoulos-Marinescu"
+    long_email = "alexandru.constantin.papadopoulos.marinescu@kennington-south.example.co.uk"
+    long_role = "Senior Site Supervisor and Safety Coordinator"
+    shifts = [_shift(long_name, "2026-08-10", "Kennington", "8.00", role=long_role, week_start="2026-08-10")]
+    pays = [_pay(long_name, period="2026-08-10 to 2026-08-16", role=long_role)]
+    for row in (*shifts, *pays):
+        row["employee_email"] = long_email
+    doc = _build_report(shifts, pays)
+    primary, email_line = employee_identity_lines(doc.employees[0])
+    assert primary == long_name
+    assert email_line == long_email
+    html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+    assert long_name in html and long_email in html and long_role in html
+    assert "overflow-wrap: anywhere" in html
+    text = "\n".join((p.extract_text() or "") for p in PdfReader(BytesIO(build_hierarchical_payroll_pdf(doc))).pages)
+    assert "Alexandru-Constantin" in text
+    assert "kennington-south.example.co.uk" in text
+    assert "Senior Site Supervisor" in text
+
+
+def test_seven_employee_single_week_stays_three_pages() -> None:
+    shifts, pays = _single_week_employees(7, days=5)
+    doc = _build_report(shifts, pays, period_label="W33 · 10–16 Aug 2026")
+    body = build_hierarchical_payroll_pdf(doc)
+    reader = PdfReader(BytesIO(body))
+    assert len(reader.pages) == 3
+    assert sum((p.extract_text() or "").count("EMPLOYEE") for p in reader.pages) == 7
+
+
+def test_one_employee_single_week_stays_one_page() -> None:
+    shifts, pays = _single_week_employees(1, days=5)
+    doc = _build_report(shifts, pays, period_label="W33 · 10–16 Aug 2026")
+    reader = PdfReader(BytesIO(build_hierarchical_payroll_pdf(doc)))
+    assert len(reader.pages) == 1
+
+
+def test_visual_changes_do_not_alter_payroll_values() -> None:
+    shifts, pays = _four_week_employee(weeks=4, days_per_week=5)
+    doc = _build_report(shifts, pays, totals_heading="Employee month total")
+    snap = _payroll_data_snapshot(doc)
+    emp = snap["employees"][0]
+    assert emp["hours"] == "152.00"
+    assert Decimal(emp["ot_hours"]) == Decimal("0.00")
+    assert emp["gross"] == "3040.00"
+    assert emp["cis_tax"] == "608.00"
+    assert Decimal(emp["other_deductions"] or "0") == Decimal("0.00")
+    assert emp["net"] == "2432.00"
+    assert emp["weeks"][-1]["status"] == "pending"
+    assert emp["employee_email"] == "u1@ex.com"
+    html = print_html_mod.render_hierarchical_payroll_print_html(doc)
+    text = "\n".join((p.extract_text() or "") for p in PdfReader(BytesIO(build_hierarchical_payroll_pdf(doc))).pages)
+    assert "£3,040.00" in html
+    assert "3040.00" in text.replace(",", "")
+    rebuilt = _payroll_data_snapshot(_build_report(shifts, pays, totals_heading="Employee month total"))
+    assert rebuilt == snap
+
+
+def test_week_footer_separates_status_badge_from_metrics() -> None:
+    html = print_html_mod.render_hierarchical_payroll_print_html(
+        _build_report(
+            [_shift("Petre Rotaru", "2026-08-10", "Kennington", "8.00", week_start="2026-08-10")],
+            [_pay("Petre Rotaru", period="2026-08-10 to 2026-08-16", status="paid")],
+        ),
+    )
+    assert "Days 1 · Hours 38.00 · OT 0.00" in html
+    assert "· Status " not in html
+    assert "status-cell" in html
+    assert "status-badge-paid" in html
+    source_pdf = inspect.getsource(pdf_export._week_unit_bits)
+    assert "_status_badge" in source_pdf
+    assert "· Status " not in source_pdf

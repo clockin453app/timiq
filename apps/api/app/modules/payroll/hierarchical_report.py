@@ -41,6 +41,7 @@ class PayrollEmployeeBlock:
     user_key: str
     employee_name: str
     role: str
+    employee_email: str = ""
     weeks: list[PayrollWeekBlock] = field(default_factory=list)
     # Totals across all weeks in this report for the employee.
     days_worked: int = 0
@@ -166,13 +167,22 @@ def build_hierarchical_payroll_report(
     # user_key -> employee meta
     employees: dict[str, PayrollEmployeeBlock] = {}
 
-    def _ensure(key: str, name: str, role: str) -> PayrollEmployeeBlock:
+    def _ensure(key: str, name: str, role: str, email: str = "") -> PayrollEmployeeBlock:
         block = employees.get(key)
+        cleaned_email = (email or "").strip()
         if block is None:
-            block = PayrollEmployeeBlock(user_key=key, employee_name=name or "Employee", role=role or "—")
+            block = PayrollEmployeeBlock(
+                user_key=key,
+                employee_name=name or "Employee",
+                role=role or "—",
+                employee_email=cleaned_email,
+            )
             employees[key] = block
-        elif role and role != "—" and (not block.role or block.role == "—"):
-            block.role = role
+        else:
+            if role and role != "—" and (not block.role or block.role == "—"):
+                block.role = role
+            if cleaned_email and not block.employee_email:
+                block.employee_email = cleaned_email
         return block
 
     def _week_block(emp: PayrollEmployeeBlock, week_start: date) -> PayrollWeekBlock:
@@ -201,7 +211,8 @@ def build_hierarchical_payroll_report(
         key = str(row.get("user_id") or row.get("employee_email") or row.get("employee") or "")
         name = str(row.get("employee") or "Employee")
         role = str(row.get("role") or "—")
-        emp = _ensure(key, name, role)
+        email = str(row.get("employee_email") or "")
+        emp = _ensure(key, name, role, email)
         week = _week_block(emp, week_start)
         ot = _dec(row.get("ot_hours"))
         site = str(row.get("location") or "").strip() or "—"
@@ -223,7 +234,8 @@ def build_hierarchical_payroll_report(
         key = str(row.get("user_id") or row.get("employee_email") or row.get("employee") or "")
         name = str(row.get("employee") or "Employee")
         role = str(row.get("role") or "—")
-        emp = _ensure(key, name, role)
+        email = str(row.get("employee_email") or "")
+        emp = _ensure(key, name, role, email)
         week = _week_block(emp, week_start)
         week.hours = _hours_dec(row.get("hours"))
         week.ot_hours = _hours_dec(row.get("ot_hours"))
@@ -349,6 +361,63 @@ def status_display(value: str | None) -> str:
     if text == "—":
         return text
     return text.replace("_", " ").title()
+
+
+def _looks_like_email(value: str) -> bool:
+    text = (value or "").strip()
+    return "@" in text and " " not in text
+
+
+def employee_identity_lines(emp: PayrollEmployeeBlock) -> tuple[str, str | None]:
+    """Primary identity plus optional email line. Never invents name or email."""
+    name = (emp.employee_name or "").strip()
+    email = (emp.employee_email or "").strip()
+    placeholder = name in {"", "—", "-", "Employee"}
+    name_is_email = _looks_like_email(name)
+
+    if email and (placeholder or (name_is_email and name.lower() == email.lower())):
+        return email, None
+    if name and email and name.lower() != email.lower():
+        return name, email
+    if name:
+        return name, None
+    if email:
+        return email, None
+    return "Employee", None
+
+
+def employee_role_line(emp: PayrollEmployeeBlock) -> str:
+    role = (emp.role or "").strip()
+    return role if role else "—"
+
+
+def status_badge_kind(value: str | None) -> str:
+    """Map stored payroll status to a presentation kind. Does not change stored values."""
+    key = (value or "").strip().lower()
+    if key == "paid":
+        return "paid"
+    if key == "approved":
+        return "approved"
+    if key == "pending":
+        return "pending"
+    if key in {"rejected", "failed", "cancelled"}:
+        return "danger"
+    return "neutral"
+
+
+# Shared visual tokens for PDF + print HTML (presentation only).
+REPORT_NAVY = "#172033"
+REPORT_MUTED = "#64748B"
+REPORT_SLATE = "#475569"
+REPORT_NET = "#166534"
+REPORT_HEADER_TINT = "#F4F6F9"
+STATUS_BADGE_COLORS: dict[str, tuple[str, str, str]] = {
+    "paid": ("#ECFDF5", "#166534", "#BBF7D0"),
+    "approved": ("#EFF6FF", "#1D4ED8", "#BFDBFE"),
+    "pending": ("#FFFBEB", "#92400E", "#FDE68A"),
+    "danger": ("#FEF2F2", "#B91C1C", "#FECACA"),
+    "neutral": ("#F8FAFC", "#334155", "#CBD5E1"),
+}
 
 
 def employee_summary_badge(report: PayrollHierarchicalReport, emp: PayrollEmployeeBlock) -> str:
