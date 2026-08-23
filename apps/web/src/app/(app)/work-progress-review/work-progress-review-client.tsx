@@ -29,6 +29,7 @@ import {
   archiveWorkProgressReviewEntry,
   bulkDeleteWorkProgressAttachments,
   bulkDownloadWorkProgressAttachments,
+  bulkDownloadWorkProgressAttachmentsMatching,
   ELEVATION_OPTIONS,
   fetchWorkProgressFileBlob,
   formatReviewTitleType,
@@ -667,7 +668,7 @@ function WorkProgressPicturesBody() {
   async function downloadZip() {
     if (selectedIds.size === 0) return;
     if (selectedIds.size > WORK_PROGRESS_ZIP_MAX_FILES) {
-      setBulkError("ZIP limited to 48 pictures.");
+      setBulkError(`ZIP download is limited to ${WORK_PROGRESS_ZIP_MAX_FILES} selected pictures. Use Download all matching for the current filters.`);
       return;
     }
     setBusy(true);
@@ -698,6 +699,42 @@ function WorkProgressPicturesBody() {
       URL.revokeObjectURL(url);
     } catch (error) {
       setBulkError(error instanceof Error ? error.message : "Could not download ZIP.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function downloadAllMatching() {
+    setBusy(true);
+    setBulkError("");
+    try {
+      const blob = await bulkDownloadWorkProgressAttachmentsMatching({
+        ...baseFilters,
+        entry_id: shownSubmission?.id,
+      });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      const siteLabel = locations.find((row) => row.id === locationId)?.name || null;
+      const employeeOpt =
+        employees.find((row) => row.user_id === employeeId) ||
+        filteredEmployees.find((row) => row.user_id === employeeId);
+      const employeeLabel = employeeOpt
+        ? employeeOpt.display_name?.trim() || employeeOpt.email
+        : null;
+      anchor.download = buildWorkProgressZipDownloadFilename({
+        siteLabel,
+        workCategory: workCategory || null,
+        elevation: elevation || null,
+        level: level === "" ? null : Number(level),
+        employeeLabel: employeeId ? employeeLabel : null,
+        dateFrom: dateFrom || null,
+        dateTo: dateTo || null,
+      });
+      anchor.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      setBulkError(error instanceof Error ? error.message : "Could not download matching pictures.");
     } finally {
       setBusy(false);
     }
@@ -1139,7 +1176,7 @@ function WorkProgressPicturesBody() {
             >
               Picture gallery ({pictureTotal})
             </p>
-            <p className="text-xs text-[var(--color-text-muted)]">Selected: {selectedIds.size} · ZIP limited to 48 pictures</p>
+            <p className="text-xs text-[var(--color-text-muted)]">Selected: {selectedIds.size}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
@@ -1172,6 +1209,17 @@ function WorkProgressPicturesBody() {
             >
               <FileDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
               Download ZIP
+            </Button>
+            <Button
+              className="inline-flex items-center gap-1.5"
+              disabled={busy || pictureTotal === 0}
+              onClick={() => void downloadAllMatching()}
+              size="sm"
+              type="button"
+              variant="secondary"
+            >
+              <FileDown aria-hidden="true" className="h-3.5 w-3.5 shrink-0 text-[var(--color-accent)]" />
+              Download all matching
             </Button>
             <Button
               className="inline-flex items-center gap-1.5"
