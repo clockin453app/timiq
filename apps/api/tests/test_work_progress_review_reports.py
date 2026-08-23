@@ -171,6 +171,7 @@ def test_zip_rejects_total_size_before_read() -> None:
         patch("app.modules.work_progress.service._ordered_bulk_attachment_rows", return_value=[(att, entry)]),
         patch("app.modules.work_progress.service._assert_bulk_attachment_scope", return_value=[(att, entry, owner)]),
         patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
+        patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value={}),
     ):
         # two files each half+1
         ids = [att.id, uuid.uuid4()]
