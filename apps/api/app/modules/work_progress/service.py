@@ -1,16 +1,19 @@
-import io
 import csv
+import tempfile
 import threading
 import uuid
 import zipfile
+from collections.abc import Iterator
 from datetime import date, datetime, timezone
 from pathlib import Path, PurePosixPath
+from typing import BinaryIO, IO
 
 from sqlalchemy import insert, inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from app.core.export_csv import safe_export_filename, truncate_plain_text
 from app.core.storage.factory import get_storage_backend
+from app.db.session import get_session_factory
 from app.modules.audit.models import AuditEvent
 from app.modules.audit.service import create_internal_audit_event
 from app.modules.auth.models import SystemRole, User
@@ -52,9 +55,11 @@ from app.modules.work_progress.repository import (
     list_attachments_for_entry_ids,
     list_entries_for_user,
     list_location_ids_for_user_site_access,
+    list_review_attachments_for_export,
     list_review_attachments_page,
     list_review_entries,
     list_review_entries_for_export,
+    list_submit_audit_payloads_by_entry_ids,
     save_attachment,
     save_entry,
 )
@@ -78,8 +83,9 @@ MAX_ORIGINAL_PHOTO_BYTES = 25 * 1024 * 1024
 # Safety ceiling for processed JPEG output (long edge 1600, q≈82 — normally far smaller).
 MAX_STORED_JPEG_BYTES = 10 * 1024 * 1024
 MAX_ATTACHMENTS_PER_ENTRY = 30
-MAX_ZIP_ATTACHMENT_IDS = 48
-MAX_ZIP_TOTAL_BYTES = 64 * 1024 * 1024
+MAX_ZIP_ATTACHMENT_IDS = 200
+MAX_ZIP_TOTAL_BYTES = 512 * 1024 * 1024
+MAX_ZIP_SPOOL_MEMORY_BYTES = 16 * 1024 * 1024
 MAX_BULK_ATTACHMENT_IDS = 200
 _ZIP_GENERATION_SEMAPHORE = threading.BoundedSemaphore(1)
 
@@ -1069,25 +1075,60 @@ def _assert_zip_export_did_not_mutate(
                 )
 
 
-def bulk_download_review_attachments_zip(
-    db_session: Session,
+def _zip_folder_classification_for_entry(
+    entry: WorkProgressEntry,
+    audit_payloads: list[object] | None,
+):
+    from app.modules.work_progress.zip_export import resolve_zip_folder_classification
+
+    return resolve_zip_folder_classification(
+        progress_status=getattr(entry, "progress_status", None),
+        work_category=getattr(entry, "work_category", None),
+        elevation=getattr(entry, "elevation", None),
+        elevation_custom=getattr(entry, "elevation_custom", None),
+        level=getattr(entry, "level", None),
+        submit_audit_payloads=audit_payloads,
+    )
+
+
+def _iter_zip_spool(spool: IO[bytes], chunk_size: int = 65536) -> Iterator[bytes]:
+    try:
+        while True:
+            chunk = spool.read(chunk_size)
+            if not chunk:
+                break
+            yield chunk
+    finally:
+        spool.close()
+
+
+def _record_zip_download_audit(
     actor: User,
-    file_ids: list[uuid.UUID],
-) -> bytes:
-    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
-        raise WorkProgressPermissionError()
-
-    unique_ids = list(dict.fromkeys(file_ids))
-    if len(unique_ids) > MAX_ZIP_ATTACHMENT_IDS:
-        raise WorkProgressZipLimitError(
-            code="work_progress_zip_too_many_files",
-            message="ZIP download is limited to 48 pictures. Reduce the selection or delete in bulk instead.",
-            http_status=400,
-            extra={"max_files": MAX_ZIP_ATTACHMENT_IDS},
+    *,
+    company_id: uuid.UUID | None,
+    details: dict[str, object],
+) -> None:
+    audit_session = get_session_factory()()
+    try:
+        create_internal_audit_event(
+            db_session=audit_session,
+            actor=actor,
+            action="work_progress.attachments_bulk_downloaded",
+            entity_type="work_progress_attachment",
+            entity_id=None,
+            company_id=company_id,
+            details=details,
+            commit=True,
         )
+    finally:
+        audit_session.close()
 
-    ordered = _ordered_bulk_attachment_rows(db_session, unique_ids)
-    triples = _assert_bulk_attachment_scope(db_session, actor, ordered)
+
+def _build_attachments_zip_spool(
+    db_session: Session,
+    triples: list[tuple[WorkProgressAttachment, WorkProgressEntry, User]],
+) -> BinaryIO:
+    from app.modules.work_progress.zip_export import build_work_progress_zip_arcname
 
     backend = get_storage_backend()
     sizes: list[int] = []
@@ -1100,91 +1141,238 @@ def bulk_download_review_attachments_zip(
     if total_size > MAX_ZIP_TOTAL_BYTES:
         raise WorkProgressZipLimitError(
             code="work_progress_zip_too_large",
-            message="Selected pictures exceed the 64 MB ZIP limit. Select fewer pictures and try again.",
+            message=(
+                f"Export is {total_size} bytes across {len(triples)} pictures, which exceeds the "
+                f"{MAX_ZIP_TOTAL_BYTES} byte limit. Narrow the filters or selection and try again."
+            ),
             http_status=413,
-            extra={"max_total_bytes": MAX_ZIP_TOTAL_BYTES},
+            extra={
+                "max_total_bytes": MAX_ZIP_TOTAL_BYTES,
+                "matched_count": len(triples),
+                "total_bytes": total_size,
+            },
         )
 
-    from app.modules.work_progress.zip_export import build_work_progress_zip_arcname
-
+    entry_ids = list({entry.id: None for _att, entry, _owner in triples}.keys())
+    audit_by_entry = list_submit_audit_payloads_by_entry_ids(db_session, entry_ids)
     include_site = len({getattr(entry, "location_id", None) for _att, entry, _owner in triples}) > 1
     used_folder_by_entry: dict[str, str] = {}
+    used_arcnames: set[str] = set()
 
+    decorated: list[tuple[tuple[object, ...], WorkProgressAttachment, WorkProgressEntry, User]] = []
+    for att, entry, owner in triples:
+        labels = _zip_folder_classification_for_entry(entry, audit_by_entry.get(entry.id))
+        profile = get_employee_profile_by_user_id(db_session, entry.user_id)
+        employee_name = _display_name(profile)
+        site_name = _location_name(db_session, getattr(entry, "location_id", None))
+        sort_key = (
+            site_name or "",
+            labels.work_category or "",
+            labels.elevation or "",
+            labels.level if labels.level is not None else -1,
+            employee_name or (owner.email if owner else ""),
+            entry.work_date or date.min,
+            str(entry.id),
+            att.original_filename or "",
+            str(att.id),
+        )
+        decorated.append((sort_key, att, entry, owner, labels, employee_name, site_name))
+    decorated.sort(key=lambda row: row[0])
+
+    spool = tempfile.SpooledTemporaryFile(max_size=MAX_ZIP_SPOOL_MEMORY_BYTES)
+    actual_total = 0
+    try:
+        with zipfile.ZipFile(spool, "w", zipfile.ZIP_DEFLATED, allowZip64=True) as zf:
+            for _key, att, entry, owner, labels, employee_name, site_name in decorated:
+                storage_key = att.storage_path
+                if not backend.exists(storage_key):
+                    raise WorkProgressNotFoundError()
+                try:
+                    raw = backend.read_bytes(storage_key)
+                except FileNotFoundError:
+                    raise WorkProgressNotFoundError() from None
+                actual_total += len(raw)
+                if actual_total > MAX_ZIP_TOTAL_BYTES:
+                    raise WorkProgressZipLimitError(
+                        code="work_progress_zip_too_large",
+                        message=(
+                            f"Export is {actual_total} bytes across {len(triples)} pictures, which exceeds the "
+                            f"{MAX_ZIP_TOTAL_BYTES} byte limit. Narrow the filters or selection and try again."
+                        ),
+                        http_status=413,
+                        extra={
+                            "max_total_bytes": MAX_ZIP_TOTAL_BYTES,
+                            "matched_count": len(triples),
+                            "total_bytes": actual_total,
+                        },
+                    )
+                arcname = build_work_progress_zip_arcname(
+                    site_name=site_name,
+                    include_site=include_site,
+                    work_category=labels.work_category,
+                    elevation=labels.elevation,
+                    elevation_custom=labels.elevation_custom,
+                    level=labels.level,
+                    legacy_title=getattr(entry, "title", None),
+                    employee_name=employee_name,
+                    employee_email=owner.email if owner else None,
+                    work_date=entry.work_date,
+                    original_filename=att.original_filename,
+                    used_arcnames=used_arcnames,
+                    entry_id=entry.id,
+                    used_folder_by_entry=used_folder_by_entry,
+                )
+                if ".." in PurePosixPath(arcname).parts or PurePosixPath(arcname).is_absolute():
+                    raise WorkProgressValidationError("Unsafe ZIP member path blocked.")
+                zf.writestr(arcname, raw)
+                del raw
+        spool.seek(0)
+    except Exception:
+        spool.close()
+        raise
+    return spool
+
+
+def bulk_download_review_attachments_zip(
+    db_session: Session,
+    actor: User,
+    file_ids: list[uuid.UUID],
+) -> BinaryIO:
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise WorkProgressPermissionError()
+
+    unique_ids = list(dict.fromkeys(file_ids))
+    if len(unique_ids) > MAX_ZIP_ATTACHMENT_IDS:
+        raise WorkProgressZipLimitError(
+            code="work_progress_zip_too_many_files",
+            message=(
+                f"ZIP download is limited to {MAX_ZIP_ATTACHMENT_IDS} selected pictures. "
+                "Use Download all matching for the current filters."
+            ),
+            http_status=400,
+            extra={"max_files": MAX_ZIP_ATTACHMENT_IDS},
+        )
+
+    ordered = _ordered_bulk_attachment_rows(db_session, unique_ids)
+    triples = _assert_bulk_attachment_scope(db_session, actor, ordered)
     _ZIP_GENERATION_SEMAPHORE.acquire()
     try:
-        actual_total = 0
-        used_arcnames: set[str] = set()
-        with io.BytesIO() as buf:
-            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-                for att, entry, owner in triples:
-                    storage_key = att.storage_path
-                    if not backend.exists(storage_key):
-                        raise WorkProgressNotFoundError()
-                    try:
-                        raw = backend.read_bytes(storage_key)
-                    except FileNotFoundError:
-                        raise WorkProgressNotFoundError() from None
-                    actual_total += len(raw)
-                    if actual_total > MAX_ZIP_TOTAL_BYTES:
-                        raise WorkProgressZipLimitError(
-                            code="work_progress_zip_too_large",
-                            message="Selected pictures exceed the 64 MB ZIP limit. Select fewer pictures and try again.",
-                            http_status=413,
-                            extra={"max_total_bytes": MAX_ZIP_TOTAL_BYTES},
-                        )
-                    profile = get_employee_profile_by_user_id(db_session, entry.user_id)
-                    folder_site_name = _location_name(db_session, entry.location_id)
-                    folder_work_category = getattr(entry, "work_category", None)
-                    folder_elevation = getattr(entry, "elevation", None)
-                    folder_elevation_custom = getattr(entry, "elevation_custom", None)
-                    folder_level = getattr(entry, "level", None)
-                    folder_legacy_title = getattr(entry, "title", None)
-                    folder_employee_name = _display_name(profile)
-                    folder_employee_email = owner.email if owner else None
-                    folder_work_date = entry.work_date
-                    archive_filename = att.original_filename
-                    grouping_entry_id = entry.id
-                    arcname = build_work_progress_zip_arcname(
-                        site_name=folder_site_name,
-                        include_site=include_site,
-                        work_category=folder_work_category,
-                        elevation=folder_elevation,
-                        elevation_custom=folder_elevation_custom,
-                        level=folder_level,
-                        legacy_title=folder_legacy_title,
-                        employee_name=folder_employee_name,
-                        employee_email=folder_employee_email,
-                        work_date=folder_work_date,
-                        original_filename=archive_filename,
-                        used_arcnames=used_arcnames,
-                        entry_id=grouping_entry_id,
-                        used_folder_by_entry=used_folder_by_entry,
-                    )
-                    # ZIP-slip final guard: refuse absolute / parent paths.
-                    if ".." in PurePosixPath(arcname).parts or PurePosixPath(arcname).is_absolute():
-                        raise WorkProgressValidationError("Unsafe ZIP member path blocked.")
-                    zf.writestr(arcname, raw)
-                    del raw
-            zip_bytes = buf.getvalue()
+        spool = _build_attachments_zip_spool(db_session, triples)
     finally:
         _ZIP_GENERATION_SEMAPHORE.release()
 
     _assert_zip_export_did_not_mutate(triples)
-
-    company_id_for_audit = triples[0][1].company_id if triples else None
-    create_internal_audit_event(
-        db_session=db_session,
-        actor=actor,
-        action="work_progress.attachments_bulk_downloaded",
-        entity_type="work_progress_attachment",
-        entity_id=None,
-        company_id=company_id_for_audit,
+    for att, entry, _owner in triples:
+        if att in db_session:
+            db_session.expunge(att)
+        if entry in db_session:
+            db_session.expunge(entry)
+    _record_zip_download_audit(
+        actor,
+        company_id=triples[0][1].company_id if triples else None,
         details={
+            "mode": "selected",
             "file_count": len(triples),
             "attachment_ids": [str(att.id) for att, _, _ in triples],
         },
     )
-    return zip_bytes
+    return spool
+
+
+def bulk_download_review_attachments_zip_matching_filters(
+    db_session: Session,
+    actor: User,
+    *,
+    company_id: uuid.UUID | None,
+    user_id: uuid.UUID | None,
+    location_id: uuid.UUID | None,
+    status_filter: str | None,
+    include_archived: bool,
+    entry_id: uuid.UUID | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
+) -> BinaryIO:
+    if actor.system_role not in (SystemRole.ADMIN, SystemRole.ADMINISTRATOR):
+        raise WorkProgressPermissionError()
+
+    company_filter, uid, loc_id, status_f, d_from, d_to = _resolve_review_list_filters(
+        db_session,
+        actor,
+        company_id=company_id,
+        user_id=user_id,
+        location_id=location_id,
+        status_filter=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    category, elev, lvl = _normalize_review_classification_filters(
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
+    )
+    if entry_id is not None:
+        try:
+            entry, _owner = _assert_review_access(db_session, actor, entry_id)
+        except WorkProgressPermissionError:
+            raise WorkProgressNotFoundError() from None
+        if company_filter is not None and entry.company_id != company_filter:
+            raise WorkProgressNotFoundError()
+
+    rows = list_review_attachments_for_export(
+        db_session,
+        company_id_filter=company_filter,
+        user_id_filter=uid,
+        location_id_filter=loc_id,
+        status_filter=status_f,
+        include_archived=include_archived,
+        entry_id_filter=entry_id,
+        date_from=d_from,
+        date_to=d_to,
+        title_search=title_search,
+        work_category=category,
+        elevation=elev,
+        level=lvl,
+    )
+    if not rows:
+        raise WorkProgressValidationError("No pictures match the current filters.")
+    triples = _assert_bulk_attachment_scope(db_session, actor, rows)
+    _ZIP_GENERATION_SEMAPHORE.acquire()
+    try:
+        spool = _build_attachments_zip_spool(db_session, triples)
+    finally:
+        _ZIP_GENERATION_SEMAPHORE.release()
+
+    _assert_zip_export_did_not_mutate(triples)
+    for att, entry, _owner in triples:
+        if att in db_session:
+            db_session.expunge(att)
+        if entry in db_session:
+            db_session.expunge(entry)
+    _record_zip_download_audit(
+        actor,
+        company_id=triples[0][1].company_id if triples else None,
+        details={
+            "mode": "matching_filters",
+            "file_count": len(triples),
+            "company_id": str(company_filter) if company_filter else None,
+            "user_id": str(uid) if uid else None,
+            "location_id": str(loc_id) if loc_id else None,
+            "status": status_f,
+            "include_archived": include_archived,
+            "entry_id": str(entry_id) if entry_id else None,
+            "date_from": str(d_from) if d_from else None,
+            "date_to": str(d_to) if d_to else None,
+            "title_search": bool(title_search and title_search.strip()),
+            "work_category": category,
+            "elevation": elev,
+            "level": lvl,
+        },
+    )
+    return spool
 
 
 def _delete_storage_key_counted(backend, relative_path: str) -> str:

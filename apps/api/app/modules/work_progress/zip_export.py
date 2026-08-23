@@ -8,15 +8,22 @@ Does not mutate database objects.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path, PurePosixPath
 from typing import Any
 from uuid import UUID
 
 from app.modules.work_progress.classification import (
+    CLASSIFIED_PROGRESS_STATUS,
     ELEVATION_CUSTOM,
+    ELEVATION_CUSTOM_MAX_LEN,
     ELEVATION_LABELS,
+    ELEVATION_VALUES,
+    LEVEL_MAX,
+    LEVEL_MIN,
     WORK_CATEGORY_LABELS,
+    WORK_CATEGORY_VALUES,
 )
 
 _UNSAFE_COMPONENT = re.compile(r'[/\\:*?"<>|\x00-\x1f]')
@@ -25,6 +32,79 @@ _MULTI_DASH = re.compile(r"-{2,}")
 
 _COMPONENT_MAX = 80
 _FOLDER_NAME_MAX = 180
+
+
+@dataclass(frozen=True)
+class ZipFolderClassification:
+    """Read-only presentation labels for one ZIP submission folder. Never written to ORM."""
+
+    work_category: str | None
+    elevation: str | None
+    elevation_custom: str | None
+    level: int | None
+    source: str
+
+
+def parse_submit_audit_classification(details: object) -> tuple[str, str, str | None, int] | None:
+    """Return validated audit classification, or None if any field is invalid."""
+    if not isinstance(details, dict):
+        return None
+    category = details.get("work_category")
+    elevation = details.get("elevation")
+    if not isinstance(category, str) or category not in WORK_CATEGORY_VALUES:
+        return None
+    if not isinstance(elevation, str) or elevation not in ELEVATION_VALUES:
+        return None
+    raw_level = details.get("level")
+    if isinstance(raw_level, bool) or not isinstance(raw_level, int):
+        return None
+    if raw_level < LEVEL_MIN or raw_level > LEVEL_MAX:
+        return None
+    custom: str | None = None
+    raw_custom = details.get("elevation_custom")
+    if elevation == ELEVATION_CUSTOM:
+        if not isinstance(raw_custom, str):
+            return None
+        custom = raw_custom.strip()
+        if not custom or len(custom) > ELEVATION_CUSTOM_MAX_LEN:
+            return None
+    elif raw_custom and str(raw_custom).strip():
+        return None
+    return category, elevation, custom, raw_level
+
+
+def resolve_zip_folder_classification(
+    *,
+    progress_status: str | None,
+    work_category: str | None,
+    elevation: str | None,
+    elevation_custom: str | None,
+    level: int | None,
+    submit_audit_payloads: list[object] | None,
+) -> ZipFolderClassification:
+    """Choose DB classification, a single valid submit-audit payload, or unclassified.
+
+    Does not mutate callers. Does not persist.
+    """
+    db_category = (work_category or "").strip() or None
+    if db_category:
+        return ZipFolderClassification(
+            work_category=db_category,
+            elevation=elevation,
+            elevation_custom=elevation_custom,
+            level=level,
+            source="db",
+        )
+    if (progress_status or "") != CLASSIFIED_PROGRESS_STATUS:
+        return ZipFolderClassification(None, None, None, None, "unclassified")
+    payloads = submit_audit_payloads or []
+    if len(payloads) != 1:
+        return ZipFolderClassification(None, None, None, None, "unclassified")
+    parsed = parse_submit_audit_classification(payloads[0])
+    if parsed is None:
+        return ZipFolderClassification(None, None, None, None, "unclassified")
+    category, elev, custom, lvl = parsed
+    return ZipFolderClassification(category, elev, custom, lvl, "audit")
 
 
 def sanitize_zip_path_component(

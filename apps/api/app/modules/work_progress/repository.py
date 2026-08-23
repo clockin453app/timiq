@@ -5,6 +5,8 @@ from datetime import date, datetime, timezone
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.modules.audit.models import AuditEvent
+
 from app.modules.auth.models import User
 from app.modules.companies.models import Company
 from app.modules.employee_profiles.models import EmployeeProfile
@@ -384,6 +386,76 @@ def list_review_attachments_page(
     stmt = stmt.order_by(WorkProgressAttachment.created_at.desc()).limit(limit).offset(offset)
     rows = db_session.execute(stmt).all()
     return [(r[0], r[1]) for r in rows]
+
+
+def list_review_attachments_for_export(
+    db_session: Session,
+    *,
+    company_id_filter: uuid.UUID | None,
+    user_id_filter: uuid.UUID | None,
+    location_id_filter: uuid.UUID | None,
+    status_filter: str | None,
+    date_from: date | None,
+    date_to: date | None,
+    title_search: str | None,
+    include_archived: bool = False,
+    entry_id_filter: uuid.UUID | None = None,
+    work_category: str | None = None,
+    elevation: str | None = None,
+    level: int | None = None,
+) -> list[tuple[WorkProgressAttachment, WorkProgressEntry]]:
+    """All matching gallery attachments. Pagination is intentionally omitted."""
+    stmt = (
+        select(WorkProgressAttachment, WorkProgressEntry)
+        .join(WorkProgressEntry, WorkProgressEntry.id == WorkProgressAttachment.entry_id)
+    )
+    stmt = _apply_review_entry_filters(
+        stmt,
+        entry_id_filter=entry_id_filter,
+        company_id_filter=company_id_filter,
+        user_id_filter=user_id_filter,
+        location_id_filter=location_id_filter,
+        status_filter=status_filter,
+        include_archived=include_archived,
+        date_from=date_from,
+        date_to=date_to,
+        title_search=title_search,
+        work_category=work_category,
+        elevation=elevation,
+        level=level,
+    )
+    stmt = stmt.order_by(
+        WorkProgressEntry.work_date.asc(),
+        WorkProgressEntry.created_at.asc(),
+        WorkProgressAttachment.created_at.asc(),
+        WorkProgressAttachment.id.asc(),
+    )
+    rows = db_session.execute(stmt).all()
+    return [(r[0], r[1]) for r in rows]
+
+
+def list_submit_audit_payloads_by_entry_ids(
+    db_session: Session,
+    entry_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[object]]:
+    """Read-only submit-audit payloads grouped by Work Progress entry id."""
+    if not entry_ids:
+        return {}
+    id_strings = [str(entry_id) for entry_id in entry_ids]
+    stmt = select(AuditEvent).where(
+        AuditEvent.action == "work_progress.submitted",
+        AuditEvent.entity_type == "work_progress_entry",
+        AuditEvent.entity_id.in_(id_strings),
+    )
+    grouped: dict[uuid.UUID, list[object]] = {entry_id: [] for entry_id in entry_ids}
+    for event in db_session.scalars(stmt):
+        try:
+            key = uuid.UUID(str(event.entity_id))
+        except (TypeError, ValueError):
+            continue
+        if key in grouped:
+            grouped[key].append(event.details or {})
+    return grouped
 
 
 def list_attachments_for_entry_ids(

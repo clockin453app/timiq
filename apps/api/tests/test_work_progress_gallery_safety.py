@@ -240,11 +240,13 @@ def test_zip_valid_request_returns_readable_archive() -> None:
         patch("app.modules.work_progress.service._assert_bulk_attachment_scope", return_value=[(att, entry, owner)]),
         patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
         patch("app.modules.work_progress.service.create_internal_audit_event"),
+        patch("app.modules.work_progress.service.get_session_factory", return_value=MagicMock),
+        patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value={}),
         patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
         patch("app.modules.work_progress.service._location_name", return_value="Kennington"),
     ):
         result = bulk_download_review_attachments_zip(MagicMock(), actor, [att.id])
-    with zipfile.ZipFile(io.BytesIO(result)) as archive:
+    with zipfile.ZipFile(result) as archive:
         name = archive.namelist()[0]
         assert archive.read(name) == b"data"
         assert name.startswith("Mastic - Internal - Level 00 -")
@@ -259,15 +261,31 @@ def test_zip_actual_bytes_over_limit_are_rejected() -> None:
     actor = _user(role=SystemRole.ADMIN, company_id=company_id)
     owner = _user(role=SystemRole.EMPLOYEE, company_id=company_id)
     att = SimpleNamespace(id=uuid.uuid4(), storage_path="work-progress-files/grown.jpg", original_filename="grown.jpg")
-    entry = SimpleNamespace(id=uuid.uuid4(), company_id=company_id, work_date="2026-07-29", user_id=owner.id)
+    entry = SimpleNamespace(
+        id=uuid.uuid4(),
+        company_id=company_id,
+        location_id=uuid.uuid4(),
+        work_date="2026-07-29",
+        user_id=owner.id,
+        work_category=None,
+        elevation=None,
+        elevation_custom=None,
+        level=None,
+        title="",
+        progress_status=None,
+    )
     backend = MagicMock()
     backend.object_byte_size.return_value = 1
     backend.exists.return_value = True
-    backend.read_bytes.return_value = b"x" * (MAX_ZIP_TOTAL_BYTES + 1)
+    backend.read_bytes.return_value = b"x" * 32
     with (
+        patch("app.modules.work_progress.service.MAX_ZIP_TOTAL_BYTES", 16),
         patch("app.modules.work_progress.service._ordered_bulk_attachment_rows", return_value=[(att, entry)]),
         patch("app.modules.work_progress.service._assert_bulk_attachment_scope", return_value=[(att, entry, owner)]),
         patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
+        patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value={}),
+        patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
+        patch("app.modules.work_progress.service._location_name", return_value="Site"),
     ):
         with pytest.raises(WorkProgressZipLimitError) as exc:
             bulk_download_review_attachments_zip(MagicMock(), actor, [att.id])
@@ -320,6 +338,8 @@ def test_zip_generation_semaphore_serializes_body_reads() -> None:
             patch("app.modules.work_progress.service._assert_bulk_attachment_scope", return_value=[(att, entry, owner)]),
             patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
             patch("app.modules.work_progress.service.create_internal_audit_event"),
+            patch("app.modules.work_progress.service.get_session_factory", return_value=MagicMock),
+            patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value={}),
         ):
             bulk_download_review_attachments_zip(MagicMock(), actor, [att.id])
 
@@ -329,6 +349,8 @@ def test_zip_generation_semaphore_serializes_body_reads() -> None:
             return_value=SimpleNamespace(first_name="Pat", last_name="Lee"),
         ),
         patch("app.modules.work_progress.service._location_name", return_value="Site"),
+        patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
+        patch("app.modules.work_progress.service.get_session_factory", return_value=MagicMock),
     ):
         threads = [threading.Thread(target=run, args=(i,)) for i in range(2)]
         for thread in threads:

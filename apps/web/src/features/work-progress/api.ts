@@ -417,7 +417,7 @@ export type WorkProgressBulkDeleteResult = {
   warning: string | null;
 };
 
-export const WORK_PROGRESS_ZIP_MAX_FILES = 48;
+export const WORK_PROGRESS_ZIP_MAX_FILES = 200;
 export const WORK_PROGRESS_SELECTION_MAX = 200;
 export const WORK_PROGRESS_GALLERY_PAGE_SIZE = 48;
 
@@ -587,6 +587,22 @@ export async function bulkDownloadWorkProgressAttachments(fileIds: string[]): Pr
   });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, "Could not download selected files."));
+  }
+  return response.blob();
+}
+
+export async function bulkDownloadWorkProgressAttachmentsMatching(
+  params?: WorkProgressReviewQuery,
+): Promise<Blob> {
+  const search = new URLSearchParams();
+  appendReviewQuery(search, params);
+  const q = search.toString();
+  const response = await fetch(
+    `${API_URL}/api/work-progress/review/attachments/bulk-download-matching${q ? `?${q}` : ""}`,
+    { method: "POST", credentials: "include" },
+  );
+  if (!response.ok) {
+    throw new Error(await parseErrorMessage(response, "Could not download matching pictures."));
   }
   return response.blob();
 }

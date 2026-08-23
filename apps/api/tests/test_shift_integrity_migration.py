@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import importlib.util
-import os
 from pathlib import Path
 import subprocess
 
 import pytest
 from sqlalchemy import create_engine, text
+
+from app.testing.database_safety import alembic_test_subprocess_env
 
 
 def _load_migration_module():
@@ -46,7 +47,7 @@ def test_shift_integrity_migration_postgres_with_existing_duplicates() -> None:
         pytest.skip("psycopg unavailable")
 
     admin_dsn = "postgresql://postgres:postgres@localhost:5432/postgres"
-    db_name = "timiq_disposable_shift_integrity_mig"
+    db_name = "timiq_test_shift_integrity_mig"
     db_user = "timiq_shift_integrity_mig"
     db_pass = "timiq_shift_integrity_mig_pw"
     app_dsn = f"postgresql+psycopg://{db_user}:{db_pass}@localhost:5432/{db_name}"
@@ -63,9 +64,7 @@ def test_shift_integrity_migration_postgres_with_existing_duplicates() -> None:
 
     repo_root = Path(__file__).resolve().parents[3]
     api_root = repo_root / "apps" / "api"
-    env = os.environ.copy()
-    env["DATABASE_URL"] = app_dsn
-    env["PYTHONPATH"] = str(api_root)
+    env = alembic_test_subprocess_env(app_dsn, extra={"PYTHONPATH": str(api_root)})
     cmd_prefix = ["python", "-m", "alembic", "-c", str(api_root / "alembic.ini")]
 
     subprocess.run([*cmd_prefix, "upgrade", "a1b2c3d4e5f8"], cwd=repo_root, env=env, check=True)

@@ -2,7 +2,7 @@ import uuid
 from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status as http_status
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.storage.file_response import (
@@ -40,6 +40,8 @@ from app.modules.work_progress.service import (
     archive_review_entry,
     bulk_delete_review_attachments,
     bulk_download_review_attachments_zip,
+    bulk_download_review_attachments_zip_matching_filters,
+    _iter_zip_spool,
     create_my_entry,
     download_work_progress_file,
     download_work_progress_thumbnail,
@@ -333,7 +335,7 @@ def post_work_progress_review_attachments_bulk_download(
     current_user: User = Depends(require_admin_or_administrator),
 ) -> Response:
     try:
-        data = bulk_download_review_attachments_zip(db_session, current_user, body.file_ids)
+        spool = bulk_download_review_attachments_zip(db_session, current_user, body.file_ids)
     except WorkProgressZipLimitError as exc:
         detail = {"code": exc.code, "message": exc.message, **exc.extra}
         raise HTTPException(status_code=exc.http_status, detail=detail) from exc
@@ -341,8 +343,57 @@ def post_work_progress_review_attachments_bulk_download(
         raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
     except WorkProgressNotFoundError:
         raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+    except WorkProgressValidationError as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     headers = {"Content-Disposition": 'attachment; filename="work-progress-attachments.zip"'}
-    return Response(content=data, media_type="application/zip", headers=headers)
+    return StreamingResponse(_iter_zip_spool(spool), media_type="application/zip", headers=headers)
+
+
+@router.post("/review/attachments/bulk-download-matching")
+def post_work_progress_review_attachments_bulk_download_matching(
+    company_id: uuid.UUID | None = Query(default=None),
+    user_id: uuid.UUID | None = Query(default=None),
+    location_id: uuid.UUID | None = Query(default=None),
+    status: str | None = Query(default=None),
+    include_archived: bool = Query(default=False),
+    entry_id: uuid.UUID | None = Query(default=None),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    title_search: str | None = Query(default=None, max_length=300),
+    work_category: str | None = Query(default=None, max_length=64),
+    elevation: str | None = Query(default=None, max_length=64),
+    level: int | None = Query(default=None, ge=0, le=20),
+    db_session: Session = Depends(get_db_session),
+    current_user: User = Depends(require_admin_or_administrator),
+) -> StreamingResponse:
+    try:
+        spool = bulk_download_review_attachments_zip_matching_filters(
+            db_session,
+            current_user,
+            company_id=company_id,
+            user_id=user_id,
+            location_id=location_id,
+            status_filter=status,
+            include_archived=include_archived,
+            entry_id=entry_id,
+            date_from=date_from,
+            date_to=date_to,
+            title_search=title_search,
+            work_category=work_category,
+            elevation=elevation,
+            level=level,
+        )
+    except WorkProgressZipLimitError as exc:
+        detail = {"code": exc.code, "message": exc.message, **exc.extra}
+        raise HTTPException(status_code=exc.http_status, detail=detail) from exc
+    except WorkProgressPermissionError as exc:
+        raise HTTPException(status_code=http_status.HTTP_403_FORBIDDEN, detail=str(exc)) from exc
+    except WorkProgressNotFoundError:
+        raise HTTPException(status_code=http_status.HTTP_404_NOT_FOUND, detail=NOT_FOUND) from None
+    except WorkProgressValidationError as exc:
+        raise HTTPException(status_code=http_status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    headers = {"Content-Disposition": 'attachment; filename="work-progress-attachments.zip"'}
+    return StreamingResponse(_iter_zip_spool(spool), media_type="application/zip", headers=headers)
 
 
 @router.post("/review/attachments/bulk-delete", response_model=WorkProgressBulkDeleteResponse)

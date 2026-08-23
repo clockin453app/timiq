@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import os
+import random
+import re
+import tempfile
+import time
+import tracemalloc
 import uuid
 import zipfile
 from datetime import date, datetime, timezone
@@ -24,12 +31,19 @@ from app.modules.work_progress.models import WorkProgressAttachment, WorkProgres
 from app.modules.work_progress.repository import list_review_entries
 from app.modules.work_progress.service import (
     MAX_ZIP_ATTACHMENT_IDS,
+    MAX_ZIP_SPOOL_MEMORY_BYTES,
+    MAX_ZIP_TOTAL_BYTES,
+    WorkProgressNotFoundError,
     WorkProgressZipLimitError,
     _classification_fields,
+    _build_attachments_zip_spool,
+    _iter_zip_spool,
     bulk_download_review_attachments_zip,
 )
 from app.modules.work_progress.zip_export import (
     build_work_progress_zip_arcname,
+    parse_submit_audit_classification,
+    resolve_zip_folder_classification,
     sanitize_zip_filename,
     sanitize_zip_path_component,
 )
@@ -265,11 +279,13 @@ def test_zip_download_writes_flat_folder_and_preserves_selected_only() -> None:
         patch("app.modules.work_progress.service._assert_bulk_attachment_scope", return_value=[(att, entry, owner)]),
         patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
         patch("app.modules.work_progress.service.create_internal_audit_event"),
+        patch("app.modules.work_progress.service.get_session_factory", return_value=MagicMock),
+        patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value={}),
         patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
         patch("app.modules.work_progress.service._location_name", return_value="Kennington"),
     ):
         result = bulk_download_review_attachments_zip(MagicMock(), actor, [att.id])
-    with zipfile.ZipFile(io.BytesIO(result)) as archive:
+    with zipfile.ZipFile(result) as archive:
         names = archive.namelist()
         assert names == ["Brickwork level - South - Level 00 - emp@ex.com - 12 Aug 2026/IMG_1234.jpg"]
         assert archive.read(names[0]) == b"data"
@@ -278,7 +294,7 @@ def test_zip_download_writes_flat_folder_and_preserves_selected_only() -> None:
     backend.delete_file.assert_not_called()
 
 
-def test_zip_limit_48_still_enforced() -> None:
+def test_selected_zip_rejects_more_than_selection_schema() -> None:
     actor = _user(role=SystemRole.ADMIN, company_id=uuid.uuid4())
     ids = [uuid.uuid4() for _ in range(MAX_ZIP_ATTACHMENT_IDS + 1)]
     with pytest.raises(WorkProgressZipLimitError) as exc:
@@ -337,11 +353,13 @@ def test_multi_site_zip_download_prefixes_site() -> None:
         ),
         patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
         patch("app.modules.work_progress.service.create_internal_audit_event"),
+        patch("app.modules.work_progress.service.get_session_factory", return_value=MagicMock),
+        patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value={}),
         patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
         patch("app.modules.work_progress.service._location_name", side_effect=_site_name),
     ):
         result = bulk_download_review_attachments_zip(MagicMock(), actor, [att_a.id, att_b.id])
-    with zipfile.ZipFile(io.BytesIO(result)) as archive:
+    with zipfile.ZipFile(result) as archive:
         assert sorted(archive.namelist()) == [
             "Battersea - Insulation - South - Level 03 - petre@ex.com - 15 Aug 2026/b.jpg",
             "Kennington - Brickwork ties - North - Level 00 - petre@ex.com - 15 Aug 2026/a.jpg",
@@ -648,6 +666,8 @@ def test_zip_export_does_not_mutate_submissions_or_attachments() -> None:
         patch("app.modules.work_progress.service._assert_bulk_attachment_scope", return_value=scoped),
         patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
         patch("app.modules.work_progress.service.create_internal_audit_event", side_effect=_capture_audit),
+        patch("app.modules.work_progress.service.get_session_factory", return_value=MagicMock),
+        patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value={}),
         patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
         patch("app.modules.work_progress.service.archive_review_entry") as archive_spy,
         patch("app.modules.work_progress.service.bulk_delete_review_attachments") as delete_spy,
@@ -657,7 +677,7 @@ def test_zip_export_does_not_mutate_submissions_or_attachments() -> None:
         delete_spy.assert_not_called()
     backend.delete_file.assert_not_called()
 
-    with zipfile.ZipFile(io.BytesIO(result)) as archive:
+    with zipfile.ZipFile(result) as archive:
         names = archive.namelist()
         assert len(names) == 5
         assert len(set(names)) == 5
@@ -727,3 +747,558 @@ def test_zip_export_does_not_mutate_submissions_or_attachments() -> None:
     finally:
         fresh.close()
         engine.dispose()
+
+
+def test_audit_fallback_classification_is_used_when_db_is_null() -> None:
+    labels = resolve_zip_folder_classification(
+        progress_status=CLASSIFIED_PROGRESS_STATUS,
+        work_category=None,
+        elevation=None,
+        elevation_custom=None,
+        level=None,
+        submit_audit_payloads=[
+            {
+                "work_category": "brickwork_ties",
+                "elevation": "north",
+                "elevation_custom": None,
+                "level": 0,
+            }
+        ],
+    )
+    assert labels.source == "audit"
+    assert labels.work_category == "brickwork_ties"
+    assert labels.level == 0
+    arc = _arc(
+        work_category=labels.work_category,
+        elevation=labels.elevation,
+        elevation_custom=labels.elevation_custom,
+        level=labels.level,
+        legacy_title="",
+    )
+    assert arc.startswith("Brickwork ties - North - Level 00 - Petre Rotaru - 15 Aug 2026/")
+
+
+def test_duplicate_or_invalid_audit_stays_unclassified() -> None:
+    payload = {
+        "work_category": "brickwork_ties",
+        "elevation": "north",
+        "level": 0,
+    }
+    duplicate = resolve_zip_folder_classification(
+        progress_status=CLASSIFIED_PROGRESS_STATUS,
+        work_category=None,
+        elevation=None,
+        elevation_custom=None,
+        level=None,
+        submit_audit_payloads=[payload, payload],
+    )
+    assert duplicate.source == "unclassified"
+    invalid = resolve_zip_folder_classification(
+        progress_status=CLASSIFIED_PROGRESS_STATUS,
+        work_category=None,
+        elevation=None,
+        elevation_custom=None,
+        level=None,
+        submit_audit_payloads=[{"work_category": "nope", "elevation": "north", "level": 0}],
+    )
+    assert invalid.source == "unclassified"
+    assert parse_submit_audit_classification({"work_category": "brickwork_ties", "elevation": "north", "level": 99}) is None
+
+
+def test_resolve_does_not_mutate_entry_namespace() -> None:
+    entry = SimpleNamespace(
+        progress_status=CLASSIFIED_PROGRESS_STATUS,
+        work_category=None,
+        elevation=None,
+        elevation_custom=None,
+        level=None,
+    )
+    labels = resolve_zip_folder_classification(
+        progress_status=entry.progress_status,
+        work_category=entry.work_category,
+        elevation=entry.elevation,
+        elevation_custom=entry.elevation_custom,
+        level=entry.level,
+        submit_audit_payloads=[
+            {"work_category": "brickwork_ties", "elevation": "custom", "elevation_custom": "Core A", "level": 1}
+        ],
+    )
+    assert labels.source == "audit"
+    assert entry.work_category is None
+    assert entry.elevation is None
+    assert entry.level is None
+
+
+def _scale_triples(count: int):
+    company_id = uuid.uuid4()
+    owner = _user(role=SystemRole.EMPLOYEE, company_id=company_id, email="scale@ex.com")
+    loc_id = uuid.uuid4()
+    triples = []
+    for index in range(count):
+        entry = SimpleNamespace(
+            id=uuid.uuid4(),
+            company_id=company_id,
+            location_id=loc_id,
+            user_id=owner.id,
+            work_date=date(2026, 8, 15),
+            work_category="brickwork_ties",
+            elevation="north",
+            elevation_custom=None,
+            level=0,
+            title="",
+            progress_status=CLASSIFIED_PROGRESS_STATUS,
+        )
+        att = SimpleNamespace(
+            id=uuid.uuid4(),
+            storage_path=f"work-progress-files/{index}.jpg",
+            original_filename=f"IMG_{index:04d}.jpg",
+        )
+        triples.append((att, entry, owner))
+    return triples
+
+
+def _run_scale_zip(count: int) -> tuple[int, int]:
+    triples = _scale_triples(count)
+    backend = MagicMock()
+    backend.object_byte_size.return_value = 32
+    backend.exists.return_value = True
+    backend.read_bytes.return_value = b"x" * 32
+    with (
+        patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
+        patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value={}),
+        patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
+        patch("app.modules.work_progress.service._location_name", return_value="Kennington"),
+    ):
+        spool = _build_attachments_zip_spool(MagicMock(), triples)
+    with zipfile.ZipFile(spool) as archive:
+        names = [name for name in archive.namelist() if not name.endswith("/")]
+        size = sum(info.file_size for info in archive.infolist())
+    spool.close()
+    return len(names), size
+
+
+def test_synthetic_zip_scale_101_250_500() -> None:
+    for count in (1, 30, 100, 101, 250, 500):
+        members, _size = _run_scale_zip(count)
+        assert members == count
+
+
+def test_custom_elevation_and_level_20_folder() -> None:
+    arc = _arc(elevation="custom", elevation_custom="Core A", level=20)
+    assert "Core A" in arc
+    assert "Level 20" in arc
+    assert arc.count("/") == 1
+
+
+# ---------------------------------------------------------------------------
+# Realistic local synthetic scale (no DB, no production pictures).
+# Payloads are generated one-at-a-time on each storage read.
+# ---------------------------------------------------------------------------
+
+_REALISTIC_PAYLOAD_BYTES = 256 * 1024
+_UUID_IN_PATH = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+    re.IGNORECASE,
+)
+
+
+def _deterministic_payload(storage_key: str, size: int) -> bytes:
+    seed = int(hashlib.sha256(storage_key.encode("utf-8")).hexdigest()[:16], 16)
+    return random.Random(seed).randbytes(size)
+
+
+class _SequentialFakeStorage:
+    """One payload at a time. Never holds a list of picture bodies."""
+
+    def __init__(self, *, payload_size: int, metadata_size: int | None = None, missing: frozenset[str] = frozenset()):
+        self.payload_size = payload_size
+        self.metadata_size = payload_size if metadata_size is None else metadata_size
+        self.missing = missing
+        self.live_reads = 0
+        self.max_live_reads = 0
+        self.read_count = 0
+        self.retained_payloads: list[bytes] = []
+
+    def object_byte_size(self, key: str) -> int:
+        return self.metadata_size
+
+    def exists(self, key: str) -> bool:
+        return key not in self.missing
+
+    def read_bytes(self, key: str) -> bytes:
+        if key in self.missing:
+            raise FileNotFoundError(key)
+        self.live_reads += 1
+        self.max_live_reads = max(self.max_live_reads, self.live_reads)
+        self.read_count += 1
+        try:
+            return _deterministic_payload(key, self.payload_size)
+        finally:
+            self.live_reads -= 1
+
+
+class _TrackingSpooledTemporaryFile(tempfile.SpooledTemporaryFile):
+    instances: list["_TrackingSpooledTemporaryFile"] = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rolled_to_disk = False
+        self.disk_path: str | None = None
+        type(self).instances.append(self)
+
+    def rollover(self):
+        result = super().rollover()
+        self.rolled_to_disk = True
+        inner = getattr(self, "_file", None)
+        self.disk_path = getattr(inner, "name", None)
+        return result
+
+    @classmethod
+    def reset(cls) -> None:
+        cls.instances = []
+
+
+def _structured_scale_triples(submissions: int, pics_each: int):
+    """50×10-style layout: mixed levels, custom elevation, audit, unclassified, folder collisions."""
+    company_id = uuid.uuid4()
+    owner = _user(role=SystemRole.EMPLOYEE, company_id=company_id, email="scale@ex.com")
+    loc_id = uuid.uuid4()
+    triples = []
+    audit_map: dict[uuid.UUID, list[dict[str, object]]] = {}
+    same_date = date(2026, 8, 15)
+
+    for submission in range(submissions):
+        work_category = "brickwork_ties"
+        elevation = "north"
+        elevation_custom = None
+        level: int | None = 0
+        title = ""
+        work_date = same_date
+        progress_status = CLASSIFIED_PROGRESS_STATUS
+        audit_payloads: list[dict[str, object]] | None = None
+
+        if submission <= 2:
+            level = 0
+        elif submission <= 9:
+            level = 0
+            work_date = date(2026, 8, 16 + (submission - 3))
+        elif submission <= 19:
+            level = 1
+            work_date = date(2026, 7, 1 + (submission - 10))
+        elif submission <= 29:
+            level = 10
+            work_date = date(2026, 6, 1 + (submission - 20))
+        elif submission <= 39:
+            level = 20
+            work_date = date(2026, 5, 1 + (submission - 30))
+        elif submission <= 44:
+            elevation = "custom"
+            elevation_custom = "Core A"
+            level = 0
+            work_date = date(2026, 4, 1 + (submission - 40))
+        elif submission <= 47:
+            work_category = None  # type: ignore[assignment]
+            elevation = None
+            level = None
+            work_date = date(2026, 3, 1 + (submission - 45))
+            audit_payloads = [
+                {
+                    "work_category": "firebreaks",
+                    "elevation": "west",
+                    "elevation_custom": None,
+                    "level": 1,
+                }
+            ]
+        else:
+            work_category = None  # type: ignore[assignment]
+            elevation = None
+            level = None
+            title = ""
+            work_date = date(2026, 2, 1 + (submission - 48))
+            audit_payloads = []
+
+        entry = SimpleNamespace(
+            id=uuid.uuid4(),
+            company_id=company_id,
+            location_id=loc_id,
+            user_id=owner.id,
+            work_date=work_date,
+            work_category=work_category,
+            elevation=elevation,
+            elevation_custom=elevation_custom,
+            level=level,
+            title=title,
+            progress_status=progress_status,
+        )
+        if audit_payloads is not None:
+            audit_map[entry.id] = audit_payloads
+        for pic in range(pics_each):
+            att = SimpleNamespace(
+                id=uuid.uuid4(),
+                storage_path=f"work-progress-files/sub{submission:02d}_{pic:02d}.bin",
+                original_filename=f"IMG_{submission:02d}_{pic:02d}.jpg",
+            )
+            triples.append((att, entry, owner))
+    return triples, audit_map
+
+
+def _assert_zip_build_is_not_fully_buffered() -> None:
+    import inspect
+
+    from app.modules.work_progress import service as wp_service
+    from app.modules.work_progress import zip_export as zip_export_mod
+
+    build_src = inspect.getsource(wp_service._build_attachments_zip_spool)
+    iter_src = inspect.getsource(wp_service._iter_zip_spool)
+    zip_src = inspect.getsource(zip_export_mod)
+    assert "getvalue" not in build_src
+    assert "BytesIO" not in build_src
+    assert "getvalue" not in iter_src
+    assert "BytesIO" not in iter_src
+    assert "getvalue" not in zip_src
+
+
+def _run_realistic_zip(
+    *,
+    submissions: int,
+    pics_each: int,
+    payload_size: int = _REALISTIC_PAYLOAD_BYTES,
+    metadata_size: int | None = None,
+    missing: frozenset[str] = frozenset(),
+    max_total_bytes: int | None = None,
+    consume_stream: bool = True,
+    measure_tracemalloc: bool = False,
+):
+    triples, audit_map = _structured_scale_triples(submissions, pics_each)
+    backend = _SequentialFakeStorage(
+        payload_size=payload_size,
+        metadata_size=metadata_size,
+        missing=missing,
+    )
+    _TrackingSpooledTemporaryFile.reset()
+    patches = [
+        patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
+        patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value=audit_map),
+        patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
+        patch("app.modules.work_progress.service._location_name", return_value="Kennington"),
+        patch(
+            "app.modules.work_progress.service.tempfile.SpooledTemporaryFile",
+            _TrackingSpooledTemporaryFile,
+        ),
+    ]
+    if max_total_bytes is not None:
+        patches.append(patch("app.modules.work_progress.service.MAX_ZIP_TOTAL_BYTES", max_total_bytes))
+
+    started = time.perf_counter()
+    snapshot = None
+    if measure_tracemalloc:
+        tracemalloc.start()
+    try:
+        with patches[0], patches[1], patches[2], patches[3], patches[4]:
+            if max_total_bytes is not None:
+                with patch("app.modules.work_progress.service.MAX_ZIP_TOTAL_BYTES", max_total_bytes):
+                    spool = _build_attachments_zip_spool(MagicMock(), triples)
+            else:
+                spool = _build_attachments_zip_spool(MagicMock(), triples)
+    finally:
+        elapsed = time.perf_counter() - started
+        if measure_tracemalloc:
+            snapshot = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
+
+    tracker = _TrackingSpooledTemporaryFile.instances[-1]
+    zip_bytes = b"".join(_iter_zip_spool(spool)) if consume_stream else None
+    return {
+        "backend": backend,
+        "tracker": tracker,
+        "spool": spool,
+        "zip_bytes": zip_bytes,
+        "elapsed": elapsed,
+        "tracemalloc": snapshot,
+        "picture_count": submissions * pics_each,
+        "payload_size": payload_size,
+    }
+
+
+class TestRealisticZipScale:
+    def test_production_byte_cap_constant_unchanged(self) -> None:
+        assert MAX_ZIP_TOTAL_BYTES == 512 * 1024 * 1024
+        assert MAX_ZIP_SPOOL_MEMORY_BYTES == 16 * 1024 * 1024
+        _assert_zip_build_is_not_fully_buffered()
+
+    def test_scale_100_x_256kb(self) -> None:
+        result = _run_realistic_zip(submissions=10, pics_each=10)
+        self._assert_complete_archive(result, expected_pictures=100, expect_rollover=True)
+        print(
+            "LOCAL SYNTHETIC ONLY 100x256KB "
+            f"members={result['member_count']} zip_bytes={result['zip_size']} "
+            f"uncompressed={result['uncompressed']} elapsed_s={result['elapsed']:.3f} "
+            f"rolled_to_disk={result['tracker'].rolled_to_disk} max_live={result['backend'].max_live_reads}",
+            flush=True,
+        )
+
+    def test_scale_250_x_256kb(self) -> None:
+        result = _run_realistic_zip(submissions=25, pics_each=10)
+        self._assert_complete_archive(result, expected_pictures=250, expect_rollover=True)
+        print(
+            "LOCAL SYNTHETIC ONLY 250x256KB "
+            f"members={result['member_count']} zip_bytes={result['zip_size']} "
+            f"uncompressed={result['uncompressed']} elapsed_s={result['elapsed']:.3f} "
+            f"rolled_to_disk={result['tracker'].rolled_to_disk} max_live={result['backend'].max_live_reads}",
+            flush=True,
+        )
+
+    def test_scale_500_x_256kb_folder_structure(self) -> None:
+        result = _run_realistic_zip(submissions=50, pics_each=10, measure_tracemalloc=True)
+        self._assert_complete_archive(result, expected_pictures=500, expect_rollover=True)
+        names = result["names"]
+        folders = [name.split("/", 1)[0] for name in names]
+        unique_folders = list(dict.fromkeys(folders))
+        assert len(unique_folders) == 50
+        for folder in unique_folders:
+            in_folder = [name for name in names if name.startswith(folder + "/")]
+            assert len(in_folder) == 10, folder
+        assert any(" (2)" in folder for folder in unique_folders)
+        assert any(" (3)" in folder for folder in unique_folders)
+        assert any("Level 00" in folder for folder in unique_folders)
+        assert any("Level 01" in folder for folder in unique_folders)
+        assert any("Level 10" in folder for folder in unique_folders)
+        assert any("Level 20" in folder for folder in unique_folders)
+        assert any("Core A" in folder for folder in unique_folders)
+        assert any("Firebreaks" in folder and "West" in folder for folder in unique_folders)
+        assert any(folder.startswith("Unclassified") for folder in unique_folders)
+        assert all(_UUID_IN_PATH.search(name) is None for name in names)
+        current, peak = result["tracemalloc"]
+        result["folder_count"] = len(unique_folders)
+        print(
+            "LOCAL SYNTHETIC ONLY 500x256KB "
+            f"members={result['member_count']} folders={len(unique_folders)} "
+            f"zip_bytes={result['zip_size']} uncompressed={result['uncompressed']} "
+            f"elapsed_s={result['elapsed']:.3f} rolled_to_disk={result['tracker'].rolled_to_disk} "
+            f"max_live={result['backend'].max_live_reads} "
+            f"tracemalloc_current={current} tracemalloc_peak={peak}",
+            flush=True,
+        )
+
+    def test_actual_byte_limit_no_partial_zip(self) -> None:
+        cap = 5 * 1024 * 1024
+        _TrackingSpooledTemporaryFile.reset()
+        triples, audit_map = _structured_scale_triples(3, 10)
+        backend = _SequentialFakeStorage(payload_size=_REALISTIC_PAYLOAD_BYTES)
+        with (
+            patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
+            patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value=audit_map),
+            patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
+            patch("app.modules.work_progress.service._location_name", return_value="Kennington"),
+            patch("app.modules.work_progress.service.tempfile.SpooledTemporaryFile", _TrackingSpooledTemporaryFile),
+            patch("app.modules.work_progress.service.MAX_ZIP_TOTAL_BYTES", cap),
+        ):
+            with pytest.raises(WorkProgressZipLimitError) as raised:
+                _build_attachments_zip_spool(MagicMock(), triples)
+        err = raised.value
+        assert err.http_status == 413
+        assert err.code == "work_progress_zip_too_large"
+        for spool in _TrackingSpooledTemporaryFile.instances:
+            assert spool.closed
+            if spool.disk_path:
+                assert not os.path.exists(spool.disk_path)
+        print(
+            f"LOCAL SYNTHETIC ONLY actual-byte-limit cap={cap} "
+            f"http_status={err.http_status} spool_instances={len(_TrackingSpooledTemporaryFile.instances)}",
+            flush=True,
+        )
+
+    def test_metadata_underreport_running_guard(self) -> None:
+        cap = 5 * 1024 * 1024
+        _TrackingSpooledTemporaryFile.reset()
+        triples, audit_map = _structured_scale_triples(3, 10)
+        backend = _SequentialFakeStorage(
+            payload_size=_REALISTIC_PAYLOAD_BYTES,
+            metadata_size=1024,
+        )
+        metadata_total = backend.metadata_size * len(triples)
+        assert metadata_total < cap
+        with (
+            patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
+            patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value=audit_map),
+            patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
+            patch("app.modules.work_progress.service._location_name", return_value="Kennington"),
+            patch("app.modules.work_progress.service.tempfile.SpooledTemporaryFile", _TrackingSpooledTemporaryFile),
+            patch("app.modules.work_progress.service.MAX_ZIP_TOTAL_BYTES", cap),
+        ):
+            with pytest.raises(WorkProgressZipLimitError) as raised:
+                _build_attachments_zip_spool(MagicMock(), triples)
+        err = raised.value
+        assert err.http_status == 413
+        assert backend.read_count > 0
+        assert backend.max_live_reads == 1
+        assert _TrackingSpooledTemporaryFile.instances
+        for spool in _TrackingSpooledTemporaryFile.instances:
+            assert spool.closed
+            if spool.disk_path:
+                assert not os.path.exists(spool.disk_path)
+        print(
+            "LOCAL SYNTHETIC ONLY metadata-underreport "
+            f"metadata_total={metadata_total} cap={cap} reads={backend.read_count} "
+            f"http_status={err.http_status} spool_closed=True",
+            flush=True,
+        )
+
+    def test_missing_source_object_fails_and_closes_spool(self) -> None:
+        _TrackingSpooledTemporaryFile.reset()
+        triples, audit_map = _structured_scale_triples(2, 5)
+        missing_key = triples[7][0].storage_path
+        backend = _SequentialFakeStorage(
+            payload_size=_REALISTIC_PAYLOAD_BYTES,
+            missing=frozenset({missing_key}),
+        )
+        with (
+            patch("app.modules.work_progress.service.get_storage_backend", return_value=backend),
+            patch("app.modules.work_progress.service.list_submit_audit_payloads_by_entry_ids", return_value=audit_map),
+            patch("app.modules.work_progress.service.get_employee_profile_by_user_id", return_value=None),
+            patch("app.modules.work_progress.service._location_name", return_value="Kennington"),
+            patch("app.modules.work_progress.service.tempfile.SpooledTemporaryFile", _TrackingSpooledTemporaryFile),
+        ):
+            with pytest.raises(WorkProgressNotFoundError):
+                _build_attachments_zip_spool(MagicMock(), triples)
+        assert _TrackingSpooledTemporaryFile.instances
+        for spool in _TrackingSpooledTemporaryFile.instances:
+            assert spool.closed
+            if spool.disk_path:
+                assert not os.path.exists(spool.disk_path)
+        print(
+            "LOCAL SYNTHETIC ONLY missing-source-object "
+            f"spool_closed=True instances={len(_TrackingSpooledTemporaryFile.instances)}",
+            flush=True,
+        )
+
+    def test_success_stream_closes_tempfile(self) -> None:
+        result = _run_realistic_zip(submissions=4, pics_each=5)
+        self._assert_complete_archive(result, expected_pictures=20, expect_rollover=False)
+        assert result["spool"].closed
+        if result["tracker"].disk_path:
+            assert not os.path.exists(result["tracker"].disk_path)
+
+    @staticmethod
+    def _assert_complete_archive(result: dict, *, expected_pictures: int, expect_rollover: bool) -> None:
+        assert result["backend"].max_live_reads == 1
+        assert result["backend"].read_count == expected_pictures
+        assert result["backend"].retained_payloads == []
+        tracker = result["tracker"]
+        if expect_rollover:
+            assert tracker.rolled_to_disk is True
+            assert tracker._rolled is True
+        assert result["zip_bytes"] is not None
+        zip_bytes = result["zip_bytes"]
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as archive:
+            bad = archive.testzip()
+            assert bad is None
+            names = [name for name in archive.namelist() if not name.endswith("/")]
+            uncompressed = sum(info.file_size for info in archive.infolist() if not info.is_dir())
+        assert len(names) == expected_pictures
+        assert uncompressed == expected_pictures * result["payload_size"]
+        assert result["spool"].closed
+        result["names"] = names
+        result["member_count"] = len(names)
+        result["zip_size"] = len(zip_bytes)
+        result["uncompressed"] = uncompressed
