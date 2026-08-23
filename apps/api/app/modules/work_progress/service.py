@@ -6,7 +6,7 @@ import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import insert, inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from app.core.export_csv import safe_export_filename, truncate_plain_text
@@ -457,9 +457,12 @@ def get_my_entry_detail(db_session: Session, user: User, entry_id: uuid.UUID) ->
     return _build_detail(db_session, row, atts)
 
 
-def _assert_persisted_classification(
-    row: WorkProgressEntry,
+def _assert_persisted_classification_values(
     *,
+    stored_category: str | None,
+    stored_elevation: str | None,
+    stored_elevation_custom: str | None,
+    stored_level: int | None,
     category: str,
     elevation: str,
     elevation_custom: str | None,
@@ -469,20 +472,45 @@ def _assert_persisted_classification(
 
     Level must use identity checks so integer 0 (Level 00) is never treated as missing.
     """
+    stored_level_int: int | None
+    if stored_level is None:
+        stored_level_int = None
+    else:
+        stored_level_int = int(stored_level)
     errors: list[str] = []
-    if row.work_category != category:
+    if stored_category != category:
         errors.append("work_category")
-    if row.elevation != elevation:
+    if stored_elevation != elevation:
         errors.append("elevation")
-    if (row.elevation_custom or None) != (elevation_custom or None):
+    if (stored_elevation_custom or None) != (elevation_custom or None):
         errors.append("elevation_custom")
-    if row.level is None or row.level != level:
+    if stored_level_int is None or stored_level_int != level:
         errors.append("level")
     if errors:
         raise WorkProgressValidationError(
             "Site Progress classification failed to persist (" + ", ".join(errors) + "). "
             "Please retry. If this continues, contact support before submitting again."
         )
+
+
+def _assert_persisted_classification(
+    row: WorkProgressEntry,
+    *,
+    category: str,
+    elevation: str,
+    elevation_custom: str | None,
+    level: int,
+) -> None:
+    _assert_persisted_classification_values(
+        stored_category=row.work_category,
+        stored_elevation=row.elevation,
+        stored_elevation_custom=row.elevation_custom,
+        stored_level=row.level,
+        category=category,
+        elevation=elevation,
+        elevation_custom=elevation_custom,
+        level=level,
+    )
 
 
 def create_my_entry(
@@ -509,70 +537,90 @@ def create_my_entry(
             raise WorkProgressValidationError("Workplace is not valid for your company.")
 
     now = _utc_now()
-    row = WorkProgressEntry(
-        user_id=user.id,
-        company_id=user.company_id,
-        workplace_id=workplace_id,
-        location_id=body.location_id,
-        work_date=body.work_date,
-        title="",
-        progress_status=CLASSIFIED_PROGRESS_STATUS,
-        notes=body.notes.strip() if body.notes else None,
-        percent_complete=None,
-        status=STATUS_SUBMITTED,
-        reviewed_at=None,
-        reviewed_by_user_id=None,
-        review_note=None,
-        created_at=now,
-        updated_at=now,
+    if level is None:
+        raise WorkProgressValidationError("Level must be between 0 and 20.")
+    entry_id = uuid.uuid4()
+    stmt = (
+        insert(WorkProgressEntry)
+        .values(
+            id=entry_id,
+            user_id=user.id,
+            company_id=user.company_id,
+            workplace_id=workplace_id,
+            location_id=body.location_id,
+            work_date=body.work_date,
+            title="",
+            progress_status=CLASSIFIED_PROGRESS_STATUS,
+            notes=body.notes.strip() if body.notes else None,
+            percent_complete=None,
+            work_category=category,
+            elevation=elevation,
+            elevation_custom=elevation_custom,
+            level=level,
+            status=STATUS_SUBMITTED,
+            reviewed_at=None,
+            reviewed_by_user_id=None,
+            review_note=None,
+            created_at=now,
+            updated_at=now,
+        )
+        .returning(
+            WorkProgressEntry.id,
+            WorkProgressEntry.company_id,
+            WorkProgressEntry.location_id,
+            WorkProgressEntry.work_date,
+            WorkProgressEntry.work_category,
+            WorkProgressEntry.elevation,
+            WorkProgressEntry.elevation_custom,
+            WorkProgressEntry.level,
+        )
     )
-    # Assign classification after construction so mapper state is unambiguously dirty,
-    # including level=0 (Level 00) which must never be skipped by truthiness checks.
-    row.work_category = category
-    row.elevation = elevation
-    row.elevation_custom = elevation_custom
-    row.level = level
-    db_session.add(row)
     try:
-        db_session.flush()
-        db_session.commit()
-    except Exception:
-        db_session.rollback()
-        raise
-
-    persisted = get_entry_by_id(db_session, row.id)
-    if persisted is None:
-        raise WorkProgressValidationError("Site Progress submission could not be reloaded after save.")
-    try:
-        _assert_persisted_classification(
-            persisted,
+        stored = db_session.execute(stmt).one()
+        _assert_persisted_classification_values(
+            stored_category=stored.work_category,
+            stored_elevation=stored.elevation,
+            stored_elevation_custom=stored.elevation_custom,
+            stored_level=stored.level,
             category=category,
             elevation=elevation,
             elevation_custom=elevation_custom,
             level=level,
         )
-    except WorkProgressValidationError:
-        # Leave the incomplete row for support inspection; do not write a misleading submit audit.
+        audit_details: dict[str, object] = {
+            "work_date": str(stored.work_date),
+            "location_id": str(stored.location_id),
+            "work_category": stored.work_category,
+            "elevation": stored.elevation,
+            "level": int(stored.level) if stored.level is not None else stored.level,
+        }
+        if stored.elevation_custom:
+            audit_details["elevation_custom"] = stored.elevation_custom
+        create_internal_audit_event(
+            db_session=db_session,
+            actor=user,
+            action="work_progress.submitted",
+            entity_type="work_progress_entry",
+            entity_id=str(stored.id),
+            company_id=stored.company_id,
+            details=audit_details,
+            commit=False,
+        )
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
         raise
 
-    audit_details: dict[str, object] = {
-        "work_date": str(persisted.work_date),
-        "location_id": str(persisted.location_id),
-        "work_category": persisted.work_category,
-        "elevation": persisted.elevation,
-        "level": persisted.level,
-    }
-    if persisted.elevation_custom:
-        audit_details["elevation_custom"] = persisted.elevation_custom
-
-    create_internal_audit_event(
-        db_session=db_session,
-        actor=user,
-        action="work_progress.submitted",
-        entity_type="work_progress_entry",
-        entity_id=str(persisted.id),
-        company_id=persisted.company_id,
-        details=audit_details,
+    db_session.expire_all()
+    persisted = get_entry_by_id(db_session, entry_id)
+    if persisted is None:
+        raise WorkProgressValidationError("Site Progress submission could not be reloaded after save.")
+    _assert_persisted_classification(
+        persisted,
+        category=category,
+        elevation=elevation,
+        elevation_custom=elevation_custom,
+        level=level,
     )
     return _build_detail(db_session, persisted, [])
 
