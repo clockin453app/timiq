@@ -6,6 +6,7 @@ import zipfile
 from datetime import date, datetime, timezone
 from pathlib import Path, PurePosixPath
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 
 from app.core.export_csv import safe_export_filename, truncate_plain_text
@@ -1002,6 +1003,24 @@ def _assert_bulk_attachment_scope(
     return out
 
 
+def _assert_zip_export_did_not_mutate(
+    triples: list[tuple[WorkProgressAttachment, WorkProgressEntry, User]],
+) -> None:
+    """Refuse to write the download audit if ZIP presentation dirtied ORM rows."""
+    for att, entry, _owner in triples:
+        for obj in (att, entry):
+            try:
+                state = sa_inspect(obj, raiseerr=False)
+            except Exception:
+                continue
+            if state is None:
+                continue
+            if getattr(state, "modified", False):
+                raise WorkProgressValidationError(
+                    "ZIP export must not modify Work Progress submissions or attachments.",
+                )
+
+
 def bulk_download_review_attachments_zip(
     db_session: Session,
     actor: User,
@@ -1040,6 +1059,9 @@ def bulk_download_review_attachments_zip(
 
     from app.modules.work_progress.zip_export import build_work_progress_zip_arcname
 
+    include_site = len({getattr(entry, "location_id", None) for _att, entry, _owner in triples}) > 1
+    used_folder_by_entry: dict[str, str] = {}
+
     _ZIP_GENERATION_SEMAPHORE.acquire()
     try:
         actual_total = 0
@@ -1047,10 +1069,11 @@ def bulk_download_review_attachments_zip(
         with io.BytesIO() as buf:
             with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
                 for att, entry, owner in triples:
-                    if not backend.exists(att.storage_path):
+                    storage_key = att.storage_path
+                    if not backend.exists(storage_key):
                         raise WorkProgressNotFoundError()
                     try:
-                        raw = backend.read_bytes(att.storage_path)
+                        raw = backend.read_bytes(storage_key)
                     except FileNotFoundError:
                         raise WorkProgressNotFoundError() from None
                     actual_total += len(raw)
@@ -1062,18 +1085,32 @@ def bulk_download_review_attachments_zip(
                             extra={"max_total_bytes": MAX_ZIP_TOTAL_BYTES},
                         )
                     profile = get_employee_profile_by_user_id(db_session, entry.user_id)
+                    folder_site_name = _location_name(db_session, entry.location_id)
+                    folder_work_category = getattr(entry, "work_category", None)
+                    folder_elevation = getattr(entry, "elevation", None)
+                    folder_elevation_custom = getattr(entry, "elevation_custom", None)
+                    folder_level = getattr(entry, "level", None)
+                    folder_legacy_title = getattr(entry, "title", None)
+                    folder_employee_name = _display_name(profile)
+                    folder_employee_email = owner.email if owner else None
+                    folder_work_date = entry.work_date
+                    archive_filename = att.original_filename
+                    grouping_entry_id = entry.id
                     arcname = build_work_progress_zip_arcname(
-                        site_name=_location_name(db_session, entry.location_id),
-                        work_category=getattr(entry, "work_category", None),
-                        elevation=getattr(entry, "elevation", None),
-                        elevation_custom=getattr(entry, "elevation_custom", None),
-                        level=getattr(entry, "level", None),
-                        legacy_title=getattr(entry, "title", None),
-                        employee_name=_display_name(profile),
-                        employee_email=owner.email if owner else None,
-                        work_date=entry.work_date,
-                        original_filename=att.original_filename,
+                        site_name=folder_site_name,
+                        include_site=include_site,
+                        work_category=folder_work_category,
+                        elevation=folder_elevation,
+                        elevation_custom=folder_elevation_custom,
+                        level=folder_level,
+                        legacy_title=folder_legacy_title,
+                        employee_name=folder_employee_name,
+                        employee_email=folder_employee_email,
+                        work_date=folder_work_date,
+                        original_filename=archive_filename,
                         used_arcnames=used_arcnames,
+                        entry_id=grouping_entry_id,
+                        used_folder_by_entry=used_folder_by_entry,
                     )
                     # ZIP-slip final guard: refuse absolute / parent paths.
                     if ".." in PurePosixPath(arcname).parts or PurePosixPath(arcname).is_absolute():
@@ -1083,6 +1120,8 @@ def bulk_download_review_attachments_zip(
             zip_bytes = buf.getvalue()
     finally:
         _ZIP_GENERATION_SEMAPHORE.release()
+
+    _assert_zip_export_did_not_mutate(triples)
 
     company_id_for_audit = triples[0][1].company_id if triples else None
     create_internal_audit_event(

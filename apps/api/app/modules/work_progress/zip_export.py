@@ -2,6 +2,7 @@
 
 Builds internal archive member paths only. Does not rename object storage.
 Does not invent classification for legacy rows.
+Does not mutate database objects.
 """
 
 from __future__ import annotations
@@ -9,6 +10,8 @@ from __future__ import annotations
 import re
 from datetime import date
 from pathlib import Path, PurePosixPath
+from typing import Any
+from uuid import UUID
 
 from app.modules.work_progress.classification import (
     ELEVATION_CUSTOM,
@@ -20,8 +23,16 @@ _UNSAFE_COMPONENT = re.compile(r'[/\\:*?"<>|\x00-\x1f]')
 _MULTI_SPACE = re.compile(r"\s+")
 _MULTI_DASH = re.compile(r"-{2,}")
 
+_COMPONENT_MAX = 80
+_FOLDER_NAME_MAX = 180
 
-def sanitize_zip_path_component(value: str | None, *, fallback: str = "Unknown") -> str:
+
+def sanitize_zip_path_component(
+    value: str | None,
+    *,
+    fallback: str = "Unknown",
+    max_len: int = _COMPONENT_MAX,
+) -> str:
     """Sanitize one ZIP folder/file segment against ZIP-slip and OS-unsafe chars."""
     raw = (value or "").strip()
     if not raw:
@@ -42,7 +53,8 @@ def sanitize_zip_path_component(value: str | None, *, fallback: str = "Unknown")
     cleaned = cleaned.strip(" .-") or fallback
     if "/" in cleaned or "\\" in cleaned or ".." in cleaned or cleaned in {".", ".."}:
         return fallback
-    return cleaned[:120]
+    limit = max(8, max_len)
+    return cleaned[:limit].rstrip(" .-") or fallback
 
 
 def sanitize_zip_filename(original_filename: str | None) -> str:
@@ -93,6 +105,122 @@ def format_work_date_folder(work_date: date | str | None) -> str:
     return work_date.strftime("%d %b %Y")
 
 
+def _folder_employee(employee_name: str | None, employee_email: str | None) -> str:
+    return sanitize_zip_path_component(
+        (employee_name or "").strip() or (employee_email or "").strip() or "Unknown-employee",
+        fallback="Unknown-employee",
+    )
+
+
+def _folder_level(level: int | None) -> str:
+    if level is None:
+        return "Unknown level"
+    return f"Level {level:02d}"
+
+
+def _classified_folder_parts(
+    *,
+    work_category: str,
+    elevation: str | None,
+    elevation_custom: str | None,
+    level: int | None,
+    folder_employee: str,
+    folder_date: str,
+) -> list[str]:
+    folder_category = sanitize_zip_path_component(
+        WORK_CATEGORY_LABELS.get(work_category, work_category),
+        fallback="Category",
+    )
+    if elevation == ELEVATION_CUSTOM:
+        elev_label = (elevation_custom or "").strip() or "Custom elevation"
+    elif elevation:
+        elev_label = ELEVATION_LABELS.get(elevation, elevation)
+    else:
+        elev_label = "Unknown elevation"
+    folder_elevation = sanitize_zip_path_component(elev_label, fallback="Elevation")
+    folder_level = sanitize_zip_path_component(_folder_level(level), fallback="Level")
+    return [folder_category, folder_elevation, folder_level, folder_employee, folder_date]
+
+
+def _legacy_folder_parts(
+    *,
+    legacy_title: str | None,
+    folder_employee: str,
+    folder_date: str,
+) -> list[str]:
+    title = (legacy_title or "").strip() or "Unclassified"
+    folder_title = sanitize_zip_path_component(title, fallback="Unclassified")
+    return [folder_title, folder_employee, folder_date]
+
+
+def _unique_submission_folder(base: str, used_folder_by_entry: dict[str, str]) -> str:
+    existing = set(used_folder_by_entry.values())
+    folder = base
+    n = 2
+    while folder in existing:
+        suffix = f" ({n})"
+        trimmed = base[: max(8, _FOLDER_NAME_MAX - len(suffix))].rstrip(" .-") or "Submission"
+        folder = f"{trimmed}{suffix}"
+        n += 1
+    return folder
+
+
+def build_submission_zip_folder(
+    *,
+    entry_id: UUID | str | None,
+    site_name: str | None,
+    include_site: bool,
+    work_category: str | None,
+    elevation: str | None,
+    elevation_custom: str | None,
+    level: int | None,
+    legacy_title: str | None,
+    employee_name: str | None,
+    employee_email: str | None,
+    work_date: date | str | None,
+    used_folder_by_entry: dict[str, str],
+) -> str:
+    """One descriptive folder per Work Progress submission (entry_id grouping only)."""
+    key = str(entry_id) if entry_id is not None else ""
+    if key and key in used_folder_by_entry:
+        return used_folder_by_entry[key]
+
+    folder_employee = _folder_employee(employee_name, employee_email)
+    folder_date = sanitize_zip_path_component(
+        format_work_date_folder(work_date),
+        fallback="Unknown-date",
+    )
+    parts: list[str] = []
+    if include_site:
+        parts.append(sanitize_zip_path_component(site_name, fallback="Unknown-site"))
+    if work_category:
+        parts.extend(
+            _classified_folder_parts(
+                work_category=work_category,
+                elevation=elevation,
+                elevation_custom=elevation_custom,
+                level=level,
+                folder_employee=folder_employee,
+                folder_date=folder_date,
+            ),
+        )
+    else:
+        parts.extend(
+            _legacy_folder_parts(
+                legacy_title=legacy_title,
+                folder_employee=folder_employee,
+                folder_date=folder_date,
+            ),
+        )
+
+    joined = " - ".join(part for part in parts if part)
+    base = sanitize_zip_path_component(joined, fallback="Submission", max_len=_FOLDER_NAME_MAX)
+    folder = _unique_submission_folder(base, used_folder_by_entry)
+    if key:
+        used_folder_by_entry[key] = folder
+    return folder
+
+
 def build_work_progress_zip_arcname(
     *,
     site_name: str | None,
@@ -106,44 +234,50 @@ def build_work_progress_zip_arcname(
     work_date: date | str | None,
     original_filename: str | None,
     used_arcnames: set[str],
+    entry_id: UUID | str | None = None,
+    include_site: bool = False,
+    used_folder_by_entry: dict[str, str] | None = None,
 ) -> str:
-    """Build a hierarchical, sanitized ZIP member path for one attachment."""
-    site = sanitize_zip_path_component(site_name, fallback="Unknown-site")
-    employee = sanitize_zip_path_component(
-        (employee_name or "").strip() or (employee_email or "").strip() or "Unknown-employee",
-        fallback="Unknown-employee",
+    """Build a flat, sanitized ZIP member path for one attachment.
+
+    Presentation only. Callers must pass copies of field values, never mutate ORM rows.
+    """
+    folder_map = used_folder_by_entry if used_folder_by_entry is not None else {}
+    directory = build_submission_zip_folder(
+        entry_id=entry_id,
+        site_name=site_name,
+        include_site=include_site,
+        work_category=work_category,
+        elevation=elevation,
+        elevation_custom=elevation_custom,
+        level=level,
+        legacy_title=legacy_title,
+        employee_name=employee_name,
+        employee_email=employee_email,
+        work_date=work_date,
+        used_folder_by_entry=folder_map,
     )
-    day = sanitize_zip_path_component(format_work_date_folder(work_date), fallback="Unknown-date")
     filename = sanitize_zip_filename(original_filename)
 
-    if work_category:
-        category = sanitize_zip_path_component(
-            WORK_CATEGORY_LABELS.get(work_category, work_category),
-            fallback="Category",
-        )
-        if elevation == ELEVATION_CUSTOM:
-            elev_label = (elevation_custom or "").strip() or "Custom elevation"
-        elif elevation:
-            elev_label = ELEVATION_LABELS.get(elevation, elevation)
-        else:
-            elev_label = "Unknown elevation"
-        elev = sanitize_zip_path_component(elev_label, fallback="Elevation")
-        if level is None:
-            level_label = "Unknown level"
-        else:
-            level_label = f"Level {level:02d}"
-        level_folder = sanitize_zip_path_component(level_label, fallback="Level")
-        directory = "/".join([site, category, elev, level_folder, employee, day])
-    else:
-        title = (legacy_title or "").strip() or "Unclassified"
-        legacy_folder = sanitize_zip_path_component(title, fallback="Unclassified")
-        directory = "/".join([site, "Legacy", legacy_folder, employee, day])
-
-    # Absolute / traversal hardening on the joined path.
     posix = PurePosixPath(directory)
     if posix.is_absolute() or ".." in posix.parts:
-        directory = "/".join(
-            sanitize_zip_path_component(part, fallback="Unknown") for part in posix.parts if part not in {"", ".", ".."}
+        directory = sanitize_zip_path_component(
+            "-".join(part for part in posix.parts if part not in {"", ".", ".."}),
+            fallback="Submission",
+            max_len=_FOLDER_NAME_MAX,
         )
 
     return _unique_arcname(used_arcnames, directory, filename)
+
+
+def orm_instance_is_modified(obj: Any) -> bool:
+    """True when a mapped SQLAlchemy instance has pending attribute changes."""
+    try:
+        from sqlalchemy import inspect as sa_inspect
+
+        state = sa_inspect(obj, raiseerr=False)
+    except Exception:
+        return False
+    if state is None:
+        return False
+    return bool(getattr(state, "modified", False))

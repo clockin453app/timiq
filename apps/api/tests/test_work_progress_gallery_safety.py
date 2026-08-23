@@ -247,8 +247,10 @@ def test_zip_valid_request_returns_readable_archive() -> None:
     with zipfile.ZipFile(io.BytesIO(result)) as archive:
         name = archive.namelist()[0]
         assert archive.read(name) == b"data"
-        assert name.startswith("Kennington/Mastic/Internal/Level 00/")
+        assert name.startswith("Mastic - Internal - Level 00 -")
         assert name.endswith("/a.jpg")
+        assert name.count("/") == 1
+        assert "Kennington/" not in name
         assert ".." not in name
 
 
