@@ -14,6 +14,11 @@ function apiProxyOrigin(): string {
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  experimental: {
+    // Next 15.5.22 defaults external rewrite proxyTimeout to 30_000 ms.
+    // Work Progress ZIP builds the full spool before first byte; 5 minutes is first-byte wait only.
+    proxyTimeout: 300_000,
+  },
   async redirects() {
     return [
       {
