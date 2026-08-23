@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session, sessionmaker
 API_ROOT = Path(__file__).resolve().parents[2]
 ENV_FILE = API_ROOT / ".env"
 
+# Default override=False: values already in os.environ (including a pytest-pinned
+# DATABASE_URL) are not replaced by apps/api/.env.
 load_dotenv(ENV_FILE)
 
 
@@ -20,6 +22,18 @@ class DatabaseConfigurationError(RuntimeError):
 
 
 def get_database_url() -> str:
+    env_name = (getenv("TIMIQ_ENV") or getenv("APP_ENV") or "").strip()
+    if env_name.lower() == "test":
+        test_url = getenv("TEST_DATABASE_URL", "").strip()
+        if not test_url:
+            raise DatabaseConfigurationError(
+                "TEST_DATABASE_URL is required when TIMIQ_ENV=test. "
+                "DATABASE_URL is not used as a fallback."
+            )
+        from app.testing.database_safety import validate_test_database_url
+
+        return validate_test_database_url(test_url, timiq_env=env_name)
+
     database_url = getenv("DATABASE_URL", "").strip()
 
     if not database_url:
