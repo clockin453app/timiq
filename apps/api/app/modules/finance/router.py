@@ -17,8 +17,10 @@ from app.modules.auth.models import User
 from app.modules.finance.access import (
     PREVIEW_READONLY,
     assert_finance_access,
+    assert_finance_company_access,
     finance_module_enabled,
     finance_preview_readonly,
+    finance_user_authorized,
 )
 from app.modules.finance.cost_register_schemas import CostDraftInput
 from app.modules.finance.cost_register_service import (
@@ -97,9 +99,11 @@ class CustomerInvoiceBody(BaseModel):
 def _company(db_session: Session, actor: User, company_id: uuid.UUID | None) -> uuid.UUID:
     assert_finance_access(actor)
     try:
-        return resolve_operational_company_id(db_session, actor, company_id)
+        scoped = resolve_operational_company_id(db_session, actor, company_id)
     except CompanyScopeError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    assert_finance_company_access(scoped)
+    return scoped
 
 
 def _ledger(exc: FinanceLedgerError) -> HTTPException:
@@ -108,8 +112,12 @@ def _ledger(exc: FinanceLedgerError) -> HTTPException:
 
 @router.get("/module-status")
 def finance_module_status(actor: User = Depends(get_current_user)) -> dict[str, bool]:
-    """Always available when authenticated. Does not enable Finance operations."""
-    enabled = finance_module_enabled()
+    """Always available when authenticated. Does not enable Finance operations.
+
+    ``enabled`` is true only when the module flag is on AND this actor is
+    authorized for Finance (pilot allowlist in live-like environments).
+    """
+    enabled = finance_module_enabled() and finance_user_authorized(actor)
     return {
         "enabled": enabled,
         "readonly": finance_preview_readonly() if enabled else True,
