@@ -14,6 +14,8 @@ import { LogoutButton, formatAuthUserDisplayName, useCurrentUser } from "../../f
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
 import { useT } from "../../lib/i18n";
 
+import { fetchFinanceModuleStatus } from "../../features/finance/finance-module";
+
 import { useDesktopSidebarState } from "./desktop-sidebar-state";
 import { NavGroupIcon, NavItemIcon } from "./nav-item-icon";
 import { NavTree } from "./nav-tree";
@@ -40,12 +42,24 @@ export function DesktopSidebar({ activeHref = "/dashboard" }: DesktopSidebarProp
   const t = useT();
   const limited = userHasLimitedAccess(user);
   const { collapsed, hydrated, setCollapsed } = useDesktopSidebarState();
+  // Fail closed until /api/finance/module-status confirms Finance is enabled.
+  const [financeModuleEnabled, setFinanceModuleEnabled] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchFinanceModuleStatus(controller.signal).then((status) => {
+      if (!controller.signal.aborted) {
+        setFinanceModuleEnabled(status.enabled);
+      }
+    });
+    return () => controller.abort();
+  }, []);
   const tree = useMemo(
     () =>
       getDesktopSidebarNavigationTree(user.system_role, {
         limitedAccess: limited,
+        financeModuleEnabled,
       }),
-    [limited, user.system_role],
+    [financeModuleEnabled, limited, user.system_role],
   );
   const [forceOpenIds, setForceOpenIds] = useState<string[]>([]);
   const [navBadges, setNavBadges] = useState<Record<string, number>>({});

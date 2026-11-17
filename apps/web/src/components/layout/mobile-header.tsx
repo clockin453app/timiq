@@ -8,6 +8,7 @@ import { TimIQBrandLockup } from "../brand";
 import { getMobileDrawerNavigationTree } from "../../config/navigation";
 import { logout, LogoutConfirmDialog, useCurrentUser } from "../../features/auth";
 import { userHasLimitedAccess } from "../../features/auth/limited-access";
+import { fetchFinanceModuleStatus } from "../../features/finance/finance-module";
 import { clearAllTimiqOfflineData } from "../../features/offline/db";
 import { useI18n, useT } from "../../lib/i18n";
 
@@ -61,10 +62,24 @@ export function MobileHeader({ activeHref = "/dashboard" }: MobileHeaderProps) {
   const [forceOpenIds, setForceOpenIds] = useState<string[]>([]);
 
   const limited = userHasLimitedAccess(user);
+  const [financeModuleEnabled, setFinanceModuleEnabled] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchFinanceModuleStatus(controller.signal).then((status) => {
+      if (!controller.signal.aborted) {
+        setFinanceModuleEnabled(status.enabled);
+      }
+    });
+    return () => controller.abort();
+  }, []);
 
   const drawerTree = useMemo(
-    () => getMobileDrawerNavigationTree(user.system_role, { limitedAccess: limited }),
-    [user.system_role, limited],
+    () =>
+      getMobileDrawerNavigationTree(user.system_role, {
+        limitedAccess: limited,
+        financeModuleEnabled,
+      }),
+    [financeModuleEnabled, user.system_role, limited],
   );
 
   const accountSectionId = useMemo(

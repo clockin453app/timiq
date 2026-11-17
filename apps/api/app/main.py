@@ -34,6 +34,8 @@ from app.modules.settings.router import router as settings_router
 from app.modules.smart_forms.router import router as smart_forms_router
 from app.modules.toolbox_talks.router import router as toolbox_talks_router
 from app.modules.rams.router import router as rams_router
+from app.modules.finance.commercial_router import router as finance_commercial_router
+from app.modules.finance.router import router as finance_router
 
 
 def _api_docs_enabled() -> bool:
@@ -99,3 +101,5 @@ app.include_router(settings_router)
 app.include_router(smart_forms_router)
 app.include_router(toolbox_talks_router)
 app.include_router(rams_router)
+app.include_router(finance_router)
+app.include_router(finance_commercial_router)

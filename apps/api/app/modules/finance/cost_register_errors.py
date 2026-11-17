@@ -1,0 +1,24 @@
+"""Stable cost-register errors. Messages are safe to show to a signed-in user."""
+
+from __future__ import annotations
+
+
+class CostRegisterError(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
+DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"
+IMMUTABLE_DOCUMENT = "IMMUTABLE_DOCUMENT"
+REQUIRED_FIELD = "REQUIRED_FIELD"
+INVALID_AMOUNT = "INVALID_AMOUNT"
+ALLOCATION_MISMATCH = "ALLOCATION_MISMATCH"
+UNPOSTABLE_DOCUMENT_TYPE = "UNPOSTABLE_DOCUMENT_TYPE"
+REFERENCE_NOT_IN_COMPANY = "REFERENCE_NOT_IN_COMPANY"
+DUPLICATE_REFERENCE = "DUPLICATE_REFERENCE"
+DUPLICATE_REVERSAL = "DUPLICATE_REVERSAL"
+CREDIT_REJECTED = "CREDIT_REJECTED"
+REVERSAL_REJECTED = "REVERSAL_REJECTED"
+DATABASE_REJECTED = "DATABASE_REJECTED"
