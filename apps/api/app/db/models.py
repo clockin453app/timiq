@@ -17,6 +17,24 @@ from app.modules.budgets.models import (
 )
 from app.modules.companies.models import Company, CompanyTimePolicy
 from app.modules.employee_profiles.models import EmployeeProfile
+from app.modules.finance.models import (
+    FinanceAuditEvent,
+    FinanceBudgetLine,
+    FinanceBudgetVersion,
+    FinanceCostAllocation,
+    FinanceCostCode,
+    FinanceCostDocument,
+    FinanceCostLine,
+    FinanceCounterparty,
+    FinanceDuplicateException,
+    FinanceProject,
+)
+from app.modules.finance.supplier_payment_models import (
+    FinanceSupplierPayment,
+    FinanceSupplierPaymentAllocation,
+    FinanceSupplierPaymentAllocationReversal,
+    FinanceSupplierPaymentReversal,
+)
 from app.modules.messaging.models import (
     Announcement,
     AnnouncementRead,
@@ -121,4 +139,18 @@ __all__ = [
     "WorkProgressEntry",
     "WorkProgressAttachment",
     "TimesheetExtraHours",
+    "FinanceProject",
+    "FinanceCostCode",
+    "FinanceCounterparty",
+    "FinanceBudgetVersion",
+    "FinanceBudgetLine",
+    "FinanceCostDocument",
+    "FinanceCostLine",
+    "FinanceCostAllocation",
+    "FinanceAuditEvent",
+    "FinanceDuplicateException",
+    "FinanceSupplierPayment",
+    "FinanceSupplierPaymentAllocation",
+    "FinanceSupplierPaymentReversal",
+    "FinanceSupplierPaymentAllocationReversal",
 ]

@@ -423,6 +423,24 @@ const MANAGEMENT_NAV_TREE: NavigationNode[] = [
     folder("mgmt-payroll-finance", "Finance", "nav.folder.finance", MGMT, [
       itemToLeaf(BUDGET_CALCULATOR, "budgets"),
       itemToLeaf(ACCOUNTING_LINK, "accounting"),
+      itemToLeaf(
+        {
+          label: "Company Finance",
+          labelKey: "nav.company_finance",
+          href: "/finance",
+          allowedRoles: MGMT,
+        },
+        "company-finance",
+      ),
+      itemToLeaf(
+        {
+          label: "Finance audit trail",
+          labelKey: "nav.finance_audit_trail",
+          href: "/finance/audit",
+          allowedRoles: MGMT,
+        },
+        "finance-audit-trail",
+      ),
     ]),
   ]),
   folder("mgmt-work", "Work & Safety", "nav.group.mgmt_work", MGMT, [
@@ -747,18 +765,50 @@ export function getManagementNavigationGroups(role: SystemRole): NavigationGroup
   );
 }
 
+const FINANCE_MODULE_NAV_IDS = new Set(["company-finance", "finance-audit-trail"]);
+
+/** Drop Company Finance leaves when the Finance module flag is off. */
+export function filterFinanceModuleNavigation(
+  nodes: NavigationNode[],
+  financeModuleEnabled: boolean,
+): NavigationNode[] {
+  if (financeModuleEnabled) {
+    return nodes;
+  }
+  const out: NavigationNode[] = [];
+  for (const node of nodes) {
+    if (FINANCE_MODULE_NAV_IDS.has(node.id)) {
+      continue;
+    }
+    if (node.children && node.children.length > 0) {
+      const children = filterFinanceModuleNavigation(node.children, false);
+      if (children.length === 0) {
+        continue;
+      }
+      out.push({ ...node, children, href: undefined });
+      continue;
+    }
+    if (node.href) {
+      out.push({ ...node, children: undefined });
+    }
+  }
+  return out;
+}
+
 /** Recursive desktop / mobile sidebar tree for the current role. */
 export function getDesktopSidebarNavigationTree(
   role: SystemRole,
-  options?: { limitedAccess?: boolean },
+  options?: { limitedAccess?: boolean; financeModuleEnabled?: boolean },
 ): NavigationNode[] {
+  let tree: NavigationNode[];
   if (options?.limitedAccess && role === "employee") {
-    return filterNavigationTree(LIMITED_ACCESS_NAV_TREE, role);
+    tree = filterNavigationTree(LIMITED_ACCESS_NAV_TREE, role);
+  } else if (role === "admin" || role === "administrator") {
+    tree = filterNavigationTree(MANAGEMENT_NAV_TREE, role);
+  } else {
+    tree = filterNavigationTree(EMPLOYEE_NAV_TREE, role);
   }
-  if (role === "admin" || role === "administrator") {
-    return filterNavigationTree(MANAGEMENT_NAV_TREE, role);
-  }
-  return filterNavigationTree(EMPLOYEE_NAV_TREE, role);
+  return filterFinanceModuleNavigation(tree, options?.financeModuleEnabled !== false);
 }
 
 /**
@@ -839,7 +889,7 @@ export type MobileDrawerNavigation = {
 
 export function getMobileDrawerNavigationTree(
   role: SystemRole,
-  options?: { limitedAccess?: boolean },
+  options?: { limitedAccess?: boolean; financeModuleEnabled?: boolean },
 ): NavigationNode[] {
   return getDesktopSidebarNavigationTree(role, options);
 }

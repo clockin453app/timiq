@@ -1,0 +1,25 @@
+"""Stable supplier-payment errors. Messages are safe to show to a signed-in user."""
+
+from __future__ import annotations
+
+
+class SupplierPaymentError(Exception):
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
+PAYMENT_NOT_FOUND = "PAYMENT_NOT_FOUND"
+ALLOCATION_NOT_FOUND = "ALLOCATION_NOT_FOUND"
+DOCUMENT_NOT_FOUND = "DOCUMENT_NOT_FOUND"
+IMMUTABLE_PAYMENT = "IMMUTABLE_PAYMENT"
+REQUIRED_FIELD = "REQUIRED_FIELD"
+INVALID_AMOUNT = "INVALID_AMOUNT"
+INVALID_METHOD = "INVALID_METHOD"
+REFERENCE_NOT_IN_COMPANY = "REFERENCE_NOT_IN_COMPANY"
+ALLOCATION_REJECTED = "ALLOCATION_REJECTED"
+REVERSAL_REJECTED = "REVERSAL_REJECTED"
+DUPLICATE_REFERENCE = "DUPLICATE_REFERENCE"
+DUPLICATE_REVERSAL = "DUPLICATE_REVERSAL"
+DATABASE_REJECTED = "DATABASE_REJECTED"
