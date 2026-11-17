@@ -16,7 +16,12 @@ from app.core.company_scope import CompanyScopeError, resolve_operational_compan
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_current_user
 from app.modules.auth.models import User
-from app.modules.finance.access import PREVIEW_READONLY, assert_finance_access, finance_preview_readonly
+from app.modules.finance.access import (
+    PREVIEW_READONLY,
+    assert_finance_access,
+    assert_finance_company_access,
+    finance_preview_readonly,
+)
 from app.modules.finance.commercial_service import (
     allocate_receipt,
     approve_budget,
@@ -235,9 +240,11 @@ class HmrcBody(BaseModel):
 def _company(db_session: Session, actor: User, company_id: uuid.UUID | None) -> uuid.UUID:
     assert_finance_access(actor)
     try:
-        return resolve_operational_company_id(db_session, actor, company_id)
+        scoped = resolve_operational_company_id(db_session, actor, company_id)
     except CompanyScopeError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    assert_finance_company_access(scoped)
+    return scoped
 
 
 def _run(db_session: Session, action):
