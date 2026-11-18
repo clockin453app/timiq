@@ -27,3 +27,7 @@ coverage/
 .tmp-payroll-a4-samples/
 .tmp-payroll-compact-samples/
 .tmp-adaptive-samples/
+
+apps/api/_pg18_env.json
+apps/api/_b8_schema_dump.sql
+apps/api/_b8.py

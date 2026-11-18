@@ -364,27 +364,20 @@ def _persist_vat_status(db_session: Session, document: FinanceCostDocument, line
         return
     db_session.flush()
     if status in UNCLASSIFIED_VAT:
+        # Status is metadata only. Never rewrite net/tax/recoverable/non-recoverable/
+        # eligible amounts here — that would invent recoverability and can violate
+        # non_recoverable = tax - recoverable when VAT is present but unclassified.
+        # Posting rules still block unclassified VAT.
         db_session.execute(
             text(
-                "UPDATE finance_cost_lines SET vat_recoverability_status = :status, "
-                "recoverable_amount = 0, non_recoverable_amount = 0, eligible_amount = net_amount "
+                "UPDATE finance_cost_lines SET vat_recoverability_status = :status "
                 "WHERE document_id = :document_id"
             ),
             {"status": status, "document_id": document.id},
         )
         db_session.execute(
             text(
-                "UPDATE finance_cost_allocations AS allocation SET amount_non_recoverable = 0, "
-                "amount_eligible = allocation.amount_net "
-                "FROM finance_cost_lines AS line "
-                "WHERE allocation.line_id = line.id AND line.document_id = :document_id"
-            ),
-            {"document_id": document.id},
-        )
-        db_session.execute(
-            text(
-                "UPDATE finance_cost_documents SET vat_recoverability_status = :status, "
-                "recoverable_amount = 0, non_recoverable_amount = 0, eligible_amount = net_amount "
+                "UPDATE finance_cost_documents SET vat_recoverability_status = :status "
                 "WHERE id = :document_id"
             ),
             {"status": status, "document_id": document.id},
