@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
@@ -19,6 +20,8 @@ from app.modules.finance.access import (
     SCOPED_WRITE_OPERATIONS,
     assert_finance_access,
     assert_finance_company_access,
+    assert_finance_write,
+    assert_projects_write_allowed,
     effective_finance_readonly,
     finance_module_enabled,
     finance_preview_readonly,
@@ -51,11 +54,27 @@ from app.modules.finance.supplier_payment_service import (
     post_supplier_payment,
 )
 
+# Soft-path prefixes: may continue under FINANCE_PREVIEW_MODE=readonly only after
+# assert_finance_write / assert_projects_write_allowed succeeds in the endpoint.
+_SCOPED_WRITE_PATH_PREFIXES = (
+    "/api/finance/cis/import",
+    "/api/finance/paye/import",
+    "/api/finance/worker-payments",
+    "/api/finance/customer-invoices",
+    "/api/finance/cost-documents",
+    "/api/finance/supplier-payments",
+)
+
+
 def reject_preview_mutation(request: Request) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
-    if finance_preview_readonly():
-        raise HTTPException(status_code=403, detail=PREVIEW_READONLY)
+    if not finance_preview_readonly():
+        return
+    path = request.url.path.rstrip("/") or "/"
+    if any(path == prefix or path.startswith(f"{prefix}/") for prefix in _SCOPED_WRITE_PATH_PREFIXES):
+        return
+    raise HTTPException(status_code=403, detail=PREVIEW_READONLY)
 
 
 router = APIRouter(prefix="/api/finance", tags=["finance"], dependencies=[Depends(reject_preview_mutation)])
@@ -203,6 +222,13 @@ def finance_cis_import(
     actor: User = Depends(get_current_user),
 ) -> dict[str, object]:
     scoped = _company(db_session, actor, company_id)
+    assert_finance_write(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_id=None,
+        operation="cis_import",
+    )
     try:
         result = import_cis_snapshot(
             db_session,
@@ -227,6 +253,13 @@ def finance_paye_import(
     actor: User = Depends(get_current_user),
 ) -> dict[str, str]:
     scoped = _company(db_session, actor, company_id)
+    assert_finance_write(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_id=None,
+        operation="paye_import",
+    )
     try:
         snapshot_id = import_paye_snapshot(
             db_session,
@@ -250,6 +283,13 @@ def finance_worker_payment(
     actor: User = Depends(get_current_user),
 ) -> dict[str, str]:
     scoped = _company(db_session, actor, company_id)
+    assert_finance_write(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_id=None,
+        operation="worker_payment_create",
+    )
     try:
         payment_id = create_worker_payment(
             db_session,
@@ -278,6 +318,13 @@ def finance_worker_allocations(
     actor: User = Depends(get_current_user),
 ) -> dict[str, str]:
     scoped = _company(db_session, actor, company_id)
+    assert_finance_write(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_id=None,
+        operation="worker_payment_allocate",
+    )
     try:
         allocate_worker_payment(
             db_session,
@@ -301,6 +348,13 @@ def finance_customer_invoice(
     actor: User = Depends(get_current_user),
 ) -> dict[str, str]:
     scoped = _company(db_session, actor, company_id)
+    assert_finance_write(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_id=body.project_id,
+        operation="customer_invoice_create",
+    )
     try:
         invoice_id = create_customer_invoice(
             db_session,
@@ -331,6 +385,19 @@ def finance_cost_draft(
     actor: User = Depends(get_current_user),
 ):
     scoped = _company(db_session, actor, company_id)
+    project_ids = {
+        allocation.project_id
+        for line in body.lines
+        for allocation in line.allocations
+        if allocation.project_id is not None
+    }
+    assert_projects_write_allowed(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_ids=project_ids,
+        operation="cost_document_draft",
+    )
     try:
         view = create_cost_draft(db_session, company_id=scoped, actor_user_id=actor.id, payload=body)
         db_session.commit()
@@ -348,6 +415,28 @@ def finance_cost_post(
     actor: User = Depends(get_current_user),
 ):
     scoped = _company(db_session, actor, company_id)
+    project_ids = {
+        uuid.UUID(str(row[0]))
+        for row in db_session.execute(
+            text(
+                "SELECT DISTINCT allocation.project_id "
+                "FROM finance_cost_allocations AS allocation "
+                "JOIN finance_cost_lines AS line "
+                "  ON line.id = allocation.line_id AND line.company_id = allocation.company_id "
+                "WHERE line.document_id = :document_id "
+                "  AND allocation.company_id = :company_id "
+                "  AND allocation.project_id IS NOT NULL"
+            ),
+            {"document_id": document_id, "company_id": scoped},
+        ).all()
+    }
+    assert_projects_write_allowed(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_ids=project_ids,
+        operation="cost_document_post",
+    )
     try:
         result = post_cost_document(db_session, company_id=scoped, actor_user_id=actor.id, document_id=document_id)
         db_session.commit()
@@ -379,6 +468,13 @@ def finance_supplier_payment(
     actor: User = Depends(get_current_user),
 ):
     scoped = _company(db_session, actor, company_id)
+    assert_finance_write(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_id=None,
+        operation="supplier_payment_create",
+    )
     try:
         draft = create_supplier_payment_draft(db_session, company_id=scoped, actor_user_id=actor.id, payload=body)
         posted = post_supplier_payment(db_session, company_id=scoped, actor_user_id=actor.id, payment_id=draft.id)
@@ -398,6 +494,13 @@ def finance_supplier_allocations(
     actor: User = Depends(get_current_user),
 ):
     scoped = _company(db_session, actor, company_id)
+    assert_finance_write(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_id=None,
+        operation="supplier_payment_allocate",
+    )
     try:
         view = allocate_supplier_payment(
             db_session,

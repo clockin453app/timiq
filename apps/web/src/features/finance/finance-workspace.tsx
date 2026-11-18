@@ -1394,8 +1394,8 @@ function Expenses({ books, companyId, names, projectId, query, onQuery, filter, 
         Search
         <input className="search" aria-label="Search expenses" placeholder="Search supplier or reference" value={query} onChange={(event) => onQuery(event.target.value)} />
       </label>
-      <Action className="btn" onClick={onExpense}>+ Other expense</Action>
-      <Action className="btn mainbtn" onClick={onInvoice}>+ Supplier invoice</Action>
+      <Action className="btn" allowWhenScoped onClick={onExpense}>+ Other expense</Action>
+      <Action className="btn mainbtn" allowWhenScoped onClick={onInvoice}>+ Supplier invoice</Action>
     </div>
   );
 
@@ -1501,7 +1501,7 @@ function Payments({ books, companyId, names, view, onView, onExplain, onPay, onW
   return (
     <>
       <Head title={view === "Supplier payments" ? "Supplier payments" : "Payroll Finance"} text={view === "Supplier payments" ? "Bank settlements against existing obligations. Payments do not create project cost again." : "CIS / PAYE bank settlements from approved sources only. Finance does not invent payroll figures."}>
-        <Action className="btn mainbtn" onClick={view === "Supplier payments" ? onPay : onWorker}>+ Record bank payment</Action>
+        <Action className="btn mainbtn" allowWhenScoped onClick={view === "Supplier payments" ? onPay : onWorker}>+ Record payment record</Action>
       </Head>
       <div className="pills">
         {paymentRegisterViewOptions().map((item) => (
@@ -1696,7 +1696,7 @@ function Customers({ books, companyId, names, projectsById, projectId, onExplain
   return (
     <>
       <Head title="Customer invoices" text="Amounts billed to the customer. Missing references are not invented.">
-        <Action className="btn mainbtn" onClick={onNew}>+ New customer invoice</Action>
+        <Action className="btn mainbtn" allowWhenScoped onClick={onNew}>+ New customer invoice</Action>
       </Head>
       <Stats items={[["Posted gross", formatGbp(gross)], ["Rows loaded", String(visible.length)], ["Missing ref / due", String(missing), missing ? "amber" : "green"], ["Filter", demoMode ? "Local DEMO books" : (invoiceServer.error ? "Query failed" : (invoiceServer.note || "Company register")), invoiceServer.error ? "amber" : "blue"]]} />
       {demoMode ? (
@@ -1775,7 +1775,7 @@ function Receipts({ books, companyId, names, onExplain, onNew, demoMode = false 
   return (
     <>
       <Head title="Customer receipts" text="Cash received only. A receipt is not extra turnover.">
-        <Action className="btn mainbtn" onClick={onNew}>+ Record receipt</Action>
+        <Action className="btn mainbtn" allowWhenScoped onClick={onNew}>+ Record receipt</Action>
       </Head>
       <Stats items={[["Receipt rows", String(books.receipts.length)], ["Unallocated", receiptUnallocated(books.receipts), "amber"], ["Drafts", String(books.receipts.filter((row) => String(row.status) !== "posted").length)], ["Allocation", "Posted links", "blue"]]} />
       <RegisterSearch enabled={!demoMode} companyId={companyId} register="receipts" dateField="receipt" dateFields={[["receipt", "Actual bank receipt date"]]} parties={books.parties.filter((item) => item.counterparty_type === "customer").map((item) => [String(item.id), String(item.name)])} partyLabel="Customer" />
@@ -1873,7 +1873,7 @@ function CisTax({ books, onPreview, onImport }: { books: Books; onPreview?: () =
       <Head title="CIS tax / HMRC" text="Approved snapshots only. Statutory rates are not guessed." />
       <div className="bar">
         {onPreview ? <button className="btn" type="button" onClick={onPreview}>View fictional worker preview</button> : null}
-        <Action className="btn mainbtn" disabled={books.cisSources.length === 0} onClick={onImport}>Import approved snapshot</Action>
+        <Action className="btn mainbtn" allowWhenScoped disabled={books.cisSources.length === 0} onClick={onImport}>Import approved snapshot</Action>
       </div>
       <FinanceDataGrid
         columns={[
@@ -2074,7 +2074,7 @@ function Loans({ books, companyId, names, view, onView, onExplain, onNew, demoMo
   return (
     <>
       <Head title="Loans & advances" text="Loan principal is a liability, not project income or trading revenue.">
-        <Action className="btn mainbtn" onClick={onNew}>+ Loan movement</Action>
+        <Action className="btn mainbtn" allowWhenScoped onClick={onNew}>+ Loan movement</Action>
       </Head>
       <div className="pills">{["Movements", "Opening balances", "Supplier position", "Audit"].map((item) => <button key={item} className={`pill${view === item ? " active" : ""}`} type="button" onClick={() => onView(item)}>{item}</button>)}</div>
       <Stats items={[["Loan draw", formatGbp(draw)], ["Principal repaid", formatGbp(repaid), "green"], ["Principal remaining", formatGbp(draw - repaid), "amber"], ["Opening remaining", money(books.position?.opening_remaining), "violet"]]} />
@@ -2348,6 +2348,8 @@ type ExtraAllocation = { projectId: string; codeId: string; net: string };
 
 function CostForm({ kind, books, send, onClose }: { kind: string; books: Books; send: EditorProps["send"]; onClose: () => void }) {
   const previewLocked = useContext(ReadOnlyPreview);
+  const scoped = useContext(ScopedWrite);
+  const formLocked = previewLocked && !scoped;
   const expense = kind === "expense";
   const [party, setParty] = useState("");
   const [project, setProject] = useState("");
@@ -2566,7 +2568,7 @@ function CostForm({ kind, books, send, onClose }: { kind: string; books: Books; 
       <p className="sub">{names.get(party) || "Supplier not selected"} · {overhead ? "Company overhead" : String(projectName || "Project not selected")}{multiProject ? ` + ${extraNames || "extra projects"}` : ""} · {codeName ? `${codeName.code} ${codeName.name}` : "Cost code not selected"} · {reference || "Reference missing"} · {date || "Date missing"}</p>
       <p className="sub">Supplier payable after posting would be the gross above, until a separate bank payment is allocated. Eligible project cost is the allocated net under the current VAT rule, not the gross liability. Input VAT control would record the VAT amount. That is not a verified reclaim.</p>
       <Footer draft draftDisabled={projectMissing || splitInvalid || Boolean(remainingError) || (!unclassified && (Boolean(blocker) || !treatment))} />
-      <button className="btn mainbtn" type="button" disabled={!draftId || projectMissing || Boolean(blocker) || Boolean(remainingError) || postedDuplicate || previewLocked} onClick={async () => { const saved = await send(`/api/finance/cost-documents/${draftId}/post`, {}, true); if (saved) onClose(); }}>Confirm post</button>
+      <button className="btn mainbtn" type="button" disabled={!draftId || projectMissing || Boolean(blocker) || Boolean(remainingError) || postedDuplicate || formLocked} onClick={async () => { const saved = await send(`/api/finance/cost-documents/${draftId}/post`, {}, true); if (saved) onClose(); }}>Confirm post</button>
       {!draftId ? <p className="sub">Save the draft before posting. Enter does not post. Changing a field clears the saved draft link.</p> : null}
     </form>
   );
@@ -2828,7 +2830,9 @@ function Select({ options, value, onChange, optional = false }: { options: [stri
 
 function Footer({ draft, post, draftDisabled = false, postDisabled = false }: { draft?: boolean; post?: string; draftDisabled?: boolean; postDisabled?: boolean }) {
   const previewLocked = useContext(ReadOnlyPreview);
-  return <div className="dfoot" style={{ padding: 0, border: 0 }}>{draft ? <button className="btn" type="submit" disabled={draftDisabled || previewLocked}>Save draft</button> : null}{post ? <button className="btn mainbtn" type="submit" disabled={postDisabled || previewLocked}>{post}</button> : null}<span className="sub">{previewLocked ? "Read-only preview. Nothing can be saved or posted." : "Escape closes this panel. Close does not post."}</span></div>;
+  const scoped = useContext(ScopedWrite);
+  const locked = previewLocked && !scoped;
+  return <div className="dfoot" style={{ padding: 0, border: 0 }}>{draft ? <button className="btn" type="submit" disabled={draftDisabled || locked}>Save draft</button> : null}{post ? <button className="btn mainbtn" type="submit" disabled={postDisabled || locked}>{post}</button> : null}<span className="sub">{locked ? "Read-only preview. Nothing can be saved or posted." : "Escape closes this panel. Close does not post."}</span></div>;
 }
 
 type EditorProps = { send: (path: string, body: unknown, posting: boolean, quiet?: boolean) => Promise<{ id?: string } | null> };

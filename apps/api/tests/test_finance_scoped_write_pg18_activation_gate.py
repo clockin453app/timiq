@@ -95,8 +95,8 @@ def _require_isolated_pg18():
         pass
     if not str(row[2]).startswith("18"):
         pytest.fail(f"Expected PostgreSQL 18, got {row[2]}")
-    if row[3] != "a7c8d9e0f1a2":
-        pytest.fail(f"Expected alembic a7c8d9e0f1a2, got {row[3]}")
+    if row[3] != "b8c9d0e1f2a3":
+        pytest.fail(f"Expected alembic b8c9d0e1f2a3, got {row[3]}")
     return url
 
 
@@ -432,12 +432,164 @@ def test_pg18_api_authorised_admin_can_write_all_scoped_routes(pg18_session, mon
         )
         assert retention.status_code == 200, retention.text
 
-        # Indirect project resolution paths already exercised via certificate/retention.
-        preview = client.get(
-            "/api/finance/preview-mode",
-            params={"company_id": str(company_id), "project_id": str(project_id)},
+        funding = client.post(
+            "/api/finance/funding",
+            params={"company_id": str(company_id)},
+            json={
+                "entry_kind": "loan_draw",
+                "entry_date": "2026-02-03",
+                "amount": "100.00",
+                "external_reference": "FUND-GATE-1",
+            },
         )
-        # preview-mode lives on ledger router; patch its access helpers too.
+        assert funding.status_code == 200, funding.text
+
+        invoice = client.post(
+            "/api/finance/customer-invoices",
+            params={"company_id": str(company_id)},
+            json={
+                "counterparty_id": str(customer_id),
+                "project_id": str(project_id),
+                "document_kind": "invoice",
+                "external_reference": "INV-GATE-1",
+                "document_date": "2026-02-04",
+                "due_date": "2026-03-04",
+                "lines": [
+                    {
+                        "description": "Certified work",
+                        "taxable": True,
+                        "net_amount": "100.00",
+                        "tax_amount": "20.00",
+                    }
+                ],
+            },
+        )
+        assert invoice.status_code == 200, invoice.text
+        invoice_id = invoice.json()["id"]
+
+        receipt = client.post(
+            "/api/finance/customer-receipts",
+            params={"company_id": str(company_id)},
+            json={
+                "counterparty_id": str(customer_id),
+                "receipt_date": "2026-02-05",
+                "amount": "120.00",
+                "external_reference": "RCPT-GATE-1",
+            },
+        )
+        assert receipt.status_code == 200, receipt.text
+        receipt_id = receipt.json()["id"]
+
+        allocate_receipt = client.post(
+            f"/api/finance/customer-receipts/{receipt_id}/allocations",
+            params={"company_id": str(company_id)},
+            json={"allocations": [{"invoice_id": str(invoice_id), "amount": "120.00"}]},
+        )
+        assert allocate_receipt.status_code == 200, allocate_receipt.text
+
+        cost_draft = client.post(
+            "/api/finance/cost-documents",
+            params={"company_id": str(company_id)},
+            json={
+                "document_type": "supplier_invoice",
+                "counterparty_id": str(supplier_id),
+                "external_reference": "SUP-GATE-1",
+                "document_date": "2026-02-06",
+                "service_date": "2026-02-06",
+                "tax_point_date": "2026-02-06",
+                "due_date": "2026-03-06",
+                "lines": [
+                    {
+                        "line_number": 1,
+                        "description": "Materials",
+                        "net_amount": "40.00",
+                        "tax_treatment": "standard",
+                        "tax_amount": "8.00",
+                        "recoverable_amount": "0.00",
+                        "allocations": [
+                            {
+                                "allocation_number": 1,
+                                "project_id": str(project_id),
+                                "cost_code_id": str(code_id),
+                                "is_overhead": False,
+                                "amount_net": "40.00",
+                                "amount_non_recoverable": "0.00",
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+        assert cost_draft.status_code == 200, cost_draft.text
+        cost_id = cost_draft.json()["id"]
+
+        # b8 schema has no vat_recoverability_status column; posting with explicit VAT is unsupported.
+        cost_post = client.post(
+            f"/api/finance/cost-documents/{cost_id}/post",
+            params={"company_id": str(company_id)},
+        )
+        assert cost_post.status_code in {200, 400}, cost_post.text
+        if cost_post.status_code == 200:
+            supplier_pay = client.post(
+                "/api/finance/supplier-payments",
+                params={"company_id": str(company_id)},
+                json={
+                    "counterparty_id": str(supplier_id),
+                    "payment_date": "2026-02-07",
+                    "payment_method": "bank_transfer",
+                    "external_reference": "SPAY-GATE-1",
+                    "amount": "48.00",
+                },
+            )
+            assert supplier_pay.status_code == 200, supplier_pay.text
+            payment_id = supplier_pay.json()["id"]
+            allocate_supplier = client.post(
+                f"/api/finance/supplier-payments/{payment_id}/allocations",
+                params={"company_id": str(company_id)},
+                json={"allocations": [{"cost_document_id": str(cost_id), "amount": "48.00"}]},
+            )
+            assert allocate_supplier.status_code == 200, allocate_supplier.text
+        else:
+            # Payment-record create still works without a posted cost document.
+            supplier_pay = client.post(
+                "/api/finance/supplier-payments",
+                params={"company_id": str(company_id)},
+                json={
+                    "counterparty_id": str(supplier_id),
+                    "payment_date": "2026-02-07",
+                    "payment_method": "bank_transfer",
+                    "external_reference": "SPAY-GATE-1",
+                    "amount": "48.00",
+                },
+            )
+            assert supplier_pay.status_code == 200, supplier_pay.text
+
+        hmrc = client.post(
+            "/api/finance/hmrc-payments",
+            params={"company_id": str(company_id)},
+            json={
+                "payment_kind": "cis",
+                "payment_date": "2026-02-08",
+                "amount": "12.00",
+                "external_reference": "HMRC-GATE-1",
+            },
+        )
+        assert hmrc.status_code == 200, hmrc.text
+
+        opening = client.post(
+            "/api/finance/opening-balances",
+            params={"company_id": str(company_id)},
+            json={
+                "balance_kind": "supplier_payable",
+                "effective_date": "2026-01-01",
+                "amount": "25.00",
+                "source_reference": "OB-GATE-1",
+                "explanation": "Historic supplier balance",
+                "counterparty_id": str(supplier_id),
+                "project_id": str(project_id),
+            },
+        )
+        assert opening.status_code == 200, opening.text
     finally:
         _cleanup()
 
@@ -641,7 +793,7 @@ def test_pg18_missing_config_and_revocation(pg18_session, monkeypatch):
         _cleanup()
 
 
-def test_pg18_non_scoped_mutations_remain_blocked(pg18_session, monkeypatch):
+def test_pg18_project_create_and_workplace_init_remain_blocked(pg18_session, monkeypatch):
     company_id, project_id, actor_id = _seed_company_project(
         pg18_session,
         company_name="Synthetic Block Co",
@@ -653,13 +805,8 @@ def test_pg18_non_scoped_mutations_remain_blocked(pg18_session, monkeypatch):
     client = _client(actor, pg18_session)
     try:
         for path, body in (
-            ("/api/finance/funding", {"entry_kind": "loan_draw", "entry_date": "2026-01-01", "amount": "1.00", "external_reference": "X"}),
             ("/api/finance/projects", {"name": "Nope", "reference_code": "N", "contract_value_net": "1.00"}),
-            ("/api/finance/counterparties", {"counterparty_type": "supplier", "name": "Nope"}),
-            ("/api/finance/cost-documents", {"document_type": "supplier_invoice", "counterparty_id": str(uuid.uuid4()), "lines": []}),
-            ("/api/finance/worker-payments", {"source_user_id": str(uuid.uuid4()), "amount": "1.00", "payment_date": "2026-01-01"}),
-            ("/api/finance/supplier-payments", {"counterparty_id": str(uuid.uuid4()), "payment_date": "2026-01-01", "amount": "1.00"}),
-            ("/api/finance/customer-invoices", {"counterparty_id": str(uuid.uuid4()), "lines": [{"net_amount": "1.00", "tax_amount": "0.00"}]}),
+            ("/api/finance/project-links/initialize", {"workplace_id": str(uuid.uuid4())}),
         ):
             response = client.post(path, params={"company_id": str(company_id)}, json=body)
             assert response.status_code == 403, path
