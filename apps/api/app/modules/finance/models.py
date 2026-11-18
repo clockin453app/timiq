@@ -63,6 +63,13 @@ class FinanceProject(Base):
             unique=True,
             postgresql_where=text("reference_code IS NOT NULL"),
         ),
+        Index(
+            "uq_finance_projects_company_workplace",
+            "company_id",
+            "workplace_id",
+            unique=True,
+            postgresql_where=text("workplace_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -78,6 +85,12 @@ class FinanceProject(Base):
         String(16), nullable=False, default="draft", server_default="draft"
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    workplace_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workplaces.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
     created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, server_default=text("now()")

@@ -16,6 +16,7 @@ import { DEMO_ALLOCATION_LINES } from "./finance-demo-fixture";
 import { FinanceSourceDrawer } from "./finance-source-drawer";
 import { CisBankPayments, EMPTY_QUERY, FinanceQueryBar, RegisterSearch, exportHref, useFinanceQuery, type FinanceQuery } from "./finance-query";
 import { FICTIONAL_WORKER_PREVIEW, isFinanceFictionalPreviewAllowed, mayRenderFictionalWorkerPreview, paymentRegisterViewOptions } from "./finance-preview";
+import { DEMO_PROJECT_LINKS, type ProjectLinksPayload } from "./finance-workplace-links";
 import type { SourceBreakdownPayload } from "./finance-reconcile";
 import {
   WORKSHEET_NAV,
@@ -125,6 +126,10 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
   const [projectId, setProjectId] = useState(demo?.initialProjectId ?? "");
   const [sheet, setSheet] = useState<Worksheet>(demo?.initialSheet ?? "PROJECT CONTROL");
   const [books, setBooks] = useState<Books>(demo?.books ?? EMPTY);
+  const [projectLinks, setProjectLinks] = useState<ProjectLinksPayload | null>(null);
+  const [linksLoading, setLinksLoading] = useState(false);
+  const [linksError, setLinksError] = useState("");
+  const [linksToken, setLinksToken] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -174,6 +179,39 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
       setCompanyId(next);
     }).catch(() => setError("Companies could not be loaded."));
   }, [demoMode]);
+
+  useEffect(() => {
+    if (demoMode) {
+      setProjectLinks(DEMO_PROJECT_LINKS);
+      setLinksError("");
+      setLinksLoading(false);
+      return;
+    }
+    if (!companyId) return;
+    let cancelled = false;
+    setLinksLoading(true);
+    setLinksError("");
+    void fetch(`${API_URL}${withCompany("/api/finance/project-links", companyId)}`, { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(await readError(response));
+        return response.json() as Promise<ProjectLinksPayload>;
+      })
+      .then((body) => {
+        if (!cancelled) setProjectLinks(body);
+      })
+      .catch((reason: unknown) => {
+        if (!cancelled) {
+          setProjectLinks(null);
+          setLinksError(reason instanceof Error ? reason.message : "Workplace links could not be loaded.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLinksLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, demoMode, linksToken]);
 
   useEffect(() => {
     if (demoMode) {
@@ -245,6 +283,56 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  async function refreshWorkplaceLinks() {
+    setLinksToken((value) => value + 1);
+  }
+
+  async function initializeWorkplaceLink(workplaceId: string) {
+    if (previewReadonly || demoMode) {
+      setMessage("Initialize is blocked while Finance preview is read-only.");
+      return;
+    }
+    const saved = await send("/api/finance/project-links/initialize", { workplace_id: workplaceId }, false);
+    if (saved) {
+      setMessage("Finance project linked from workplace.");
+      await refreshWorkplaceLinks();
+      setReloadToken((value) => value + 1);
+    }
+  }
+
+  async function runWorkplaceDryRun() {
+    if (demoMode) {
+      setExplain({
+        title: "Workplace initialize dry-run",
+        body: `Eligible to create: ${DEMO_PROJECT_LINKS.unlinked_active_workplaces.map((row) => row.name).join(", ") || "none"}. Already linked: ${DEMO_PROJECT_LINKS.workplaces.filter((row) => row.link_status === "LINKED").map((row) => row.name).join(", ") || "none"}. No contract/costs/payroll would be imported.`,
+        warning: "DEMO dry-run only. LIVE initialize remains owner-approved and read-only blocked in pilot.",
+      });
+      return;
+    }
+    if (!companyId) return;
+    try {
+      const response = await fetch(`${API_URL}${withCompany("/api/finance/project-links/dry-run", companyId)}`, { credentials: "include" });
+      if (!response.ok) throw new Error(await readError(response));
+      const body = await response.json() as {
+        would_create?: { name?: string }[];
+        already_linked?: { name?: string }[];
+        skipped_inactive?: { name?: string }[];
+        conflicts?: { message?: string }[];
+      };
+      const createNames = (body.would_create ?? []).map((row) => row.name).filter(Boolean).join(", ") || "none";
+      const linkedNames = (body.already_linked ?? []).map((row) => row.name).filter(Boolean).join(", ") || "none";
+      const skipped = (body.skipped_inactive ?? []).map((row) => row.name).filter(Boolean).join(", ") || "none";
+      const conflicts = (body.conflicts ?? []).map((row) => row.message).filter(Boolean).join(" ") || "none";
+      setExplain({
+        title: "Workplace initialize dry-run",
+        body: `Would create: ${createNames}. Already linked: ${linkedNames}. Skipped inactive: ${skipped}. Conflicts: ${conflicts}. Contract/costs/payroll are not imported.`,
+        warning: "DRY-RUN only. No rows were written.",
+      });
+    } catch (reason: unknown) {
+      setError(reason instanceof Error ? reason.message : "Dry-run failed.");
+    }
+  }
 
   async function send(path: string, body: unknown, posting: boolean, quiet = false) {
     if (previewReadonly) { setError("Read-only preview is active. The change was not sent."); return null; }
@@ -365,9 +453,16 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
                 projects={demo?.books.projects ?? books.projects}
                 cvrs={books.cvrs}
                 demoMode={demoMode}
+                projectLinks={projectLinks}
+                linksLoading={linksLoading}
+                linksError={linksError}
+                previewReadonly={previewReadonly}
                 onSelectProject={setProjectId}
                 onRefresh={() => setReloadToken((value) => value + 1)}
                 onNavigate={navigateFinance}
+                onRefreshLinks={() => { void refreshWorkplaceLinks(); }}
+                onInitializeWorkplace={(workplaceId) => { void initializeWorkplaceLink(workplaceId); }}
+                onDryRunLinks={() => { void runWorkplaceDryRun(); }}
               />
             )
           ) : null}
