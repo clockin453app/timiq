@@ -18,10 +18,13 @@ def test_local_environment_is_not_preview(monkeypatch: pytest.MonkeyPatch) -> No
 def test_readonly_flag_blocks_changes_for_every_role(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FINANCE_PREVIEW_MODE", "readonly")
     assert finance_preview_readonly() is True
+    # Hard-blocked path (not in scoped soft-path allowlist).
     for method in ("POST", "PUT", "PATCH", "DELETE", "TRACE"):
         with pytest.raises(HTTPException) as denied:
-            reject_preview_mutation(SimpleNamespace(method=method, url=SimpleNamespace(path="/api/finance/cost-documents")))  # type: ignore[arg-type]
+            reject_preview_mutation(SimpleNamespace(method=method, url=SimpleNamespace(path="/api/finance/projects")))  # type: ignore[arg-type]
         assert denied.value.status_code == 403
+    # Soft-path ledger routes continue past the guard; assert_finance_write enforces allowlists.
+    reject_preview_mutation(SimpleNamespace(method="POST", url=SimpleNamespace(path="/api/finance/cost-documents")))  # type: ignore[arg-type]
     for method in ("GET", "HEAD", "OPTIONS"):
         reject_preview_mutation(SimpleNamespace(method=method, url=SimpleNamespace(path="/api/finance/dashboard")))  # type: ignore[arg-type]
 
