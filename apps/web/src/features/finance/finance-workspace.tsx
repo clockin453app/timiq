@@ -455,21 +455,59 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
   return (
     <ReadOnlyPreview.Provider value={previewReadonly}>
     <div className="fv3" data-finance-v3="true" data-readonly={previewReadonly ? "true" : "false"}>
-      <header className="top">
-        <div className="brand">TIMIQ <span>Finance</span><small>{demoMode ? (demo?.label ?? "Local DEMO visual QA") : "Commercial control · UK construction"}</small></div>
-        <div className="top-meta">
-          {demoMode ? <span className="chip readonly">DEMO DATA · local only</span> : null}
-          {previewReadonly ? <span className="chip readonly" title="Operational mode — not an error">Read-only pilot</span> : <span className="chip live">Editing enabled</span>}
+      <header className="top" aria-label="TIMIQ Finance">
+        <div className="fv-bar-row">
+          <div className="brand">TIMIQ <span>Finance</span></div>
+          <div className="top-meta">
+            {demoMode ? <span className="chip readonly">DEMO DATA · local only</span> : null}
+            {previewReadonly ? (
+              <span className="chip readonly" title="Operational mode — not an error">READ-ONLY</span>
+            ) : (
+              <span className="chip live">LIVE WRITE</span>
+            )}
+            <div className="fv-bar-filters">
+              <label>Company
+                <select aria-label="Company" value={companyId} onChange={(event) => { setCompanyId(event.target.value); setProjectId(""); }}>
+                  {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+                </select>
+              </label>
+              <label>Project
+                <select aria-label="Project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+                  <option value="">All projects</option>
+                  {(demo?.books.projects ?? books.projects).map((project) => <option key={String(project.id)} value={String(project.id)}>{String(project.name)}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
         </div>
+        <nav className="fv-context-groups" aria-label="Finance sections">
+          {WORKSHEET_NAV.map((group) => {
+            const isActive = activeNavGroup === group.group;
+            const isOpen = openNavGroup === group.group;
+            return (
+              <button
+                key={group.group}
+                type="button"
+                className={`fv-context-group${isActive ? " active" : ""}${isOpen && !isActive ? " open" : ""}`}
+                aria-expanded={isOpen}
+                aria-current={isActive ? "true" : undefined}
+                onClick={() => {
+                  setOpenNavGroup(group.group);
+                  setShowReportsIndex(group.group === "Reports");
+                }}
+              >
+                {group.group}
+              </button>
+            );
+          })}
+        </nav>
       </header>
       <div className="main">
         <nav className="fv-context-nav" aria-label="Finance worksheets">
           <div className="fv-crumb" aria-label="Finance location">
-            <strong>Finance</strong>
-            <span className="sep">/</span>
             <span>{openNavGroup}</span>
             <span className="sep">/</span>
-            <strong>{worksheetHeading(sheet)}</strong>
+            <strong>{showReportsIndex ? "Reports catalogue" : worksheetHeading(sheet)}</strong>
             <span className="sep">·</span>
             <span className={`chip ${projectId ? "scope-project" : "scope-company"}`}>
               {projectId
@@ -477,36 +515,15 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
                 : "Company-wide"}
             </span>
           </div>
-          <div className="fv-context-groups">
-            {WORKSHEET_NAV.map((group) => {
-              const isActive = activeNavGroup === group.group;
-              const isOpen = openNavGroup === group.group;
-              return (
-                <button
-                  key={group.group}
-                  type="button"
-                  className={`fv-context-group${isActive ? " active" : ""}${isOpen && !isActive ? " open" : ""}`}
-                  aria-expanded={isOpen}
-                  aria-current={isActive ? "true" : undefined}
-                  onClick={() => {
-                    setOpenNavGroup(group.group);
-                    setShowReportsIndex(group.group === "Reports");
-                  }}
-                >
-                  {group.group}
-                </button>
-              );
-            })}
-          </div>
           <div className="fv-context-sheets" role="list">
             {openGroupItems.map((item) => (
               <button
                 key={`${item.sheet}-${item.label}`}
                 type="button"
                 role="listitem"
-                className={`fv-sheet-pill${sheet === item.sheet ? " active" : ""}`}
+                className={`fv-sheet-pill${sheet === item.sheet && !showReportsIndex ? " active" : ""}`}
                 title={item.hint}
-                aria-current={sheet === item.sheet ? "page" : undefined}
+                aria-current={sheet === item.sheet && !showReportsIndex ? "page" : undefined}
                 onClick={() => {
                   setSheet(item.sheet);
                   setQuery("");
@@ -533,19 +550,6 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
                 <a className="fv-sheet-pill link" href={demoMode ? "#audit" : "/finance/audit"} role="listitem">Audit trail</a>
               </>
             ) : null}
-            <div className="fv-context-filters">
-              <label>Company
-                <select aria-label="Company" value={companyId} onChange={(event) => { setCompanyId(event.target.value); setProjectId(""); }}>
-                  {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-                </select>
-              </label>
-              <label>Project
-                <select aria-label="Project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-                  <option value="">All projects</option>
-                  {(demo?.books.projects ?? books.projects).map((project) => <option key={String(project.id)} value={String(project.id)}>{String(project.name)}</option>)}
-                </select>
-              </label>
-            </div>
           </div>
         </nav>
         <section className="workarea">
