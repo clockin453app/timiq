@@ -251,8 +251,12 @@ def test_supplier_registry_matches_d2_index_contract() -> None:
         if not str(table.name).startswith("finance_"):
             continue
         if table.name in d2_tables:
+            workplace_link = _migration_path(
+                "b8c9d0e1f2a3_finance_project_workplace_link.py"
+            ).read_text(encoding="utf-8")
+            named = d2_source + "\n" + workplace_link
             for index in table.indexes:
-                assert index.name in d2_source
+                assert index.name in named
         else:
             assert table.name.startswith("finance_supplier_payment")
             assert list(table.indexes) == []

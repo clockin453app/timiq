@@ -204,11 +204,18 @@ def test_migration_is_additive_and_parented_on_current_head() -> None:
 
 def test_model_indexes_are_named_in_the_migration() -> None:
     source = _migration_path().read_text(encoding="utf-8")
+    workplace_link = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "b8c9d0e1f2a3_finance_project_workplace_link.py"
+    ).read_text(encoding="utf-8")
+    named = source + "\n" + workplace_link
     for table in FinanceProject.metadata.tables.values():
         if not str(table.name).startswith("finance_"):
             continue
         for index in table.indexes:
-            assert index.name in source
+            assert index.name in named
 
 
 def test_destructive_fixture_cannot_reach_the_trial_database(monkeypatch: pytest.MonkeyPatch) -> None:
