@@ -30,6 +30,10 @@ import { FICTIONAL_WORKER_PREVIEW, isFinanceFictionalPreviewAllowed, mayRenderFi
 import { DEMO_PROJECT_LINKS, type ProjectLinksPayload } from "./finance-workplace-links";
 import type { SourceBreakdownPayload } from "./finance-reconcile";
 import {
+  clientMaySendFinanceMutation,
+  interpretFinanceWriteState,
+} from "./finance-scoped-write";
+import {
   WORKSHEET_NAV,
   FINANCE_FIGURE_HELP,
   INVOICE_LEARNING_STEPS,
@@ -116,23 +120,6 @@ const EMPTY: Books = {
 const LIABILITY = new Set(["supplier_invoice", "expense_receipt"]);
 const ReadOnlyPreview = createContext(true);
 const ScopedWrite = createContext(false);
-
-const SCOPED_WRITE_PATH_PREFIXES = [
-  "/api/finance/contract-value",
-  "/api/finance/budgets",
-  "/api/finance/cost-to-complete",
-  "/api/finance/variations",
-  "/api/finance/dayworks",
-  "/api/finance/commitments",
-  "/api/finance/applications",
-  "/api/finance/certificates",
-  "/api/finance/retention-releases",
-] as const;
-
-function isScopedWritePath(path: string): boolean {
-  const clean = path.split("?")[0] ?? path;
-  return SCOPED_WRITE_PATH_PREFIXES.some((prefix) => clean === prefix || clean.startsWith(`${prefix}/`));
-}
 
 function Action({
   className,
@@ -252,17 +239,15 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
       })
       .then((body) => {
         if (cancelled) return;
-        // Fail closed: missing flags keep Finance read-only.
-        setPreviewModeReadonly(
-          body.preview_mode_readonly === true
-          || (body.preview_mode_readonly == null && body.readonly !== false),
-        );
-        setWriteAllowed(body.write_allowed === true);
+        const interpreted = interpretFinanceWriteState(body);
+        setPreviewModeReadonly(interpreted.previewModeReadonly);
+        setWriteAllowed(interpreted.writeAllowed);
       })
       .catch(() => {
         if (cancelled) return;
-        setPreviewModeReadonly(true);
-        setWriteAllowed(false);
+        const interpreted = interpretFinanceWriteState(null);
+        setPreviewModeReadonly(interpreted.previewModeReadonly);
+        setWriteAllowed(interpreted.writeAllowed);
       });
     return () => { cancelled = true; };
   }, [companyId, projectId, demoMode]);
@@ -439,11 +424,9 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
   }
 
   async function send(path: string, body: unknown, posting: boolean, quiet = false) {
-    if (previewModeReadonly) {
-      if (!writeAllowed || !isScopedWritePath(path)) {
-        setError("Read-only preview is active. The change was not sent.");
-        return null;
-      }
+    if (!clientMaySendFinanceMutation(path, { previewModeReadonly, writeAllowed })) {
+      setError("Read-only preview is active. The change was not sent.");
+      return null;
     }
     if (busy.current) { setError("A finance save is already in progress. Wait for it to finish before trying again."); return null; }
     const prompt = posting ? confirmationCopy("finance record") : "Save this draft? It stays out of posted totals until posting is confirmed.";
