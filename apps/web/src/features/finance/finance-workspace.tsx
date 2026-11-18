@@ -7,12 +7,23 @@ import { listCompanies, type Company } from "@/features/companies/api";
 import { readStoredCompanyId, writeStoredCompanyId } from "@/features/companies/selected-company";
 
 import "./finance-v3.css";
+import "./finance-ui.css";
 import "./finance-grid.css";
 import { CommercialPerformanceChart, buildCommercialBars } from "./finance-chart";
 import { FinanceCvrScreen } from "./finance-cvr-screen";
 import { FinanceDataGrid, type FinanceGridColumn } from "./finance-data-grid";
 import { FinanceOverviewScreen } from "./finance-overview-screen";
 import { DEMO_ALLOCATION_LINES } from "./finance-demo-fixture";
+import {
+  FieldStateLegend,
+  ReportsCatalogue,
+  buildReportsCatalogue,
+  explainToPayload,
+  knownOrMissing,
+  moneyCell,
+  statusChip,
+  statusTone,
+} from "./finance-register-kit";
 import { FinanceSourceDrawer } from "./finance-source-drawer";
 import { CisBankPayments, EMPTY_QUERY, FinanceQueryBar, RegisterSearch, exportHref, useFinanceQuery, type FinanceQuery } from "./finance-query";
 import { FICTIONAL_WORKER_PREVIEW, isFinanceFictionalPreviewAllowed, mayRenderFictionalWorkerPreview, paymentRegisterViewOptions } from "./finance-preview";
@@ -49,6 +60,7 @@ import {
   invoiceGross,
   ownerControl,
   paymentPreview,
+  payrollEmptyCopy,
   postedSupplierTotals,
   retentionPreview,
   retentionReleaseStatus,
@@ -125,7 +137,14 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
   const [companyId, setCompanyId] = useState(demo?.companies[0]?.id ?? "");
   const [projectId, setProjectId] = useState(demo?.initialProjectId ?? "");
   const [sheet, setSheet] = useState<Worksheet>(demo?.initialSheet ?? "PROJECT CONTROL");
-  const [books, setBooks] = useState<Books>(demo?.books ?? EMPTY);
+  const [books, setBooks] = useState<Books>(() => {
+    if (!demo) return EMPTY;
+    const initialProject = demo.initialProjectId ?? "";
+    const selectedCvrs = initialProject
+      ? demo.books.cvrs.filter((row) => String(row.id) === initialProject)
+      : demo.books.cvrs;
+    return { ...demo.books, cvrs: selectedCvrs };
+  });
   const [projectLinks, setProjectLinks] = useState<ProjectLinksPayload | null>(null);
   const [linksLoading, setLinksLoading] = useState(false);
   const [linksError, setLinksError] = useState("");
@@ -140,7 +159,20 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
   const [loanView, setLoanView] = useState("Movements");
   const [drawer, setDrawer] = useState<string | null>(null);
   const [explain, setExplain] = useState<{ title: string; body: string; warning: string } | null>(null);
-  const [categories, setCategories] = useState<{ category: string; eligible: string }[]>(demo?.categories ?? []);
+  const [categories, setCategories] = useState<{ category: string; eligible: string }[]>(() => {
+    if (!demo) return [];
+    const initialProject = demo.initialProjectId ?? "";
+    const selected = initialProject
+      ? demo.books.cvrs.find((row) => String(row.id) === initialProject)
+      : undefined;
+    const pending = Boolean(
+      selected &&
+        (String(selected.cost_to_complete ?? "") === "missing" ||
+          String(selected.approved_contract_value ?? "") === "missing" ||
+          String(selected.forecast_final_cost ?? "") === "missing"),
+    );
+    return pending ? [] : (demo.categories ?? []);
+  });
   const [categoryLoadFailed, setCategoryLoadFailed] = useState(!(demo?.categories?.length));
   const [previewReadonly, setPreviewReadonly] = useState(true);
   const [navFocus, setNavFocus] = useState<FinanceNavigateTarget["focus"] | null>(null);
@@ -219,9 +251,16 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
       const selectedCvrs = projectId
         ? demo.books.cvrs.filter((row) => String(row.id) === projectId)
         : demo.books.cvrs;
+      const selected = selectedCvrs[0];
+      const commercialPending = Boolean(
+        selected &&
+          (String(selected.cost_to_complete ?? "") === "missing" ||
+            String(selected.approved_contract_value ?? "") === "missing" ||
+            String(selected.forecast_final_cost ?? "") === "missing"),
+      );
       setBooks({ ...demo.books, cvrs: selectedCvrs });
-      setCategories(demo.categories ?? []);
-      setCategoryLoadFailed(!(demo.categories?.length));
+      setCategories(commercialPending ? [] : (demo.categories ?? []));
+      setCategoryLoadFailed(commercialPending ? false : !(demo.categories?.length));
       setLoading(false);
       setError("");
       return;
@@ -359,10 +398,59 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
   const names = useMemo(() => new Map(books.parties.map((item) => [String(item.id), String(item.name)])), [books.parties]);
   const projectsById = useMemo(() => new Map(books.projects.map((item) => [String(item.id), String(item.name)])), [books.projects]);
   const open = (title: string, body: string, warning: string) => setExplain({ title, body, warning });
-  const activeNavGroup = WORKSHEET_NAV.find((group) => group.items.some((item) => item.sheet === sheet))?.group ?? WORKSHEET_NAV[0].group;
-  const [openNavGroup, setOpenNavGroup] = useState(activeNavGroup);
-  useEffect(() => { setOpenNavGroup(activeNavGroup); }, [activeNavGroup]);
+  const sheetNavGroups = WORKSHEET_NAV.filter((group) => group.items.some((item) => item.sheet === sheet));
+  const [openNavGroup, setOpenNavGroup] = useState(sheetNavGroups[0]?.group ?? WORKSHEET_NAV[0].group);
+  const [showReportsIndex, setShowReportsIndex] = useState(false);
+  const activeNavGroup = showReportsIndex
+    ? "Reports"
+    : (
+      sheetNavGroups.find((group) => group.group === openNavGroup)?.group
+      ?? sheetNavGroups[0]?.group
+      ?? WORKSHEET_NAV[0].group
+    );
+  // When the active sheet belongs to exactly one nav group, keep that group open.
+  useEffect(() => {
+    if (sheetNavGroups.length === 1) {
+      setOpenNavGroup(sheetNavGroups[0].group);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only react to sheet changes, not manual group browsing
+  }, [sheet]);
   const openGroupItems = WORKSHEET_NAV.find((group) => group.group === openNavGroup)?.items ?? [];
+  const selectedCvr = projectId ? books.cvrs.find((row) => String(row.id) === projectId) : null;
+  const hasValidatedCvr = Boolean(
+    selectedCvr
+      && String(selectedCvr.approved_contract_value ?? "") !== "missing"
+      && String(selectedCvr.forecast_final_cost ?? "") !== "missing"
+      && String(selectedCvr.approved_contract_value ?? "").trim() !== ""
+      && String(selectedCvr.forecast_final_cost ?? "").trim() !== "",
+  );
+  const projectLabel = projectId
+    ? String((demo?.books.projects ?? books.projects).find((item) => String(item.id) === projectId)?.name ?? "Selected project")
+    : "All projects";
+  const projectNameForScope = projectLabel;
+  const scopedCostCount = projectId
+    ? books.costs.filter((row) => costDocumentTouchesProject(row, projectId, String((demo?.books.projects ?? books.projects).find((item) => String(item.id) === projectId)?.name ?? ""))).length
+    : books.costs.length;
+  const scopedCustomerCount = projectId
+    ? books.customerInvoices.filter((row) => String(row.project_id ?? "") === projectId).length
+    : books.customerInvoices.length;
+  const scopedDayworkCount = projectId
+    ? books.dayworks.filter((row) => String(row.project_id ?? "") === projectId).length
+      + books.variations.filter((row) => String(row.project_id ?? "") === projectId).length
+    : books.dayworks.length + books.variations.length;
+  const reportItems = buildReportsCatalogue({
+    projectSelected: Boolean(projectId),
+    projectName: projectNameForScope,
+    hasCvr: hasValidatedCvr,
+    costCount: scopedCostCount,
+    customerInvoiceCount: scopedCustomerCount,
+    receiptCount: projectId ? 0 : books.receipts.length, // receipts are company cash; do not imply project availability
+    cisCount: books.cis.length,
+    certificateCount: books.certificates.length,
+    dayworkCount: scopedDayworkCount,
+    fundingCount: books.funding.length,
+    taxPresent: Boolean(books.tax),
+  });
 
   return (
     <ReadOnlyPreview.Provider value={previewReadonly}>
@@ -371,11 +459,24 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
         <div className="brand">TIMIQ <span>Finance</span><small>{demoMode ? (demo?.label ?? "Local DEMO visual QA") : "Commercial control · UK construction"}</small></div>
         <div className="top-meta">
           {demoMode ? <span className="chip readonly">DEMO DATA · local only</span> : null}
-          {previewReadonly ? <span className="chip readonly">Read-only pilot</span> : <span className="chip live">Editing enabled</span>}
+          {previewReadonly ? <span className="chip readonly" title="Operational mode — not an error">Read-only pilot</span> : <span className="chip live">Editing enabled</span>}
         </div>
       </header>
       <div className="main">
         <nav className="fv-context-nav" aria-label="Finance worksheets">
+          <div className="fv-crumb" aria-label="Finance location">
+            <strong>Finance</strong>
+            <span className="sep">/</span>
+            <span>{openNavGroup}</span>
+            <span className="sep">/</span>
+            <strong>{worksheetHeading(sheet)}</strong>
+            <span className="sep">·</span>
+            <span className={`chip ${projectId ? "scope-project" : "scope-company"}`}>
+              {projectId
+                ? `Project · ${String((demo?.books.projects ?? books.projects).find((item) => String(item.id) === projectId)?.name ?? "Selected")}`
+                : "Company-wide"}
+            </span>
+          </div>
           <div className="fv-context-groups">
             {WORKSHEET_NAV.map((group) => {
               const isActive = activeNavGroup === group.group;
@@ -387,7 +488,10 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
                   className={`fv-context-group${isActive ? " active" : ""}${isOpen && !isActive ? " open" : ""}`}
                   aria-expanded={isOpen}
                   aria-current={isActive ? "true" : undefined}
-                  onClick={() => setOpenNavGroup(group.group)}
+                  onClick={() => {
+                    setOpenNavGroup(group.group);
+                    setShowReportsIndex(group.group === "Reports");
+                  }}
                 >
                   {group.group}
                 </button>
@@ -403,13 +507,31 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
                 className={`fv-sheet-pill${sheet === item.sheet ? " active" : ""}`}
                 title={item.hint}
                 aria-current={sheet === item.sheet ? "page" : undefined}
-                onClick={() => { setSheet(item.sheet); setQuery(""); setMessage(""); }}
+                onClick={() => {
+                  setSheet(item.sheet);
+                  setQuery("");
+                  setMessage("");
+                  setShowReportsIndex(false);
+                  if (openNavGroup === "Payroll Finance" && item.sheet === "Payment Register") {
+                    setPayView("CIS workers");
+                  }
+                }}
               >
                 {item.label}
               </button>
             ))}
             {openNavGroup === "Reports" ? (
-              <a className="fv-sheet-pill link" href={demoMode ? "#audit" : "/finance/audit"} role="listitem">Audit trail</a>
+              <>
+                <button
+                  type="button"
+                  className={`fv-sheet-pill${showReportsIndex ? " active" : ""}`}
+                  role="listitem"
+                  onClick={() => setShowReportsIndex(true)}
+                >
+                  Available reports
+                </button>
+                <a className="fv-sheet-pill link" href={demoMode ? "#audit" : "/finance/audit"} role="listitem">Audit trail</a>
+              </>
             ) : null}
             <div className="fv-context-filters">
               <label>Company
@@ -430,14 +552,33 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
           {error ? <p className="notice bad" role="alert">{error} <button className="linkbtn" type="button" onClick={() => setReloadToken((value) => value + 1)}>Retry</button></p> : null}
           {message ? <p className="notice neutral">{message}</p> : null}
           {loading ? <p className="sub">Loading finance records…</p> : null}
-          {sheet === "PROJECT CONTROL" ? (
+          {showReportsIndex ? (
+            <ReportsCatalogue
+              items={reportItems}
+              projectLabel={projectLabel}
+              onOpen={(item) => {
+                if (item.sheet === "audit") {
+                  if (demoMode) {
+                    setMessage("Audit trail opens at /finance/audit in LIVE.");
+                    return;
+                  }
+                  window.location.href = "/finance/audit";
+                  return;
+                }
+                setShowReportsIndex(false);
+                setSheet(item.sheet);
+                if (item.sheet === "Payment Register") setPayView("CIS workers");
+              }}
+            />
+          ) : null}
+          {!showReportsIndex && sheet === "PROJECT CONTROL" ? (
             projectId ? (
               <FinanceCvrScreen
                 companyId={companyId}
                 companyName={companies.find((item) => item.id === companyId)?.name ?? ""}
                 projectId={projectId}
                 projectName={String((demo?.books.projects ?? books.projects).find((item) => String(item.id) === projectId)?.name ?? "")}
-                cvr={books.cvrs[0] ?? {}}
+                cvr={(projectId ? books.cvrs.find((row) => String(row.id) === projectId) : null) ?? {}}
                 categories={categories}
                 categoryLoadFailed={categoryLoadFailed}
                 books={books}
@@ -466,12 +607,12 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
               />
             )
           ) : null}
-          {sheet === "Project Expenses" ? <Expenses books={books} companyId={companyId} names={names} projectId={projectId} query={query} onQuery={setQuery} filter={expenseFilter} onFilter={setExpenseFilter} onExplain={open} onInvoice={() => setDrawer("invoice")} onExpense={() => setDrawer("expense")} demoMode={demoMode} /> : null}
-          {sheet === "Payment Register" ? <Payments books={books} companyId={companyId} names={names} view={payView} onView={setPayView} onExplain={open} onPay={() => setDrawer("supplier-payment")} onWorker={() => setDrawer("worker-payment")} /> : null}
-          {sheet === "Customer Invoices" ? <Customers books={books} companyId={companyId} names={names} projectsById={projectsById} projectId={projectId} onExplain={open} onNew={() => setDrawer("customer-invoice")} /> : null}
-          {sheet === "Receipts Register" ? <Receipts books={books} companyId={companyId} names={names} onExplain={open} onNew={() => setDrawer("receipt")} /> : null}
-          {sheet === "VAT Reconciliation" ? <Vat books={books} names={names} onExplain={open} /> : null}
-          {sheet === "CIS Tax HMRC" ? (
+          {!showReportsIndex && sheet === "Project Expenses" ? <Expenses books={books} companyId={companyId} names={names} projectId={projectId} query={query} onQuery={setQuery} filter={expenseFilter} onFilter={setExpenseFilter} onExplain={open} onInvoice={() => setDrawer("invoice")} onExpense={() => setDrawer("expense")} demoMode={demoMode} /> : null}
+          {!showReportsIndex && sheet === "Payment Register" ? <Payments books={books} companyId={companyId} names={names} view={payView} onView={setPayView} onExplain={open} onPay={() => setDrawer("supplier-payment")} onWorker={() => setDrawer("worker-payment")} demoMode={demoMode} /> : null}
+          {!showReportsIndex && sheet === "Customer Invoices" ? <Customers books={books} companyId={companyId} names={names} projectsById={projectsById} projectId={projectId} onExplain={open} onNew={() => setDrawer("customer-invoice")} demoMode={demoMode} /> : null}
+          {!showReportsIndex && sheet === "Receipts Register" ? <Receipts books={books} companyId={companyId} names={names} onExplain={open} onNew={() => setDrawer("receipt")} demoMode={demoMode} /> : null}
+          {!showReportsIndex && sheet === "VAT Reconciliation" ? <Vat books={books} names={names} onExplain={open} /> : null}
+          {!showReportsIndex && sheet === "CIS Tax HMRC" ? (
             <CisTax
               books={books}
               onPreview={
@@ -485,9 +626,9 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
               onImport={() => setDrawer("cis-import")}
             />
           ) : null}
-          {sheet === "Retention Register" ? <Retention books={books} companyId={companyId} names={names} projectsById={projectsById} onExplain={open} onRelease={() => setDrawer("retention")} /> : null}
-          {sheet === "DAYWORKS LIVE" ? <Dayworks books={books} companyId={companyId} projectsById={projectsById} onExplain={open} onNew={() => setDrawer("daywork")} /> : null}
-          {sheet === "Loans & Advances" ? <Loans books={books} companyId={companyId} names={names} view={loanView} onView={setLoanView} onExplain={open} onNew={() => setDrawer("funding")} /> : null}
+          {!showReportsIndex && sheet === "Retention Register" ? <Retention books={books} companyId={companyId} names={names} projectsById={projectsById} onExplain={open} onRelease={() => setDrawer("retention")} demoMode={demoMode} /> : null}
+          {!showReportsIndex && sheet === "DAYWORKS LIVE" ? <Dayworks books={books} companyId={companyId} projectsById={projectsById} onExplain={open} onNew={() => setDrawer("daywork")} demoMode={demoMode} /> : null}
+          {!showReportsIndex && sheet === "Loans & Advances" ? <Loans books={books} companyId={companyId} names={names} view={loanView} onView={setLoanView} onExplain={open} onNew={() => setDrawer("funding")} demoMode={demoMode} /> : null}
         </section>
       </div>
       {explain ? (
@@ -522,42 +663,65 @@ function inProject(row: Row, projectId: string, projectName: string): boolean {
   return costDocumentTouchesProject(row, projectId, projectName);
 }
 
-function badge(label: string, tone: string) {
-  return <span className={`state ${tone}`}>{label}</span>;
+function badge(label: string, tone?: string) {
+  const mapped =
+    tone === "gray" ? "neutral"
+      : tone === "violet" ? "blue"
+        : (tone as "neutral" | "amber" | "red" | "green" | "blue" | undefined);
+  return statusChip(label, mapped ?? statusTone(label));
 }
 
 function toneFor(status: string): string {
-  if (/paid|approved|posted|settled/i.test(status) && !/part|review|demo/i.test(status)) return "green";
-  if (/draft|reversed/i.test(status) && !/not confirmed/i.test(status)) return "gray";
-  if (/overdue|error/i.test(status)) return "red";
-  if (/part|review|missing|incomplete|not determined|not confirmed/i.test(status)) return "amber";
-  return "blue";
+  return statusTone(status);
 }
 
 function Stats({ items }: { items: [string, string, string?][] }) {
-  return <div className="stats">{items.map(([cap, val, tone]) => <div key={cap} className={`stat ${tone ?? ""}`}><div className="cap">{cap}</div><div className="val">{val}</div></div>)}</div>;
+  return (
+    <div className="stats fin-stats">
+      {items.map(([cap, val, tone]) => (
+        <div key={cap} className={`stat ${tone ?? ""}`}>
+          <div className="cap">{cap}</div>
+          <div className="val">{val}</div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
-function Grid({ headers, rows, emptyTitle = "No records", emptyText = "Nothing matches this company and filter." }: { headers: { label: string; amt?: boolean; hide?: boolean }[]; rows: ReactNode[][]; emptyTitle?: string; emptyText?: string }) {
-  if (rows.length === 0) {
-    return (
-      <div className="empty" role="status">
-        <strong>{emptyTitle}</strong>
-        <span>{emptyText}</span>
-      </div>
-    );
-  }
+function Grid({
+  headers,
+  rows,
+  emptyTitle = "No records yet",
+  emptyText = "Nothing is loaded for this company and filter yet. This is an empty register, not a calculation error.",
+  compactMetricColumnIds,
+}: {
+  headers: { label: string; amt?: boolean; hide?: boolean }[];
+  rows: ReactNode[][];
+  emptyTitle?: string;
+  emptyText?: string;
+  compactMetricColumnIds?: string[];
+}) {
+  const columns: FinanceGridColumn[] = headers.map((header, index) => ({
+    id: `c${index}`,
+    label: header.label,
+    money: Boolean(header.amt),
+    align: header.amt ? "right" : "left",
+    compactHide: Boolean(header.hide),
+  }));
+  const gridRows = rows.map((cells, index) => ({
+    id: `legacy-${index}`,
+    cells: Object.fromEntries(cells.map((cell, cellIndex) => [`c${cellIndex}`, cell])),
+    amountColumnIds: headers.flatMap((header, cellIndex) => (header.amt ? [`c${cellIndex}`] : [])),
+  }));
+  const moneyIds = headers.flatMap((header, index) => (header.amt ? [`c${index}`] : []));
   return (
-    <div className="gridwrap">
-      <table>
-        <thead><tr>{headers.map((header) => <th key={header.label} className={`${header.amt ? "amt" : ""} ${header.hide ? "hide-mid" : ""}`}>{header.label}</th>)}</tr></thead>
-        <tbody>
-          {rows.map((cells, index) => (
-            <tr key={index}>{cells.map((cell, cellIndex) => <td key={cellIndex} className={`${headers[cellIndex]?.amt ? "amt" : ""} ${headers[cellIndex]?.hide ? "hide-mid" : ""}`}>{cell}</td>)}</tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <FinanceDataGrid
+      columns={columns}
+      rows={gridRows}
+      emptyTitle={emptyTitle}
+      emptyText={emptyText}
+      compactMetricColumnIds={compactMetricColumnIds ?? moneyIds.slice(0, 3)}
+    />
   );
 }
 
@@ -1149,38 +1313,66 @@ function Expenses({ books, companyId, names, projectId, query, onQuery, filter, 
     setInvoiceDrawer(basePayload);
   }
 
+  const filterBar = (
+    <div className="fin-filter-bar">
+      <label>
+        Status / type
+        <select aria-label="Expense filter" value={filter} onChange={(event) => onFilter(event.target.value)}>
+          {["All", "Supplier invoices", "Other expenses", "Credits", "Draft", "Outstanding", "Review"].map((item) => (
+            <option key={item} value={item}>{item}</option>
+          ))}
+        </select>
+      </label>
+      <label style={{ flex: 1, minWidth: 180 }}>
+        Search
+        <input className="search" aria-label="Search expenses" placeholder="Search supplier or reference" value={query} onChange={(event) => onQuery(event.target.value)} />
+      </label>
+      <Action className="btn" onClick={onExpense}>+ Other expense</Action>
+      <Action className="btn mainbtn" onClick={onInvoice}>+ Supplier invoice</Action>
+    </div>
+  );
+
   return (
     <>
       <Head
-        title="Supplier invoices"
-        hideTitle
-        text="Cost documents only. Cash paid is bank settlement — not a second project cost. Bank entry lives on Supplier payments."
+        title="Costs & Suppliers"
+        text="Supplier invoices and cost documents. Cash paid is bank settlement — not a second project cost."
       >
-        <Action className="btn mainbtn" onClick={onInvoice}>+ Supplier invoice</Action>
-        <Action className="btn" onClick={onExpense}>+ Other expense</Action>
+        <span className="chip scope-company">{totals.scope}</span>
+        <span className={`chip ${projectId ? "scope-project" : "scope-company"}`}>{listScope}</span>
       </Head>
       <Stats items={[
         [`Invoice gross · ${totals.scope}`, totals.gross],
         [`Cash paid · ${totals.scope}`, totals.cashPaid, "green"],
-        [`Credits · ${totals.scope}`, totals.creditApplied, "amber"],
-        [`Outstanding · ${totals.scope}`, totals.outstanding, "amber"],
+        [`Credits · ${totals.scope}`, totals.creditApplied, totals.creditApplied === "£0.00" ? "" : "amber"],
+        [`Outstanding · ${totals.scope}`, totals.outstanding, totals.outstanding === "£0.00" ? "green" : "amber"],
       ]} />
-      <div className="table-toolbar">
-        <div className="pills">
-          {["All", "Supplier invoices", "Other expenses", "Credits", "Draft", "Outstanding", "Review"].map((item) => (
-            <button key={item} className={`pill${filter === item ? " active" : ""}`} type="button" onClick={() => onFilter(item)}>{item}</button>
-          ))}
-        </div>
-        <input className="search" aria-label="Search expenses" placeholder="Search supplier or reference" value={query} onChange={(event) => onQuery(event.target.value)} />
-      </div>
-      {demoMode ? null : (
-        <RegisterSearch companyId={companyId} register="supplier-invoices" dateField="expense" dateFields={[["expense", "Expense date"], ["due", "Due date"]]} parties={books.parties.filter((item) => item.counterparty_type === "supplier").map((item) => [String(item.id), String(item.name)])} partyLabel="Supplier" statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
+      <p className="fin-scope-note">
+        KPI summary is <strong>{totals.scope}</strong> document liability. The register table below is filtered to <strong>{listScope}</strong>.
+      </p>
+      {rows.length === 0 && filter === "All" && !query.trim() ? (
+        <details className="filters-collapsed">
+          <summary>Filters &amp; advanced search</summary>
+          {filterBar}
+          {demoMode ? null : (
+            <RegisterSearch companyId={companyId} register="supplier-invoices" dateField="expense" dateFields={[["expense", "Expense date"], ["due", "Due date"]]} parties={books.parties.filter((item) => item.counterparty_type === "supplier").map((item) => [String(item.id), String(item.name)])} partyLabel="Supplier" statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
+          )}
+        </details>
+      ) : (
+        <>
+          {filterBar}
+          {demoMode ? null : (
+            <RegisterSearch companyId={companyId} register="supplier-invoices" dateField="expense" dateFields={[["expense", "Expense date"], ["due", "Due date"]]} parties={books.parties.filter((item) => item.counterparty_type === "supplier").map((item) => [String(item.id), String(item.name)])} partyLabel="Supplier" statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
+          )}
+        </>
       )}
-      <p className="sub">Summary is {totals.scope} document liability. Table is {listScope}.</p>
       <FinanceDataGrid
         columns={expenseColumns}
-        emptyTitle="No supplier invoices"
-        emptyText="No cost documents match this company, project and filter."
+        emptyTitle={projectId ? "No project cost documents yet" : "No supplier invoices yet"}
+        emptyText={projectId
+          ? `No posted or draft cost documents are linked to ${projectName || "this project"} yet. This is an empty register, not a calculation error.`
+          : "No cost documents are loaded for this company yet. This is an empty register, not a calculation error."}
+        compactMetricColumnIds={["gross", "outstanding"]}
         rows={rows.map((row) => {
           const postedRow = String(row.status) === "posted" && LIABILITY.has(String(row.document_type));
           const status = supplierSettlementStatus(row, today);
@@ -1194,14 +1386,20 @@ function Expenses({ books, companyId, names, projectId, query, onQuery, filter, 
               reference: String(row.external_reference || "Reference missing"),
               date: String(row.document_date || "Date missing"),
               project: String(row.project_names || "").trim() || "No project allocation stored",
-              gross: row.gross_amount,
-              outstanding: postedRow ? row.outstanding : null,
+              gross: { value: row.gross_amount as string, kind: "source-linked" as const },
+              outstanding: postedRow
+                ? { value: row.outstanding as string, kind: "calculated" as const }
+                : { value: "missing", kind: "missing-required" as const },
               status: label,
             },
             meta: { row },
           };
         })}
         onAmountClick={(_metric, gridRow) => {
+          const row = gridRow.meta?.row as Row | undefined;
+          if (row) void openInvoiceDetail(row);
+        }}
+        onRowSelect={(gridRow) => {
           const row = gridRow.meta?.row as Row | undefined;
           if (row) void openInvoiceDetail(row);
         }}
@@ -1216,15 +1414,26 @@ function Expenses({ books, companyId, names, projectId, query, onQuery, filter, 
   );
 }
 
-function Payments({ books, companyId, names, view, onView, onExplain, onPay, onWorker }: {
-  books: Books; companyId: string; names: Map<string, string>; view: string; onView: (value: string) => void; onExplain: (title: string, body: string, warning: string) => void; onPay: () => void; onWorker: () => void;
+function Payments({ books, companyId, names, view, onView, onExplain, onPay, onWorker, demoMode = false }: {
+  books: Books; companyId: string; names: Map<string, string>; view: string; onView: (value: string) => void; onExplain: (title: string, body: string, warning: string) => void; onPay: () => void; onWorker: () => void; demoMode?: boolean;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const payables = books.costs.filter((row) => String(row.status) === "posted" && LIABILITY.has(String(row.document_type)));
   const companyTotals = postedSupplierTotals(books.costs);
+  const [drawerPayload, setDrawerPayload] = useState<SourceBreakdownPayload | null>(null);
+  const payColumns: FinanceGridColumn[] = [
+    { id: "payee", label: "Payee" },
+    { id: "reference", label: "Source invoice" },
+    { id: "gross", label: "Invoice gross", money: true, align: "right", compactHide: true },
+    { id: "cash", label: "Cash paid", money: true, align: "right", compactHide: true },
+    { id: "credits", label: "Credits", money: true, align: "right", compactHide: true },
+    { id: "outstanding", label: "Outstanding", money: true, align: "right" },
+    { id: "bank", label: "Bank reference", compactHide: true },
+    { id: "status", label: "Status" },
+  ];
   return (
     <>
-      <Head title="Supplier payments" text="Bank settlements against existing obligations. Payments do not create project cost again.">
+      <Head title={view === "Supplier payments" ? "Supplier payments" : "Payroll Finance"} text={view === "Supplier payments" ? "Bank settlements against existing obligations. Payments do not create project cost again." : "CIS / PAYE bank settlements from approved sources only. Finance does not invent payroll figures."}>
         <Action className="btn mainbtn" onClick={view === "Supplier payments" ? onPay : onWorker}>+ Record bank payment</Action>
       </Head>
       <div className="pills">
@@ -1238,18 +1447,51 @@ function Payments({ books, companyId, names, view, onView, onExplain, onPay, onW
         <>
           <Stats items={[["Posted rows", String(books.supplierPayments.filter((row) => String(row.status) === "posted").length)], ["Active payments", formatCount(activeMovementCount(books.supplierPayments, "payment_reversed"))], ["Open payables", String(payables.filter((row) => (subtractMoney(row.outstanding, "0") ?? 0n) > 0n).length), "amber"], ["Bank paid", formatKnownMoney(effectiveMovementTotal(books.supplierPayments, "amount", "payment_reversed")), "green"], [`Outstanding · ${companyTotals.scope}`, companyTotals.outstanding, "amber"]]} />
           <p className="sub">Company-wide bank payments. Credits are not cash paid.</p>
-          <Grid headers={[{ label: "Payee" }, { label: "Source invoice" }, { label: "Invoice gross", amt: true, hide: true }, { label: "Cash paid", amt: true, hide: true }, { label: "Credits", amt: true, hide: true }, { label: "Outstanding", amt: true }, { label: "Bank reference" }, { label: "Status" }]} rows={payables.map((row) => {
-            const cash = supplierCashPaid(row);
-            const credit = supplierCreditApplied(row);
-            const status = supplierSettlementStatus(row, today);
-            const cashText = cash === null ? "Not determined" : formatGbp(cash);
-            const creditText = credit === null ? "Not determined" : formatGbp(credit);
-            return [names.get(String(row.counterparty_id ?? "")) ?? "Supplier name missing", String(row.external_reference || "Reference missing"), money(row.gross_amount), cashText, creditText, <button className="linkbtn" type="button" onClick={() => onExplain(String(row.payment_references || "Supplier balance"), `Invoice gross ${money(row.gross_amount)}. Cash paid (bank) ${cashText}. Supplier credits ${creditText}. Outstanding ${money(row.outstanding)}. Payment refs: ${String(row.payment_references || "none")}.`, "A supplier payment is not a second project cost. Credits are not cash paid.")}>{money(row.outstanding)} ↗</button>, String(row.payment_references || "None"), badge(status, toneFor(status))];
-          })} />
+          <FinanceDataGrid
+            columns={payColumns}
+            emptyTitle="No open supplier payables"
+            emptyText="No posted supplier invoice or expense obligations are loaded for this company."
+            compactMetricColumnIds={["outstanding", "cash"]}
+            rows={payables.map((row) => {
+              const cash = supplierCashPaid(row);
+              const credit = supplierCreditApplied(row);
+              const status = supplierSettlementStatus(row, today);
+              return {
+                id: String(row.id),
+                metricId: "supplier_payable",
+                amountColumnIds: ["gross", "cash", "credits", "outstanding"],
+                cells: {
+                  payee: names.get(String(row.counterparty_id ?? "")) ?? "Supplier name missing",
+                  reference: String(row.external_reference || "Reference missing"),
+                  gross: moneyCell(row.gross_amount, "source-linked"),
+                  cash: cash === null ? moneyCell("missing") : moneyCell(cash, "source-linked"),
+                  credits: credit === null ? moneyCell("missing") : moneyCell(credit, "calculated"),
+                  outstanding: moneyCell(row.outstanding, "calculated"),
+                  bank: String(row.payment_references || "None"),
+                  status: badge(status),
+                },
+                meta: { row, cash, credit },
+              };
+            })}
+            onAmountClick={(_metric, gridRow) => {
+              const row = gridRow.meta?.row as Row | undefined;
+              if (!row) return;
+              const cash = gridRow.meta?.cash as bigint | null;
+              const credit = gridRow.meta?.credit as bigint | null;
+              setDrawerPayload(explainToPayload({
+                title: String(row.payment_references || "Supplier balance"),
+                body: `Invoice gross ${money(row.gross_amount)}. Cash paid (bank) ${cash === null ? "Not determined" : formatGbp(cash)}. Supplier credits ${credit === null ? "Not determined" : formatGbp(credit)}. Outstanding ${money(row.outstanding)}. Payment refs: ${String(row.payment_references || "none")}.`,
+                warning: "A supplier payment is not a second project cost. Credits are not cash paid.",
+                companyId,
+                amount: row.outstanding,
+              }));
+            }}
+          />
+          <FieldStateLegend />
         </>
       ) : null}
-      {view === "CIS workers" ? <CisBankPayments companyId={companyId} workers={books.cisSources.map((item) => [String(item.user_id), String(item.email || item.user_id || "Worker")])} /> : null}
-      {view === "PAYE employees" ? <LiveWorkers title="PAYE" rows={[]} empty="No approved PAYE snapshot is posted for this company. Employee net bank payments are not the same as PAYE deductions." onExplain={onExplain} /> : null}
+      {view === "CIS workers" ? <CisBankPayments companyId={companyId} workers={books.cisSources.map((item) => [String(item.user_id), String(item.email || item.user_id || "Worker")])} demoMode={demoMode} /> : null}
+      {view === "PAYE employees" ? <LiveWorkers title="PAYE" rows={[]} empty={payrollEmptyCopy("PAYE")} onExplain={onExplain} /> : null}
       {view === "Fictional preview" ? (
         mayRenderFictionalWorkerPreview(view) ? (
           <FictionalPreview />
@@ -1257,21 +1499,56 @@ function Payments({ books, companyId, names, view, onView, onExplain, onPay, onW
           <p className="empty" role="status">Fictional worker preview is not available in production.</p>
         )
       ) : null}
+      <FinanceSourceDrawer open={Boolean(drawerPayload)} title="Payment source" payload={drawerPayload} onClose={() => setDrawerPayload(null)} />
     </>
   );
 }
 
 function LiveWorkers({ title, rows, empty, onExplain }: { title: string; rows: Row[]; empty: string; onExplain: (title: string, body: string, warning: string) => void }) {
-  if (rows.length === 0) return <p className="empty">{empty}</p>;
+  if (rows.length === 0) {
+    return (
+      <div className="fdg-wrap">
+        <div className="fdg-empty" role="status">
+          <strong>{title === "PAYE" ? "No PAYE payroll yet" : "No CIS payroll yet"}</strong>
+          <div>{empty}</div>
+        </div>
+      </div>
+    );
+  }
   return (
-    <Grid headers={[{ label: title === "CIS" ? "Worker" : "Employee" }, { label: "Period" }, { label: "Source payable", amt: true }, { label: "Bank paid", amt: true }, { label: "Remaining", amt: true }, { label: "Status" }]} rows={rows.map((row) => [
-      String(row.email || row.source_user_id || "Worker"),
-      String(row.week_start || row.tax_month || "Period missing"),
-      money(row.effective_payable_amount || row.net_pay),
-      money(row.bank_allocated),
-      <button className="linkbtn" type="button" onClick={() => onExplain(`${title} obligation`, `Source payable ${money(row.effective_payable_amount || row.net_pay)}. Bank allocated ${money(row.bank_allocated)}. Still owed ${money(row.still_owed)}. CIS deduction ${money(row.effective_cis_deduction)}.`, "Statutory deductions are shown only when the approved snapshot includes them. They are not inferred from a net payment.")}>{money(row.still_owed || row.outstanding)} ↗</button>,
-      badge("Source snapshot", "blue"),
-    ])} />
+    <FinanceDataGrid
+      columns={[
+        { id: "worker", label: title === "CIS" ? "Worker" : "Employee" },
+        { id: "period", label: "Period" },
+        { id: "payable", label: "Source payable", money: true, align: "right" },
+        { id: "paid", label: "Bank paid", money: true, align: "right" },
+        { id: "remaining", label: "Remaining", money: true, align: "right" },
+        { id: "status", label: "Status" },
+      ]}
+      compactMetricColumnIds={["payable", "remaining"]}
+      rows={rows.map((row) => ({
+        id: String(row.id || row.source_user_id || Math.random()),
+        amountColumnIds: ["payable", "paid", "remaining"],
+        cells: {
+          worker: String(row.email || row.source_user_id || "Worker"),
+          period: String(row.week_start || row.tax_month || "Period missing"),
+          payable: moneyCell(row.effective_payable_amount || row.net_pay, "source-linked"),
+          paid: moneyCell(row.bank_allocated, "source-linked"),
+          remaining: moneyCell(row.still_owed || row.outstanding, "calculated"),
+          status: badge("Source snapshot", "blue"),
+        },
+        meta: { row },
+      }))}
+      onAmountClick={(_metric, gridRow) => {
+        const row = gridRow.meta?.row as Row | undefined;
+        if (!row) return;
+        onExplain(
+          `${title} obligation`,
+          `Source payable ${money(row.effective_payable_amount || row.net_pay)}. Bank allocated ${money(row.bank_allocated)}. Still owed ${money(row.still_owed)}. CIS deduction ${money(row.effective_cis_deduction)}.`,
+          "Statutory deductions are shown only when the approved snapshot includes them. They are not inferred from a net payment.",
+        );
+      }}
+    />
   );
 }
 
@@ -1283,45 +1560,142 @@ function FictionalPreview() {
     <div>
       <div className="preview"><b>{FICTIONAL_WORKER_PREVIEW.label}.</b> These workers and amounts are a visual sample. They are not Finance Local Trial records, not approved Payroll, and not bank payments. They cannot be selected for posting.</div>
       <h3 className="head2">Sample CIS rows</h3>
-      <Grid headers={[{ label: "Worker" }, { label: "Period" }, { label: "Demo payable", amt: true }, { label: "Demo bank paid", amt: true }, { label: "Demo outstanding", amt: true }, { label: "Demo reference" }, { label: "State" }]} rows={FICTIONAL_WORKER_PREVIEW.cis.map((row) => [row.worker, row.period, row.payable, row.paid, row.due, row.reference, badge(row.status, "amber")])} />
+      <FinanceDataGrid
+        columns={[
+          { id: "worker", label: "Worker" },
+          { id: "period", label: "Period" },
+          { id: "payable", label: "Demo payable", money: true, align: "right" },
+          { id: "paid", label: "Demo bank paid", money: true, align: "right" },
+          { id: "due", label: "Demo outstanding", money: true, align: "right" },
+          { id: "reference", label: "Demo reference", compactHide: true },
+          { id: "status", label: "State" },
+        ]}
+        compactMetricColumnIds={["payable", "due"]}
+        rows={FICTIONAL_WORKER_PREVIEW.cis.map((row, index) => ({
+          id: `demo-cis-${index}`,
+          cells: {
+            worker: row.worker,
+            period: row.period,
+            payable: row.payable,
+            paid: row.paid,
+            due: row.due,
+            reference: row.reference,
+            status: badge(row.status, "amber"),
+          },
+        }))}
+      />
       <h3 className="head2">Sample PAYE row</h3>
-      <Grid headers={[{ label: "Employee" }, { label: "Period" }, { label: "Demo net payable", amt: true }, { label: "Demo bank paid", amt: true }, { label: "Demo outstanding", amt: true }, { label: "Demo reference" }, { label: "State" }]} rows={FICTIONAL_WORKER_PREVIEW.paye.map((row) => [row.worker, row.period, row.payable, row.paid, row.due, row.reference, badge(row.status, "amber")])} />
+      <FinanceDataGrid
+        columns={[
+          { id: "worker", label: "Employee" },
+          { id: "period", label: "Period" },
+          { id: "payable", label: "Demo net payable", money: true, align: "right" },
+          { id: "paid", label: "Demo bank paid", money: true, align: "right" },
+          { id: "due", label: "Demo outstanding", money: true, align: "right" },
+          { id: "reference", label: "Demo reference", compactHide: true },
+          { id: "status", label: "State" },
+        ]}
+        compactMetricColumnIds={["payable", "due"]}
+        rows={FICTIONAL_WORKER_PREVIEW.paye.map((row, index) => ({
+          id: `demo-paye-${index}`,
+          cells: {
+            worker: row.worker,
+            period: row.period,
+            payable: row.payable,
+            paid: row.paid,
+            due: row.due,
+            reference: row.reference,
+            status: badge(row.status, "amber"),
+          },
+        }))}
+      />
       <p className="sub">CIS tax, PAYE, NI and pension are not derived from these sample nets.</p>
     </div>
   );
 }
 
-function Customers({ books, companyId, names, projectsById, projectId, onExplain, onNew }: { books: Books; companyId: string; names: Map<string, string>; projectsById: Map<string, string>; projectId: string; onExplain: (title: string, body: string, warning: string) => void; onNew: () => void }) {
+function Customers({ books, companyId, names, projectsById, projectId, onExplain, onNew, demoMode = false }: { books: Books; companyId: string; names: Map<string, string>; projectsById: Map<string, string>; projectId: string; onExplain: (title: string, body: string, warning: string) => void; onNew: () => void; demoMode?: boolean }) {
   const [invoiceQuery, setInvoiceQuery] = useState<FinanceQuery>({ ...EMPTY_QUERY, dateField: "issue" });
-  const invoiceServer = useFinanceQuery(companyId, "invoices", invoiceQuery);
+  const [drawerPayload, setDrawerPayload] = useState<SourceBreakdownPayload | null>(null);
+  const invoiceServer = useFinanceQuery(companyId, "invoices", invoiceQuery, { enabled: !demoMode });
   const visible = books.customerInvoices.filter((row) => !projectId || String(row.project_id ?? "") === projectId);
   const posted = visible.filter((row) => String(row.status) === "posted" && String(row.document_kind) === "invoice");
   const gross = addMoney(posted.map((row) => row.gross_amount));
   const missing = posted.filter((row) => !String(row.external_reference ?? "").trim() || !String(row.due_date ?? "").trim()).length;
+  const serverFilterActive = Boolean(invoiceQuery.q || invoiceQuery.dateFrom || invoiceQuery.dateTo || invoiceQuery.partyId || invoiceQuery.status !== "all");
+  const filtered = (!demoMode && serverFilterActive && !invoiceServer.error)
+    ? visible.filter((row) => invoiceServer.rows.some((item) => String(item.id) === String(row.id)))
+    : visible;
   return (
     <>
       <Head title="Customer invoices" text="Amounts billed to the customer. Missing references are not invented.">
         <Action className="btn mainbtn" onClick={onNew}>+ New customer invoice</Action>
       </Head>
-      <Stats items={[["Posted gross", formatGbp(gross)], ["Rows loaded", String(visible.length)], ["Missing ref / due", String(missing), missing ? "amber" : "green"], ["Filter", invoiceServer.note || "Company register", "blue"]]} />
-      <FinanceQueryBar dateFields={[["issue", "Invoice issue date"], ["due", "Invoice due date"]]} parties={books.parties.filter((item) => item.counterparty_type === "customer").map((item) => [String(item.id), String(item.name)])} partyLabel="Customer" value={invoiceQuery} onChange={setInvoiceQuery} exportHref={exportHref(companyId, "invoices", invoiceQuery)} />
-      <Grid headers={[{ label: "Customer" }, { label: "Invoice ref" }, { label: "Due date", hide: true }, { label: "Project", hide: true }, { label: "Net", amt: true, hide: true }, { label: "Output VAT", amt: true, hide: true }, { label: "Gross", amt: true, hide: true }, { label: "Received", amt: true, hide: true }, { label: "Outstanding", amt: true }, { label: "Status" }]} rows={(invoiceQuery.q || invoiceQuery.dateFrom || invoiceQuery.dateTo || invoiceQuery.partyId || invoiceQuery.status !== "all" ? visible.filter((row) => invoiceServer.rows.some((item) => String(item.id) === String(row.id))) : visible).map((row) => {
-        const live = String(row.status) === "posted" && String(row.document_kind) === "invoice";
-        const got = invoiceCashReceived(row);
-        const reference = String(row.external_reference || "").trim();
-        const due = String(row.due_date || "").trim();
-        const status = String(row.status) === "draft" ? "Draft" : !reference || !due ? "Needs correction" : customerSettlementStatus(row, new Date().toISOString().slice(0, 10));
-        const receivedLabel = formatKnownMoney(got);
-        return [
-          names.get(String(row.counterparty_id ?? "")) ?? "Customer name missing",
-          reference || "Reference missing",
-          due || "Due date not stored",
-          projectsById.get(String(row.project_id ?? "")) ?? "Not linked",
-          money(row.net_amount), money(row.tax_amount), money(row.gross_amount), receivedLabel,
-          <button className="linkbtn" type="button" onClick={() => onExplain("Customer balance", `Net ${money(row.net_amount)} + output VAT ${money(row.tax_amount)} = gross ${money(row.gross_amount)}. Effective receipt allocations ${String(row.receipt_references || "none")} ${receivedLabel}. Outstanding ${live ? money(row.outstanding) : "£0.00"}.`, "Outstanding includes credits and receipts. Cash received is the effective allocation only. A zero outstanding balance is not labelled Paid unless the cash allocation covers it.")}>{live ? money(row.outstanding) : "—"} ↗</button>,
-          badge(status, toneFor(status)),
-        ];
-      })} />
+      <Stats items={[["Posted gross", formatGbp(gross)], ["Rows loaded", String(visible.length)], ["Missing ref / due", String(missing), missing ? "amber" : "green"], ["Filter", demoMode ? "Local DEMO books" : (invoiceServer.error ? "Query failed" : (invoiceServer.note || "Company register")), invoiceServer.error ? "amber" : "blue"]]} />
+      {demoMode ? (
+        <p className="notice neutral" role="status">Advanced invoice server filters require LIVE Finance API. The grid below uses loaded DEMO books for the selected project/company.</p>
+      ) : (
+        <FinanceQueryBar dateFields={[["issue", "Invoice issue date"], ["due", "Invoice due date"]]} parties={books.parties.filter((item) => item.counterparty_type === "customer").map((item) => [String(item.id), String(item.name)])} partyLabel="Customer" value={invoiceQuery} onChange={setInvoiceQuery} exportHref={exportHref(companyId, "invoices", invoiceQuery)} />
+      )}
+      {invoiceServer.error ? <p className="notice bad" role="alert">{invoiceServer.note} This is a query failure, not an empty invoice register.</p> : null}
+      <FinanceDataGrid
+        columns={[
+          { id: "customer", label: "Customer" },
+          { id: "reference", label: "Invoice ref" },
+          { id: "due", label: "Due date", compactHide: true },
+          { id: "project", label: "Project", compactHide: true },
+          { id: "net", label: "Net", money: true, align: "right", compactHide: true },
+          { id: "vat", label: "Output VAT", money: true, align: "right", compactHide: true },
+          { id: "gross", label: "Gross", money: true, align: "right", compactHide: true },
+          { id: "received", label: "Received", money: true, align: "right", compactHide: true },
+          { id: "outstanding", label: "Outstanding", money: true, align: "right" },
+          { id: "status", label: "Status" },
+        ]}
+        emptyTitle={projectId ? "No customer invoices for this project" : "No customer invoices yet"}
+        emptyText="No customer invoices are loaded for this scope. This is an empty register, not a calculation error."
+        compactMetricColumnIds={["gross", "outstanding"]}
+        rows={filtered.map((row) => {
+          const live = String(row.status) === "posted" && String(row.document_kind) === "invoice";
+          const got = invoiceCashReceived(row);
+          const reference = String(row.external_reference || "").trim();
+          const due = String(row.due_date || "").trim();
+          const status = String(row.status) === "draft" ? "Draft" : !reference || !due ? "Needs correction" : customerSettlementStatus(row, new Date().toISOString().slice(0, 10));
+          return {
+            id: String(row.id),
+            metricId: "customer_invoice",
+            amountColumnIds: ["net", "vat", "gross", "received", "outstanding"],
+            cells: {
+              customer: names.get(String(row.counterparty_id ?? "")) ?? "Customer name missing",
+              reference: reference || "Reference missing",
+              due: due || "Due date not stored",
+              project: projectsById.get(String(row.project_id ?? "")) ?? "Not linked",
+              net: moneyCell(row.net_amount, "source-linked"),
+              vat: moneyCell(row.tax_amount, "source-linked"),
+              gross: moneyCell(row.gross_amount, "calculated"),
+              received: got === null ? moneyCell("missing") : moneyCell(got, "source-linked"),
+              outstanding: live ? moneyCell(row.outstanding, "calculated") : moneyCell("missing"),
+              status: badge(status),
+            },
+            meta: { row, got, live },
+          };
+        })}
+        onAmountClick={(_metric, gridRow) => {
+          const row = gridRow.meta?.row as Row | undefined;
+          if (!row) return;
+          const got = gridRow.meta?.got as bigint | null;
+          const live = Boolean(gridRow.meta?.live);
+          setDrawerPayload(explainToPayload({
+            title: "Customer balance",
+            body: `Net ${money(row.net_amount)} + output VAT ${money(row.tax_amount)} = gross ${money(row.gross_amount)}. Effective receipt allocations ${String(row.receipt_references || "none")} ${formatKnownMoney(got)}. Outstanding ${live ? money(row.outstanding) : "—"}.`,
+            warning: "Outstanding includes credits and receipts. Cash received is the effective allocation only. A zero outstanding balance is not labelled Paid unless the cash allocation covers it.",
+            companyId,
+            projectId,
+            amount: live ? row.outstanding : "missing",
+          }));
+        }}
+      />
+      <FieldStateLegend />
+      <FinanceSourceDrawer open={Boolean(drawerPayload)} title="Customer invoice source" payload={drawerPayload} onClose={() => setDrawerPayload(null)} />
     </>
   );
 }
@@ -1330,28 +1704,50 @@ function formatCount(value: number | null): string {
   return value === null ? "Not determined" : String(value);
 }
 
-function Receipts({ books, companyId, names, onExplain, onNew }: { books: Books; companyId: string; names: Map<string, string>; onExplain: (title: string, body: string, warning: string) => void; onNew: () => void }) {
+function Receipts({ books, companyId, names, onExplain, onNew, demoMode = false }: { books: Books; companyId: string; names: Map<string, string>; onExplain: (title: string, body: string, warning: string) => void; onNew: () => void; demoMode?: boolean }) {
   return (
     <>
       <Head title="Customer receipts" text="Cash received only. A receipt is not extra turnover.">
         <Action className="btn mainbtn" onClick={onNew}>+ Record receipt</Action>
       </Head>
       <Stats items={[["Receipt rows", String(books.receipts.length)], ["Unallocated", receiptUnallocated(books.receipts), "amber"], ["Drafts", String(books.receipts.filter((row) => String(row.status) !== "posted").length)], ["Allocation", "Posted links", "blue"]]} />
-      <RegisterSearch companyId={companyId} register="receipts" dateField="receipt" dateFields={[["receipt", "Actual bank receipt date"]]} parties={books.parties.filter((item) => item.counterparty_type === "customer").map((item) => [String(item.id), String(item.name)])} partyLabel="Customer" />
-      <Grid headers={[{ label: "Date" }, { label: "Receipt ref" }, { label: "Customer" }, { label: "Amount received", amt: true }, { label: "Linked invoice" }, { label: "Allocated", amt: true }, { label: "Status" }]} rows={books.receipts.map((row) => {
-        const reference = String(row.external_reference || "Reference missing");
-        const linked = books.customerInvoices.filter((invoice) => String(invoice.receipt_references || "").includes(reference) && reference !== "Reference missing");
-        return [
-          String(row.receipt_date || "Date missing"),
-          reference,
-          names.get(String(row.counterparty_id ?? "")) ?? "Customer name missing",
-          money(row.amount),
-          linked.length ? linked.map((invoice) => String(invoice.external_reference || "Reference missing")).join(", ") : "Not linked on the invoice list",
-          row.allocated_amount === undefined || row.allocated_amount === null ? "Not on this register" : money(row.allocated_amount),
-          badge(receiptAllocationStatus(row), receiptAllocationStatus(row) === "Fully allocated" ? "green" : receiptAllocationStatus(row) === "Reversed" ? "gray" : "amber"),
-        ];
-      })} />
+      <RegisterSearch enabled={!demoMode} companyId={companyId} register="receipts" dateField="receipt" dateFields={[["receipt", "Actual bank receipt date"]]} parties={books.parties.filter((item) => item.counterparty_type === "customer").map((item) => [String(item.id), String(item.name)])} partyLabel="Customer" />
+      <FinanceDataGrid
+        columns={[
+          { id: "date", label: "Date" },
+          { id: "reference", label: "Receipt ref" },
+          { id: "customer", label: "Customer" },
+          { id: "amount", label: "Amount received", money: true, align: "right" },
+          { id: "linked", label: "Linked invoice", compactHide: true },
+          { id: "allocated", label: "Allocated", money: true, align: "right" },
+          { id: "status", label: "Status" },
+        ]}
+        emptyTitle="No customer receipts yet"
+        emptyText="No receipts are loaded for this company. This is an empty register, not a calculation error."
+        compactMetricColumnIds={["amount", "allocated"]}
+        rows={books.receipts.map((row) => {
+          const reference = String(row.external_reference || "Reference missing");
+          const linked = books.customerInvoices.filter((invoice) => String(invoice.receipt_references || "").includes(reference) && reference !== "Reference missing");
+          const status = receiptAllocationStatus(row);
+          return {
+            id: String(row.id),
+            amountColumnIds: ["amount", "allocated"],
+            cells: {
+              date: String(row.receipt_date || "Date missing"),
+              reference,
+              customer: names.get(String(row.counterparty_id ?? "")) ?? "Customer name missing",
+              amount: moneyCell(row.amount, "source-linked"),
+              linked: linked.length ? linked.map((invoice) => String(invoice.external_reference || "Reference missing")).join(", ") : "Not linked on the invoice list",
+              allocated: row.allocated_amount === undefined || row.allocated_amount === null
+                ? moneyCell("missing")
+                : moneyCell(row.allocated_amount, "calculated"),
+              status: badge(status, status === "Fully allocated" ? "green" : status === "Reversed" ? "gray" : "amber"),
+            },
+          };
+        })}
+      />
       <p className="sub">Allocated is the sum of posted receipt allocations that have not been reversed. It is not copied from the receipt total. Cash received is summarised on Project Control. <button className="linkbtn" type="button" onClick={() => onExplain("Receipt allocation", "Allocated comes from posted customer-receipt allocations. Unallocated is the receipt amount minus that sum. A receipt is not extra turnover.", "Do not treat the receipt as new revenue.")}>Explain</button></p>
+      <FieldStateLegend />
     </>
   );
 }
@@ -1366,18 +1762,39 @@ function Vat({ books, names, onExplain }: { books: Books; names: Map<string, str
       <Head title="VAT reconciliation" text="Company-wide control totals — not a filed VAT return." />
       <Stats items={[["Output VAT", money(books.tax?.output_vat), "blue"], ["Input VAT recorded", money(books.tax?.input_vat)], ["Indicative control", money(books.tax?.net_vat_control), "violet"], ["Recoverability", "Not determined", "amber"]]} />
       <p className="sub">Recorded input VAT is not verified recoverable VAT. The indicative control is not an HMRC reclaim.</p>
-      <Grid headers={[{ label: "Document ref" }, { label: "Type" }, { label: "Party" }, { label: "Net", amt: true }, { label: "VAT code/rate", hide: true }, { label: "Input VAT", amt: true }, { label: "Output VAT", amt: true }, { label: "Recoverable", hide: true }, { label: "Review" }]} rows={documents.map(({ kind, row }) => [
-        String(row.external_reference || "Reference missing"),
-        kind,
-        names.get(String(row.counterparty_id ?? "")) ?? "Party missing",
-        money(row.net_amount),
-        "Not determined",
-        kind === "Input" ? money(row.tax_amount) : "—",
-        kind === "Output" ? money(row.tax_amount) : "—",
-        "Not determined",
-        badge("Review required", "amber"),
-      ])} />
+      <FinanceDataGrid
+        columns={[
+          { id: "reference", label: "Document ref" },
+          { id: "type", label: "Type" },
+          { id: "party", label: "Party" },
+          { id: "net", label: "Net", money: true, align: "right" },
+          { id: "rate", label: "VAT code/rate", compactHide: true },
+          { id: "input", label: "Input VAT", money: true, align: "right" },
+          { id: "output", label: "Output VAT", money: true, align: "right" },
+          { id: "recoverable", label: "Recoverable", compactHide: true },
+          { id: "review", label: "Review" },
+        ]}
+        emptyTitle="No VAT documents yet"
+        emptyText="No posted cost or customer documents with VAT are loaded."
+        compactMetricColumnIds={["net", "input", "output"]}
+        rows={documents.map(({ kind, row }) => ({
+          id: `${kind}-${String(row.id)}`,
+          amountColumnIds: ["net", "input", "output"],
+          cells: {
+            reference: String(row.external_reference || "Reference missing"),
+            type: kind,
+            party: names.get(String(row.counterparty_id ?? "")) ?? "Party missing",
+            net: moneyCell(row.net_amount, "source-linked"),
+            rate: statusChip("Not determined", "neutral"),
+            input: kind === "Input" ? moneyCell(row.tax_amount, "source-linked") : moneyCell("missing"),
+            output: kind === "Output" ? moneyCell(row.tax_amount, "source-linked") : moneyCell("missing"),
+            recoverable: statusChip("Not determined", "amber"),
+            review: badge("Review required", "amber"),
+          },
+        }))}
+      />
       <div className="bar"><button className="btn" type="button" onClick={() => onExplain("VAT control", `Output VAT ${money(books.tax?.output_vat)} minus recorded input VAT ${money(books.tax?.input_vat)} = indicative net control ${money(books.tax?.net_vat_control)}. ${String(books.tax?.review_required || "")}`, "Recoverable VAT is not determined from the recorded VAT amount.")}>Explain control</button></div>
+      <FieldStateLegend />
     </>
   );
 }
@@ -1387,59 +1804,158 @@ function CisTax({ books, onPreview, onImport }: { books: Books; onPreview?: () =
   return (
     <>
       <Head title="CIS tax / HMRC" text="Approved snapshots only. Statutory rates are not guessed." />
-      {empty ? <div className="empty" role="status"><strong>No approved payroll snapshots</strong><span>The live CIS register stays empty for this company.</span></div> : null}
       <div className="bar">
         {onPreview ? <button className="btn" type="button" onClick={onPreview}>View fictional worker preview</button> : null}
         <Action className="btn mainbtn" disabled={books.cisSources.length === 0} onClick={onImport}>Import approved snapshot</Action>
       </div>
-      <Grid headers={[{ label: "Source period" }, { label: "Worker" }, { label: "Source obligation", amt: true }, { label: "CIS deduction", amt: true }, { label: "Bank paid", amt: true }, { label: "Outstanding", amt: true }, { label: "Status" }]} rows={books.cis.map((row) => [String(row.week_start || "Period missing"), String(row.source_user_id || "Worker"), money(row.effective_payable_amount), money(row.effective_cis_deduction), money(row.bank_allocated), money(row.still_owed), badge("Posted snapshot", "blue")])} />
+      <FinanceDataGrid
+        columns={[
+          { id: "period", label: "Source period" },
+          { id: "worker", label: "Worker" },
+          { id: "obligation", label: "Source obligation", money: true, align: "right" },
+          { id: "deduction", label: "CIS deduction", money: true, align: "right" },
+          { id: "paid", label: "Bank paid", money: true, align: "right" },
+          { id: "outstanding", label: "Outstanding", money: true, align: "right" },
+          { id: "status", label: "Status" },
+        ]}
+        emptyTitle="No approved payroll snapshots"
+        emptyText={payrollEmptyCopy("CIS")}
+        compactMetricColumnIds={["obligation", "outstanding"]}
+        rows={books.cis.map((row) => ({
+          id: String(row.id || `${row.source_user_id}-${row.week_start}`),
+          amountColumnIds: ["obligation", "deduction", "paid", "outstanding"],
+          cells: {
+            period: String(row.week_start || "Period missing"),
+            worker: String(row.source_user_id || "Worker"),
+            obligation: moneyCell(row.effective_payable_amount, "source-linked"),
+            deduction: moneyCell(row.effective_cis_deduction, "source-linked"),
+            paid: moneyCell(row.bank_allocated, "source-linked"),
+            outstanding: moneyCell(row.still_owed, "calculated"),
+            status: badge("Posted snapshot", "blue"),
+          },
+        }))}
+      />
       <h3 className="head2">PAYE / HMRC control</h3>
       <p className="sub">Employer NI and pension from the tax control: {money(books.tax?.employer_ni_and_pension)}. HMRC payments recorded: {money(books.tax?.hmrc_payments_recorded)}. These are not worker net pay and not project cost.</p>
-      {books.payeSources.length === 0 ? <p className="empty">No approved PAYE source is available to import.</p> : <p className="sub">{books.payeSources.length} approved PAYE source row(s) can be imported from the secondary action. They are not bank payments.</p>}
+      {books.payeSources.length === 0 ? <p className="empty">{payrollEmptyCopy("PAYE")}</p> : <p className="sub">{books.payeSources.length} approved PAYE source row(s) can be imported from the secondary action. They are not bank payments.</p>}
+      {empty ? null : <FieldStateLegend />}
     </>
   );
 }
 
-function Retention({ books, companyId, names, projectsById, onExplain, onRelease }: { books: Books; companyId: string; names: Map<string, string>; projectsById: Map<string, string>; onExplain: (title: string, body: string, warning: string) => void; onRelease: () => void }) {
+function Retention({ books, companyId, names, projectsById, onExplain, onRelease, demoMode = false }: { books: Books; companyId: string; names: Map<string, string>; projectsById: Map<string, string>; onExplain: (title: string, body: string, warning: string) => void; onRelease: () => void; demoMode?: boolean }) {
   const withheld = addMoney(books.certificates.filter((row) => String(row.status) === "posted").map((row) => row.retention_withheld));
   const released = addMoney(books.releases.filter((row) => String(row.status) === "posted").map((row) => row.amount));
+  const [drawerPayload, setDrawerPayload] = useState<SourceBreakdownPayload | null>(null);
   return (
     <>
       <Head title="Retention & certificates" text="Certificate retention held and released. Release is not new revenue.">
         <Action className="btn mainbtn" onClick={onRelease}>+ Release retention</Action>
       </Head>
       <Stats items={[["Withheld", formatGbp(withheld)], ["Released", formatGbp(released), "green"], ["Still retained", formatGbp(withheld - released), "amber"], ["Certificates", String(books.certificates.length)]]} />
-      <RegisterSearch companyId={companyId} register="retention" dateField="release" dateFields={[["release", "Release date"]]} showSearch={false} statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
-      <Grid headers={[{ label: "Project" }, { label: "Customer", hide: true }, { label: "Certificate" }, { label: "Certified", amt: true, hide: true }, { label: "Recorded rate" }, { label: "Withheld", amt: true }, { label: "Released", amt: true, hide: true }, { label: "Remaining", amt: true }, { label: "Status" }]} rows={books.certificates.map((row) => {
-        const application = books.applications.find((item) => String(item.id) === String(row.application_id));
-        const releasedFor = addMoney(books.releases.filter((item) => String(item.certificate_id) === String(row.id) && String(item.status) === "posted").map((item) => item.amount));
-        const remaining = (subtractMoney(row.retention_withheld, 0) ?? 0n) - releasedFor;
-        const rate = recordedRate(row.retention_rate);
-        return [
-          projectsById.get(String(application?.project_id ?? "")) ?? "Project not on the certificate",
-          names.get(String(application?.counterparty_id ?? "")) ?? "Customer not on the certificate",
-          String(row.certificate_reference || "Reference missing"),
-          money(row.certified_net),
-          rate,
-          money(row.retention_withheld),
-          formatGbp(releasedFor),
-          <button className="linkbtn" type="button" onClick={() => onExplain(String(row.certificate_reference || "Retention"), `Certified ${money(row.certified_net)} at recorded rate ${rate}. Withheld ${money(row.retention_withheld)}. Released ${formatGbp(releasedFor)}. Remaining withheld minus released = ${formatGbp(remaining)}.`, "The release is not extra revenue. The rate is the recorded certificate rate, not a contract clause invented here.")}>{formatGbp(remaining)} ↗</button>,
-          badge(retentionReleaseStatus(releasedFor, remaining), retentionReleaseStatus(releasedFor, remaining) === "Fully released" ? "green" : "amber"),
-        ];
-      })} />
+      <RegisterSearch enabled={!demoMode} companyId={companyId} register="retention" dateField="release" dateFields={[["release", "Release date"]]} showSearch={false} statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
+      <FinanceDataGrid
+        columns={[
+          { id: "project", label: "Project" },
+          { id: "customer", label: "Customer", compactHide: true },
+          { id: "certificate", label: "Certificate" },
+          { id: "certified", label: "Certified", money: true, align: "right", compactHide: true },
+          { id: "rate", label: "Recorded rate" },
+          { id: "withheld", label: "Withheld", money: true, align: "right" },
+          { id: "released", label: "Released", money: true, align: "right", compactHide: true },
+          { id: "remaining", label: "Remaining", money: true, align: "right" },
+          { id: "status", label: "Status" },
+        ]}
+        emptyTitle="No certificates yet"
+        emptyText="No retention certificates are loaded for this company."
+        compactMetricColumnIds={["withheld", "remaining"]}
+        rows={books.certificates.map((row) => {
+          const application = books.applications.find((item) => String(item.id) === String(row.application_id));
+          const releasedFor = addMoney(books.releases.filter((item) => String(item.certificate_id) === String(row.id) && String(item.status) === "posted").map((item) => item.amount));
+          const remaining = (subtractMoney(row.retention_withheld, 0) ?? 0n) - releasedFor;
+          const rate = recordedRate(row.retention_rate);
+          const status = retentionReleaseStatus(releasedFor, remaining);
+          return {
+            id: String(row.id),
+            metricId: "retention",
+            amountColumnIds: ["certified", "withheld", "released", "remaining"],
+            cells: {
+              project: projectsById.get(String(application?.project_id ?? "")) ?? "Project not on the certificate",
+              customer: names.get(String(application?.counterparty_id ?? "")) ?? "Customer not on the certificate",
+              certificate: String(row.certificate_reference || "Reference missing"),
+              certified: moneyCell(row.certified_net, "source-linked"),
+              rate,
+              withheld: moneyCell(row.retention_withheld, "source-linked"),
+              released: moneyCell(releasedFor, "calculated"),
+              remaining: moneyCell(remaining, "calculated"),
+              status: badge(status, status === "Fully released" ? "green" : "amber"),
+            },
+            meta: { row, releasedFor, remaining, rate },
+          };
+        })}
+        onAmountClick={(_metric, gridRow) => {
+          const row = gridRow.meta?.row as Row | undefined;
+          if (!row) return;
+          const releasedFor = gridRow.meta?.releasedFor as bigint;
+          const remaining = gridRow.meta?.remaining as bigint;
+          const rate = String(gridRow.meta?.rate || "");
+          setDrawerPayload(explainToPayload({
+            title: String(row.certificate_reference || "Retention"),
+            body: `Certified ${money(row.certified_net)} at recorded rate ${rate}. Withheld ${money(row.retention_withheld)}. Released ${formatGbp(releasedFor)}. Remaining withheld minus released = ${formatGbp(remaining)}.`,
+            warning: "The release is not extra revenue. The rate is the recorded certificate rate, not a contract clause invented here.",
+            companyId,
+            amount: String(remaining),
+          }));
+        }}
+      />
+      <FieldStateLegend />
+      <FinanceSourceDrawer open={Boolean(drawerPayload)} title="Retention source" payload={drawerPayload} onClose={() => setDrawerPayload(null)} />
     </>
   );
 }
 
-function Dayworks({ books, companyId, projectsById, onExplain, onNew }: { books: Books; companyId: string; projectsById: Map<string, string>; onExplain: (title: string, body: string, warning: string) => void; onNew: () => void }) {
+function Dayworks({ books, companyId, projectsById, onExplain, onNew, demoMode = false }: { books: Books; companyId: string; projectsById: Map<string, string>; onExplain: (title: string, body: string, warning: string) => void; onNew: () => void; demoMode?: boolean }) {
   const dayApproved = addMoney(books.dayworks.filter((row) => String(row.approval_status) === "approved").map((row) => row.approved_value));
   const variationApproved = addMoney(books.variations.filter((row) => String(row.approval_status) === "approved").map((row) => row.approved_value));
-  const rows: ReactNode[][] = [
+  const [drawerPayload, setDrawerPayload] = useState<SourceBreakdownPayload | null>(null);
+  const dayRows = [
     ...books.dayworks.map((row) => {
       const parts = addMoney([row.labour_amount, row.material_amount, row.plant_amount]);
-      return [projectsById.get(String(row.project_id)) ?? "Project missing", String(row.work_date || "Date missing"), String(row.reference_code), String(row.description || ""), money(row.labour_amount), money(row.material_amount), money(row.plant_amount), <button className="linkbtn" type="button" onClick={() => onExplain(String(row.reference_code), `Labour ${money(row.labour_amount)} + materials ${money(row.material_amount)} + plant ${money(row.plant_amount)} = stored split ${formatGbp(parts)}. Submitted ${money(row.submitted_value)}. Approved ${money(row.approved_value)}.`, "Hours and rates are not stored. They are not invented from the totals.")}>{money(row.approved_value)} ↗</button>, badge(String(row.approval_status || "Review"), toneFor(String(row.approval_status)))];
+      return {
+        id: `dw-${String(row.id)}`,
+        metricId: "daywork",
+        amountColumnIds: ["labour", "materials", "plant", "approved"],
+        cells: {
+          project: projectsById.get(String(row.project_id)) ?? "Project missing",
+          date: String(row.work_date || "Date missing"),
+          reference: String(row.reference_code),
+          description: String(row.description || ""),
+          labour: moneyCell(row.labour_amount, "source-linked"),
+          materials: moneyCell(row.material_amount, "source-linked"),
+          plant: moneyCell(row.plant_amount, "source-linked"),
+          approved: moneyCell(row.approved_value, "calculated"),
+          status: badge(String(row.approval_status || "Review")),
+        },
+        meta: { row, parts, kind: "daywork" },
+      };
     }),
-    ...books.variations.map((row) => [projectsById.get(String(row.project_id)) ?? "Project missing", "—", String(row.reference_code), String(row.description || "Variation"), "—", "—", "—", money(row.approved_value), badge(String(row.approval_status || "Review"), toneFor(String(row.approval_status)))]),
+    ...books.variations.map((row) => ({
+      id: `var-${String(row.id)}`,
+      metricId: "variation",
+      amountColumnIds: ["approved"],
+      cells: {
+        project: projectsById.get(String(row.project_id)) ?? "Project missing",
+        date: "—",
+        reference: String(row.reference_code),
+        description: String(row.description || "Variation"),
+        labour: moneyCell("missing"),
+        materials: moneyCell("missing"),
+        plant: moneyCell("missing"),
+        approved: moneyCell(row.approved_value, "source-linked"),
+        status: badge(String(row.approval_status || "Review")),
+      },
+      meta: { row, kind: "variation" },
+    })),
   ];
   return (
     <>
@@ -1448,13 +1964,43 @@ function Dayworks({ books, companyId, projectsById, onExplain, onNew }: { books:
       </Head>
       <Stats items={[["Daywork approved", formatGbp(dayApproved), "green"], ["Variation approved", formatGbp(variationApproved), "green"], ["Hours / rates", "Not stored", "amber"], ["Contract uplift", formatGbp(dayApproved + variationApproved), "blue"]]} />
       <p className="sub">Hours, rates and CVR-6 immutability remain {metricHonestyLabel("experimentalUnavailable")}.</p>
-      <RegisterSearch companyId={companyId} register="dayworks" dateField="work" dateFields={[["work", "Work date"]]} statusOptions={[["all", "All"], ["approved", "Approved"], ["draft", "Draft"], ["submitted", "Submitted"]]} />
-      <Grid headers={[{ label: "Project" }, { label: "Work/date", hide: true }, { label: "Reference" }, { label: "Description", hide: true }, { label: "Labour", amt: true, hide: true }, { label: "Materials", amt: true, hide: true }, { label: "Plant", amt: true, hide: true }, { label: "Approved value", amt: true }, { label: "Status" }]} rows={rows} />
+      <RegisterSearch enabled={!demoMode} companyId={companyId} register="dayworks" dateField="work" dateFields={[["work", "Work date"]]} statusOptions={[["all", "All"], ["approved", "Approved"], ["draft", "Draft"], ["submitted", "Submitted"]]} />
+      <FinanceDataGrid
+        columns={[
+          { id: "project", label: "Project" },
+          { id: "date", label: "Work/date", compactHide: true },
+          { id: "reference", label: "Reference" },
+          { id: "description", label: "Description", compactHide: true },
+          { id: "labour", label: "Labour", money: true, align: "right", compactHide: true },
+          { id: "materials", label: "Materials", money: true, align: "right", compactHide: true },
+          { id: "plant", label: "Plant", money: true, align: "right", compactHide: true },
+          { id: "approved", label: "Approved value", money: true, align: "right" },
+          { id: "status", label: "Status" },
+        ]}
+        emptyTitle="No dayworks or variations yet"
+        emptyText="No daywork or variation rows are loaded for this company."
+        compactMetricColumnIds={["approved"]}
+        rows={dayRows}
+        onAmountClick={(_metric, gridRow) => {
+          const row = gridRow.meta?.row as Row | undefined;
+          if (!row || gridRow.meta?.kind !== "daywork") return;
+          const parts = gridRow.meta?.parts as bigint;
+          setDrawerPayload(explainToPayload({
+            title: String(row.reference_code),
+            body: `Labour ${money(row.labour_amount)} + materials ${money(row.material_amount)} + plant ${money(row.plant_amount)} = stored split ${formatGbp(parts)}. Submitted ${money(row.submitted_value)}. Approved ${money(row.approved_value)}.`,
+            warning: "Hours and rates are not stored. They are not invented from the totals.",
+            companyId,
+            amount: row.approved_value,
+          }));
+        }}
+      />
+      <FieldStateLegend />
+      <FinanceSourceDrawer open={Boolean(drawerPayload)} title="Daywork source" payload={drawerPayload} onClose={() => setDrawerPayload(null)} />
     </>
   );
 }
 
-function Loans({ books, companyId, names, view, onView, onExplain, onNew }: { books: Books; companyId: string; names: Map<string, string>; view: string; onView: (value: string) => void; onExplain: (title: string, body: string, warning: string) => void; onNew: () => void }) {
+function Loans({ books, companyId, names, view, onView, onExplain, onNew, demoMode = false }: { books: Books; companyId: string; names: Map<string, string>; view: string; onView: (value: string) => void; onExplain: (title: string, body: string, warning: string) => void; onNew: () => void; demoMode?: boolean }) {
   const posted = books.funding.filter((row) => String(row.status) === "posted");
   const draw = addMoney(posted.filter((row) => row.entry_kind === "loan_draw").map((row) => row.amount));
   const repaid = addMoney(posted.filter((row) => row.entry_kind === "loan_repayment" || row.entry_kind === "principal_repayment").map((row) => row.amount));
@@ -1465,11 +2011,98 @@ function Loans({ books, companyId, names, view, onView, onExplain, onNew }: { bo
       </Head>
       <div className="pills">{["Movements", "Opening balances", "Supplier position", "Audit"].map((item) => <button key={item} className={`pill${view === item ? " active" : ""}`} type="button" onClick={() => onView(item)}>{item}</button>)}</div>
       <Stats items={[["Loan draw", formatGbp(draw)], ["Principal repaid", formatGbp(repaid), "green"], ["Principal remaining", formatGbp(draw - repaid), "amber"], ["Opening remaining", money(books.position?.opening_remaining), "violet"]]} />
-      <RegisterSearch companyId={companyId} register="funding" dateField="entry" dateFields={[["entry", "Entry date"]]} statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
-      {view === "Movements" ? <Grid headers={[{ label: "Kind" }, { label: "Reference" }, { label: "Date" }, { label: "Amount", amt: true }, { label: "Status" }]} rows={books.funding.map((row) => [labelKind(String(row.entry_kind)), String(row.external_reference || "Reference missing"), String(row.entry_date || ""), money(row.amount), badge(String(row.status) === "posted" ? "Posted" : "Draft", toneFor(String(row.status)))])} /> : null}
-      {view === "Opening balances" ? <Grid headers={[{ label: "Kind" }, { label: "Reference" }, { label: "Date" }, { label: "Amount", amt: true }, { label: "Review" }]} rows={books.openings.map((row) => [labelKind(String(row.balance_kind)), String(row.source_reference || "Reference missing"), String(row.effective_date || ""), money(row.amount), badge(String(row.review_status || "Review"), "violet")])} /> : null}
-      {view === "Supplier position" ? <div className="calc"><div className="line"><span>Invoice outstanding</span><span>{money(books.position?.invoice_outstanding)}</span></div><div className="line"><span>Opening payable</span><span>{money(books.position?.opening_supplier_payable)}</span></div><div className="line"><span>Opening settled</span><span>{money(books.position?.opening_settled)}</span></div><div className="line"><span>Opening remaining</span><span>{money(books.position?.opening_remaining)}</span></div><div className="line"><span>Combined supplier position</span><span>{money(books.position?.combined_supplier_position)}</span></div><button className="linkbtn" type="button" onClick={() => onExplain("Supplier position", `Invoice outstanding ${money(books.position?.invoice_outstanding)} plus opening remaining ${money(books.position?.opening_remaining)} is the combined position ${money(books.position?.combined_supplier_position)}.`, "Opening balances are not reduced by invoice allocations.")}>Explain</button></div> : null}
-      {view === "Audit" ? <Grid headers={[{ label: "When" }, { label: "Record" }, { label: "Action" }, { label: "Reason" }]} rows={books.audit.map((row) => [String(row.created_at || ""), labelKind(String(row.entity_type)), labelKind(String(row.action)), String(row.reason || "—")])} /> : null}
+      <RegisterSearch enabled={!demoMode} companyId={companyId} register="funding" dateField="entry" dateFields={[["entry", "Entry date"]]} statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
+      {view === "Movements" ? (
+        <FinanceDataGrid
+          columns={[
+            { id: "kind", label: "Kind" },
+            { id: "reference", label: "Reference" },
+            { id: "date", label: "Date" },
+            { id: "amount", label: "Amount", money: true, align: "right" },
+            { id: "status", label: "Status" },
+          ]}
+          emptyTitle="No loan movements yet"
+          emptyText="No funding movements are loaded for this company."
+          compactMetricColumnIds={["amount"]}
+          rows={books.funding.map((row) => ({
+            id: String(row.id),
+            amountColumnIds: ["amount"],
+            cells: {
+              kind: labelKind(String(row.entry_kind)),
+              reference: String(row.external_reference || "Reference missing"),
+              date: String(row.entry_date || ""),
+              amount: moneyCell(row.amount, "source-linked"),
+              status: badge(String(row.status) === "posted" ? "Posted" : "Draft"),
+            },
+          }))}
+        />
+      ) : null}
+      {view === "Opening balances" ? (
+        <FinanceDataGrid
+          columns={[
+            { id: "kind", label: "Kind" },
+            { id: "reference", label: "Reference" },
+            { id: "date", label: "Date" },
+            { id: "amount", label: "Amount", money: true, align: "right" },
+            { id: "review", label: "Review" },
+          ]}
+          emptyTitle="No opening balances"
+          emptyText="No opening balance rows are loaded."
+          compactMetricColumnIds={["amount"]}
+          rows={books.openings.map((row) => ({
+            id: String(row.id),
+            amountColumnIds: ["amount"],
+            cells: {
+              kind: labelKind(String(row.balance_kind)),
+              reference: String(row.source_reference || "Reference missing"),
+              date: String(row.effective_date || ""),
+              amount: moneyCell(row.amount, "source-linked"),
+              review: badge(String(row.review_status || "Review"), "violet"),
+            },
+          }))}
+        />
+      ) : null}
+      {view === "Supplier position" ? (
+        <>
+          <FinanceDataGrid
+            columns={[
+              { id: "label", label: "Position line" },
+              { id: "amount", label: "Amount", money: true, align: "right" },
+            ]}
+            compactMetricColumnIds={["amount"]}
+            rows={[
+              { id: "inv", cells: { label: "Invoice outstanding", amount: knownOrMissing(books.position?.invoice_outstanding) } },
+              { id: "op", cells: { label: "Opening payable", amount: knownOrMissing(books.position?.opening_supplier_payable) } },
+              { id: "os", cells: { label: "Opening settled", amount: knownOrMissing(books.position?.opening_settled) } },
+              { id: "or", cells: { label: "Opening remaining", amount: knownOrMissing(books.position?.opening_remaining) } },
+              { id: "comb", cells: { label: "Combined supplier position", amount: knownOrMissing(books.position?.combined_supplier_position) }, rowKind: "total" as const },
+            ]}
+          />
+          <button className="linkbtn" type="button" onClick={() => onExplain("Supplier position", `Invoice outstanding ${money(books.position?.invoice_outstanding)} plus opening remaining ${money(books.position?.opening_remaining)} is the combined position ${money(books.position?.combined_supplier_position)}.`, "Opening balances are not reduced by invoice allocations.")}>Explain</button>
+        </>
+      ) : null}
+      {view === "Audit" ? (
+        <FinanceDataGrid
+          columns={[
+            { id: "when", label: "When" },
+            { id: "record", label: "Record" },
+            { id: "action", label: "Action" },
+            { id: "reason", label: "Reason" },
+          ]}
+          emptyTitle="No audit rows"
+          emptyText="No funding audit events are loaded on this sheet."
+          rows={books.audit.map((row, index) => ({
+            id: `audit-${index}`,
+            cells: {
+              when: String(row.created_at || ""),
+              record: labelKind(String(row.entity_type)),
+              action: labelKind(String(row.action)),
+              reason: String(row.reason || "—"),
+            },
+          }))}
+        />
+      ) : null}
+      <FieldStateLegend />
       <p className="sub">{names.size ? "" : ""}</p>
     </>
   );

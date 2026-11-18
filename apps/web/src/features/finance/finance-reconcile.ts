@@ -169,9 +169,10 @@ export function formulaCheckFromDifference(displayed: MoneyValue, difference: st
   return "MISMATCH";
 }
 
-export function verificationTone(verification: string): "green" | "amber" | "red" {
+export function verificationTone(verification: string): "green" | "amber" | "red" | "neutral" {
   if (verification === "RECONCILED") return "green";
-  if (verification.includes("UNAVAILABLE") || verification === "UNVERIFIED") return "red";
+  if (verification.includes("UNAVAILABLE")) return "red";
+  if (verification === "UNVERIFIED" || verification === "PARTIAL") return "neutral";
   return "amber";
 }
 

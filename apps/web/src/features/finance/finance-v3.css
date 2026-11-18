@@ -1,23 +1,33 @@
 /* TIMIQ Finance — Coreloops-inspired enterprise commercial UI */
 .fv3 {
-  --fv-bg: #f5f6f8;
+  --fv-bg: #f3f5f7;
   --fv-surface: #ffffff;
   --fv-ink: #111827;
-  --fv-muted: #6b7280;
+  --fv-muted: #4b5563;
   --fv-line: #e5e7eb;
   --fv-line-strong: #d1d5db;
-  --fv-blue: #2563eb;
+  --fv-blue: #1d4ed8;
   --fv-blue-soft: #eff6ff;
-  --fv-green: #059669;
-  --fv-amber: #d97706;
-  --fv-red: #dc2626;
-  --fv-radius: 10px;
+  --fv-green: #047857;
+  --fv-green-bg: #ecfdf5;
+  --fv-green-border: #a7f3d0;
+  --fv-amber: #b45309;
+  --fv-amber-bg: #fffbeb;
+  --fv-amber-border: #fde68a;
+  --fv-red: #b91c1c;
+  --fv-red-bg: #fef2f2;
+  --fv-red-border: #fecaca;
+  --fv-neutral: #6b7280;
+  --fv-neutral-bg: #f8fafc;
+  --fv-neutral-border: #e2e8f0;
+  --fv-radius: 8px;
   --fv-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
   margin: 0;
   background: var(--fv-bg);
   color: var(--fv-ink);
-  font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+  font: 13.5px/1.45 "Segoe UI", system-ui, sans-serif;
   min-width: 0;
+  -webkit-font-smoothing: antialiased;
 }
 .fv3 button, .fv3 input, .fv3 select, .fv3 textarea { font: inherit; }
 .fv3 button { cursor: pointer; }
@@ -40,17 +50,35 @@
   border: 1px solid var(--fv-line); background: #f9fafb;
   border-radius: 999px; padding: 4px 10px; font-size: 11px; color: var(--fv-muted); font-weight: 650;
 }
-.fv3 .chip.readonly { border-color: #fde68a; background: #fffbeb; color: #92400e; }
-.fv3 .chip.live { border-color: #a7f3d0; background: #ecfdf5; color: #065f46; }
+.fv3 .chip.readonly {
+  border-color: var(--fv-neutral-border);
+  background: var(--fv-neutral-bg);
+  color: #374151;
+}
+.fv3 .chip.live { border-color: var(--fv-green-border); background: var(--fv-green-bg); color: #065f46; }
+.fv3 .chip.scope-company { border-color: #bfdbfe; background: var(--fv-blue-soft); color: #1e3a8a; }
+.fv3 .chip.scope-project { border-color: #c7d2fe; background: #eef2ff; color: #3730a3; }
 .fv3 .chip a, a.chip { color: inherit; text-decoration: none; }
 
 .fv3 .main {
-  padding: 16px 24px 32px;
-  max-width: 1360px;
+  padding: 14px 20px 28px;
+  max-width: 1600px;
   margin: 0 auto;
   width: 100%;
   box-sizing: border-box;
 }
+
+.fv3 .fv-crumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--fv-muted);
+}
+.fv3 .fv-crumb strong { color: var(--fv-ink); font-weight: 700; }
+.fv3 .fv-crumb .sep { color: #9ca3af; }
 
 /* Contextual top nav — replaces second Finance sidebar */
 .fv3 .fv-context-nav {
@@ -258,11 +286,27 @@
 
 .fv3 .notice {
   padding: 10px 12px; margin: 0;
-  border: 1px solid #fde68a; border-left: 3px solid var(--fv-amber);
-  background: #fffbeb; color: #92400e; font-size: 12px; border-radius: 8px;
+  border: 1px solid var(--fv-amber-border); border-left: 3px solid var(--fv-amber);
+  background: var(--fv-amber-bg); color: #92400e; font-size: 12px; border-radius: 8px;
 }
-.fv3 .notice.neutral { border-color: #bfdbfe; border-left-color: var(--fv-blue); background: #eff6ff; color: #1e3a8a; }
-.fv3 .notice.bad { border-color: #fecaca; border-left-color: var(--fv-red); background: #fef2f2; color: #991b1b; }
+.fv3 .notice.neutral {
+  border-color: var(--fv-neutral-border);
+  border-left-color: #64748b;
+  background: var(--fv-neutral-bg);
+  color: #334155;
+}
+.fv3 .notice.info {
+  border-color: #bfdbfe;
+  border-left-color: var(--fv-blue);
+  background: var(--fv-blue-soft);
+  color: #1e3a8a;
+}
+.fv3 .notice.bad {
+  border-color: var(--fv-red-border);
+  border-left-color: var(--fv-red);
+  background: var(--fv-red-bg);
+  color: #991b1b;
+}
 .fv3 .honesty-compact { font-size: 12px; padding: 8px 10px; }
 
 .fv3 .panel {
@@ -341,11 +385,36 @@
 }
 .fv3 .search { min-width: 180px; flex: 1; max-width: 320px; }
 .fv3 .empty {
-  border: 1px dashed var(--fv-line-strong); padding: 36px 24px; text-align: center;
-  border-radius: var(--fv-radius); background: #fafafa; color: #6b7280;
+  border: 1px solid var(--fv-neutral-border);
+  padding: 28px 22px;
+  text-align: center;
+  border-radius: var(--fv-radius);
+  background: var(--fv-neutral-bg);
+  color: var(--fv-muted);
+  max-width: 52rem;
+  margin: 0 auto;
 }
-.fv3 .empty strong { display: block; color: var(--fv-ink); margin-bottom: 4px; font-size: 14px; }
+.fv3 .empty strong { display: block; color: var(--fv-ink); margin-bottom: 6px; font-size: 14px; font-weight: 700; }
+.fv3 .empty span, .fv3 .empty p { display: block; font-size: 12.5px; line-height: 1.45; max-width: 48ch; margin: 0 auto; }
 .fv3 .empty-state { display: grid; gap: 8px; }
+.fv3 .filters-collapsed {
+  border: 1px solid var(--fv-line);
+  border-radius: var(--fv-radius);
+  background: var(--fv-surface);
+  padding: 0;
+}
+.fv3 .filters-collapsed > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 10px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #374151;
+}
+.fv3 .filters-collapsed > summary::-webkit-details-marker { display: none; }
+.fv3 .filters-collapsed[open] > summary { border-bottom: 1px solid #f3f4f6; }
+.fv3 .filters-collapsed .table-toolbar,
+.fv3 .filters-collapsed .pills { margin: 10px 12px 12px; }
 
 .fv3 .attention-center { scroll-margin-top: 12px; }
 .fv3 .attention-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
@@ -412,10 +481,21 @@
   border: 1px solid var(--fv-line); border-radius: var(--fv-radius);
   background: #fff; padding: 14px 16px; display: grid; gap: 10px;
 }
-.fv3 .fv-chart.demo { border-color: #f59e0b; box-shadow: inset 0 0 0 1px #fde68a; }
+.fv3 .fv-chart.demo { border-color: var(--fv-amber-border); box-shadow: inset 0 0 0 1px var(--fv-amber-border); }
+.fv3 .fv-chart.empty-state {
+  background: var(--fv-neutral-bg);
+  border-style: solid;
+  border-color: var(--fv-neutral-border);
+}
+.fv3 .fv-chart.empty-state .empty {
+  border: 0;
+  background: transparent;
+  padding: 18px 8px 8px;
+  margin: 0;
+}
 .fv3 .fv-chart-demo-banner {
   display: inline-flex; align-items: center; gap: 8px;
-  background: #fffbeb; color: #92400e; border: 1px solid #fde68a;
+  background: var(--fv-amber-bg); color: #92400e; border: 1px solid var(--fv-amber-border);
   border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 750;
   letter-spacing: 0.04em; text-transform: uppercase; width: fit-content;
 }

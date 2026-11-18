@@ -30,6 +30,7 @@ import {
   activeMovementCount,
   auditDescription,
   budgetForecastReview,
+  isBudgetForecastMismatch,
   columnsForWidth,
   confirmationCopy,
   customerSettlementStatus,
@@ -486,7 +487,27 @@ test("forecast margin stays labelled as forecast and a missing cost to complete 
   assert.match(review, /£80,000.00/);
   assert.match(review, /£4,500.00/);
   assert.match(review, /Review is required/);
-  assert.match(budgetForecastReview({ approved_budget: "80000.0000", forecast_final_cost: "missing" }), /not treated as zero/);
+  assert.equal(isBudgetForecastMismatch(review), true);
+  const missing = budgetForecastReview({ approved_budget: "80000.0000", forecast_final_cost: "missing" });
+  assert.match(missing, /not treated as zero/);
+  assert.equal(isBudgetForecastMismatch(missing), false);
+  const figures = ownerControl({
+    ...blankOwner(),
+    projectSelected: true,
+    projectName: "Kennington",
+    cvrs: [{
+      name: "Kennington",
+      approved_budget: "80000.0000",
+      forecast_final_cost: "missing",
+      cost_to_complete: "missing",
+      forecast_final_profit: "missing",
+      forecast_final_margin_percent: "missing",
+    }],
+  });
+  assert.equal(figures.attention.some((item) => /approved budget different from Forecast Final Cost/i.test(item)), false);
+  const ui = financeUiAttentionActions(figures.attention);
+  assert.equal(ui.some((item) => item.title === "Budget vs forecast mismatch"), false);
+  assert.equal(ui.some((item) => item.title === "Commercial setup pending"), false);
 });
 
 test("forecast attention keeps estimated profit distinct from certified profit", () => {

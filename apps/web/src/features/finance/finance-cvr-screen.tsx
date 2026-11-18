@@ -5,7 +5,13 @@ import { useEffect, useMemo, useState } from "react";
 import { API_URL } from "@/config/api";
 
 import { CommercialPerformanceChart, buildCommercialBars } from "./finance-chart";
-import { FinanceDataGrid, type FinanceGridColumn, type FinanceGridRow } from "./finance-data-grid";
+import {
+  FinanceDataGrid,
+  type FinanceGridColumn,
+  type FinanceGridRow,
+  type FinanceMoneyCell,
+} from "./finance-data-grid";
+import { FinanceFieldState } from "./finance-field-state";
 import {
   missingCtcIncomplete,
   reconcileKpiToContributions,
@@ -14,6 +20,7 @@ import {
   type SourceBreakdownRow,
 } from "./finance-reconcile";
 import { FinanceSourceDrawer } from "./finance-source-drawer";
+import "./finance-ui.css";
 import {
   controlAmount,
   controlPercent,
@@ -68,8 +75,9 @@ type Props = {
 };
 
 const COLUMNS: FinanceGridColumn[] = [
-  { id: "code", label: "Hierarchy", width: "220px" },
+  { id: "code", label: "Hierarchy / Cost code", width: "220px" },
   { id: "description", label: "Description / reference" },
+  { id: "status", label: "Status", width: "120px" },
   { id: "budget", label: "Budget", money: true, align: "right" },
   { id: "actual", label: "Actual cost", money: true, align: "right" },
   { id: "commitments", label: "Open commitments", money: true, align: "right" },
@@ -77,6 +85,15 @@ const COLUMNS: FinanceGridColumn[] = [
   { id: "final", label: "Forecast final", money: true, align: "right" },
   { id: "margin", label: "Margin", money: true, align: "right" },
 ];
+
+function moneyCell(value: unknown, incomplete = false): FinanceMoneyCell {
+  const raw = value as string | number | null | undefined;
+  const missing = raw === "missing" || raw === null || raw === undefined || String(raw).trim() === "";
+  return {
+    value: missing ? "missing" : raw,
+    kind: missing ? "missing-required" : incomplete ? "unverified" : "calculated",
+  };
+}
 
 export function FinanceCvrScreen({
   companyId,
@@ -100,6 +117,7 @@ export function FinanceCvrScreen({
   const [drawerError, setDrawerError] = useState("");
   const [drawerPayload, setDrawerPayload] = useState<SourceBreakdownPayload | null>(null);
   const [drawerTitle, setDrawerTitle] = useState("");
+  const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
 
   const approved = controlAmount(cvr.approved_contract_value);
   const incurred = controlAmount(cvr.actual_incurred_cost ?? cvr.actual_eligible_cost);
@@ -129,7 +147,7 @@ export function FinanceCvrScreen({
     today: new Date().toISOString().slice(0, 10),
   });
   const attention = financeUiAttentionActions(figures.attention);
-
+  const commercialSetupPending = !kpisReady || incomplete;
   const chartBars = buildCommercialBars({
     contract: cvr.approved_contract_value,
     incurred: cvr.actual_incurred_cost ?? cvr.actual_eligible_cost,
@@ -138,6 +156,7 @@ export function FinanceCvrScreen({
     forecastFinal: cvr.forecast_final_cost,
     forecastProfit: cvr.forecast_final_profit ?? cvr.forecast_margin,
   });
+  const showCommercialChart = !commercialSetupPending;
 
   async function loadBreakdown(metric: string, title: string) {
     setDrawerOpen(true);
@@ -146,7 +165,7 @@ export function FinanceCvrScreen({
     setDrawerError("");
     try {
       if (demoMode) {
-        setDrawerPayload(demoBreakdown(metric, cvr, demoAllocations));
+        setDrawerPayload(sanitizeMissingBreakdown(demoBreakdown(metric, cvr, demoAllocations)));
         return;
       }
       const path = withCompany(
@@ -155,7 +174,7 @@ export function FinanceCvrScreen({
       );
       const response = await fetch(`${API_URL}${path}`, { credentials: "include" });
       if (!response.ok) throw new Error(await response.text());
-      setDrawerPayload((await response.json()) as SourceBreakdownPayload);
+      setDrawerPayload(sanitizeMissingBreakdown((await response.json()) as SourceBreakdownPayload));
     } catch (reason: unknown) {
       setDrawerPayload(null);
       setDrawerError(reason instanceof Error ? reason.message : "Source breakdown could not be loaded.");
@@ -212,17 +231,20 @@ export function FinanceCvrScreen({
       id: "project-root",
       expandable: false,
       incomplete: incomplete,
+      rowKind: "project",
+      selected: selectedRowId === "project-root",
       metricId: "cost_to_date",
-      amountColumnIds: ["actual", "commitments", "ctc", "final", "margin"],
+      amountColumnIds: ["budget", "actual", "commitments", "ctc", "final", "margin"],
       cells: {
         code: "PROJECT",
         description: projectName || "Selected project",
-        budget: cvr.approved_budget,
-        actual: cvr.actual_incurred_cost ?? cvr.actual_eligible_cost,
-        commitments: cvr.open_commitments ?? cvr.open_commitment,
-        ctc: cvr.cost_to_complete,
-        final: cvr.forecast_final_cost,
-        margin: cvr.forecast_final_profit ?? cvr.forecast_margin,
+        status: incomplete ? "Incomplete" : "Live",
+        budget: moneyCell(cvr.approved_budget, incomplete),
+        actual: moneyCell(cvr.actual_incurred_cost ?? cvr.actual_eligible_cost, incomplete),
+        commitments: moneyCell(cvr.open_commitments ?? cvr.open_commitment, incomplete),
+        ctc: moneyCell(cvr.cost_to_complete, incomplete),
+        final: moneyCell(cvr.forecast_final_cost, incomplete),
+        margin: moneyCell(cvr.forecast_final_profit ?? cvr.forecast_margin, incomplete),
       },
     });
 
@@ -237,17 +259,20 @@ export function FinanceCvrScreen({
         depth: 1,
         expandable: true,
         expanded: open,
+        rowKind: "code",
+        selected: selectedRowId === `cat-${cat.category}`,
         metricId: "actual_eligible",
         amountColumnIds: ["actual"],
         cells: {
           code: cat.category,
           description: "Eligible allocations",
-          budget: null,
-          actual: cat.eligible,
-          commitments: null,
-          ctc: null,
-          final: null,
-          margin: null,
+          status: "—",
+          budget: moneyCell(null),
+          actual: moneyCell(cat.eligible),
+          commitments: moneyCell(null),
+          ctc: moneyCell(null),
+          final: moneyCell(null),
+          margin: moneyCell(null),
         },
         meta: { category: cat.category },
       });
@@ -262,12 +287,13 @@ export function FinanceCvrScreen({
             cells: {
               code: "No source documents",
               description: demoMode ? "DEMO fixture empty for this code" : "No matching allocation lines",
-              budget: null,
-              actual: null,
-              commitments: null,
-              ctc: null,
-              final: null,
-              margin: null,
+              status: "Not verified",
+              budget: moneyCell(null),
+              actual: moneyCell(null),
+              commitments: moneyCell(null),
+              ctc: moneyCell(null),
+              final: moneyCell(null),
+              margin: moneyCell(null),
             },
           });
         } else {
@@ -281,12 +307,13 @@ export function FinanceCvrScreen({
               cells: {
                 code: "Source document",
                 description: `${child.reference} · ${child.document_date || "date —"} · ${child.cost_code || cat.category}`,
-                budget: null,
-                actual: child.amount,
-                commitments: null,
-                ctc: null,
-                final: null,
-                margin: null,
+                status: "Source linked",
+                budget: moneyCell(null),
+                actual: { value: child.amount, kind: "source-linked" },
+                commitments: moneyCell(null),
+                ctc: moneyCell(null),
+                final: moneyCell(null),
+                margin: moneyCell(null),
               },
               meta: { documentId: child.document_id },
             });
@@ -298,55 +325,64 @@ export function FinanceCvrScreen({
     rows.push({
       id: "eligible-subtotal",
       depth: 1,
+      rowKind: "subtotal",
+      selected: selectedRowId === "eligible-subtotal",
       metricId: "actual_eligible",
       amountColumnIds: ["actual"],
       cells: {
-        code: "Eligible subtotal",
-        description: "Sum of cost-code eligible allocations",
-        budget: null,
-        actual: cvr.actual_eligible_cost ?? null,
-        commitments: null,
-        ctc: null,
-        final: null,
-        margin: null,
+        code: "SUBTOTAL",
+        description: "Eligible allocations",
+        status: "—",
+        budget: moneyCell(null),
+        actual: moneyCell(cvr.actual_eligible_cost ?? null),
+        commitments: moneyCell(null),
+        ctc: moneyCell(null),
+        final: moneyCell(null),
+        margin: moneyCell(null),
       },
     });
     rows.push({
       id: "cis-labour",
       depth: 1,
       incomplete: true,
+      rowKind: "code",
+      selected: selectedRowId === "cis-labour",
       metricId: "cost_to_date",
       amountColumnIds: ["actual"],
       cells: {
         code: "CIS labour gross",
         description: "Formula component · no CIS split register",
-        budget: null,
-        actual: cvr.cis_labour_gross ?? "missing",
-        commitments: null,
-        ctc: null,
-        final: null,
-        margin: null,
+        status: "Incomplete",
+        budget: moneyCell(null),
+        actual: moneyCell(cvr.cis_labour_gross ?? "missing", true),
+        commitments: moneyCell(null),
+        ctc: moneyCell(null),
+        final: moneyCell(null),
+        margin: moneyCell(null),
       },
     });
     rows.push({
       id: "project-total",
       subtotal: true,
       incomplete: incomplete,
+      rowKind: "total",
+      selected: selectedRowId === "project-total",
       metricId: "forecast_final_cost",
-      amountColumnIds: ["final", "actual", "commitments", "ctc", "margin"],
+      amountColumnIds: ["budget", "final", "actual", "commitments", "ctc", "margin"],
       cells: {
         code: "PROJECT TOTAL",
         description: "Eligible + CIS labour",
-        budget: cvr.approved_budget,
-        actual: cvr.actual_incurred_cost ?? cvr.actual_eligible_cost,
-        commitments: cvr.open_commitments ?? cvr.open_commitment,
-        ctc: cvr.cost_to_complete,
-        final: cvr.forecast_final_cost,
-        margin: cvr.forecast_final_profit ?? cvr.forecast_margin,
+        status: incomplete ? "Incomplete" : "Live",
+        budget: moneyCell(cvr.approved_budget, incomplete),
+        actual: moneyCell(cvr.actual_incurred_cost ?? cvr.actual_eligible_cost, incomplete),
+        commitments: moneyCell(cvr.open_commitments ?? cvr.open_commitment, incomplete),
+        ctc: moneyCell(cvr.cost_to_complete, incomplete),
+        final: moneyCell(cvr.forecast_final_cost, incomplete),
+        margin: moneyCell(cvr.forecast_final_profit ?? cvr.forecast_margin, incomplete),
       },
     });
     return rows;
-  }, [categories, expanded, childRows, cvr, projectName, demoMode, incomplete]);
+  }, [categories, expanded, childRows, cvr, projectName, demoMode, incomplete, selectedRowId]);
 
   return (
     <>
@@ -354,13 +390,14 @@ export function FinanceCvrScreen({
         <div>
           <h2>Project CVR — {projectName || "Selected project"}</h2>
           <div className="cvr-v3-meta">
-            <span className="chip">{companyName || "Company"}</span>
+            <span className="chip scope-company">{companyName || "Company"}</span>
+            <span className="chip scope-project">{projectName || "Selected project"}</span>
             <span className="chip live">LIVE AS-OF / GBP</span>
             <span className="chip readonly">READ-ONLY</span>
             {demoMode ? <span className="chip readonly">DEMO DATA</span> : null}
           </div>
           <p className="sub">
-            Project → Cost code → Source document. KPI click opens formula + source checks.
+            Project → Cost code → Source document. Click a figure for Formula Check and Source Verification. Missing values show Not provided — never as £0.00.
           </p>
         </div>
         <div className="bar">
@@ -376,26 +413,37 @@ export function FinanceCvrScreen({
         </div>
       </div>
 
+      {commercialSetupPending ? (
+        <p className="notice info" role="status">
+          Commercial setup pending — contract and/or cost-to-complete are not configured for this project. Missing values stay undetermined and are not treated as £0.00.
+        </p>
+      ) : null}
+
       {kpisReady ? (
         <div className="fdg-kpi-strip fdg-kpi-strip-6">
           <button type="button" className="fdg-kpi blue" onClick={() => void loadBreakdown("contract_value", "Contract value")}>
             <span className="label">Contract</span>
+            <span className="scope">Project · CVR</span>
             <span className="value">{approved}</span>
           </button>
           <button type="button" className="fdg-kpi" onClick={() => void loadBreakdown("cost_to_date", "Cost to date")}>
             <span className="label">Cost to date</span>
+            <span className="scope">Project · CVR</span>
             <span className="value">{incurred}</span>
           </button>
           <button type="button" className="fdg-kpi" onClick={() => void loadBreakdown("open_commitments", "Open commitments")}>
             <span className="label">Open commitments</span>
+            <span className="scope">Project · CVR</span>
             <span className="value">{commitments}</span>
           </button>
-          <button type="button" className={`fdg-kpi${incomplete ? " amber" : ""}`} onClick={() => void loadBreakdown("cost_to_complete", "Cost to complete")}>
+          <button type="button" className={`fdg-kpi${incomplete ? " neutral" : ""}`} onClick={() => void loadBreakdown("cost_to_complete", "Cost to complete")}>
             <span className="label">Cost to complete</span>
+            <span className="scope">Project · CVR</span>
             <span className="value">{ctc}</span>
           </button>
-          <button type="button" className={`fdg-kpi${incomplete ? " amber" : ""}`} onClick={() => void loadBreakdown("forecast_final_cost", "Forecast final cost")}>
+          <button type="button" className={`fdg-kpi${incomplete ? " neutral" : ""}`} onClick={() => void loadBreakdown("forecast_final_cost", "Forecast final cost")}>
             <span className="label">Forecast final</span>
+            <span className="scope">Project · CVR</span>
             <span className="value">{finalCost}</span>
           </button>
           <button
@@ -404,29 +452,30 @@ export function FinanceCvrScreen({
             onClick={() => void loadBreakdown("forecast_profit", "Forecast profit")}
           >
             <span className="label">Forecast profit</span>
+            <span className="scope">Project · CVR</span>
             <span className="value">{profit}</span>
           </button>
         </div>
-      ) : (
-        <p className="notice amber" role="status">
-          Primary KPIs incomplete — missing contract and/or CTC. Totals are not forced to zero.
-        </p>
-      )}
+      ) : null}
 
-      <p className="sub">Margin {margin}.</p>
+      {!commercialSetupPending ? <p className="sub">Margin {margin}.</p> : null}
 
       <FinanceDataGrid
         columns={COLUMNS}
         rows={gridRows}
         emptyTitle="No cost categories"
         emptyText="Cost categories will appear when eligible allocations exist for this project."
+        compactMetricColumnIds={["actual", "final", "margin"]}
+        onRowSelect={(row) => setSelectedRowId(row.id)}
         onToggle={(row) => {
           const category = String(row.meta?.category || row.cells.code || "");
           const next = !expanded[category];
           setExpanded((prev) => ({ ...prev, [category]: next }));
+          setSelectedRowId(row.id);
           if (next) void ensureChildren(category);
         }}
         onAmountClick={(metricId, row, columnId) => {
+          setSelectedRowId(row.id);
           const map: Record<string, { metric: string; title: string }> = {
             actual: { metric: row.depth && row.depth >= 1 ? "actual_eligible" : "cost_to_date", title: row.depth && row.depth >= 1 ? "Actual eligible cost" : "Cost to date" },
             commitments: { metric: "open_commitments", title: "Open commitments" },
@@ -440,43 +489,101 @@ export function FinanceCvrScreen({
         }}
       />
 
-      {attention.length ? (
-        <div className="attention-compact">
-          <strong>Needs attention</strong>
-          <ul>
-            {attention.slice(0, 5).map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  className="linkbtn"
-                  onClick={() => {
-                    onExplain(item.title, item.reason, item.recommendedAction);
-                    if (item.available && item.sheet) {
-                      onNavigate({ sheet: item.sheet, focus: item.focus, expenseFilter: item.expenseFilter });
-                    }
-                  }}
-                >
-                  {item.title}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <div className="cvr-insights" style={{ marginTop: 12 }}>
+        <section className="cvr-insight" aria-label="Project summary">
+          <h3>Project summary</h3>
+          <dl>
+            <div>
+              <dt>Contract value</dt>
+              <dd>
+                <FinanceFieldState kind={approved === "Not determined" ? "missing-required" : "calculated"} readOnly>
+                  {approved === "Not determined" ? undefined : approved}
+                </FinanceFieldState>
+              </dd>
+            </div>
+            <div>
+              <dt>Cost to complete</dt>
+              <dd>
+                <FinanceFieldState kind={ctc === "Not determined" ? "missing-required" : "calculated"} readOnly>
+                  {ctc === "Not determined" ? undefined : ctc}
+                </FinanceFieldState>
+              </dd>
+            </div>
+            <div>
+              <dt>Forecast final</dt>
+              <dd>
+                <FinanceFieldState kind={finalCost === "Not determined" ? "missing-required" : "calculated"} readOnly>
+                  {finalCost === "Not determined" ? undefined : finalCost}
+                </FinanceFieldState>
+              </dd>
+            </div>
+            <div>
+              <dt>Forecast margin</dt>
+              <dd>
+                <FinanceFieldState kind={margin === "Not determined" ? "missing-required" : "calculated"} readOnly>
+                  {margin === "Not determined" ? undefined : margin}
+                </FinanceFieldState>
+              </dd>
+            </div>
+          </dl>
+        </section>
 
-      {isForecastLoss(cvr.forecast_final_profit) ? (
-        <p className="notice bad" role="status">
-          Forecast loss — amount shown in the profit KPI.
-        </p>
-      ) : null}
+        <section className="cvr-insight" aria-label="CVR commercial performance">
+          <h3>CVR commercial performance</h3>
+          {showCommercialChart ? (
+            <CommercialPerformanceChart
+              title="Validated snapshot"
+              subtitle="No invented monthly history."
+              bars={chartBars}
+              demo={demoMode}
+            />
+          ) : (
+            <div className="empty">
+              <strong>No validated commercial history</strong>
+              <span>When contract, cost and forecast figures are present, the chart appears here. Missing values are not charted as £0.00.</span>
+            </div>
+          )}
+        </section>
 
-      <div style={{ marginTop: 16 }}>
-        <CommercialPerformanceChart
-          title="CVR commercial performance"
-          subtitle="Secondary chart — validated snapshot only. No invented monthly history."
-          bars={chartBars}
-          demo={demoMode}
-        />
+        <section className="cvr-insight" aria-label="Information and actions">
+          <h3>Information & actions</h3>
+          {commercialSetupPending ? (
+            <ul>
+              <li>Provide approved contract value (read-only pilot — setup outside this screen).</li>
+              <li>Define cost to complete before forecast is treated as complete.</li>
+              <li>Click any figure to open Formula Check and Source Verification.</li>
+            </ul>
+          ) : attention.length ? (
+            <ul>
+              {attention.slice(0, 4).map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    className="linkbtn"
+                    onClick={() => {
+                      onExplain(item.title, item.reason, item.recommendedAction);
+                      if (item.available && item.sheet) {
+                        onNavigate({ sheet: item.sheet, focus: item.focus, expenseFilter: item.expenseFilter });
+                      }
+                    }}
+                  >
+                    {item.title}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="sub">No open attention items for this project.</p>
+          )}
+          <button type="button" className="btn" onClick={() => void loadBreakdown("cost_to_date", "Cost to date")}>
+            View source verification
+          </button>
+          {!commercialSetupPending && isForecastLoss(cvr.forecast_final_profit) ? (
+            <p className="notice bad" role="status">
+              Forecast loss — amount shown in the profit KPI.
+            </p>
+          ) : null}
+        </section>
       </div>
 
       <FinanceSourceDrawer
@@ -497,6 +604,39 @@ export function FinanceCvrScreen({
       />
     </>
   );
+}
+
+/** Presentation honesty: a missing displayed figure must not look like reconciled £0.00. */
+function sanitizeMissingBreakdown(payload: SourceBreakdownPayload): SourceBreakdownPayload {
+  const displayed = payload.displayed_total;
+  const missing =
+    displayed === "missing" ||
+    displayed === null ||
+    displayed === undefined ||
+    String(displayed).trim() === "";
+  if (!missing) return payload;
+  const basis = String(payload.basis || "");
+  const cleanBasis = /DEMO/i.test(basis)
+    ? "Formula components are unavailable while the displayed figure is missing. No illustrative amounts are shown."
+    : basis;
+  return {
+    ...payload,
+    displayed_total: "missing",
+    source_total: "missing",
+    difference: "missing",
+    formula_check: "INCOMPLETE",
+    source_verification: payload.source_verification ?? "PARTIAL",
+    verified_subtotal: "missing",
+    unverified_subtotal: "missing",
+    components_incomplete: true,
+    basis: cleanBasis || payload.basis,
+    groups: (payload.groups ?? []).map((group) => ({
+      ...group,
+      total: "missing",
+      rows: [],
+      note: group.note || "Components unavailable while the displayed figure is missing.",
+    })),
+  };
 }
 
 function demoBreakdown(metric: string, cvr: Row, allocations: DemoAllocation[]): SourceBreakdownPayload {
@@ -574,7 +714,7 @@ function demoBreakdown(metric: string, cvr: Row, allocations: DemoAllocation[]):
       displayed_total: displayed,
       formula: "actual_eligible_cost + cis_labour_gross",
       basis:
-        "Authoritative compose_cvr_forecast: actual_incurred = actual_eligible_cost + cis_labour_gross. DEMO fixture: 580000 + 22500 = 602500.",
+        "Authoritative compose_cvr_forecast: actual_incurred = actual_eligible_cost + cis_labour_gross.",
       reconcilable: false,
       verification: "PARTIAL",
       formula_check: globalCheck.difference === "0.0000" && displayed !== "missing" ? "MATCH" : displayed === "missing" ? "INCOMPLETE" : "MISMATCH",
@@ -736,7 +876,7 @@ function demoBreakdown(metric: string, cvr: Row, allocations: DemoAllocation[]):
       project_id: projectId,
       displayed_total: displayed,
       formula: "actual_incurred + open_commitment + cost_to_complete",
-      basis: "compose_cvr_forecast; DEMO 602500 + 165000 + 390000 = 1157500",
+      basis: "compose_cvr_forecast: actual_incurred + open_commitment + cost_to_complete",
       reconcilable: false,
       verification: "PARTIAL",
       difference: displayed === "missing" ? "0.0000" : check.difference,
@@ -784,7 +924,7 @@ function demoBreakdown(metric: string, cvr: Row, allocations: DemoAllocation[]):
       project_id: projectId,
       displayed_total: displayed,
       formula: "approved_contract - forecast_final_cost",
-      basis: "Indicative forecast profit — not recognised accounting profit. DEMO 1250000 - 1157500 = 92500",
+      basis: "Indicative forecast profit — not recognised accounting profit.",
       reconcilable: false,
       verification: "PARTIAL",
       difference: "0.0000",
