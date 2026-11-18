@@ -14,7 +14,7 @@
   border-collapse: separate;
   border-spacing: 0;
   min-width: 960px;
-  font-size: 13px;
+  font-size: var(--fv-font-table, 14.5px);
 }
 
 .fv3 .fdg-table thead th {
@@ -24,11 +24,11 @@
   background: #f9fafb;
   border-bottom: 1px solid var(--fv-line-strong);
   color: #374151;
-  font-size: 11px;
+  font-size: var(--fv-font-label, 13.5px);
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-  padding: 10px 12px;
+  padding: 12px 12px;
   white-space: nowrap;
   text-align: left;
 }
