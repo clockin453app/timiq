@@ -10,3 +10,22 @@ export const FICTIONAL_WORKER_PREVIEW = {
     { worker: "Test Employee D", period: "Sep 2026", payable: "£1,750.00", paid: "£1,000.00", due: "£750.00", reference: "DEMO-BA-04", status: "Part-paid" },
   ],
 } as const;
+
+/** Production builds must not expose fictional worker/payment samples in live Finance. */
+export function isFinanceFictionalPreviewAllowed(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
+/** Payment Register tabs. Fictional preview is omitted in production. */
+export function paymentRegisterViewOptions(): readonly string[] {
+  const base = ["Supplier payments", "CIS workers", "PAYE employees"] as const;
+  if (!isFinanceFictionalPreviewAllowed()) {
+    return base;
+  }
+  return [...base, "Fictional preview"];
+}
+
+/** True only when the fictional worker sample UI may render rows. */
+export function mayRenderFictionalWorkerPreview(view: string): boolean {
+  return view === "Fictional preview" && isFinanceFictionalPreviewAllowed();
+}
