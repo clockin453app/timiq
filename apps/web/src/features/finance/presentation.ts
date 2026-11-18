@@ -60,36 +60,41 @@ export type FinanceNavigateTarget = {
   expenseFilter?: string;
 };
 
-/** Plain-English worksheet groups mapped only to real existing worksheets. */
+/** Compact Finance secondary navigation — only real existing worksheets. */
 export const WORKSHEET_NAV: { group: string; items: { sheet: Worksheet; label: string; hint: string }[] }[] = [
   {
-    group: "Overview & jobs",
+    group: "Overview",
     items: [
-      { sheet: "PROJECT CONTROL", label: "Finance overview & Project Control", hint: "Company or one job: incurred cost, commitments, forecast and attention." },
+      { sheet: "PROJECT CONTROL", label: "Overview & CVR", hint: "Company or one job: contract, cost to date, forecast and attention." },
     ],
   },
   {
-    group: "Costs & suppliers",
+    group: "Costs & Invoices",
     items: [
-      { sheet: "Project Expenses", label: "Supplier invoices & credits", hint: "Post invoices, allocate net across jobs, view credits. Not bank payments." },
-      { sheet: "Payment Register", label: "Supplier payments", hint: "Record bank settlements. Payments do not create project cost again." },
+      { sheet: "Project Expenses", label: "Supplier invoices", hint: "Post invoices and credits. Not bank payments." },
+      { sheet: "Payment Register", label: "Supplier payments", hint: "Bank settlements. Payments do not create project cost again." },
     ],
   },
   {
-    group: "Customers & cash in",
+    group: "Revenue & Payments",
     items: [
       { sheet: "Customer Invoices", label: "Customer invoices", hint: "Amounts billed to the customer." },
       { sheet: "Receipts Register", label: "Customer receipts", hint: "Cash received. Receipts do not create Value of Work." },
+      { sheet: "Retention Register", label: "Retention", hint: "Retention held and released where recorded." },
     ],
   },
   {
-    group: "Commercial & tax",
+    group: "Forecast & Dayworks",
     items: [
-      { sheet: "VAT Reconciliation", label: "VAT reconciliation", hint: "Recorded VAT control — not a verified reclaim." },
-      { sheet: "CIS Tax HMRC", label: "CIS tax (HMRC)", hint: "CIS tax view from Finance registers." },
-      { sheet: "Retention Register", label: "Retention", hint: "Retention held and released where recorded." },
-      { sheet: "DAYWORKS LIVE", label: "Basic Dayworks", hint: "Labour / materials / plant amount register on a7. Hours, rates, frozen rate and CVR-6 are experimental — not active." },
+      { sheet: "DAYWORKS LIVE", label: "Dayworks", hint: "Basic dayworks register on a7. Experimental CVR-6 stays inactive." },
       { sheet: "Loans & Advances", label: "Loans & advances", hint: "Financing movements — not trading income or project cost." },
+    ],
+  },
+  {
+    group: "Reports & Tax",
+    items: [
+      { sheet: "VAT Reconciliation", label: "VAT", hint: "Recorded VAT control — not a verified reclaim." },
+      { sheet: "CIS Tax HMRC", label: "CIS tax", hint: "CIS tax view from Finance registers." },
     ],
   },
 ];

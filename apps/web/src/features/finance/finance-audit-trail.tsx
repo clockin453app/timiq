@@ -100,7 +100,10 @@ export function FinanceAuditTrail() {
 
   return (
     <div className="fv3">
-      <header className="top"><div className="brand">TIMIQ <span>Finance</span><small>Audit trail · not a workbook tab</small></div></header>
+      <header className="top">
+        <div className="brand">TIMIQ <span>Finance</span><small>Audit trail</small></div>
+        <div className="top-meta"><a className="chip" href="/finance">Back to Finance</a></div>
+      </header>
       <div className="main">
         <div className="titlebar">
           <div>
@@ -109,6 +112,7 @@ export function FinanceAuditTrail() {
           </div>
         </div>
         <section className="workarea">
+          <div className="panel">
           <div className="filters">
             <label>Company
               <select aria-label="Company" value={companyId} onChange={(event) => setCompanyId(event.target.value)}>
@@ -141,7 +145,7 @@ export function FinanceAuditTrail() {
                     <td>{shown(row.recorded_uk)}</td>
                     <td>{shown(row.operation)}</td>
                     <td>{shown(row.party_display)}</td>
-                    <td>{shown(row.amount_display)}</td>
+                    <td className="amt">{shown(row.amount_display)}</td>
                     <td>{shown(row.reference_display)}</td>
                     <td>{shown(row.actor_label)}</td>
                     <td><button className="linkbtn" type="button" onClick={() => setSelected(row)}>View details</button></td>
@@ -154,6 +158,7 @@ export function FinanceAuditTrail() {
           <div className="actions">
             <button className="btn" type="button" disabled={query.offset === 0} onClick={() => setQuery({ ...query, offset: Math.max(0, query.offset - 50) })}>Previous</button>
             <button className="btn" type="button" disabled={query.offset + rows.length >= total} onClick={() => setQuery({ ...query, offset: query.offset + 50 })}>Next</button>
+          </div>
           </div>
         </section>
       </div>
