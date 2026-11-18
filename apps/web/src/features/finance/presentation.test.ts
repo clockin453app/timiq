@@ -12,6 +12,7 @@ import {
   controlPercent,
   forecastShare,
   financeAttentionActions,
+  financeUiAttentionActions,
   financePortfolioSummary,
   forecastTone,
   isForecastLoss,
@@ -36,6 +37,8 @@ import {
   receiptAllocationStatus,
   registerNotice,
   ownerControl,
+  primaryKpisIncomplete,
+  primaryKpisReady,
   retentionPosition,
   retentionReleaseStatus,
   reversalState,
@@ -72,9 +75,21 @@ test("C5 reporting honesty labels distinguish live, snapshot, provisional and ex
 
 test("owner worksheet nav maps only to real worksheets with plain-English labels", () => {
   const sheets = WORKSHEET_NAV.flatMap((group) => group.items.map((item) => item.sheet));
-  assert.deepEqual([...sheets].sort(), [...WORKSHEETS].sort());
+  // Groups may reuse a real worksheet (e.g. Payment Register under Costs and Payroll).
+  assert.deepEqual([...new Set(sheets)].sort(), [...WORKSHEETS].sort());
+  assert.ok(sheets.every((sheet) => (WORKSHEETS as readonly string[]).includes(sheet)));
   assert.ok(WORKSHEET_NAV.some((group) => group.items.some((item) => item.label.includes("Supplier invoices"))));
   assert.equal(INVOICE_LEARNING_STEPS.length, 5);
+  assert.ok(WORKSHEET_NAV.some((group) => group.group === "Costs & Suppliers"));
+  assert.ok(WORKSHEET_NAV.some((group) => group.group === "Reports"));
+  assert.ok(WORKSHEET_NAV.some((group) => group.group === "Payroll Finance"));
+});
+
+test("primary KPI incomplete helper collapses all-missing grids", () => {
+  assert.equal(primaryKpisIncomplete(["Not determined", "MISSING / NOT AVAILABLE", "missing", ""]), true);
+  assert.equal(primaryKpisIncomplete(["£10.00", "Not determined", "Not determined", "Not determined"]), false);
+  assert.equal(primaryKpisReady(["£10.00", "£20.00", "£30.00", "£40.00"]), true);
+  assert.equal(primaryKpisReady(["£10.00", "Not determined", "£30.00", "£40.00"]), false);
 });
 
 test("portfolio summary never treats missing CTC as zero and flags forecast loss", () => {
@@ -155,6 +170,11 @@ test("attention actions link draft invoices and forecast losses to real workshee
   assert.ok(actions.every((item) => item.title && item.reason && item.recommendedAction));
   assert.ok(actions.some((item) => item.sheet === "Project Expenses" && item.expenseFilter === "Draft"));
   assert.ok(actions.some((item) => item.severity === "red" && /loss/i.test(item.label)));
+  const ui = financeUiAttentionActions(figures.attention);
+  assert.ok(ui.every((item) => item.title !== "Attention item"));
+  assert.ok(ui.some((item) => /draft/i.test(item.title)));
+  assert.ok(ui.some((item) => /loss/i.test(item.title)));
+  assert.equal(new Set(ui.map((item) => item.title)).size, ui.length);
 });
 
 test("Project Control drill-downs use live Alpha values and compact experimental status", () => {

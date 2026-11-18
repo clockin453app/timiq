@@ -65,6 +65,7 @@ from app.modules.finance.commercial_service import (
     transition_variation,
     vat_cis_report,
 )
+from app.modules.finance.cvr_source_breakdown import build_cvr_source_breakdown
 from app.modules.finance.ledger_service import FinanceLedgerError, paye_obligation
 from app.modules.finance.supplier_payment_errors import SupplierPaymentError
 from app.modules.finance.supplier_payment_schemas import ReversalInput
@@ -479,6 +480,28 @@ def finance_cvr_csv(project_id: uuid.UUID, company_id: uuid.UUID | None = None, 
         status = 404 if exc.code == "NOT_FOUND" else 400
         raise HTTPException(status_code=status, detail={"code": exc.code, "message": exc.message}) from exc
     return PlainTextResponse(report_csv(report), media_type="text/csv")
+
+
+@router.get("/cvr/source-breakdown")
+def finance_cvr_source_breakdown(
+    project_id: uuid.UUID,
+    metric: str,
+    company_id: uuid.UUID | None = None,
+    db_session: Session = Depends(get_db_session),
+    actor: User = Depends(get_current_user),
+):
+    """READ-ONLY CVR source rows for Finance Data Grid / source drawer."""
+    scoped = _company(db_session, actor, company_id)
+    try:
+        return build_cvr_source_breakdown(
+            db_session,
+            company_id=scoped,
+            project_id=project_id,
+            metric=metric,
+        )
+    except FinanceLedgerError as exc:
+        status = 404 if exc.code == "NOT_FOUND" else 400
+        raise HTTPException(status_code=status, detail={"code": exc.code, "message": exc.message}) from exc
 
 
 @router.post("/cis-splits")

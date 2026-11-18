@@ -19,11 +19,18 @@ const KIND_COLOR: Record<CommercialBar["kind"], string> = {
   profit: "#059669",
 };
 
-function barHeight(minor: bigint | null, max: bigint): number {
-  if (minor === null || max <= 0n) return 0;
-  const abs = minor < 0n ? -minor : minor;
-  const pct = Number((abs * 10000n) / max) / 10000;
-  return Math.max(pct * 100, abs > 0n ? 4 : 0);
+function axisLabel(minor: bigint): string {
+  const pounds = Number(minor) / 10000;
+  if (Math.abs(pounds) >= 1_000_000) return `£${(pounds / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(pounds) >= 1_000) return `£${(pounds / 1_000).toFixed(pounds >= 10_000 ? 0 : 1)}k`;
+  return formatGbp(String((Number(minor) / 10000).toFixed(2))) || "£0";
+}
+
+function shortValueLabel(minor: bigint): string {
+  const pounds = Number(minor) / 10000;
+  if (Math.abs(pounds) >= 1_000_000) return `${(pounds / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(pounds) >= 1_000) return `${(pounds / 1_000).toFixed(pounds >= 100_000 ? 0 : 1)}k`;
+  return pounds.toFixed(0);
 }
 
 /** Snapshot commercial chart from validated Finance Core figures only — never invents months. */
@@ -31,10 +38,14 @@ export function CommercialPerformanceChart({
   title = "Commercial performance",
   subtitle = "Live Finance Core snapshot. Not a monthly history.",
   bars,
+  showValueTable = false,
+  demo = false,
 }: {
   title?: string;
   subtitle?: string;
   bars: CommercialBar[];
+  showValueTable?: boolean;
+  demo?: boolean;
 }) {
   const gradientId = useId();
   const [active, setActive] = useState<string | null>(null);
@@ -53,7 +64,8 @@ export function CommercialPerformanceChart({
 
   if (!prepared.length) {
     return (
-      <section className="fv-chart empty-state" aria-label={title}>
+      <section className={`fv-chart empty-state${demo ? " demo" : ""}`} aria-label={title}>
+        {demo ? <div className="fv-chart-demo-banner">DEMO DATA</div> : null}
         <h3>{title}</h3>
         <p className="sub">{subtitle}</p>
         <div className="empty">No commercial figures are available yet for this view.</div>
@@ -63,7 +75,8 @@ export function CommercialPerformanceChart({
 
   if (!known.length) {
     return (
-      <section className="fv-chart empty-state" aria-label={title}>
+      <section className={`fv-chart empty-state${demo ? " demo" : ""}`} aria-label={title}>
+        {demo ? <div className="fv-chart-demo-banner">DEMO DATA</div> : null}
         <h3>{title}</h3>
         <p className="sub">{subtitle}</p>
         <div className="empty">Commercial figures are incomplete. Forecast stays Not determined until CTC and contract are present.</div>
@@ -79,10 +92,18 @@ export function CommercialPerformanceChart({
     );
   }
 
+  const plotLeft = 72;
+  const plotRight = 700;
+  const plotTop = 36;
+  const plotBottom = 236;
+  const plotHeight = plotBottom - plotTop;
+  const plotWidth = plotRight - plotLeft;
+
   return (
-    <section className="fv-chart" aria-label={title}>
+    <section className={`fv-chart${demo ? " demo" : ""}`} aria-label={title}>
       <div className="fv-chart-head">
         <div>
+          {demo ? <div className="fv-chart-demo-banner">DEMO DATA</div> : null}
           <h3>{title}</h3>
           <p className="sub">{subtitle}</p>
         </div>
@@ -96,26 +117,35 @@ export function CommercialPerformanceChart({
         </ul>
       </div>
       <div className="fv-chart-plot">
-        <svg viewBox="0 0 640 260" role="img" aria-label={`${title} bar chart`}>
+        <svg viewBox="0 0 720 300" role="img" aria-label={`${title} bar chart`}>
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#eff6ff" />
+              <stop offset="0%" stopColor="#f8fafc" />
               <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
             </linearGradient>
           </defs>
-          <rect x="0" y="0" width="640" height="260" fill={`url(#${gradientId})`} />
+          <rect x="0" y="0" width="720" height="300" fill={`url(#${gradientId})`} />
           {[0, 1, 2, 3, 4].map((step) => {
-            const y = 30 + step * 40;
-            return <line key={step} x1="48" x2="620" y1={y} y2={y} stroke="#e2e8f0" strokeWidth="1" />;
+            const y = plotTop + (step * plotHeight) / 4;
+            const tick = max > 0n ? (max * BigInt(4 - step)) / 4n : 0n;
+            return (
+              <g key={step}>
+                <line x1={plotLeft} x2={plotRight} y1={y} y2={y} stroke="#e5e7eb" strokeWidth="1" />
+                <text x={plotLeft - 10} y={y + 3} textAnchor="end" className="fv-chart-y">{axisLabel(tick)}</text>
+              </g>
+            );
           })}
           {prepared.map((bar, index) => {
-            const slot = 560 / prepared.length;
-            const x = 56 + index * slot + slot * 0.18;
-            const width = slot * 0.64;
-            const height = barHeight(bar.minor, max);
-            const y = 210 - height * 1.6;
+            const slot = plotWidth / prepared.length;
+            const width = Math.min(slot * 0.52, 68);
+            const x = plotLeft + index * slot + (slot - width) / 2;
+            const abs = bar.minor === null ? 0n : bar.minor < 0n ? -bar.minor : bar.minor;
+            const ratio = max > 0n ? Number((abs * 10000n) / max) / 10000 : 0;
+            const height = bar.known ? Math.max(ratio * plotHeight, abs > 0n ? 6 : 0) : 0;
+            const y = plotBottom - height;
             const isLoss = bar.minor !== null && bar.minor < 0n;
             const fill = isLoss ? "#dc2626" : KIND_COLOR[bar.kind];
+            const label = bar.label.length > 16 ? `${bar.label.slice(0, 14)}…` : bar.label;
             return (
               <g
                 key={bar.id}
@@ -127,17 +157,22 @@ export function CommercialPerformanceChart({
                 role="listitem"
                 aria-label={`${bar.label}: ${bar.display}`}
               >
+                {bar.known && bar.minor !== null ? (
+                  <text x={x + width / 2} y={y - 8} textAnchor="middle" className="fv-chart-value">
+                    {shortValueLabel(bar.minor)}
+                  </text>
+                ) : null}
                 <rect
                   x={x}
-                  y={Number.isFinite(y) ? y : 210}
+                  y={y}
                   width={width}
-                  height={Math.max(height * 1.6, bar.known ? 3 : 0)}
-                  rx="6"
+                  height={height}
+                  rx="4"
                   fill={fill}
-                  opacity={active && active !== bar.id ? 0.45 : 0.95}
+                  opacity={active && active !== bar.id ? 0.35 : 0.96}
                 />
-                <text x={x + width / 2} y="232" textAnchor="middle" className="fv-chart-axis">
-                  {bar.label.length > 14 ? `${bar.label.slice(0, 12)}…` : bar.label}
+                <text x={x + width / 2} y="262" textAnchor="middle" className="fv-chart-axis">
+                  {label}
                 </text>
               </g>
             );
@@ -147,17 +182,20 @@ export function CommercialPerformanceChart({
           <div className="fv-chart-tooltip" role="status">
             <strong>{activeBar.label}</strong>
             <span>{activeBar.display}</span>
+            {demo ? <span>DEMO DATA</span> : null}
           </div>
         ) : null}
       </div>
-      <div className="fv-chart-fallback" role="table" aria-label={`${title} values`}>
-        {prepared.map((bar) => (
-          <div className="fv-chart-fallback-row" role="row" key={`t-${bar.id}`}>
-            <span role="cell">{bar.label}</span>
-            <span role="cell" className={`amt${bar.minor !== null && bar.minor < 0n ? " loss" : ""}`}>{bar.display}</span>
-          </div>
-        ))}
-      </div>
+      {showValueTable ? (
+        <div className="fv-chart-fallback" role="table" aria-label={`${title} values`}>
+          {prepared.map((bar) => (
+            <div className="fv-chart-fallback-row" role="row" key={`t-${bar.id}`}>
+              <span role="cell">{bar.label}</span>
+              <span role="cell" className={`amt${bar.minor !== null && bar.minor < 0n ? " loss" : ""}`}>{bar.display}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -179,3 +217,13 @@ export function buildCommercialBars(input: {
     { id: "profit", label: "Forecast profit", value: input.forecastProfit, kind: "profit" },
   ];
 }
+
+/** @deprecated Prefer DEMO_CHART_BARS from finance-demo-fixture — kept for chart-preview import stability. */
+export const DEMO_COMMERCIAL_BARS = [
+  { id: "contract", label: "Contract value", value: "1250000.0000", kind: "contract" as const },
+  { id: "incurred", label: "Cost to date", value: "482500.0000", kind: "cost" as const },
+  { id: "commitments", label: "Open commitments", value: "165000.0000", kind: "commitment" as const },
+  { id: "ctc", label: "Cost to complete", value: "390000.0000", kind: "forecast" as const },
+  { id: "final", label: "Forecast final cost", value: "1037500.0000", kind: "forecast" as const },
+  { id: "profit", label: "Forecast profit", value: "212500.0000", kind: "profit" as const },
+];
