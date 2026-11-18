@@ -20,6 +20,7 @@ from app.modules.finance.access import (
     PREVIEW_READONLY,
     assert_finance_access,
     assert_finance_company_access,
+    assert_finance_write,
     finance_preview_readonly,
 )
 from app.modules.finance.commercial_service import (
@@ -76,11 +77,30 @@ from app.modules.finance.supplier_payment_errors import SupplierPaymentError
 from app.modules.finance.supplier_payment_schemas import ReversalInput
 from app.modules.finance.supplier_payment_service import reverse_supplier_payment, reverse_supplier_payment_allocation
 
+# Paths that may continue under FINANCE_PREVIEW_MODE=readonly only after
+# assert_finance_write succeeds inside the endpoint.
+_SCOPED_WRITE_PATH_PREFIXES = (
+    "/api/finance/contract-value",
+    "/api/finance/budgets",
+    "/api/finance/cost-to-complete",
+    "/api/finance/variations",
+    "/api/finance/dayworks",
+    "/api/finance/commitments",
+    "/api/finance/applications",
+    "/api/finance/certificates",
+    "/api/finance/retention-releases",
+)
+
+
 def reject_preview_mutation(request: Request) -> None:
     if request.method in {"GET", "HEAD", "OPTIONS"}:
         return
-    if finance_preview_readonly():
-        raise HTTPException(status_code=403, detail=PREVIEW_READONLY)
+    if not finance_preview_readonly():
+        return
+    path = request.url.path.rstrip("/") or "/"
+    if any(path == prefix or path.startswith(f"{prefix}/") for prefix in _SCOPED_WRITE_PATH_PREFIXES):
+        return
+    raise HTTPException(status_code=403, detail=PREVIEW_READONLY)
 
 
 router = APIRouter(prefix="/api/finance", tags=["finance"], dependencies=[Depends(reject_preview_mutation)])
@@ -257,6 +277,32 @@ def _company(db_session: Session, actor: User, company_id: uuid.UUID | None) -> 
     return scoped
 
 
+def _company_for_write(
+    db_session: Session,
+    actor: User,
+    company_id: uuid.UUID | None,
+    project_id: uuid.UUID | None,
+    *,
+    operation: str,
+) -> uuid.UUID:
+    scoped = _company(db_session, actor, company_id)
+    assert_finance_write(
+        db_session,
+        actor=actor,
+        company_id=scoped,
+        project_id=project_id,
+        operation=operation,
+    )
+    return scoped
+
+
+def _project_id_or_404(db_session: Session, *, company_id: uuid.UUID, sql: str, params: dict) -> uuid.UUID:
+    project_id = db_session.execute(text(sql), params).scalar_one_or_none()
+    if project_id is None:
+        raise HTTPException(status_code=404, detail="Finance record was not found for this company.")
+    return project_id
+
+
 def _run(db_session: Session, action):
     try:
         result = action()
@@ -268,6 +314,9 @@ def _run(db_session: Session, action):
     except SupplierPaymentError as exc:
         db_session.rollback()
         raise HTTPException(status_code=400, detail={"code": exc.code, "message": exc.message}) from exc
+    except Exception:
+        db_session.rollback()
+        raise
 
 
 class ForecastBody(BaseModel):
@@ -284,7 +333,7 @@ class SettlementBody(BaseModel):
 
 @router.post("/cost-to-complete")
 def finance_forecast(body: ForecastBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, body.project_id, operation="cost_to_complete")
     return _run(db_session, lambda: {"id": str(record_cost_to_complete(db_session, company_id=scoped, actor_user_id=actor.id, project_id=body.project_id, amount=body.amount, explanation=body.explanation))})
 
 
@@ -404,20 +453,27 @@ def finance_budgets(project_id: uuid.UUID | None = None, company_id: uuid.UUID |
 
 @router.post("/budgets")
 def finance_budget_create(body: BudgetBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, body.project_id, operation="budget_create")
     return _run(db_session, lambda: {"id": str(create_budget(db_session, company_id=scoped, actor_user_id=actor.id, project_id=body.project_id, note=body.note, lines=[line.model_dump() for line in body.lines]))})
 
 
 @router.post("/budgets/{version_id}/approve")
 def finance_budget_approve(version_id: uuid.UUID, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
     scoped = _company(db_session, actor, company_id)
+    project_id = _project_id_or_404(
+        db_session,
+        company_id=scoped,
+        sql="SELECT project_id FROM finance_budget_versions WHERE id = :version_id AND company_id = :company_id",
+        params={"version_id": version_id, "company_id": scoped},
+    )
+    assert_finance_write(db_session, actor=actor, company_id=scoped, project_id=project_id, operation="budget_approve")
     return _run(db_session, lambda: approve_budget(db_session, company_id=scoped, actor_user_id=actor.id, version_id=version_id) or {"status": "approved"})
 
 
 @router.post("/contract-value")
 def finance_contract(body: ContractBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
-    return _run(db_session, lambda: {"id": str(set_contract_value(db_session, company_id=scoped, project_id=body.project_id, amount=body.amount, effective_date=body.effective_date))})
+    scoped = _company_for_write(db_session, actor, company_id, body.project_id, operation="contract_value")
+    return _run(db_session, lambda: {"id": str(set_contract_value(db_session, company_id=scoped, actor_user_id=actor.id, project_id=body.project_id, amount=body.amount, effective_date=body.effective_date))})
 
 
 @router.post("/customer-receipts")
@@ -446,55 +502,99 @@ def finance_receipt_reverse(receipt_id: uuid.UUID, body: ReasonBody, company_id:
 
 @router.post("/applications")
 def finance_application(body: ApplicationBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, body.project_id, operation="application_create")
     return _run(db_session, lambda: {"id": str(create_application(db_session, company_id=scoped, actor_user_id=actor.id, project_id=body.project_id, counterparty_id=body.counterparty_id, period_start=body.period_start, period_end=body.period_end, applied_net=body.applied_net, notes=body.notes))})
 
 
 @router.post("/certificates")
 def finance_certificate(body: CertificateBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
     scoped = _company(db_session, actor, company_id)
+    project_id = _project_id_or_404(
+        db_session,
+        company_id=scoped,
+        sql=(
+            "SELECT application.project_id FROM finance_payment_applications application "
+            "WHERE application.id = :application_id AND application.company_id = :company_id"
+        ),
+        params={"application_id": body.application_id, "company_id": scoped},
+    )
+    assert_finance_write(db_session, actor=actor, company_id=scoped, project_id=project_id, operation="certificate_create")
     return _run(db_session, lambda: {"id": str(create_certificate(db_session, company_id=scoped, actor_user_id=actor.id, application_id=body.application_id, certificate_reference=body.certificate_reference, certified_net=body.certified_net, retention_rate=body.retention_rate, invoice_id=body.invoice_id))})
 
 
 @router.post("/retention-releases")
 def finance_retention(body: RetentionBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
     scoped = _company(db_session, actor, company_id)
+    project_id = _project_id_or_404(
+        db_session,
+        company_id=scoped,
+        sql=(
+            "SELECT application.project_id "
+            "FROM finance_payment_certificates certificate "
+            "JOIN finance_payment_applications application "
+            "  ON application.id = certificate.application_id AND application.company_id = certificate.company_id "
+            "WHERE certificate.id = :certificate_id AND certificate.company_id = :company_id"
+        ),
+        params={"certificate_id": body.certificate_id, "company_id": scoped},
+    )
+    assert_finance_write(db_session, actor=actor, company_id=scoped, project_id=project_id, operation="retention_release")
     return _run(db_session, lambda: {"id": str(create_retention_release(db_session, company_id=scoped, actor_user_id=actor.id, certificate_id=body.certificate_id, amount=body.amount, release_date=body.release_date, notes=body.notes))})
 
 
 @router.post("/variations")
 def finance_variation(body: VariationBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, body.project_id, operation="variation_save")
     return _run(db_session, lambda: {"id": str(save_variation(db_session, company_id=scoped, actor_user_id=actor.id, project_id=body.project_id, reference_code=body.reference_code, description=body.description, requested_value=body.requested_value, submitted_value=body.submitted_value, counterparty_id=body.counterparty_id))})
 
 
 @router.post("/variations/{variation_id}/status")
 def finance_variation_status(variation_id: uuid.UUID, body: VariationStatusBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
     scoped = _company(db_session, actor, company_id)
+    project_id = _project_id_or_404(
+        db_session,
+        company_id=scoped,
+        sql="SELECT project_id FROM finance_variations WHERE id = :variation_id AND company_id = :company_id",
+        params={"variation_id": variation_id, "company_id": scoped},
+    )
+    assert_finance_write(db_session, actor=actor, company_id=scoped, project_id=project_id, operation="variation_status")
     return _run(db_session, lambda: transition_variation(db_session, company_id=scoped, actor_user_id=actor.id, variation_id=variation_id, approval_status=body.approval_status, approved_value=body.approved_value) or {"status": body.approval_status})
 
 
 @router.post("/dayworks")
 def finance_daywork(body: DayworkBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, body.project_id, operation="daywork_save")
     return _run(db_session, lambda: {"id": str(save_daywork(db_session, company_id=scoped, actor_user_id=actor.id, project_id=body.project_id, reference_code=body.reference_code, work_date=body.work_date, description=body.description, labour_amount=body.labour_amount, material_amount=body.material_amount, plant_amount=body.plant_amount))})
 
 
 @router.post("/dayworks/{daywork_id}/approve")
 def finance_daywork_approve(daywork_id: uuid.UUID, body: DayworkApprovalBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
     scoped = _company(db_session, actor, company_id)
+    project_id = _project_id_or_404(
+        db_session,
+        company_id=scoped,
+        sql="SELECT project_id FROM finance_dayworks WHERE id = :daywork_id AND company_id = :company_id",
+        params={"daywork_id": daywork_id, "company_id": scoped},
+    )
+    assert_finance_write(db_session, actor=actor, company_id=scoped, project_id=project_id, operation="daywork_approve")
     return _run(db_session, lambda: approve_daywork(db_session, company_id=scoped, actor_user_id=actor.id, daywork_id=daywork_id, counts_in_contract_value=body.counts_in_contract_value) or {"status": "approved"})
 
 
 @router.post("/commitments")
 def finance_commitment(body: CommitmentBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, body.project_id, operation="commitment_create")
     return _run(db_session, lambda: {"id": str(create_commitment(db_session, company_id=scoped, actor_user_id=actor.id, project_id=body.project_id, cost_code_id=body.cost_code_id, counterparty_id=body.counterparty_id, reference_code=body.reference_code, committed_amount=body.committed_amount))})
 
 
 @router.post("/commitments/{commitment_id}/draws")
 def finance_draw(commitment_id: uuid.UUID, body: DrawBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
     scoped = _company(db_session, actor, company_id)
+    project_id = _project_id_or_404(
+        db_session,
+        company_id=scoped,
+        sql="SELECT project_id FROM finance_commitments WHERE id = :commitment_id AND company_id = :company_id",
+        params={"commitment_id": commitment_id, "company_id": scoped},
+    )
+    assert_finance_write(db_session, actor=actor, company_id=scoped, project_id=project_id, operation="commitment_draw")
     return _run(db_session, lambda: {"id": str(draw_commitment(db_session, company_id=scoped, actor_user_id=actor.id, commitment_id=commitment_id, cost_document_id=body.cost_document_id, amount=body.amount))})
 
 

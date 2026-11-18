@@ -68,10 +68,16 @@ type Props = {
     audit: Row[];
   };
   demoMode?: boolean;
+  writeAllowed?: boolean;
   demoAllocations?: DemoAllocation[];
   onRefresh: () => void;
   onNavigate: (target: FinanceNavigateTarget) => void;
   onExplain: (title: string, body: string, warning: string) => void;
+  onEnterContract?: () => void;
+  onEnterCostToComplete?: () => void;
+  onEnterBudget?: () => void;
+  onEnterVariation?: () => void;
+  onEnterDaywork?: () => void;
 };
 
 const COLUMNS: FinanceGridColumn[] = [
@@ -105,10 +111,16 @@ export function FinanceCvrScreen({
   categoryLoadFailed,
   books,
   demoMode = false,
+  writeAllowed = false,
   demoAllocations = [],
   onRefresh,
   onNavigate,
   onExplain,
+  onEnterContract,
+  onEnterCostToComplete,
+  onEnterBudget,
+  onEnterVariation,
+  onEnterDaywork,
 }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [childRows, setChildRows] = useState<Record<string, SourceBreakdownRow[]>>({});
@@ -393,7 +405,11 @@ export function FinanceCvrScreen({
             <span className="chip scope-company">{companyName || "Company"}</span>
             <span className="chip scope-project">{projectName || "Selected project"}</span>
             <span className="chip live">LIVE AS-OF / GBP</span>
-            <span className="chip readonly">READ-ONLY</span>
+            {writeAllowed ? (
+              <span className="chip live" title="Server authorised scoped commercial write">SCOPED WRITE</span>
+            ) : (
+              <span className="chip readonly">READ-ONLY</span>
+            )}
             {demoMode ? <span className="chip readonly">DEMO DATA</span> : null}
           </div>
           <p className="sub">
@@ -401,6 +417,15 @@ export function FinanceCvrScreen({
           </p>
         </div>
         <div className="bar">
+          {writeAllowed ? (
+            <>
+              <button className="btn mainbtn" type="button" onClick={onEnterContract}>+ Contract value</button>
+              <button className="btn" type="button" onClick={onEnterCostToComplete}>+ Cost to complete</button>
+              <button className="btn" type="button" onClick={onEnterBudget}>+ Budget</button>
+              <button className="btn" type="button" onClick={onEnterVariation}>+ Variation</button>
+              <button className="btn" type="button" onClick={onEnterDaywork}>+ Daywork</button>
+            </>
+          ) : null}
           <button className="btn" type="button" onClick={onRefresh}>
             Refresh
           </button>
@@ -415,7 +440,9 @@ export function FinanceCvrScreen({
 
       {commercialSetupPending ? (
         <p className="notice info" role="status">
-          Commercial setup pending — contract and/or cost-to-complete are not configured for this project. Missing values stay undetermined and are not treated as £0.00.
+          {writeAllowed
+            ? "Commercial setup pending — use Contract value and Cost to complete to enter authorised figures. Missing values stay undetermined and are not treated as £0.00."
+            : "Commercial setup pending — contract and/or cost-to-complete are not configured for this project. Missing values stay undetermined and are not treated as £0.00."}
         </p>
       ) : null}
 

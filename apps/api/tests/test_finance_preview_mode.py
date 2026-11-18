@@ -20,10 +20,10 @@ def test_readonly_flag_blocks_changes_for_every_role(monkeypatch: pytest.MonkeyP
     assert finance_preview_readonly() is True
     for method in ("POST", "PUT", "PATCH", "DELETE", "TRACE"):
         with pytest.raises(HTTPException) as denied:
-            reject_preview_mutation(SimpleNamespace(method=method))  # type: ignore[arg-type]
+            reject_preview_mutation(SimpleNamespace(method=method, url=SimpleNamespace(path="/api/finance/cost-documents")))  # type: ignore[arg-type]
         assert denied.value.status_code == 403
     for method in ("GET", "HEAD", "OPTIONS"):
-        reject_preview_mutation(SimpleNamespace(method=method))  # type: ignore[arg-type]
+        reject_preview_mutation(SimpleNamespace(method=method, url=SimpleNamespace(path="/api/finance/dashboard")))  # type: ignore[arg-type]
 
 
 def test_both_finance_routers_apply_the_preview_guard() -> None:
