@@ -68,7 +68,10 @@ export function CommercialPerformanceChart({
         {demo ? <div className="fv-chart-demo-banner">DEMO DATA</div> : null}
         <h3>{title}</h3>
         <p className="sub">{subtitle}</p>
-        <div className="empty">No commercial figures are available yet for this view.</div>
+        <div className="empty">
+          <strong>No commercial figures yet</strong>
+          <span>Validated commercial values have not been loaded for this view. Missing figures are not charted as £0.00.</span>
+        </div>
       </section>
     );
   }
@@ -79,7 +82,10 @@ export function CommercialPerformanceChart({
         {demo ? <div className="fv-chart-demo-banner">DEMO DATA</div> : null}
         <h3>{title}</h3>
         <p className="sub">{subtitle}</p>
-        <div className="empty">Commercial figures are incomplete. Forecast stays Not determined until CTC and contract are present.</div>
+        <div className="empty">
+          <strong>Commercial setup pending</strong>
+          <span>Forecast stays Not determined until CTC and contract are present. Values below are listed for honesty — they are not plotted as zeros.</span>
+        </div>
         <div className="fv-chart-fallback" role="table" aria-label="Commercial figures">
           {prepared.map((bar) => (
             <div className="fv-chart-fallback-row" role="row" key={bar.id}>

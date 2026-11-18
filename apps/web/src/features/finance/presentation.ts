@@ -250,9 +250,9 @@ export function financeAttentionActions(attention: string[]): FinanceAttentionAc
       focus = "portfolio";
       recommendedAction = "Review Forecast Profit on Project Control for the affected job.";
     } else if (lower.includes("cost to complete") || lower.includes("missing ctc") || (lower.includes("incomplete") && lower.includes("forecast"))) {
-      title = "Incomplete forecast / missing CTC";
+      title = "Commercial setup pending";
       focus = "portfolio";
-      recommendedAction = "Review Project Control portfolio — CTC cannot be invented as £0.";
+      recommendedAction = "Commercial fields are not configured yet. Missing CTC is not treated as £0.";
     } else if (lower.includes("certified") || lower.includes("unvalidated")) {
       title = "Certified basis unvalidated";
       recommendedAction = "This action is not yet available in current Finance — no experimental posting.";
@@ -321,11 +321,18 @@ export function financeUiAttentionActions(attention: string[]): FinanceAttention
     if (item.title === "Open commitments reminder") return false;
     if (item.title === "Forecast profit estimate") return false;
     if (item.title === "Payroll on-costs excluded") return false;
+    // Setup gaps are shown once as a neutral banner — not as confirmed amber exceptions.
+    if (item.title === "Commercial setup pending") return false;
     if (educational.test(item.label)) return false;
     if (seen.has(item.title)) return false;
     seen.add(item.title);
     return true;
   });
+}
+
+/** True only when both budget and forecast exist and differ — missing CTC is not a mismatch. */
+export function isBudgetForecastMismatch(review: string): boolean {
+  return /is not the same as/i.test(review);
 }
 
 /** Build drill-down text from live CVR / register values — never hardcode DEMO GBP. */
@@ -1213,7 +1220,9 @@ export function ownerControl(input: {
     const missingPercent = row.forecast_final_margin_percent === "missing";
     return missingFinal || missingPercent;
   }).length;
-  const budgetMismatches = input.cvrs.filter((row) => Boolean(budgetForecastReview(row as Record<string, string>))).length;
+  const budgetMismatches = input.cvrs.filter((row) =>
+    isBudgetForecastMismatch(budgetForecastReview(row as Record<string, string>)),
+  ).length;
   if (missingReference) attention.push(`${missingReference} posted customer invoice${missingReference === 1 ? "" : "s"} have no reference.`);
   if (missingDue) attention.push(`${missingDue} posted customer invoice${missingDue === 1 ? "" : "s"} have no due date.`);
   if (overdue) attention.push(`${overdue} posted customer invoice${overdue === 1 ? "" : "s"} are overdue.`);

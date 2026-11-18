@@ -47,16 +47,37 @@
   white-space: nowrap;
 }
 
-.fv3 .fdg-table tbody tr:hover td { background: #fafbfc; }
-.fv3 .fdg-table tbody tr.fdg-subtotal td {
+.fv3 .fdg-table tbody tr:hover td { background: #f8fafc; }
+.fv3 .fdg-table tbody tr.fdg-selected td {
+  background: #eff6ff;
+  outline: 1px solid #bfdbfe;
+  outline-offset: -1px;
+}
+.fv3 .fdg-table tbody tr.fdg-project td {
   background: #f8fafc;
+  font-weight: 750;
+  border-bottom: 1px solid var(--fv-line-strong);
+}
+.fv3 .fdg-table tbody tr.fdg-subtotal td {
+  background: #f1f5f9;
   font-weight: 700;
-  border-top: 1px solid var(--fv-line);
+  border-top: 1px solid var(--fv-line-strong);
+}
+.fv3 .fdg-table tbody tr.fdg-total td {
+  background: #eef2ff;
+  font-weight: 780;
+  border-top: 2px solid #6366f1;
+  border-bottom: 1px solid #c7d2fe;
 }
 .fv3 .fdg-table tbody tr.fdg-child td {
   background: #fcfcfd;
   color: #4b5563;
+  font-size: 12.5px;
+}
+.fv3 .fdg-table tbody tr.fdg-code td:first-child .fdg-label {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-size: 12px;
+  letter-spacing: 0.01em;
 }
 
 .fv3 .fdg-tree { display: inline-flex; align-items: center; gap: 8px; min-width: 0; }
@@ -84,11 +105,17 @@
 .fv3 .fdg-kpi {
   border: 1px solid var(--fv-line); border-radius: 8px; background: var(--fv-surface);
   padding: 10px 12px; text-align: left; cursor: pointer; box-shadow: var(--fv-shadow);
+  display: grid; gap: 2px;
 }
 .fv3 .fdg-kpi:hover { border-color: #bfdbfe; background: var(--fv-blue-soft); }
 .fv3 .fdg-kpi .label {
   display: block; font-size: 11px; font-weight: 700; color: var(--fv-muted);
   text-transform: uppercase; letter-spacing: 0.03em;
+}
+.fv3 .fdg-kpi .scope {
+  display: inline-flex; width: fit-content; margin-top: 2px;
+  font-size: 9px; font-weight: 750; letter-spacing: 0.03em; text-transform: uppercase;
+  color: #475569; background: #f1f5f9; border-radius: 999px; padding: 1px 7px;
 }
 .fv3 .fdg-kpi .value {
   display: block; margin-top: 4px; font-size: 18px; font-weight: 750;
@@ -98,6 +125,7 @@
 .fv3 .fdg-kpi.red .value { color: var(--fv-red); }
 .fv3 .fdg-kpi.blue .value { color: var(--fv-blue); }
 .fv3 .fdg-kpi.green .value { color: var(--fv-green); }
+.fv3 .fdg-kpi.neutral .value { color: #64748b; }
 
 .fv3 .fsd-back {
   position: fixed; inset: 0; background: rgba(17, 24, 39, 0.35); z-index: 40;
@@ -120,9 +148,43 @@
   display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 10px;
   font-size: 11px; font-weight: 750; border: 1px solid var(--fv-line);
 }
-.fv3 .fsd-badge.green { background: #ecfdf5; color: #065f46; border-color: #a7f3d0; }
-.fv3 .fsd-badge.amber { background: #fffbeb; color: #92400e; border-color: #fde68a; }
-.fv3 .fsd-badge.red { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+.fv3 .fsd-badge.green { background: var(--fv-green-bg); color: #065f46; border-color: var(--fv-green-border); }
+.fv3 .fsd-badge.amber { background: var(--fv-amber-bg); color: #92400e; border-color: var(--fv-amber-border); }
+.fv3 .fsd-badge.red { background: var(--fv-red-bg); color: #991b1b; border-color: var(--fv-red-border); }
+.fv3 .fsd-badge.neutral { background: var(--fv-neutral-bg); color: #475569; border-color: var(--fv-neutral-border); }
+.fv3 .fsd-check-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.fv3 .fsd-check-card {
+  border: 1px solid var(--fv-line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  display: grid;
+  gap: 6px;
+}
+.fv3 .fsd-check-card h4 {
+  margin: 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fv-muted);
+}
+.fv3 .fsd-check-card p { margin: 0; font-size: 12px; color: #374151; line-height: 1.4; }
+.fv3 .fsd-warnings {
+  border: 1px solid var(--fv-neutral-border);
+  background: var(--fv-neutral-bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 6px;
+}
+.fv3 .fsd-warnings li { font-size: 12px; color: #334155; }
+@media (max-width: 700px) {
+  .fv3 .fsd-check-grid { grid-template-columns: 1fr; }
+}
 .fv3 .fsd-group { border: 1px solid var(--fv-line); border-radius: 8px; overflow: hidden; }
 .fv3 .fsd-group-head {
   background: #f9fafb; padding: 8px 12px; display: flex; justify-content: space-between;
@@ -137,7 +199,35 @@
 .fv3 .cvr-v3-header h2 { margin: 0; font-size: 18px; font-weight: 750; }
 .fv3 .cvr-v3-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 .fv3 .attention-compact {
-  border: 1px solid #fde68a; background: #fffbeb; border-radius: 8px; padding: 10px 12px; margin: 12px 0;
+  border: 1px solid var(--fv-amber-border); background: var(--fv-amber-bg); border-radius: 8px; padding: 10px 12px; margin: 12px 0;
+}
+.fv3 .attention-compact.attn-neutral {
+  border-color: var(--fv-neutral-border);
+  background: var(--fv-neutral-bg);
+}
+.fv3 .fdg-incomplete-tag {
+  border-color: var(--fv-neutral-border) !important;
+  background: var(--fv-neutral-bg) !important;
+  color: #475569 !important;
+}
+.fv3 .fdg-table tbody tr.fdg-incomplete td {
+  background: #f8fafc;
+}
+.fv3 .fdg-table tbody tr.fdg-incomplete td:nth-child(1),
+.fv3 .fdg-table tbody tr.fdg-incomplete td:nth-child(2) {
+  background: #f8fafc;
+}
+.fv3 .fdg-table tbody tr.fdg-project td:nth-child(1),
+.fv3 .fdg-table tbody tr.fdg-project td:nth-child(2) {
+  background: #f8fafc;
+}
+.fv3 .fdg-table tbody tr.fdg-total td:nth-child(1),
+.fv3 .fdg-table tbody tr.fdg-total td:nth-child(2) {
+  background: #eef2ff;
+}
+.fv3 .fdg-table tbody tr.fdg-selected td:nth-child(1),
+.fv3 .fdg-table tbody tr.fdg-selected td:nth-child(2) {
+  background: #eff6ff;
 }
 @media (max-width: 900px) {
   .fv3 .fdg-kpi-strip { grid-template-columns: repeat(2, minmax(120px, 1fr)); }
@@ -164,18 +254,15 @@
 .fv3 .fdg-incomplete-tag {
   display: inline-flex;
   align-items: center;
-  border: 1px solid #f6e05e;
-  background: #fffbeb;
-  color: #92400e;
+  border: 1px solid var(--fv-neutral-border);
+  background: var(--fv-neutral-bg);
+  color: #475569;
   border-radius: 999px;
   padding: 1px 8px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.02em;
   text-transform: uppercase;
-}
-.fv3 .fdg-table tbody tr.fdg-incomplete td {
-  background: #fffdf5;
 }
 .fv3 .fdg-wrap {
   overflow-x: auto;

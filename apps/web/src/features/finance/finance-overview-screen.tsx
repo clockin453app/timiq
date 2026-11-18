@@ -122,7 +122,7 @@ export function FinanceOverviewScreen({
             child: true,
             depth: 1,
             cells: {
-              project: notes.join(" ? "),
+              project: notes.join(" · "),
               contract: null,
               incurred: null,
               commitments: null,
@@ -138,27 +138,34 @@ export function FinanceOverviewScreen({
   }, [cvrs, expanded, projects, onSelectProject]);
 
   function openPortfolioMetric(metric: string, label: string, displayed: string) {
+    const missing = displayed === "Not determined" || displayed === "MISSING / NOT AVAILABLE" || !displayed;
     setDrawerPayload({
       metric,
       company_id: "portfolio",
       project_id: "",
-      displayed_total: displayed === "Not determined" ? "missing" : String(displayed).replace(/[?,]/g, "") || "missing",
+      displayed_total: missing ? "missing" : String(displayed).replace(/[£,]/g, "") || "missing",
       formula: "Sum of project contributions (no double count across projects)",
-      basis: "Portfolio overview ? open a project for source rows",
+      basis: "Company-wide portfolio overview — open a project for source document rows",
       reconcilable: false,
       verification: "PARTIAL",
-      difference: "0.0000",
-      source_total: "0.0000",
+      formula_check: "INCOMPLETE",
+      source_verification: "PARTIAL",
+      difference: "missing",
+      source_total: "missing",
+      verified_subtotal: "missing",
+      unverified_subtotal: "missing",
       groups: [
         {
           id: "hint",
           label: "Project drill-down required",
-          total: "0.0000",
+          total: "missing",
+          verification: "PARTIAL",
           rows: [],
+          note: "Portfolio KPIs are company-wide aggregates. Source documents are verified on Project CVR.",
         },
       ],
       warnings: [
-        demoMode ? "DEMO portfolio strip." : "Select a project and open Project CVR for RECONCILED source breakdown.",
+        demoMode ? "DEMO portfolio strip." : "Select a project and open Project CVR for source verification. A missing total is not the same as £0.00.",
       ],
     });
     setDrawerOpen(true);
@@ -171,12 +178,13 @@ export function FinanceOverviewScreen({
         <div>
           <h2>Finance overview</h2>
           <div className="cvr-v3-meta">
-            <span className="chip">{companyName || "Company"}</span>
+            <span className="chip scope-company">{companyName || "Company"}</span>
+            <span className="chip scope-company">COMPANY-WIDE</span>
             <span className="chip live">Projects commercial position</span>
             <span className="chip readonly">READ-ONLY</span>
             {demoMode ? <span className="chip readonly">DEMO DATA</span> : null}
           </div>
-          <p className="sub">Expand a project row, then open Project CVR for the full cost-code grid.</p>
+          <p className="sub">Company portfolio totals. Expand a project, then open Project CVR for the cost-code grid.</p>
         </div>
         <button className="btn" type="button" onClick={onRefresh}>Refresh</button>
       </div>
@@ -185,23 +193,29 @@ export function FinanceOverviewScreen({
         <div className="fdg-kpi-strip">
           <button type="button" className="fdg-kpi blue" onClick={() => openPortfolioMetric("contract_value", "Contract", approved)}>
             <span className="label">Contract</span>
+            <span className="scope">Company-wide · portfolio</span>
             <span className="value">{approved}</span>
           </button>
           <button type="button" className="fdg-kpi" onClick={() => openPortfolioMetric("actual_eligible", "Cost to date", incurred)}>
             <span className="label">Cost to date</span>
+            <span className="scope">Company-wide · portfolio</span>
             <span className="value">{incurred}</span>
           </button>
-          <button type="button" className={`fdg-kpi${portfolio.missingCtc ? " amber" : ""}`} onClick={() => openPortfolioMetric("forecast_final_cost", "Forecast final", finalCost)}>
+          <button type="button" className={`fdg-kpi${portfolio.missingCtc ? " neutral" : ""}`} onClick={() => openPortfolioMetric("forecast_final_cost", "Forecast final", finalCost)}>
             <span className="label">Forecast final</span>
+            <span className="scope">Company-wide · portfolio</span>
             <span className="value">{finalCost}</span>
           </button>
           <button type="button" className={`fdg-kpi${portfolio.lossMaking ? " red" : " green"}`} onClick={() => openPortfolioMetric("forecast_profit", "Forecast profit", profit)}>
             <span className="label">Forecast profit</span>
+            <span className="scope">Company-wide · portfolio</span>
             <span className="value">{profit}</span>
           </button>
         </div>
       ) : (
-        <p className="notice amber" role="status">Portfolio KPIs incomplete ? one or more projects are missing contract/CTC.</p>
+        <p className="notice neutral" role="status">
+          Commercial setup pending for one or more projects — contract and/or CTC are missing. Portfolio totals stay undetermined and are not forced to £0.00.
+        </p>
       )}
 
       <p className="sub">
