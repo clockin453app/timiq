@@ -11,6 +11,10 @@ import {
   primaryKpisReady,
   type FinanceNavigateTarget,
 } from "./presentation";
+import {
+  FinanceWorkplaceLinksPanel,
+  type ProjectLinksPayload,
+} from "./finance-workplace-links";
 
 type Row = Record<string, string | number | boolean | null>;
 
@@ -19,9 +23,16 @@ type Props = {
   projects: Row[];
   cvrs: Row[];
   demoMode?: boolean;
+  projectLinks?: ProjectLinksPayload | null;
+  linksLoading?: boolean;
+  linksError?: string;
+  previewReadonly?: boolean;
   onSelectProject: (projectId: string) => void;
   onRefresh: () => void;
   onNavigate: (target: FinanceNavigateTarget) => void;
+  onRefreshLinks?: () => void;
+  onInitializeWorkplace?: (workplaceId: string) => void;
+  onDryRunLinks?: () => void;
 };
 
 const COLUMNS: FinanceGridColumn[] = [
@@ -39,8 +50,15 @@ export function FinanceOverviewScreen({
   projects,
   cvrs,
   demoMode = false,
+  projectLinks = null,
+  linksLoading = false,
+  linksError = "",
+  previewReadonly = true,
   onSelectProject,
   onRefresh,
+  onRefreshLinks,
+  onInitializeWorkplace,
+  onDryRunLinks,
 }: Props) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -203,6 +221,18 @@ export function FinanceOverviewScreen({
           const id = String(row.meta?.projectId || row.id);
           onSelectProject(id);
         }}
+      />
+
+      <FinanceWorkplaceLinksPanel
+        companyName={companyName}
+        payload={projectLinks}
+        loading={linksLoading}
+        error={linksError}
+        readonly={previewReadonly || Boolean(demoMode)}
+        onRefresh={() => (onRefreshLinks ? onRefreshLinks() : onRefresh())}
+        onOpenCvr={onSelectProject}
+        onInitialize={(workplaceId) => onInitializeWorkplace?.(workplaceId)}
+        onDryRun={() => onDryRunLinks?.()}
       />
 
       <FinanceSourceDrawer

@@ -7,6 +7,7 @@ import {
   mayRenderFictionalWorkerPreview,
   paymentRegisterViewOptions,
 } from "./finance-preview.ts";
+import { DEMO_PROJECT_LINKS } from "./finance-workplace-links-data.ts";
 import {
   FINANCE_SECTIONS,
   WORKSHEETS,
@@ -827,4 +828,9 @@ test("finance module nav filter hides company finance leaves when disabled", asy
   assert.equal(leafHrefs(off).includes("/finance/audit"), false);
   assert.ok(leafHrefs(off).includes("/budgets"));
 });
-
+test("demo workplace links expose unlinked active workplaces without inventing money", () => {
+  assert.ok(DEMO_PROJECT_LINKS.unlinked_active_workplaces.length >= 1);
+  assert.ok(DEMO_PROJECT_LINKS.workplaces.some((row) => row.link_status === "LINKED"));
+  assert.ok(DEMO_PROJECT_LINKS.finance_projects.some((row) => row.link_status === "NOT LINKED"));
+  assert.equal(JSON.stringify(DEMO_PROJECT_LINKS).includes("£"), false);
+});

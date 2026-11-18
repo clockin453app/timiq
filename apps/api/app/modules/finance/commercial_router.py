@@ -66,6 +66,11 @@ from app.modules.finance.commercial_service import (
     vat_cis_report,
 )
 from app.modules.finance.cvr_source_breakdown import build_cvr_source_breakdown
+from app.modules.finance.workplace_link import (
+    dry_run_workplace_initialize,
+    initialize_finance_project_from_workplace,
+    list_project_links,
+)
 from app.modules.finance.ledger_service import FinanceLedgerError, paye_obligation
 from app.modules.finance.supplier_payment_errors import SupplierPaymentError
 from app.modules.finance.supplier_payment_schemas import ReversalInput
@@ -85,6 +90,10 @@ class ProjectBody(BaseModel):
     name: str
     reference_code: str | None = None
     contract_value_net: Decimal = Decimal("0")
+
+
+class WorkplaceInitBody(BaseModel):
+    workplace_id: uuid.UUID
 
 
 class NamedBody(BaseModel):
@@ -303,6 +312,56 @@ def finance_cis_history(source_item_id: uuid.UUID, company_id: uuid.UUID | None 
 @router.get("/paye/{source_item_id}/history")
 def finance_paye_history(source_item_id: uuid.UUID, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
     return list_snapshot_history(db_session, company_id=_company(db_session, actor, company_id), kind="paye", source_id=source_item_id)
+
+
+
+@router.get("/project-links")
+def finance_project_links(company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
+    """READ-ONLY workplace <-> Finance project association status for the scoped company."""
+    return list_project_links(db_session, company_id=_company(db_session, actor, company_id))
+
+
+@router.get("/project-links/dry-run")
+def finance_project_links_dry_run(
+    company_id: uuid.UUID | None = None,
+    workplace_id: list[uuid.UUID] | None = None,
+    db_session: Session = Depends(get_db_session),
+    actor: User = Depends(get_current_user),
+):
+    """DRY-RUN only. Reports what initialize would create; never writes."""
+    return dry_run_workplace_initialize(
+        db_session,
+        company_id=_company(db_session, actor, company_id),
+        workplace_ids=workplace_id,
+    )
+
+
+@router.post("/project-links/initialize")
+def finance_project_links_initialize(
+    body: WorkplaceInitBody,
+    company_id: uuid.UUID | None = None,
+    db_session: Session = Depends(get_db_session),
+    actor: User = Depends(get_current_user),
+):
+    """Create or return the Finance project for one workplace. Blocked in preview readonly."""
+    scoped = _company(db_session, actor, company_id)
+
+    def action():
+        return initialize_finance_project_from_workplace(
+            db_session,
+            company_id=scoped,
+            actor_user_id=actor.id,
+            workplace_id=body.workplace_id,
+        )
+
+    try:
+        result = action()
+        db_session.commit()
+        return result
+    except FinanceLedgerError as exc:
+        db_session.rollback()
+        status = 404 if exc.code == "NOT_FOUND" else 400
+        raise HTTPException(status_code=status, detail={"code": exc.code, "message": exc.message}) from exc
 
 
 @router.get("/projects")
