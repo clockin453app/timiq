@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { FICTIONAL_WORKER_PREVIEW } from "./finance-preview.ts";
+import {
+  FICTIONAL_WORKER_PREVIEW,
+  isFinanceFictionalPreviewAllowed,
+  mayRenderFictionalWorkerPreview,
+  paymentRegisterViewOptions,
+} from "./finance-preview.ts";
 import {
   FINANCE_SECTIONS,
   WORKSHEETS,
@@ -391,6 +396,33 @@ test("fictional worker preview is labelled and is not a posting source", () => {
   assert.equal(FICTIONAL_WORKER_PREVIEW.cis.length, 3);
   assert.equal(FICTIONAL_WORKER_PREVIEW.paye[0]?.worker, "Test Employee D");
   assert.equal(JSON.stringify(FICTIONAL_WORKER_PREVIEW).includes("finance.local"), false);
+  assert.equal(typeof isFinanceFictionalPreviewAllowed(), "boolean");
+  assert.equal(isFinanceFictionalPreviewAllowed(), process.env.NODE_ENV !== "production");
+});
+
+test("production Payment Register cannot open fictional preview rows", () => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
+    assert.equal(isFinanceFictionalPreviewAllowed(), false);
+    assert.deepEqual([...paymentRegisterViewOptions()], ["Supplier payments", "CIS workers", "PAYE employees"]);
+    assert.equal(mayRenderFictionalWorkerPreview("Fictional preview"), false);
+    assert.equal(mayRenderFictionalWorkerPreview("Supplier payments"), false);
+  } finally {
+    process.env.NODE_ENV = previous;
+  }
+});
+
+test("non-production Payment Register keeps fictional preview as a local-only tab", () => {
+  const previous = process.env.NODE_ENV;
+  process.env.NODE_ENV = "development";
+  try {
+    assert.equal(isFinanceFictionalPreviewAllowed(), true);
+    assert.ok(paymentRegisterViewOptions().includes("Fictional preview"));
+    assert.equal(mayRenderFictionalWorkerPreview("Fictional preview"), true);
+  } finally {
+    process.env.NODE_ENV = previous;
+  }
 });
 
 test("the approved workbook has exactly ten sheets and opens on project control", () => {

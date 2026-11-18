@@ -15,7 +15,7 @@ import { FinanceOverviewScreen } from "./finance-overview-screen";
 import { DEMO_ALLOCATION_LINES } from "./finance-demo-fixture";
 import { FinanceSourceDrawer } from "./finance-source-drawer";
 import { CisBankPayments, EMPTY_QUERY, FinanceQueryBar, RegisterSearch, exportHref, useFinanceQuery, type FinanceQuery } from "./finance-query";
-import { FICTIONAL_WORKER_PREVIEW } from "./finance-preview";
+import { FICTIONAL_WORKER_PREVIEW, isFinanceFictionalPreviewAllowed, mayRenderFictionalWorkerPreview, paymentRegisterViewOptions } from "./finance-preview";
 import type { SourceBreakdownPayload } from "./finance-reconcile";
 import {
   WORKSHEET_NAV,
@@ -376,7 +376,20 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
           {sheet === "Customer Invoices" ? <Customers books={books} companyId={companyId} names={names} projectsById={projectsById} projectId={projectId} onExplain={open} onNew={() => setDrawer("customer-invoice")} /> : null}
           {sheet === "Receipts Register" ? <Receipts books={books} companyId={companyId} names={names} onExplain={open} onNew={() => setDrawer("receipt")} /> : null}
           {sheet === "VAT Reconciliation" ? <Vat books={books} names={names} onExplain={open} /> : null}
-          {sheet === "CIS Tax HMRC" ? <CisTax books={books} onPreview={() => { setSheet("Payment Register"); setPayView("Fictional preview"); }} onImport={() => setDrawer("cis-import")} /> : null}
+          {sheet === "CIS Tax HMRC" ? (
+            <CisTax
+              books={books}
+              onPreview={
+                isFinanceFictionalPreviewAllowed()
+                  ? () => {
+                      setSheet("Payment Register");
+                      setPayView("Fictional preview");
+                    }
+                  : undefined
+              }
+              onImport={() => setDrawer("cis-import")}
+            />
+          ) : null}
           {sheet === "Retention Register" ? <Retention books={books} companyId={companyId} names={names} projectsById={projectsById} onExplain={open} onRelease={() => setDrawer("retention")} /> : null}
           {sheet === "DAYWORKS LIVE" ? <Dayworks books={books} companyId={companyId} projectsById={projectsById} onExplain={open} onNew={() => setDrawer("daywork")} /> : null}
           {sheet === "Loans & Advances" ? <Loans books={books} companyId={companyId} names={names} view={loanView} onView={setLoanView} onExplain={open} onNew={() => setDrawer("funding")} /> : null}
@@ -1120,7 +1133,11 @@ function Payments({ books, companyId, names, view, onView, onExplain, onPay, onW
         <Action className="btn mainbtn" onClick={view === "Supplier payments" ? onPay : onWorker}>+ Record bank payment</Action>
       </Head>
       <div className="pills">
-        {["Supplier payments", "CIS workers", "PAYE employees", "Fictional preview"].map((item) => <button key={item} type="button" className={`pill${view === item ? " active" : ""}`} onClick={() => onView(item)}>{item}</button>)}
+        {paymentRegisterViewOptions().map((item) => (
+          <button key={item} type="button" className={`pill${view === item ? " active" : ""}`} onClick={() => onView(item)}>
+            {item}
+          </button>
+        ))}
       </div>
       {view === "Supplier payments" ? (
         <>
@@ -1138,7 +1155,13 @@ function Payments({ books, companyId, names, view, onView, onExplain, onPay, onW
       ) : null}
       {view === "CIS workers" ? <CisBankPayments companyId={companyId} workers={books.cisSources.map((item) => [String(item.user_id), String(item.email || item.user_id || "Worker")])} /> : null}
       {view === "PAYE employees" ? <LiveWorkers title="PAYE" rows={[]} empty="No approved PAYE snapshot is posted for this company. Employee net bank payments are not the same as PAYE deductions." onExplain={onExplain} /> : null}
-      {view === "Fictional preview" ? <FictionalPreview /> : null}
+      {view === "Fictional preview" ? (
+        mayRenderFictionalWorkerPreview(view) ? (
+          <FictionalPreview />
+        ) : (
+          <p className="empty" role="status">Fictional worker preview is not available in production.</p>
+        )
+      ) : null}
     </>
   );
 }
@@ -1158,6 +1181,9 @@ function LiveWorkers({ title, rows, empty, onExplain }: { title: string; rows: R
 }
 
 function FictionalPreview() {
+  if (!isFinanceFictionalPreviewAllowed()) {
+    return <p className="empty" role="status">Fictional worker preview is not available in production.</p>;
+  }
   return (
     <div>
       <div className="preview"><b>{FICTIONAL_WORKER_PREVIEW.label}.</b> These workers and amounts are a visual sample. They are not Finance Local Trial records, not approved Payroll, and not bank payments. They cannot be selected for posting.</div>
@@ -1261,14 +1287,14 @@ function Vat({ books, names, onExplain }: { books: Books; names: Map<string, str
   );
 }
 
-function CisTax({ books, onPreview, onImport }: { books: Books; onPreview: () => void; onImport: () => void }) {
+function CisTax({ books, onPreview, onImport }: { books: Books; onPreview?: () => void; onImport: () => void }) {
   const empty = books.cis.length === 0;
   return (
     <>
       <Head title="CIS tax / HMRC" text="Approved snapshots only. Statutory rates are not guessed." />
       {empty ? <div className="empty" role="status"><strong>No approved payroll snapshots</strong><span>The live CIS register stays empty for this company.</span></div> : null}
       <div className="bar">
-        <button className="btn" type="button" onClick={onPreview}>View fictional worker preview</button>
+        {onPreview ? <button className="btn" type="button" onClick={onPreview}>View fictional worker preview</button> : null}
         <Action className="btn mainbtn" disabled={books.cisSources.length === 0} onClick={onImport}>Import approved snapshot</Action>
       </div>
       <Grid headers={[{ label: "Source period" }, { label: "Worker" }, { label: "Source obligation", amt: true }, { label: "CIS deduction", amt: true }, { label: "Bank paid", amt: true }, { label: "Outstanding", amt: true }, { label: "Status" }]} rows={books.cis.map((row) => [String(row.week_start || "Period missing"), String(row.source_user_id || "Worker"), money(row.effective_payable_amount), money(row.effective_cis_deduction), money(row.bank_allocated), money(row.still_owed), badge("Posted snapshot", "blue")])} />
