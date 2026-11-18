@@ -430,6 +430,9 @@ class FinanceCostDocument(Base):
     tax_notional_amount: Mapped[Decimal] = mapped_column(
         MONEY, nullable=False, default=Decimal("0"), server_default="0"
     )
+    # VAT recoverability columns are added by alembic c9d0e1f2a3b4 and read via
+    # raw SQL in cost_register_service (_vat_column_ready) so old/new API can
+    # coexist during rolling deploy without selecting missing ORM columns.
     credited_document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     reverses_document_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
