@@ -60,44 +60,85 @@ export type FinanceNavigateTarget = {
   expenseFilter?: string;
 };
 
-/** Compact Finance secondary navigation — only real existing worksheets. */
+/**
+ * Compact Finance contextual navigation.
+ * Group titles mirror FINANCE_GROUPS intent; each item opens a real worksheet (never a blank “coming soon” page).
+ */
 export const WORKSHEET_NAV: { group: string; items: { sheet: Worksheet; label: string; hint: string }[] }[] = [
   {
     group: "Overview",
     items: [
-      { sheet: "PROJECT CONTROL", label: "Overview & CVR", hint: "Company or one job: contract, cost to date, forecast and attention." },
+      { sheet: "PROJECT CONTROL", label: "Overview & CVR", hint: "Company overview or one-job Project CVR from Finance Core." },
     ],
   },
   {
-    group: "Costs & Invoices",
+    group: "Costs & Suppliers",
     items: [
-      { sheet: "Project Expenses", label: "Supplier invoices", hint: "Post invoices and credits. Not bank payments." },
+      { sheet: "Project Expenses", label: "Supplier invoices", hint: "Cost documents: invoices, expenses and credits. Not bank payments." },
       { sheet: "Payment Register", label: "Supplier payments", hint: "Bank settlements. Payments do not create project cost again." },
     ],
   },
   {
-    group: "Revenue & Payments",
+    group: "Payroll Finance",
     items: [
-      { sheet: "Customer Invoices", label: "Customer invoices", hint: "Amounts billed to the customer." },
-      { sheet: "Receipts Register", label: "Customer receipts", hint: "Cash received. Receipts do not create Value of Work." },
-      { sheet: "Retention Register", label: "Retention", hint: "Retention held and released where recorded." },
+      { sheet: "Payment Register", label: "CIS / PAYE payments", hint: "Worker bank settlements on the payment register (CIS and PAYE views)." },
+      { sheet: "CIS Tax HMRC", label: "CIS tax", hint: "CIS tax view from Finance registers." },
     ],
   },
   {
-    group: "Forecast & Dayworks",
+    group: "Customers",
     items: [
-      { sheet: "DAYWORKS LIVE", label: "Dayworks", hint: "Basic dayworks register on a7. Experimental CVR-6 stays inactive." },
+      { sheet: "Customer Invoices", label: "Customer invoices", hint: "Amounts billed to the customer." },
+      { sheet: "Receipts Register", label: "Customer receipts", hint: "Cash received. Receipts do not create Value of Work." },
+    ],
+  },
+  {
+    group: "Commercial",
+    items: [
+      { sheet: "DAYWORKS LIVE", label: "Dayworks", hint: "Basic dayworks register. Experimental CVR-6 stays inactive." },
+      { sheet: "Retention Register", label: "Retention & certificates", hint: "Certificates, retention held and released where recorded." },
+    ],
+  },
+  {
+    group: "Loans",
+    items: [
       { sheet: "Loans & Advances", label: "Loans & advances", hint: "Financing movements — not trading income or project cost." },
     ],
   },
   {
-    group: "Reports & Tax",
+    group: "Reports",
     items: [
       { sheet: "VAT Reconciliation", label: "VAT", hint: "Recorded VAT control — not a verified reclaim." },
       { sheet: "CIS Tax HMRC", label: "CIS tax", hint: "CIS tax view from Finance registers." },
+      { sheet: "PROJECT CONTROL", label: "As-of / portfolio", hint: "Historical as-of CVR and project portfolio live on Overview." },
     ],
   },
 ];
+
+function isMissingPrimaryKpi(value: string | null | undefined): boolean {
+  if (value === null || value === undefined) return true;
+  const text = String(value).trim();
+  if (!text) return true;
+  const upper = text.toUpperCase();
+  return (
+    upper === "NOT DETERMINED"
+    || upper === "MISSING / NOT AVAILABLE"
+    || upper === "MISSING"
+    || upper.startsWith("MISSING")
+  );
+}
+
+/** True when every primary KPI display is missing / Not determined. */
+export function primaryKpisIncomplete(values: Array<string | null | undefined>): boolean {
+  if (!values.length) return true;
+  return values.every((value) => isMissingPrimaryKpi(value));
+}
+
+/** True only when every primary KPI is a real determined amount — otherwise use the compact incomplete state. */
+export function primaryKpisReady(values: Array<string | null | undefined>): boolean {
+  if (!values.length) return false;
+  return values.every((value) => !isMissingPrimaryKpi(value));
+}
 
 export const FINANCE_FIGURE_HELP: Record<string, { title: string; body: string; warning: string }> = {
   actualIncurred: {
@@ -235,6 +276,22 @@ export function financeAttentionActions(attention: string[]): FinanceAttentionAc
       title = "Open commitments reminder";
       focus = "control-dashboard";
       recommendedAction = "Review Open Commitments on Project Control — they are not incurred cost.";
+    } else if (lower.includes("expenditure by cost code") || lower.includes("cost code does not cover")) {
+      title = "Cost-code coverage gap";
+      focus = "control-dashboard";
+      recommendedAction = "Review expenditure by cost code against eligible cost.";
+    } else if (lower.includes("budget") && lower.includes("forecast")) {
+      title = "Budget vs forecast mismatch";
+      focus = "portfolio";
+      recommendedAction = "Review approved budget against Forecast Final Cost.";
+    } else if (lower.includes("forecast profit is an estimate")) {
+      title = "Forecast profit estimate";
+      focus = "control-dashboard";
+      recommendedAction = "Treat Forecast Profit as an estimate, not certified profit.";
+    } else if (lower.includes("employer ni") || lower.includes("pension and paye")) {
+      title = "Payroll on-costs excluded";
+      focus = "control-dashboard";
+      recommendedAction = "Confirm Employer NI / pension / PAYE are recorded separately if required.";
     }
 
     return {
@@ -249,6 +306,25 @@ export function financeAttentionActions(attention: string[]): FinanceAttentionAc
       severity,
       available,
     };
+  });
+}
+
+/** UI list for Needs attention — real exceptions only; no placeholders, educational duplicates, or unavailable stubs. */
+export function financeUiAttentionActions(attention: string[]): FinanceAttentionAction[] {
+  const educational =
+    /open commitments are not|forecast profit is an estimate|employer ni|accruals are not|recorded input vat is not verified/i;
+  const seen = new Set<string>();
+  return financeAttentionActions(attention).filter((item) => {
+    if (!item.available) return false;
+    if (item.title === "Attention item") return false;
+    if (item.title === "Experimental / unavailable") return false;
+    if (item.title === "Open commitments reminder") return false;
+    if (item.title === "Forecast profit estimate") return false;
+    if (item.title === "Payroll on-costs excluded") return false;
+    if (educational.test(item.label)) return false;
+    if (seen.has(item.title)) return false;
+    seen.add(item.title);
+    return true;
   });
 }
 

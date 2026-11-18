@@ -7,9 +7,16 @@ import { listCompanies, type Company } from "@/features/companies/api";
 import { readStoredCompanyId, writeStoredCompanyId } from "@/features/companies/selected-company";
 
 import "./finance-v3.css";
+import "./finance-grid.css";
 import { CommercialPerformanceChart, buildCommercialBars } from "./finance-chart";
+import { FinanceCvrScreen } from "./finance-cvr-screen";
+import { FinanceDataGrid, type FinanceGridColumn } from "./finance-data-grid";
+import { FinanceOverviewScreen } from "./finance-overview-screen";
+import { DEMO_ALLOCATION_LINES } from "./finance-demo-fixture";
+import { FinanceSourceDrawer } from "./finance-source-drawer";
 import { CisBankPayments, EMPTY_QUERY, FinanceQueryBar, RegisterSearch, exportHref, useFinanceQuery, type FinanceQuery } from "./finance-query";
 import { FICTIONAL_WORKER_PREVIEW } from "./finance-preview";
+import type { SourceBreakdownPayload } from "./finance-reconcile";
 import {
   WORKSHEET_NAV,
   FINANCE_FIGURE_HELP,
@@ -23,7 +30,7 @@ import {
   controlPercent,
   costDocumentTouchesProject,
   forecastShare,
-  financeAttentionActions,
+  financeUiAttentionActions,
   financePortfolioSummary,
   forecastTone,
   isForecastLoss,
@@ -34,6 +41,7 @@ import {
   formatKnownMoney,
   invoiceCashReceived,
   metricHonestyLabel,
+  primaryKpisReady,
   projectControlDrilldown,
   receiptAllocationStatus,
   reversalState,
@@ -101,12 +109,22 @@ function Action({ className, onClick, children, disabled = false }: { className:
   return <button className={className} type="button" disabled={blocked} title={locked ? "Disabled in read-only preview" : undefined} onClick={onClick}>{children}</button>;
 }
 
-export function FinanceWorkspace() {
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [companyId, setCompanyId] = useState("");
-  const [projectId, setProjectId] = useState("");
-  const [sheet, setSheet] = useState<Worksheet>("PROJECT CONTROL");
-  const [books, setBooks] = useState<Books>(EMPTY);
+export type FinanceWorkspaceDemo = {
+  companies: Company[];
+  books: Books;
+  categories?: { category: string; eligible: string }[];
+  initialSheet?: Worksheet;
+  initialProjectId?: string;
+  label?: string;
+};
+
+export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {}) {
+  const demoMode = Boolean(demo);
+  const [companies, setCompanies] = useState<Company[]>(demo?.companies ?? []);
+  const [companyId, setCompanyId] = useState(demo?.companies[0]?.id ?? "");
+  const [projectId, setProjectId] = useState(demo?.initialProjectId ?? "");
+  const [sheet, setSheet] = useState<Worksheet>(demo?.initialSheet ?? "PROJECT CONTROL");
+  const [books, setBooks] = useState<Books>(demo?.books ?? EMPTY);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -117,8 +135,8 @@ export function FinanceWorkspace() {
   const [loanView, setLoanView] = useState("Movements");
   const [drawer, setDrawer] = useState<string | null>(null);
   const [explain, setExplain] = useState<{ title: string; body: string; warning: string } | null>(null);
-  const [categories, setCategories] = useState<{ category: string; eligible: string }[]>([]);
-  const [categoryLoadFailed, setCategoryLoadFailed] = useState(true);
+  const [categories, setCategories] = useState<{ category: string; eligible: string }[]>(demo?.categories ?? []);
+  const [categoryLoadFailed, setCategoryLoadFailed] = useState(!(demo?.categories?.length));
   const [previewReadonly, setPreviewReadonly] = useState(true);
   const [navFocus, setNavFocus] = useState<FinanceNavigateTarget["focus"] | null>(null);
   const busy = useRef(false);
@@ -132,6 +150,10 @@ export function FinanceWorkspace() {
   }
 
   useEffect(() => {
+    if (demoMode) {
+      setPreviewReadonly(true);
+      return;
+    }
     let cancelled = false;
     fetch(`${API_URL}/api/finance/preview-mode`, { credentials: "include" })
       .then(async (response) => {
@@ -141,18 +163,31 @@ export function FinanceWorkspace() {
       .then((body) => { if (!cancelled) setPreviewReadonly(body.readonly !== false); })
       .catch(() => { if (!cancelled) setPreviewReadonly(true); });
     return () => { cancelled = true; };
-  }, [companyId]);
+  }, [companyId, demoMode]);
 
   useEffect(() => {
+    if (demoMode) return;
     listCompanies().then((list) => {
       setCompanies(list);
       const stored = readStoredCompanyId();
       const next = list.find((item) => item.id === stored)?.id ?? list[0]?.id ?? "";
       setCompanyId(next);
     }).catch(() => setError("Companies could not be loaded."));
-  }, []);
+  }, [demoMode]);
 
   useEffect(() => {
+    if (demoMode) {
+      if (!demo) return;
+      const selectedCvrs = projectId
+        ? demo.books.cvrs.filter((row) => String(row.id) === projectId)
+        : demo.books.cvrs;
+      setBooks({ ...demo.books, cvrs: selectedCvrs });
+      setCategories(demo.categories ?? []);
+      setCategoryLoadFailed(!(demo.categories?.length));
+      setLoading(false);
+      setError("");
+      return;
+    }
     if (!companyId) return;
     writeStoredCompanyId(companyId);
     let cancelled = false;
@@ -201,7 +236,7 @@ export function FinanceWorkspace() {
       }
     })();
     return () => { cancelled = true; };
-  }, [companyId, projectId, reloadToken]);
+  }, [companyId, projectId, reloadToken, demoMode, demo]);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -236,78 +271,116 @@ export function FinanceWorkspace() {
   const names = useMemo(() => new Map(books.parties.map((item) => [String(item.id), String(item.name)])), [books.parties]);
   const projectsById = useMemo(() => new Map(books.projects.map((item) => [String(item.id), String(item.name)])), [books.projects]);
   const open = (title: string, body: string, warning: string) => setExplain({ title, body, warning });
+  const activeNavGroup = WORKSHEET_NAV.find((group) => group.items.some((item) => item.sheet === sheet))?.group ?? WORKSHEET_NAV[0].group;
+  const [openNavGroup, setOpenNavGroup] = useState(activeNavGroup);
+  useEffect(() => { setOpenNavGroup(activeNavGroup); }, [activeNavGroup]);
+  const openGroupItems = WORKSHEET_NAV.find((group) => group.group === openNavGroup)?.items ?? [];
 
   return (
     <ReadOnlyPreview.Provider value={previewReadonly}>
     <div className="fv3" data-finance-v3="true" data-readonly={previewReadonly ? "true" : "false"}>
       <header className="top">
-        <div className="brand">TIMIQ <span>Finance</span><small>Commercial control · UK construction</small></div>
+        <div className="brand">TIMIQ <span>Finance</span><small>{demoMode ? (demo?.label ?? "Local DEMO visual QA") : "Commercial control · UK construction"}</small></div>
         <div className="top-meta">
+          {demoMode ? <span className="chip readonly">DEMO DATA · local only</span> : null}
           {previewReadonly ? <span className="chip readonly">Read-only pilot</span> : <span className="chip live">Editing enabled</span>}
         </div>
       </header>
       <div className="main">
-        <div className="titlebar">
-          <div>
-            <h1>{worksheetHeading(sheet)}</h1>
-            <p>Clear commercial position first. Details and registers stay one click away.</p>
+        <nav className="fv-context-nav" aria-label="Finance worksheets">
+          <div className="fv-context-groups">
+            {WORKSHEET_NAV.map((group) => {
+              const isActive = activeNavGroup === group.group;
+              const isOpen = openNavGroup === group.group;
+              return (
+                <button
+                  key={group.group}
+                  type="button"
+                  className={`fv-context-group${isActive ? " active" : ""}${isOpen && !isActive ? " open" : ""}`}
+                  aria-expanded={isOpen}
+                  aria-current={isActive ? "true" : undefined}
+                  onClick={() => setOpenNavGroup(group.group)}
+                >
+                  {group.group}
+                </button>
+              );
+            })}
           </div>
-          <div className="filters">
-            <label>Company
-              <select aria-label="Company" value={companyId} onChange={(event) => { setCompanyId(event.target.value); setProjectId(""); }}>
-                {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
-              </select>
-            </label>
-            <label>Project
-              <select aria-label="Project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-                <option value="">All projects</option>
-                {books.projects.map((project) => <option key={String(project.id)} value={String(project.id)}>{String(project.name)}</option>)}
-              </select>
-            </label>
-          </div>
-        </div>
-        <div className="shell">
-          <nav className="side" aria-label="Finance sections">
-            {WORKSHEET_NAV.map((group) => (
-              <div className="side-group" key={group.group}>
-                <span className="side-label">{group.group}</span>
-                {group.items.map((item) => (
-                  <button
-                    key={item.sheet}
-                    type="button"
-                    className={`side-link${sheet === item.sheet ? " active" : ""}`}
-                    title={item.hint}
-                    aria-current={sheet === item.sheet ? "page" : undefined}
-                    onClick={() => { setSheet(item.sheet); setQuery(""); setMessage(""); }}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
+          <div className="fv-context-sheets" role="list">
+            {openGroupItems.map((item) => (
+              <button
+                key={`${item.sheet}-${item.label}`}
+                type="button"
+                role="listitem"
+                className={`fv-sheet-pill${sheet === item.sheet ? " active" : ""}`}
+                title={item.hint}
+                aria-current={sheet === item.sheet ? "page" : undefined}
+                onClick={() => { setSheet(item.sheet); setQuery(""); setMessage(""); }}
+              >
+                {item.label}
+              </button>
             ))}
-            <div className="side-group">
-              <span className="side-label">Reports & Audit</span>
-              <a className="side-link" href="/finance/audit">Audit trail</a>
-              <div className="coming-soon">Applications, certificates and historical balances: coming tomorrow.</div>
+            {openNavGroup === "Reports" ? (
+              <a className="fv-sheet-pill link" href={demoMode ? "#audit" : "/finance/audit"} role="listitem">Audit trail</a>
+            ) : null}
+            <div className="fv-context-filters">
+              <label>Company
+                <select aria-label="Company" value={companyId} onChange={(event) => { setCompanyId(event.target.value); setProjectId(""); }}>
+                  {companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}
+                </select>
+              </label>
+              <label>Project
+                <select aria-label="Project" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
+                  <option value="">All projects</option>
+                  {(demo?.books.projects ?? books.projects).map((project) => <option key={String(project.id)} value={String(project.id)}>{String(project.name)}</option>)}
+                </select>
+              </label>
             </div>
-          </nav>
-          <section className="workarea">
-            {previewReadonly ? <p className="notice">Read-only pilot. Posting and other changes stay disabled. Browsing remains available.</p> : null}
-            {error ? <p className="notice bad" role="alert">{error} <button className="linkbtn" type="button" onClick={() => setReloadToken((value) => value + 1)}>Retry</button></p> : null}
-            {message ? <p className="notice neutral">{message}</p> : null}
-            {loading ? <p className="sub">Loading finance records…</p> : null}
-            {sheet === "PROJECT CONTROL" ? <ProjectControl books={books} companyId={companyId} projectId={projectId} categories={categories} categoryLoadFailed={categoryLoadFailed} navFocus={navFocus} onNavFocusConsumed={() => setNavFocus(null)} onExplain={open} onNew={() => setDrawer("project")} onBudget={() => setDrawer("budget")} onRefresh={() => setReloadToken((value) => value + 1)} onNavigate={navigateFinance} /> : null}
-            {sheet === "Project Expenses" ? <Expenses books={books} companyId={companyId} names={names} projectId={projectId} query={query} onQuery={setQuery} filter={expenseFilter} onFilter={setExpenseFilter} onExplain={open} onInvoice={() => setDrawer("invoice")} onExpense={() => setDrawer("expense")} /> : null}
-            {sheet === "Payment Register" ? <Payments books={books} companyId={companyId} names={names} view={payView} onView={setPayView} onExplain={open} onPay={() => setDrawer("supplier-payment")} onWorker={() => setDrawer("worker-payment")} /> : null}
-            {sheet === "Customer Invoices" ? <Customers books={books} companyId={companyId} names={names} projectsById={projectsById} projectId={projectId} onExplain={open} onNew={() => setDrawer("customer-invoice")} /> : null}
-            {sheet === "Receipts Register" ? <Receipts books={books} companyId={companyId} names={names} onExplain={open} onNew={() => setDrawer("receipt")} /> : null}
-            {sheet === "VAT Reconciliation" ? <Vat books={books} names={names} onExplain={open} /> : null}
-            {sheet === "CIS Tax HMRC" ? <CisTax books={books} onPreview={() => { setSheet("Payment Register"); setPayView("Fictional preview"); }} onImport={() => setDrawer("cis-import")} /> : null}
-            {sheet === "Retention Register" ? <Retention books={books} companyId={companyId} names={names} projectsById={projectsById} onExplain={open} onRelease={() => setDrawer("retention")} /> : null}
-            {sheet === "DAYWORKS LIVE" ? <Dayworks books={books} companyId={companyId} projectsById={projectsById} onExplain={open} onNew={() => setDrawer("daywork")} /> : null}
-            {sheet === "Loans & Advances" ? <Loans books={books} companyId={companyId} names={names} view={loanView} onView={setLoanView} onExplain={open} onNew={() => setDrawer("funding")} /> : null}
-          </section>
-        </div>
+          </div>
+        </nav>
+        <section className="workarea">
+          {error ? <p className="notice bad" role="alert">{error} <button className="linkbtn" type="button" onClick={() => setReloadToken((value) => value + 1)}>Retry</button></p> : null}
+          {message ? <p className="notice neutral">{message}</p> : null}
+          {loading ? <p className="sub">Loading finance records…</p> : null}
+          {sheet === "PROJECT CONTROL" ? (
+            projectId ? (
+              <FinanceCvrScreen
+                companyId={companyId}
+                companyName={companies.find((item) => item.id === companyId)?.name ?? ""}
+                projectId={projectId}
+                projectName={String((demo?.books.projects ?? books.projects).find((item) => String(item.id) === projectId)?.name ?? "")}
+                cvr={books.cvrs[0] ?? {}}
+                categories={categories}
+                categoryLoadFailed={categoryLoadFailed}
+                books={books}
+                demoMode={demoMode}
+                demoAllocations={demoMode ? DEMO_ALLOCATION_LINES.filter((row) => row.projectId === projectId) : []}
+                onRefresh={() => setReloadToken((value) => value + 1)}
+                onNavigate={navigateFinance}
+                onExplain={open}
+              />
+            ) : (
+              <FinanceOverviewScreen
+                companyName={companies.find((item) => item.id === companyId)?.name ?? ""}
+                projects={demo?.books.projects ?? books.projects}
+                cvrs={books.cvrs}
+                demoMode={demoMode}
+                onSelectProject={setProjectId}
+                onRefresh={() => setReloadToken((value) => value + 1)}
+                onNavigate={navigateFinance}
+              />
+            )
+          ) : null}
+          {sheet === "Project Expenses" ? <Expenses books={books} companyId={companyId} names={names} projectId={projectId} query={query} onQuery={setQuery} filter={expenseFilter} onFilter={setExpenseFilter} onExplain={open} onInvoice={() => setDrawer("invoice")} onExpense={() => setDrawer("expense")} demoMode={demoMode} /> : null}
+          {sheet === "Payment Register" ? <Payments books={books} companyId={companyId} names={names} view={payView} onView={setPayView} onExplain={open} onPay={() => setDrawer("supplier-payment")} onWorker={() => setDrawer("worker-payment")} /> : null}
+          {sheet === "Customer Invoices" ? <Customers books={books} companyId={companyId} names={names} projectsById={projectsById} projectId={projectId} onExplain={open} onNew={() => setDrawer("customer-invoice")} /> : null}
+          {sheet === "Receipts Register" ? <Receipts books={books} companyId={companyId} names={names} onExplain={open} onNew={() => setDrawer("receipt")} /> : null}
+          {sheet === "VAT Reconciliation" ? <Vat books={books} names={names} onExplain={open} /> : null}
+          {sheet === "CIS Tax HMRC" ? <CisTax books={books} onPreview={() => { setSheet("Payment Register"); setPayView("Fictional preview"); }} onImport={() => setDrawer("cis-import")} /> : null}
+          {sheet === "Retention Register" ? <Retention books={books} companyId={companyId} names={names} projectsById={projectsById} onExplain={open} onRelease={() => setDrawer("retention")} /> : null}
+          {sheet === "DAYWORKS LIVE" ? <Dayworks books={books} companyId={companyId} projectsById={projectsById} onExplain={open} onNew={() => setDrawer("daywork")} /> : null}
+          {sheet === "Loans & Advances" ? <Loans books={books} companyId={companyId} names={names} view={loanView} onView={setLoanView} onExplain={open} onNew={() => setDrawer("funding")} /> : null}
+        </section>
       </div>
       {explain ? (
         <div className="drawerback" role="dialog" aria-modal="true" aria-label={explain.title}>
@@ -357,8 +430,15 @@ function Stats({ items }: { items: [string, string, string?][] }) {
   return <div className="stats">{items.map(([cap, val, tone]) => <div key={cap} className={`stat ${tone ?? ""}`}><div className="cap">{cap}</div><div className="val">{val}</div></div>)}</div>;
 }
 
-function Grid({ headers, rows }: { headers: { label: string; amt?: boolean; hide?: boolean }[]; rows: ReactNode[][] }) {
-  if (rows.length === 0) return <p className="empty">No records for this company and filter.</p>;
+function Grid({ headers, rows, emptyTitle = "No records", emptyText = "Nothing matches this company and filter." }: { headers: { label: string; amt?: boolean; hide?: boolean }[]; rows: ReactNode[][]; emptyTitle?: string; emptyText?: string }) {
+  if (rows.length === 0) {
+    return (
+      <div className="empty" role="status">
+        <strong>{emptyTitle}</strong>
+        <span>{emptyText}</span>
+      </div>
+    );
+  }
   return (
     <div className="gridwrap">
       <table>
@@ -373,8 +453,27 @@ function Grid({ headers, rows }: { headers: { label: string; amt?: boolean; hide
   );
 }
 
-function Head({ title, text, children }: { title: string; text: string; children?: ReactNode }) {
-  return <div className="pagehead"><div><h2>{title}</h2><div className="sub">{text}</div></div><div className="actions">{children}</div></div>;
+function IncompleteKpis({ scopeLabel }: { scopeLabel: string }) {
+  return (
+    <div className="fv-incomplete" role="status">
+      <strong>Commercial figures incomplete</strong>
+      <p>
+        Primary KPIs for {scopeLabel} are not determined yet. Missing CTC is never forced to £0.
+      </p>
+    </div>
+  );
+}
+
+function Head({ title, text, children, hideTitle = false }: { title: string; text: string; children?: ReactNode; hideTitle?: boolean }) {
+  return (
+    <div className="pagehead">
+      <div>
+        {hideTitle ? null : <h2>{title}</h2>}
+        <div className="sub">{text}</div>
+      </div>
+      <div className="actions">{children}</div>
+    </div>
+  );
 }
 
 function MetricCard({
@@ -459,7 +558,7 @@ function ProjectControl({ books, companyId, projectId, categories, categoryLoadF
     retentionAudited: books.audit.some((row) => String(row.action) === "retention_released"),
     today: new Date().toISOString().slice(0, 10),
   });
-  const attentionActions = financeAttentionActions(figures.attention);
+  const attentionActions = financeUiAttentionActions(figures.attention);
   const selected = projectId ? rows[0] : null;
   const projectScope: MetricScope = projectId ? "SELECTED PROJECT" : "COMPANY-WIDE";
   const supplierTotals = postedSupplierTotals(books.costs);
@@ -569,7 +668,7 @@ function ProjectControl({ books, companyId, projectId, categories, categoryLoadF
     }
   }
 
-  function openAttentionItem(item: ReturnType<typeof financeAttentionActions>[number]) {
+  function openAttentionItem(item: ReturnType<typeof financeUiAttentionActions>[number]) {
     onExplain(item.title, `${item.reason} Recommended: ${item.recommendedAction}`, item.available ? "Open the linked Finance worksheet to continue." : "This action is not yet available in current Finance.");
     if (!item.available || !item.sheet) return;
     onNavigate({ sheet: item.sheet, focus: item.focus, expenseFilter: item.expenseFilter });
@@ -592,86 +691,73 @@ function ProjectControl({ books, companyId, projectId, categories, categoryLoadF
     forecastFinal: selected?.forecast_final_cost ?? portfolio.forecastFinalCost,
     forecastProfit: selected?.forecast_final_profit ?? selected?.forecast_margin ?? portfolio.forecastProfit,
   });
+  const kpisReady = primaryKpisReady([approvedValue, incurredValue, finalCostValue, profitValue]);
+  const scopePhrase = projectId ? (projectName || "the selected project") : "this company";
 
   return (
     <>
-      <Head title={projectId ? "Project CVR" : "Finance overview"} text={projectId ? "Primary commercial position for one job. Live Finance Core figures only." : "Company commercial overview. Select a project to open Project CVR."}>
+      <Head
+        title={projectId ? `Project CVR · ${projectName || "Selected project"}` : "Finance overview"}
+        text={projectId
+          ? "One-job commercial position from live Finance Core figures. Snapshot bars only — no invented months."
+          : "Company commercial overview. Select a project for Project CVR."}
+      >
         <Action className="btn mainbtn" onClick={onNew}>+ New project</Action>
         <button className="btn" type="button" onClick={onRefresh}>Refresh</button>
         {projectId ? <a className="btn" href={`${API_URL}/api/finance/projects/${projectId}/report.xlsx?company_id=${encodeURIComponent(companyId)}`}>Export report</a> : <button className="btn" type="button" disabled title="Select one project first">Export report</button>}
       </Head>
-      <p className="notice neutral honesty-compact" role="note">
-        Experimental Internal VOW, accruals and monthly CVR close stay inactive. Forecast profit is not certified accounting profit.
-      </p>
-      <div className="panel" ref={dashboardRef} id="control-dashboard">
-        <h3>{projectId ? `Project header · ${projectName || "Selected project"}` : "Company overview"}</h3>
-        <p className="sub">Scope: {projectScope}. Missing CTC stays Not determined — never forced to £0.</p>
-        <div className="kpi-grid">
-          <MetricCard title="Contract Value" value={approvedValue} scope={projectScope} tone={portfolio.missingContract ? "amber" : "blue"} onActivate={() => openDrill("approvedContract", projectScope)} />
-          <MetricCard title="Cost to Date" value={incurredValue} scope={projectScope} onActivate={() => openDrill("actualIncurred", projectScope)} />
-          <MetricCard title="Forecast Final Cost" value={finalCostValue} scope={projectScope} tone={selected?.forecast_final_cost === "missing" || portfolio.missingCtc ? "amber" : ""} onActivate={() => openDrill("forecastFinalCost", projectScope)} />
-          <MetricCard title="Forecast Profit" value={profitValue} scope={projectScope} tone={profitTone} onActivate={() => openDrill("forecastProfit", projectScope)} />
-        </div>
-        {projectId ? (
-          <div className="secondary-metrics" style={{ marginTop: 10 }}>
-            <MetricCard title="Forecast Margin %" value={marginValue} scope="SELECTED PROJECT" tone={portfolio.missingContract || portfolio.missingCtc ? "amber" : ""} onActivate={() => openDrill("forecastMargin", "SELECTED PROJECT")} />
-            <MetricCard title="Open Commitments" value={commitmentsValue} scope="SELECTED PROJECT" onActivate={() => openDrill("openCommitments", "SELECTED PROJECT")} />
-            <MetricCard title="Cost to Complete" value={ctcValue} scope="SELECTED PROJECT" tone={selected?.cost_to_complete === "missing" ? "amber" : ""} onActivate={() => openDrill("additionalCtc", "SELECTED PROJECT")} />
+
+      <div className="panel quiet" ref={dashboardRef} id="control-dashboard">
+        <p className="sub">Scope: {projectScope}. Forecast profit is not certified accounting profit.</p>
+        {kpisReady ? (
+          <div className="kpi-grid">
+            <MetricCard title="Contract Value" value={approvedValue} scope={projectScope} tone={portfolio.missingContract ? "amber" : "blue"} onActivate={() => openDrill("approvedContract", projectScope)} />
+            <MetricCard title="Cost to Date" value={incurredValue} scope={projectScope} onActivate={() => openDrill("actualIncurred", projectScope)} />
+            <MetricCard title="Forecast Final Cost" value={finalCostValue} scope={projectScope} tone={selected?.forecast_final_cost === "missing" || portfolio.missingCtc ? "amber" : ""} onActivate={() => openDrill("forecastFinalCost", projectScope)} />
+            <MetricCard title="Forecast Profit" value={profitValue} scope={projectScope} tone={profitTone} onActivate={() => openDrill("forecastProfit", projectScope)} />
           </div>
-        ) : null}
+        ) : (
+          <IncompleteKpis scopeLabel={scopePhrase} />
+        )}
       </div>
 
-      <CommercialPerformanceChart
-        title={projectId ? "CVR commercial performance" : "Cost & forecast overview"}
-        subtitle="Validated Finance Core snapshot. No invented monthly history."
-        bars={chartBars}
-      />
-
-      <div className="panel">
-        <h3>CVR summary</h3>
-        <div className="gridwrap">
-          <table className="cvr-summary">
-            <tbody>
-              {[
-                ["Contract Value", approvedValue],
-                ["Cost to Date", incurredValue],
-                ["Open Commitments", commitmentsValue],
-                ["Additional Cost to Complete", ctcValue],
-                ["Forecast Final Cost", finalCostValue],
-                ["Forecast Profit", profitValue],
-                ["Forecast Margin", marginValue],
-              ].map(([label, value]) => (
-                <tr key={label}>
-                  <td>{label}</td>
-                  <td className="amt">{value}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {projectId ? (
+        <div className="cvr-layout">
+          <div className="cvr-hero">
+            <CommercialPerformanceChart
+              title="CVR commercial performance"
+              subtitle="Validated Finance Core snapshot. No invented monthly history."
+              bars={chartBars}
+            />
+            <aside className="cvr-summary-compact" aria-label="Secondary CVR summary">
+              <h3>Position summary</h3>
+              <dl>
+                <div><dt>Open commitments</dt><dd>{commitmentsValue}</dd></div>
+                <div><dt>Cost to complete</dt><dd>{ctcValue}</dd></div>
+                <div><dt>Forecast margin</dt><dd>{marginValue}</dd></div>
+                <div><dt>Customer invoiced</dt><dd>{customerInvoiced}</dd></div>
+                <div><dt>Cash received</dt><dd>{figures.cashReceived}</dd></div>
+                <div><dt>Customer outstanding</dt><dd>{figures.customerOutstanding}</dd></div>
+                <div><dt>Supplier outstanding</dt><dd>{figures.supplierOutstanding}</dd></div>
+                <div><dt>Internal VOW</dt><dd>{vowStatus.badge}</dd></div>
+                <div><dt>Certified value</dt><dd>{certifiedStatus.badge}</dd></div>
+                <div><dt>Reporting basis</dt><dd>{asOfDate ? `Cut-off ${asOfDate}` : liveStatus.badge}</dd></div>
+              </dl>
+              {isForecastLoss(selected?.forecast_final_profit) ? <p className="notice bad" role="status">Forecast loss — amount shown in the profit KPI above.</p> : null}
+              <div className="bar" style={{ marginTop: 10 }}>
+                <button className="btn" type="button" onClick={() => openDrill("asOf", "LIVE AS-OF")}>As-of cut-off</button>
+                <button className="btn" type="button" onClick={() => { setAttentionOpen(true); attentionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>
+                  Attention ({attentionActions.length})
+                </button>
+              </div>
+            </aside>
+          </div>
         </div>
-      </div>
-
-      <div className="panel">
-        <h3>More indicators</h3>
-        <div className="secondary-metrics">
-          <MetricCard
-            title="Needs attention"
-            value={`${attentionActions.length} item${attentionActions.length === 1 ? "" : "s"}`}
-            scope={projectScope}
-            tone={attentionActions.length ? "amber" : "green"}
-            onActivate={() => {
-              setAttentionOpen(true);
-              attentionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-            }}
-          />
-          <MetricCard
-            title="Supplier Outstanding"
-            value={figures.supplierOutstanding}
-            scope="COMPANY-WIDE"
-            tone="amber"
-            onActivate={() => openDrill("supplierOutstanding", "COMPANY-WIDE")}
-          />
-          {!projectId ? (
+      ) : (
+        <div className="company-strip">
+          <div className="secondary-metrics">
+            <MetricCard title="Projects loaded" value={String(rows.length)} scope="COMPANY-WIDE" />
+            <MetricCard title="Supplier outstanding" value={figures.supplierOutstanding} scope="COMPANY-WIDE" tone="amber" onActivate={() => openDrill("supplierOutstanding", "COMPANY-WIDE")} />
             <MetricCard
               title="Reliable project data"
               value={`${portfolio.reliableProjects} of ${rows.length}`}
@@ -679,115 +765,33 @@ function ProjectControl({ books, companyId, projectId, categories, categoryLoadF
               tone={portfolio.reliableProjects ? "green" : "amber"}
               onActivate={() => openDrill("reliableProjects", "COMPANY-WIDE")}
             />
-          ) : (
-            <MetricCard title="Approved budget" value={controlAmount(selected?.approved_budget)} scope="SELECTED PROJECT" />
-          )}
-        </div>
-        <p className="sub" style={{ marginTop: 10 }}>{figures.supplierNote}</p>
-      </div>
-
-      {selected ? (
-        <>
-          <div className="split detail-2">
-            <div className="panel">
-              <h3>COST detail</h3>
-              <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-                <MetricCard title="Supplier incurred (eligible)" value={controlAmount(selected.actual_eligible_cost)} scope="SELECTED PROJECT" onActivate={() => openDrill("supplierIncurred", "SELECTED PROJECT")} />
-                <MetricCard title="CIS gross incurred" value={controlAmount(selected.cis_labour_gross)} scope="SELECTED PROJECT" onActivate={() => openDrill("cisGross", "SELECTED PROJECT")} />
-                <MetricCard title="Actual Incurred" value={controlAmount(selected.actual_incurred_cost ?? selected.actual_eligible_cost)} scope="SELECTED PROJECT" onActivate={() => openDrill("actualIncurred", "SELECTED PROJECT")} />
-                <MetricCard title="Open Commitments" value={controlAmount(selected.open_commitments ?? selected.open_commitment)} scope="SELECTED PROJECT" onActivate={() => openDrill("openCommitments", "SELECTED PROJECT")} />
-                <MetricCard title="Additional CTC" value={controlAmount(selected.cost_to_complete)} scope="SELECTED PROJECT" tone={selected.cost_to_complete === "missing" ? "amber" : ""} onActivate={() => openDrill("additionalCtc", "SELECTED PROJECT")} />
-                <MetricCard title="Forecast Final Cost" value={controlAmount(selected.forecast_final_cost)} scope="SELECTED PROJECT" tone={selected.forecast_final_cost === "missing" ? "amber" : ""} onActivate={() => openDrill("forecastFinalCost", "SELECTED PROJECT")} />
-              </div>
-            </div>
-            <div className="panel">
-              <h3>VALUE detail</h3>
-              <div className="kpi-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))" }}>
-                <MetricCard title="Approved contract" value={controlAmount(selected.approved_contract_value)} scope="SELECTED PROJECT" tone="blue" onActivate={() => openDrill("approvedContract", "SELECTED PROJECT")} />
-                <MetricCard title="Approved variations" value={controlAmount(selected.approved_variations)} scope="SELECTED PROJECT" tone="blue" onActivate={() => openDrill("approvedVariations", "SELECTED PROJECT")} />
-                <MetricCard title="Internal VOW" scope="EXPERIMENTAL" statusBadge={vowStatus.badge} statusDetail={vowStatus.detail} tone={vowStatus.tone} onActivate={() => openDrill("internalVow", "EXPERIMENTAL")} />
-                <MetricCard title="Certified value" scope="EXPERIMENTAL" statusBadge={certifiedStatus.badge} statusDetail={certifiedStatus.detail} tone={certifiedStatus.tone} onActivate={() => openDrill("certifiedValue", "EXPERIMENTAL")} />
-                <MetricCard title="Customer invoiced" value={customerInvoiced} scope="SELECTED PROJECT" tone="blue" onActivate={() => openDrill("customerInvoiced", "SELECTED PROJECT")} />
-                <MetricCard title="Cash received" value={figures.cashReceived} scope="SELECTED PROJECT" onActivate={() => openDrill("cashReceived", "SELECTED PROJECT")} />
-              </div>
-            </div>
           </div>
-          <div className="panel">
-            <h3>PERFORMANCE detail</h3>
-            <div className="kpi-grid">
-              <MetricCard title="Forecast Profit" value={controlAmount(selected.forecast_final_profit ?? selected.forecast_margin)} scope="SELECTED PROJECT" tone={forecastTone(selected.forecast_final_profit)} onActivate={() => openDrill("forecastProfit", "SELECTED PROJECT")} />
-              <MetricCard title="Forecast Margin" value={controlPercent(selected.forecast_final_margin_percent)} scope="SELECTED PROJECT" tone={forecastTone(selected.forecast_final_profit)} onActivate={() => openDrill("forecastMargin", "SELECTED PROJECT")} />
-              <MetricCard
-                title="Reporting basis"
-                scope="LIVE AS-OF"
-                statusBadge={asOfDate ? "Cut-off set" : liveStatus.badge}
-                statusDetail={asOfDate ? `Cut-off ${asOfDate}` : liveStatus.detail}
-                tone={asOfDate ? "blue" : "gray"}
-                onActivate={() => openDrill("asOf", "LIVE AS-OF")}
+          {kpisReady ? (
+            <div style={{ marginTop: 12 }}>
+              <CommercialPerformanceChart
+                title="Cost & forecast overview"
+                subtitle="Company roll-up from Finance Core. No invented monthly history."
+                bars={chartBars}
               />
             </div>
-            {isForecastLoss(selected.forecast_final_profit) ? <p className="notice bad" role="status">This job currently shows a forecast loss. The exact GBP amount remains visible above.</p> : null}
-          </div>
-        </>
-      ) : null}
-
-      <div className="panel" id="finance-as-of-cutoff">
-        <h3>Historical as-of CVR</h3>
-        <p className="sub">
-          Select one project and a reporting cut-off date. Amounts come from the authenticated as-of API only.
-          This is not a frozen month-end snapshot. Accruals and internal value of work stay unavailable until persistence exists.
-        </p>
-        {!projectId ? (
-          <p className="sub">Choose a project before requesting a historical cut-off.</p>
-        ) : (
-          <label className="sub">
-            Reporting cut-off{" "}
-            <input
-              ref={asOfInputRef}
-              type="date"
-              value={asOfDate}
-              onChange={(event) => setAsOfDate(event.target.value)}
-              aria-label="CVR reporting cut-off date"
-            />
-          </label>
-        )}
-        {asOfLoading ? <p className="sub">Loading as-of position…</p> : null}
-        {asOfError ? <p className="sub" role="alert">{asOfError}</p> : null}
-        {asOfReport ? (
-          <>
-            <Stats items={[
-              ["Actual incurred", controlAmount(asOfReport.actual_incurred_cost)],
-              ["Open commitments", controlAmount(asOfReport.open_commitments ?? asOfReport.open_commitment)],
-              ["Cost to complete", controlAmount(asOfReport.cost_to_complete)],
-              ["Forecast final cost", controlAmount(asOfReport.forecast_final_cost)],
-              ["Forecast profit", controlAmount(asOfReport.forecast_final_profit ?? asOfReport.forecast_margin)],
-              ["Forecast margin %", controlPercent(asOfReport.forecast_final_margin_percent)],
-              ["Invoiced", controlAmount(asOfReport.customer_invoiced_net), "blue"],
-              ["Cash received", controlAmount(asOfReport.customer_receipts), "green"],
-              ["Outstanding", controlAmount(asOfReport.customer_outstanding), "amber"],
-            ]} />
-            <p className="sub">
-              Cut-off {asOfReport.cut_off}. Accrued cost: {controlAmount(asOfReport.accrued_cost)}. Internal VOW: {controlAmount(asOfReport.internal_vow)}.
-              Certified (unvalidated): {controlAmount(asOfReport.certified_value)}. {asOfReport.certified_status ?? ""} {asOfReport.cut_off_policy ?? ""}
-            </p>
-          </>
-        ) : null}
-      </div>
-
-      <div className="panel attention-center" ref={attentionRef} id="attention-center">
-        <h3>Needs attention — Action Center</h3>
-        <p className="sub">
-          Count matches loaded Finance warnings for this company/project context: <b>{attentionActions.length}</b> item{attentionActions.length === 1 ? "" : "s"}.
-          Each item opens the real worksheet or an explanation when an editor is not available.
-        </p>
-        <div className="bar">
-          <button className="btn" type="button" onClick={() => setAttentionOpen((value) => !value)} aria-expanded={attentionOpen}>
-            {attentionOpen ? "Hide attention list" : "Show attention list"}
-          </button>
-          <button className="btn" type="button" onClick={() => onNavigate({ sheet: "PROJECT CONTROL", focus: "attention-center" })}>Stay on Action Center</button>
+          ) : (
+            <p className="sub" style={{ marginTop: 8 }}>{figures.supplierNote}</p>
+          )}
         </div>
-        {attentionOpen ? (
-          attentionActions.length === 0 ? <p className="sub">No exceptions were found in the loaded records.</p> : (
+      )}
+
+      {attentionActions.length > 0 ? (
+        <div className="panel attention-center" ref={attentionRef} id="attention-center">
+          <div className="pagehead">
+            <div>
+              <h3>Needs attention</h3>
+              <p className="sub"><b>{attentionActions.length}</b> real exception{attentionActions.length === 1 ? "" : "s"} in this context.</p>
+            </div>
+            <button className="btn" type="button" onClick={() => setAttentionOpen((value) => !value)} aria-expanded={attentionOpen}>
+              {attentionOpen ? "Hide" : "Review"}
+            </button>
+          </div>
+          {attentionOpen ? (
             <ul className="attention-list">
               {attentionActions.map((item) => (
                 <li key={item.id} className={`attention-item ${item.severity === "red" ? "attn-red" : "attn-amber"}`}>
@@ -797,113 +801,146 @@ function ProjectControl({ books, companyId, projectId, categories, categoryLoadF
                   <div className="bar">
                     {item.sheet && item.available ? (
                       <button className="btn" type="button" onClick={() => openAttentionItem(item)}>
-                        Open {item.sheet === "PROJECT CONTROL" ? "Project Control" : worksheetHeading(item.sheet)}
+                        Open {item.sheet === "PROJECT CONTROL" ? "Overview" : worksheetHeading(item.sheet)}
                       </button>
                     ) : (
-                      <button className="btn" type="button" onClick={() => openAttentionItem(item)}>
-                        View explanation
-                      </button>
+                      <button className="btn" type="button" onClick={() => openAttentionItem(item)}>View explanation</button>
                     )}
-                    <button className="linkbtn" type="button" onClick={() => { setAttentionOpen(true); attentionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }); }}>Back to list</button>
                   </div>
                 </li>
               ))}
             </ul>
-          )
-        ) : (
-          <p className="sub">Open the list to work through each warning. Returning from a register keeps the same company and project selection.</p>
-        )}
-      </div>
-
-      {!projectId ? (
-        <div className="panel company-strip">
-          <h3>Company cash & receivables</h3>
-          <div className="kpi-grid">
-            <MetricCard title="Cash received" value={figures.cashReceived} scope="COMPANY-WIDE" onActivate={() => openDrill("cashReceived", "COMPANY-WIDE")} />
-            <MetricCard title="Contract left to invoice" value={figures.remainingToInvoice} scope="COMPANY-WIDE" tone="blue" />
-            <MetricCard title="Customer outstanding" value={figures.customerOutstanding} scope="COMPANY-WIDE" tone="amber" onActivate={() => onNavigate({ sheet: "Customer Invoices" })} />
-          </div>
-          <p className="sub">{figures.cashNote}</p>
+          ) : null}
         </div>
       ) : (
-        <div className="panel company-strip">
-          <h3>Settlement (selection)</h3>
-          <div className="kpi-grid">
-            <MetricCard title="Cash received" value={figures.cashReceived} scope="SELECTED PROJECT" onActivate={() => openDrill("cashReceived", "SELECTED PROJECT")} />
-            <MetricCard title="Customer outstanding" value={figures.customerOutstanding} scope="SELECTED PROJECT" tone="amber" onActivate={() => onNavigate({ sheet: "Customer Invoices" })} />
-            <MetricCard title="Contract left to invoice" value={figures.remainingToInvoice} scope="SELECTED PROJECT" tone="blue" />
-          </div>
-          <p className="sub">{figures.cashNote}</p>
-        </div>
+        <div ref={attentionRef} id="attention-center" className="sub" style={{ padding: "4px 2px" }}>No attention items for this selection.</div>
       )}
 
-      <div className="split">
-        <div className="panel">
-          <h3>Expenditure by cost code</h3>
-          {categoryLoadFailed ? <p className="sub">The cost-code breakdown could not be loaded. Nothing has been inferred.</p> : figures.categories.length === 0 ? <p className="sub">No posted cost-code allocation is stored for this selection.</p> : figures.categories.map((row) => (
-            <div className="barline" key={row.category}><span>{row.category}</span><span className="track"><span className="fill" style={{ width: `${Number((row.eligible * 100n) / largestCategory)}%` }} /></span><b>{formatGbp(row.eligible)}</b></div>
-          ))}
-          {figures.categoryGap && figures.categoryGap !== "Not determined" ? <p className="sub">Unclassified eligible cost {figures.categoryGap}. It is not assigned to a made-up category.</p> : null}
+      {!projectId ? (
+        <div ref={portfolioRef} id="project-portfolio" className="panel">
+          <h3>Project summary</h3>
+          <p className="sub">Compact portfolio. Incomplete forecasts stay Not determined — never forced to £0.</p>
+          <Grid
+            emptyTitle="No projects loaded"
+            emptyText="Select a company with Finance projects to see the summary."
+            headers={[
+              { label: "Project" },
+              { label: "Contract", amt: true },
+              { label: "Incurred", amt: true, hide: true },
+              { label: "Forecast profit", amt: true },
+              { label: "Margin", amt: true },
+              { label: "Status" },
+            ]}
+            rows={rows.map((row) => {
+              const warning = budgetForecastReview(row as Record<string, string>);
+              const missingCtc = row.cost_to_complete === "missing" || row.cost_to_complete === undefined || row.cost_to_complete === null || String(row.cost_to_complete).trim() === "";
+              const missingForecast = row.forecast_final_cost === "missing"
+                || row.forecast_final_profit === "missing"
+                || row.forecast_margin === "missing"
+                || row.forecast_final_margin_percent === "missing";
+              const loss = isForecastLoss(row.forecast_final_profit);
+              const reviewLabel = loss ? "Forecast loss" : missingForecast || missingCtc ? "Incomplete" : warning ? "Review" : "OK";
+              const explainWarning = "Forecast Profit is an estimate to job completion — not certified or official accounting profit. Missing CTC is not treated as £0.";
+              return [
+                <><b>{String(row.name || "Unnamed project")}</b><br /><span className="sub">{String(row.reference_code || "Reference missing")}</span></>,
+                controlAmount(row.approved_contract_value),
+                controlAmount(row.actual_incurred_cost ?? row.actual_eligible_cost),
+                <button className={`linkbtn${loss ? " loss" : ""}`} type="button" onClick={() => onExplain("CVR forecast", cvrText(row), explainWarning)}>{controlAmount(row.forecast_final_profit ?? row.forecast_margin)} ↗</button>,
+                <button className={`linkbtn${loss ? " loss" : ""}`} type="button" onClick={() => onExplain("CVR forecast", cvrText(row), explainWarning)}>{controlPercent(row.forecast_final_margin_percent)} ↗</button>,
+                badge(reviewLabel, loss ? "red" : missingForecast || missingCtc || warning ? "amber" : "green"),
+              ];
+            })}
+          />
         </div>
-        <div className="panel">
-          <h3>Budget used by actual cost</h3>
-          {figures.budgetUse.length === 0 ? <p className="sub">No project budget is loaded.</p> : figures.budgetUse.map((row) => (
-            <div className="barline" key={row.project}><span>{row.project}</span><span className="track"><span className="fill" style={{ width: row.percent.endsWith("%") ? row.percent : "0%" }} /></span><b>{row.percent}</b></div>
-          ))}
-          <p className="sub">Percent of the approved budget consumed by actual eligible cost. Forecast cost is not stacked on top.</p>
-        </div>
-      </div>
-      <div className="panel">
-        <h3>Cash movement by month</h3>
-        {figures.cashMovementNote ? <p className="sub">{figures.cashMovementNote}</p> : figures.cashMonths === null ? <p className="sub">Monthly cash is a company view. It is not split by project, so it is not shown for a single project.</p> : figures.cashMonths.length === 0 ? <p className="sub">No dated posted receipts, supplier payments or financing movements are available.</p> : figures.cashMonths.map((row) => (
-          <div key={row.month}>
-            <div className="barline"><span>{row.month} received</span><span className="track"><span className="fill" style={{ width: `${Number((row.receipts * 100n) / largestCash)}%` }} /></span><b>{formatGbp(row.receipts)}</b></div>
-            <div className="barline"><span>{row.month} suppliers</span><span className="track"><span className="fill pay" style={{ width: `${Number((row.supplierPayments * 100n) / largestCash)}%` }} /></span><b>{formatGbp(row.supplierPayments)}</b></div>
-            {row.loanDraws > 0n || row.loanRepayments > 0n ? <p className="sub">Financing drawn {formatGbp(row.loanDraws)}, repaid {formatGbp(row.loanRepayments)}. This is not trading income and not project cost.</p> : null}
+      ) : null}
+
+      <details className="panel fv-more" id="finance-as-of-cutoff">
+        <summary>More detail · as-of, cash and cost codes</summary>
+        <div className="fv-more-body">
+          <h3>Historical as-of CVR</h3>
+          <p className="sub">One project and a cut-off date. Amounts come from the as-of API only — not a frozen month-end close.</p>
+          {!projectId ? (
+            <p className="sub">Choose a project before requesting a historical cut-off.</p>
+          ) : (
+            <label className="sub">
+              Reporting cut-off{" "}
+              <input
+                ref={asOfInputRef}
+                type="date"
+                value={asOfDate}
+                onChange={(event) => setAsOfDate(event.target.value)}
+                aria-label="CVR reporting cut-off date"
+              />
+            </label>
+          )}
+          {asOfLoading ? <p className="sub">Loading as-of position…</p> : null}
+          {asOfError ? <p className="sub" role="alert">{asOfError}</p> : null}
+          {asOfReport ? (
+            <>
+              <Stats items={[
+                ["Actual incurred", controlAmount(asOfReport.actual_incurred_cost)],
+                ["Open commitments", controlAmount(asOfReport.open_commitments ?? asOfReport.open_commitment)],
+                ["Cost to complete", controlAmount(asOfReport.cost_to_complete)],
+                ["Forecast final cost", controlAmount(asOfReport.forecast_final_cost)],
+                ["Forecast profit", controlAmount(asOfReport.forecast_final_profit ?? asOfReport.forecast_margin)],
+                ["Forecast margin %", controlPercent(asOfReport.forecast_final_margin_percent)],
+                ["Invoiced", controlAmount(asOfReport.customer_invoiced_net), "blue"],
+                ["Cash received", controlAmount(asOfReport.customer_receipts), "green"],
+                ["Outstanding", controlAmount(asOfReport.customer_outstanding), "amber"],
+              ]} />
+              <p className="sub">
+                Cut-off {asOfReport.cut_off}. Accrued cost: {controlAmount(asOfReport.accrued_cost)}. Internal VOW: {controlAmount(asOfReport.internal_vow)}.
+                Certified (unvalidated): {controlAmount(asOfReport.certified_value)}. {asOfReport.certified_status ?? ""} {asOfReport.cut_off_policy ?? ""}
+              </p>
+            </>
+          ) : null}
+
+          {!projectId ? (
+            <div className="company-strip" style={{ marginTop: 12 }}>
+              <h3 className="head2">Cash & receivables</h3>
+              <div className="secondary-metrics">
+                <MetricCard title="Cash received" value={figures.cashReceived} scope="COMPANY-WIDE" onActivate={() => openDrill("cashReceived", "COMPANY-WIDE")} />
+                <MetricCard title="Contract left to invoice" value={figures.remainingToInvoice} scope="COMPANY-WIDE" tone="blue" />
+                <MetricCard title="Customer outstanding" value={figures.customerOutstanding} scope="COMPANY-WIDE" tone="amber" onActivate={() => onNavigate({ sheet: "Customer Invoices" })} />
+              </div>
+              <p className="sub" style={{ marginTop: 8 }}>{figures.cashNote}</p>
+            </div>
+          ) : null}
+
+          <div className="split" style={{ marginTop: 12 }}>
+            <div>
+              <h3>Expenditure by cost code</h3>
+              {categoryLoadFailed ? <p className="sub">The cost-code breakdown could not be loaded. Nothing has been inferred.</p> : figures.categories.length === 0 ? <p className="sub">No posted cost-code allocation is stored for this selection.</p> : figures.categories.map((row) => (
+                <div className="barline" key={row.category}><span>{row.category}</span><span className="track"><span className="fill" style={{ width: `${Number((row.eligible * 100n) / largestCategory)}%` }} /></span><b>{formatGbp(row.eligible)}</b></div>
+              ))}
+              {figures.categoryGap && figures.categoryGap !== "Not determined" ? <p className="sub">Unclassified eligible cost {figures.categoryGap}.</p> : null}
+            </div>
+            <div>
+              <h3>Budget used by actual cost</h3>
+              {figures.budgetUse.length === 0 ? <p className="sub">No project budget is loaded.</p> : figures.budgetUse.map((row) => (
+                <div className="barline" key={row.project}><span>{row.project}</span><span className="track"><span className="fill" style={{ width: row.percent.endsWith("%") ? row.percent : "0%" }} /></span><b>{row.percent}</b></div>
+              ))}
+            </div>
           </div>
-        ))}
-        {figures.cashMonths?.length === 1 ? <p className="sub">Only one month has dated movements. Each posted receipt and supplier payment is counted once. This is not a trend.</p> : null}
-      </div>
-      <div ref={portfolioRef} id="project-portfolio">
-        <h3 className="head2">Project portfolio</h3>
-        <p className="sub">Approved contract, Actual Incurred Cost, Open Commitments, Additional CTC, Forecast Final Cost, Forecast Profit and Forecast Margin. Open commitments are not incurred cost. An incomplete forecast is not estimated profit. Loss-making jobs stay visible with a minus sign.</p>
-        <Grid headers={[
-          { label: "Project" },
-          { label: "Contract value", amt: true },
-          { label: "Incurred cost", amt: true, hide: true },
-          { label: "Open commitments", amt: true, hide: true },
-          { label: "CTC status", amt: true, hide: true },
-          { label: "Forecast final cost", amt: true, hide: true },
-          { label: "Profit", amt: true },
-          { label: "Margin", amt: true },
-          { label: "Attention" },
-        ]} rows={rows.map((row) => {
-          const warning = budgetForecastReview(row as Record<string, string>);
-          const missingCtc = row.cost_to_complete === "missing" || row.cost_to_complete === undefined || row.cost_to_complete === null || String(row.cost_to_complete).trim() === "";
-          const missingForecast = row.forecast_final_cost === "missing"
-            || row.forecast_final_profit === "missing"
-            || row.forecast_margin === "missing"
-            || row.forecast_final_margin_percent === "missing";
-          const loss = isForecastLoss(row.forecast_final_profit);
-          const reviewLabel = loss ? "Forecast loss" : missingForecast || missingCtc ? "Incomplete forecast" : warning ? "Budget ≠ forecast · review" : "Forecast estimate";
-          const explainWarning = "Forecast Profit is an estimate to job completion — not certified or official accounting profit. Certified margin stays CERTIFIED UNVALIDATED until certificate basis is approved. Missing CTC is not treated as £0.";
-          return [
-            <><b>{String(row.name || "Unnamed project")}</b><br /><span className="sub">{String(row.reference_code || "Reference missing")}</span></>,
-            controlAmount(row.approved_contract_value),
-            controlAmount(row.actual_incurred_cost ?? row.actual_eligible_cost),
-            controlAmount(row.open_commitments ?? row.open_commitment),
-            missingCtc ? "MISSING" : controlAmount(row.cost_to_complete),
-            <button className="linkbtn" type="button" onClick={() => onExplain("CVR forecast", cvrText(row), explainWarning)}>{controlAmount(row.forecast_final_cost)} ↗</button>,
-            <button className={`linkbtn${loss ? " loss" : ""}`} type="button" onClick={() => onExplain("CVR forecast", cvrText(row), explainWarning)}>{controlAmount(row.forecast_final_profit ?? row.forecast_margin)} ↗</button>,
-            <button className={`linkbtn${loss ? " loss" : ""}`} type="button" onClick={() => onExplain("CVR forecast", cvrText(row), explainWarning)}>{controlPercent(row.forecast_final_margin_percent)} ↗</button>,
-            badge(reviewLabel, loss ? "red" : missingForecast || missingCtc || warning ? "amber" : "blue"),
-          ];
-        })} />
-        <div className="bar">
-          <button className="btn" type="button" onClick={() => onExplain("CVR calculation and sources", rows.map(cvrText).join(" ") || "Select a company with projects.", "Employer NI, pension and PAYE on-costs are not included in this project forecast unless separately recorded. Accruals are not yet fully supported as a separate incurred layer.")}>Show CVR calculation and sources</button>
-          <Action className="btn" onClick={onBudget}>+ Budget revision</Action>
+
+          {!projectId ? (
+            <div style={{ marginTop: 12 }}>
+              <h3>Cash movement by month</h3>
+              {figures.cashMovementNote ? <p className="sub">{figures.cashMovementNote}</p> : figures.cashMonths === null ? <p className="sub">Monthly cash is a company view.</p> : figures.cashMonths.length === 0 ? <p className="sub">No dated posted receipts, supplier payments or financing movements are available.</p> : figures.cashMonths.map((row) => (
+                <div key={row.month}>
+                  <div className="barline"><span>{row.month} received</span><span className="track"><span className="fill" style={{ width: `${Number((row.receipts * 100n) / largestCash)}%` }} /></span><b>{formatGbp(row.receipts)}</b></div>
+                  <div className="barline"><span>{row.month} suppliers</span><span className="track"><span className="fill pay" style={{ width: `${Number((row.supplierPayments * 100n) / largestCash)}%` }} /></span><b>{formatGbp(row.supplierPayments)}</b></div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div className="bar" style={{ marginTop: 12 }}>
+            <Action className="btn" onClick={onBudget}>+ Budget revision</Action>
+            <button className="btn" type="button" onClick={() => onExplain("CVR calculation and sources", projectId && selected ? cvrText(selected) : (rows.map(cvrText).join(" ") || "Select a company with projects."), "Employer NI, pension and PAYE on-costs are not included unless separately recorded.")}>Show CVR sources</button>
+          </div>
         </div>
-      </div>
+      </details>
     </>
   );
 }
@@ -915,12 +952,11 @@ function cvrText(row: Row): string {
   return `${String(row.name)}: original contract ${controlAmount(row.original_contract_value)} + approved variations ${controlAmount(row.approved_variations)} + approved dayworks ${controlAmount(row.approved_dayworks_in_contract)} = approved contract ${controlAmount(row.approved_contract_value)}. Approved budget ${controlAmount(row.approved_budget)}. Actual eligible cost ${controlAmount(row.actual_eligible_cost)}. CIS gross project labour ${controlAmount(row.cis_labour_gross)}. Actual incurred cost ${controlAmount(incurred)}. Open commitments ${controlAmount(row.open_commitments ?? row.open_commitment)}. Cost to complete ${controlAmount(row.cost_to_complete)}. Forecast final cost ${controlAmount(row.forecast_final_cost)}. Forecast final profit ${controlAmount(profit)}. Forecast final margin ${controlPercent(percent)}. Legacy forecast margin (GBP) ${controlAmount(row.forecast_margin)}. Forecast profit share ${forecastShare(String(row.approved_contract_value ?? ""), String(profit ?? ""))}. A period-to-date earned value is not on this API. ${String(row.review_required || "")}`;
 }
 
-function Expenses({ books, companyId, names, projectId, query, onQuery, filter, onFilter, onExplain, onInvoice, onExpense }: {
-  books: Books; companyId: string; names: Map<string, string>; projectId: string; query: string; onQuery: (value: string) => void; filter: string; onFilter: (value: string) => void; onExplain: (title: string, body: string, warning: string) => void; onInvoice: () => void; onExpense: () => void;
+function Expenses({ books, companyId, names, projectId, query, onQuery, filter, onFilter, onExplain, onInvoice, onExpense, demoMode = false }: {
+  books: Books; companyId: string; names: Map<string, string>; projectId: string; query: string; onQuery: (value: string) => void; filter: string; onFilter: (value: string) => void; onExplain: (title: string, body: string, warning: string) => void; onInvoice: () => void; onExpense: () => void; demoMode?: boolean;
 }) {
   const today = new Date().toISOString().slice(0, 10);
   const projectName = String(books.projects.find((item) => String(item.id) === projectId)?.name ?? "");
-  // Totals are always COMPANY-WIDE document liability (multi-job invoices counted once).
   const totals = postedSupplierTotals(books.costs);
   const scoped = books.costs.filter((row) => inProject(row, projectId, projectName));
   const rows = scoped.filter((row) => {
@@ -936,49 +972,138 @@ function Expenses({ books, companyId, names, projectId, query, onQuery, filter, 
     return blob.includes(query.trim().toLowerCase());
   });
   const listScope = projectId ? `SELECTED PROJECT (${projectName || "unnamed"})` : "COMPANY-WIDE";
+  const [invoiceDrawer, setInvoiceDrawer] = useState<SourceBreakdownPayload | null>(null);
+  const expenseColumns: FinanceGridColumn[] = [
+    { id: "supplier", label: "Supplier" },
+    { id: "reference", label: "Reference" },
+    { id: "date", label: "Date" },
+    { id: "project", label: "Project" },
+    { id: "gross", label: "Gross", money: true, align: "right" },
+    { id: "outstanding", label: "Outstanding", money: true, align: "right" },
+    { id: "status", label: "Status" },
+  ];
+
+  async function openInvoiceDetail(row: Row) {
+    const documentId = String(row.id || "");
+    const reference = String(row.external_reference || "Draft document");
+    const postedRow = String(row.status) === "posted" && LIABILITY.has(String(row.document_type));
+    const cash = postedRow ? supplierCashPaid(row) : null;
+    const credit = postedRow ? supplierCreditApplied(row) : null;
+    const basePayload: SourceBreakdownPayload = {
+      metric: "supplier_invoice",
+      company_id: companyId,
+      project_id: projectId || "",
+      displayed_total: String(row.gross_amount || "0.0000"),
+      formula: "Register row gross (not project eligible cost)",
+      basis: "Cash paid is bank settlement — not a second project cost",
+      reconcilable: false,
+      verification: "PARTIAL",
+      difference: "0.0000",
+      source_total: String(row.gross_amount || "0.0000"),
+      groups: [
+        {
+          id: "invoice",
+          label: reference,
+          total: String(row.gross_amount || "0.0000"),
+          rows: [
+            {
+              id: documentId,
+              reference,
+              source_type: String(row.document_type || "supplier_invoice"),
+              document_date: String(row.document_date || ""),
+              status: String(row.status || ""),
+              amount: String(row.gross_amount || "0.0000"),
+              net: String(row.net_amount || "0.0000"),
+              document_id: documentId,
+            },
+          ],
+        },
+      ],
+      warnings: [
+        `Outstanding ${postedRow ? money(row.outstanding) : "—"}. Cash paid ${cash === null ? "—" : formatGbp(cash)}. Credits ${credit === null ? "—" : formatGbp(credit)}.`,
+      ],
+    };
+    if (demoMode || !documentId) {
+      setInvoiceDrawer(basePayload);
+      return;
+    }
+    try {
+      const path = withCompany(`/api/finance/cost-documents/${encodeURIComponent(documentId)}`, companyId);
+      const response = await fetch(`${API_URL}${path}`, { credentials: "include" });
+      if (response.ok) {
+        const detail = await response.json() as Record<string, unknown>;
+        basePayload.warnings.push(`Loaded cost document detail for ${documentId}.`);
+        basePayload.groups[0].rows[0].reference = String(detail.external_reference || reference);
+      }
+    } catch {
+      basePayload.warnings.push("Cost document detail endpoint unavailable — showing register row only.");
+    }
+    setInvoiceDrawer(basePayload);
+  }
+
   return (
     <>
-      <Head title="Supplier invoices & credits" text="COST documents: invoices, expenses, credits, reversals and drafts. Cash paid is bank settlement only. Supplier credits are separate. Bank payment entry is on Supplier payments.">
+      <Head
+        title="Supplier invoices"
+        hideTitle
+        text="Cost documents only. Cash paid is bank settlement — not a second project cost. Bank entry lives on Supplier payments."
+      >
         <Action className="btn mainbtn" onClick={onInvoice}>+ Supplier invoice</Action>
+        <Action className="btn" onClick={onExpense}>+ Other expense</Action>
       </Head>
       <Stats items={[
         [`Invoice gross · ${totals.scope}`, totals.gross],
-        [`Cash paid (bank) · ${totals.scope}`, totals.cashPaid, "green"],
-        [`Supplier credits · ${totals.scope}`, totals.creditApplied, "amber"],
+        [`Cash paid · ${totals.scope}`, totals.cashPaid, "green"],
+        [`Credits · ${totals.scope}`, totals.creditApplied, "amber"],
         [`Outstanding · ${totals.scope}`, totals.outstanding, "amber"],
       ]} />
-      <p className="sub">Summary cards are {totals.scope} document liability (one invoice once, even if split across jobs). The list below is {listScope} and includes multi-job invoices that allocate to the selected job. Cash paid is bank allocations only — supplier credits are not bank payments.</p>
-      <RegisterSearch companyId={companyId} register="supplier-invoices" dateField="expense" dateFields={[["expense", "Expense date"], ["due", "Due date"]]} parties={books.parties.filter((item) => item.counterparty_type === "supplier").map((item) => [String(item.id), String(item.name)])} partyLabel="Supplier" statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
-      <div className="pills">
-        {["All", "Supplier invoices", "Other expenses", "Credits", "Draft", "Outstanding", "Review"].map((item) => <button key={item} className={`pill${filter === item ? " active" : ""}`} type="button" onClick={() => onFilter(item)}>{item}</button>)}
-      </div>
-      <div className="bar">
+      <div className="table-toolbar">
+        <div className="pills">
+          {["All", "Supplier invoices", "Other expenses", "Credits", "Draft", "Outstanding", "Review"].map((item) => (
+            <button key={item} className={`pill${filter === item ? " active" : ""}`} type="button" onClick={() => onFilter(item)}>{item}</button>
+          ))}
+        </div>
         <input className="search" aria-label="Search expenses" placeholder="Search supplier or reference" value={query} onChange={(event) => onQuery(event.target.value)} />
-        <Action className="btn" onClick={onExpense}>+ Other expense</Action>
       </div>
-      <p className="sub">Project names come from stored cost allocations. Eligible project cost is the allocated net under the VAT rule — not the invoice gross and not the bank payment.</p>
-      <Grid headers={[{ label: "Supplier / Payee" }, { label: "Invoice/Expense Ref" }, { label: "Date", hide: true }, { label: "Project", hide: true }, { label: "Net", amt: true, hide: true }, { label: "VAT", amt: true, hide: true }, { label: "Gross", amt: true }, { label: "Cash paid", amt: true, hide: true }, { label: "Credits", amt: true, hide: true }, { label: "Outstanding", amt: true }, { label: "Status" }]} rows={rows.map((row) => {
-        const postedRow = String(row.status) === "posted" && LIABILITY.has(String(row.document_type));
-        const cash = postedRow ? supplierCashPaid(row) : 0n;
-        const credit = postedRow ? supplierCreditApplied(row) : 0n;
-        const status = supplierSettlementStatus(row, today);
-        const label = String(row.document_type) === "supplier_credit" ? "Credit" : status === "Partial" ? "Partial" : status;
-        const cashText = cash === null ? "Not determined" : formatGbp(cash);
-        const creditText = credit === null ? "Not determined" : formatGbp(credit);
-        return [
-          names.get(String(row.counterparty_id ?? "")) ?? "Supplier name missing",
-          String(row.external_reference || "Reference missing"),
-          String(row.document_date || "Date missing"),
-          String(row.project_names || "").trim() || "No project allocation stored",
-          money(row.net_amount),
-          money(row.tax_amount),
-          money(row.gross_amount),
-          postedRow ? cashText : "—",
-          postedRow ? creditText : "—",
-          <button className="linkbtn" type="button" onClick={() => onExplain(String(row.external_reference || "Draft document"), `Invoice gross ${money(row.gross_amount)}. Cash paid (bank) ${postedRow ? cashText : "—"}. Supplier credits ${postedRow ? creditText : "—"}. Outstanding ${postedRow ? money(row.outstanding) : "—"}. Eligible project cost follows allocated net, not gross and not cash paid. Linked payment refs: ${String(row.payment_references || "none")}.`, "Cash paid is not a second project cost. Credits are not bank payments. Recorded VAT is not proof of recoverability.")}>{postedRow ? money(row.outstanding) : "—"} ↗</button>,
-          badge(label, toneFor(label)),
-        ];
-      })} />
+      {demoMode ? null : (
+        <RegisterSearch companyId={companyId} register="supplier-invoices" dateField="expense" dateFields={[["expense", "Expense date"], ["due", "Due date"]]} parties={books.parties.filter((item) => item.counterparty_type === "supplier").map((item) => [String(item.id), String(item.name)])} partyLabel="Supplier" statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
+      )}
+      <p className="sub">Summary is {totals.scope} document liability. Table is {listScope}.</p>
+      <FinanceDataGrid
+        columns={expenseColumns}
+        emptyTitle="No supplier invoices"
+        emptyText="No cost documents match this company, project and filter."
+        rows={rows.map((row) => {
+          const postedRow = String(row.status) === "posted" && LIABILITY.has(String(row.document_type));
+          const status = supplierSettlementStatus(row, today);
+          const label = String(row.document_type) === "supplier_credit" ? "Credit" : status === "Partial" ? "Partial" : status;
+          return {
+            id: String(row.id),
+            metricId: "supplier_invoice",
+            amountColumnIds: ["gross", "outstanding"],
+            cells: {
+              supplier: names.get(String(row.counterparty_id ?? "")) ?? "Supplier name missing",
+              reference: String(row.external_reference || "Reference missing"),
+              date: String(row.document_date || "Date missing"),
+              project: String(row.project_names || "").trim() || "No project allocation stored",
+              gross: row.gross_amount,
+              outstanding: postedRow ? row.outstanding : null,
+              status: label,
+            },
+            meta: { row },
+          };
+        })}
+        onAmountClick={(_metric, gridRow) => {
+          const row = gridRow.meta?.row as Row | undefined;
+          if (row) void openInvoiceDetail(row);
+        }}
+      />
+      <FinanceSourceDrawer
+        open={Boolean(invoiceDrawer)}
+        title="Supplier invoice detail"
+        payload={invoiceDrawer}
+        onClose={() => setInvoiceDrawer(null)}
+      />
     </>
   );
 }
@@ -991,7 +1116,7 @@ function Payments({ books, companyId, names, view, onView, onExplain, onPay, onW
   const companyTotals = postedSupplierTotals(books.costs);
   return (
     <>
-      <Head title="Bank Payment Register" text="Choose an existing obligation, then record the bank payment.">
+      <Head title="Supplier payments" text="Bank settlements against existing obligations. Payments do not create project cost again.">
         <Action className="btn mainbtn" onClick={view === "Supplier payments" ? onPay : onWorker}>+ Record bank payment</Action>
       </Head>
       <div className="pills">
@@ -999,8 +1124,8 @@ function Payments({ books, companyId, names, view, onView, onExplain, onPay, onW
       </div>
       {view === "Supplier payments" ? (
         <>
-          <Stats items={[["Historical posted rows · COMPANY-WIDE", String(books.supplierPayments.filter((row) => String(row.status) === "posted").length)], ["Active payments · COMPANY-WIDE", formatCount(activeMovementCount(books.supplierPayments, "payment_reversed"))], ["Open payable rows · COMPANY-WIDE", String(payables.filter((row) => (subtractMoney(row.outstanding, "0") ?? 0n) > 0n).length), "amber"], ["Bank paid (cash) · COMPANY-WIDE", formatKnownMoney(effectiveMovementTotal(books.supplierPayments, "amount", "payment_reversed")), "green"], [`Supplier outstanding · ${companyTotals.scope}`, companyTotals.outstanding, "amber"]]} />
-          <p className="sub">This register is COMPANY-WIDE bank payments only. Supplier outstanding matches the document liability on Supplier invoices & credits. Credits are not listed as cash paid here.</p>
+          <Stats items={[["Posted rows", String(books.supplierPayments.filter((row) => String(row.status) === "posted").length)], ["Active payments", formatCount(activeMovementCount(books.supplierPayments, "payment_reversed"))], ["Open payables", String(payables.filter((row) => (subtractMoney(row.outstanding, "0") ?? 0n) > 0n).length), "amber"], ["Bank paid", formatKnownMoney(effectiveMovementTotal(books.supplierPayments, "amount", "payment_reversed")), "green"], [`Outstanding · ${companyTotals.scope}`, companyTotals.outstanding, "amber"]]} />
+          <p className="sub">Company-wide bank payments. Credits are not cash paid.</p>
           <Grid headers={[{ label: "Payee" }, { label: "Source invoice" }, { label: "Invoice gross", amt: true, hide: true }, { label: "Cash paid", amt: true, hide: true }, { label: "Credits", amt: true, hide: true }, { label: "Outstanding", amt: true }, { label: "Bank reference" }, { label: "Status" }]} rows={payables.map((row) => {
             const cash = supplierCashPaid(row);
             const credit = supplierCreditApplied(row);
@@ -1054,12 +1179,11 @@ function Customers({ books, companyId, names, projectsById, projectId, onExplain
   const missing = posted.filter((row) => !String(row.external_reference ?? "").trim() || !String(row.due_date ?? "").trim()).length;
   return (
     <>
-      <Head title="Customer invoice register" text="A missing reference is not invented. Cash received and customer outstanding are summarised on Project Control.">
+      <Head title="Customer invoices" text="Amounts billed to the customer. Missing references are not invented.">
         <Action className="btn mainbtn" onClick={onNew}>+ New customer invoice</Action>
       </Head>
+      <Stats items={[["Posted gross", formatGbp(gross)], ["Rows loaded", String(visible.length)], ["Missing ref / due", String(missing), missing ? "amber" : "green"], ["Filter", invoiceServer.note || "Company register", "blue"]]} />
       <FinanceQueryBar dateFields={[["issue", "Invoice issue date"], ["due", "Invoice due date"]]} parties={books.parties.filter((item) => item.counterparty_type === "customer").map((item) => [String(item.id), String(item.name)])} partyLabel="Customer" value={invoiceQuery} onChange={setInvoiceQuery} exportHref={exportHref(companyId, "invoices", invoiceQuery)} />
-      <p className="sub">{invoiceServer.note} The cards above stay the company register. The table follows the server filter.</p>
-      <Stats items={[["Posted invoice gross — company register", formatGbp(gross)], ["Invoice rows in the loaded register", String(visible.length)], ["Missing reference or due date", String(missing), missing ? "amber" : "green"], ["Historical rows", "Unchanged", "blue"]]} />
       <Grid headers={[{ label: "Customer" }, { label: "Invoice ref" }, { label: "Due date", hide: true }, { label: "Project", hide: true }, { label: "Net", amt: true, hide: true }, { label: "Output VAT", amt: true, hide: true }, { label: "Gross", amt: true, hide: true }, { label: "Received", amt: true, hide: true }, { label: "Outstanding", amt: true }, { label: "Status" }]} rows={(invoiceQuery.q || invoiceQuery.dateFrom || invoiceQuery.dateTo || invoiceQuery.partyId || invoiceQuery.status !== "all" ? visible.filter((row) => invoiceServer.rows.some((item) => String(item.id) === String(row.id))) : visible).map((row) => {
         const live = String(row.status) === "posted" && String(row.document_kind) === "invoice";
         const got = invoiceCashReceived(row);
@@ -1088,10 +1212,10 @@ function formatCount(value: number | null): string {
 function Receipts({ books, companyId, names, onExplain, onNew }: { books: Books; companyId: string; names: Map<string, string>; onExplain: (title: string, body: string, warning: string) => void; onNew: () => void }) {
   return (
     <>
-      <Head title="Receipts register" text="A receipt is not extra turnover. Allocation follows the posted receipt links.">
+      <Head title="Customer receipts" text="Cash received only. A receipt is not extra turnover.">
         <Action className="btn mainbtn" onClick={onNew}>+ Record receipt</Action>
       </Head>
-      <Stats items={[["Receipt rows — company register", String(books.receipts.length)], ["Unallocated — company register", receiptUnallocated(books.receipts), "amber"], ["Draft receipts", String(books.receipts.filter((row) => String(row.status) !== "posted").length)], ["Allocation source", "Posted links", "blue"]]} />
+      <Stats items={[["Receipt rows", String(books.receipts.length)], ["Unallocated", receiptUnallocated(books.receipts), "amber"], ["Drafts", String(books.receipts.filter((row) => String(row.status) !== "posted").length)], ["Allocation", "Posted links", "blue"]]} />
       <RegisterSearch companyId={companyId} register="receipts" dateField="receipt" dateFields={[["receipt", "Actual bank receipt date"]]} parties={books.parties.filter((item) => item.counterparty_type === "customer").map((item) => [String(item.id), String(item.name)])} partyLabel="Customer" />
       <Grid headers={[{ label: "Date" }, { label: "Receipt ref" }, { label: "Customer" }, { label: "Amount received", amt: true }, { label: "Linked invoice" }, { label: "Allocated", amt: true }, { label: "Status" }]} rows={books.receipts.map((row) => {
         const reference = String(row.external_reference || "Reference missing");
@@ -1118,11 +1242,9 @@ function Vat({ books, names, onExplain }: { books: Books; names: Map<string, str
   ];
   return (
     <>
-      <Head title="VAT document register & reconciliation" text="Control totals are company-wide. They are not a filed VAT return and they are not filtered by a date." />
-      <p className="sub">A VAT date or recoverability filter is not shown. Recoverability status is not stored on every row in this control, so a filter would invent a distinction the records do not have.</p>
+      <Head title="VAT reconciliation" text="Company-wide control totals — not a filed VAT return." />
       <Stats items={[["Output VAT", money(books.tax?.output_vat), "blue"], ["Input VAT recorded", money(books.tax?.input_vat)], ["Indicative control", money(books.tax?.net_vat_control), "violet"], ["Recoverability", "Not determined", "amber"]]} />
-      <div className="notice"><b>Tax warning:</b> Recorded input VAT is not verified recoverable VAT. Unknown recoverability stays unknown. The indicative control is not an HMRC reclaim, a reverse-charge decision, or a VAT return.</div>
-      <p className="sub">Recorded input VAT is the VAT stored on posted cost documents. Verified recoverable VAT is not on this register. Non-recoverable VAT is not stored as a separate confirmed total. Unknown recoverability is the current state of these rows. Output VAT is the VAT stored on posted customer invoices.</p>
+      <p className="sub">Recorded input VAT is not verified recoverable VAT. The indicative control is not an HMRC reclaim.</p>
       <Grid headers={[{ label: "Document ref" }, { label: "Type" }, { label: "Party" }, { label: "Net", amt: true }, { label: "VAT code/rate", hide: true }, { label: "Input VAT", amt: true }, { label: "Output VAT", amt: true }, { label: "Recoverable", hide: true }, { label: "Review" }]} rows={documents.map(({ kind, row }) => [
         String(row.external_reference || "Reference missing"),
         kind,
@@ -1143,11 +1265,11 @@ function CisTax({ books, onPreview, onImport }: { books: Books; onPreview: () =>
   const empty = books.cis.length === 0;
   return (
     <>
-      <Head title="CIS / PAYE obligations and HMRC controls" text="Approved snapshots only. Statutory rates are not guessed." />
-      {empty ? <div className="notice neutral"><b>No approved payroll snapshots</b> in this company. The live register stays empty.</div> : null}
+      <Head title="CIS tax / HMRC" text="Approved snapshots only. Statutory rates are not guessed." />
+      {empty ? <div className="empty" role="status"><strong>No approved payroll snapshots</strong><span>The live CIS register stays empty for this company.</span></div> : null}
       <div className="bar">
-        <button className="btn mainbtn" type="button" onClick={onPreview}>View fictional worker preview</button>
-        <Action className="btn" disabled={books.cisSources.length === 0} onClick={onImport}>Import approved snapshot</Action>
+        <button className="btn" type="button" onClick={onPreview}>View fictional worker preview</button>
+        <Action className="btn mainbtn" disabled={books.cisSources.length === 0} onClick={onImport}>Import approved snapshot</Action>
       </div>
       <Grid headers={[{ label: "Source period" }, { label: "Worker" }, { label: "Source obligation", amt: true }, { label: "CIS deduction", amt: true }, { label: "Bank paid", amt: true }, { label: "Outstanding", amt: true }, { label: "Status" }]} rows={books.cis.map((row) => [String(row.week_start || "Period missing"), String(row.source_user_id || "Worker"), money(row.effective_payable_amount), money(row.effective_cis_deduction), money(row.bank_allocated), money(row.still_owed), badge("Posted snapshot", "blue")])} />
       <h3 className="head2">PAYE / HMRC control</h3>
@@ -1162,10 +1284,10 @@ function Retention({ books, companyId, names, projectsById, onExplain, onRelease
   const released = addMoney(books.releases.filter((row) => String(row.status) === "posted").map((row) => row.amount));
   return (
     <>
-      <Head title="Retention register" text="Release is not new revenue.">
+      <Head title="Retention & certificates" text="Certificate retention held and released. Release is not new revenue.">
         <Action className="btn mainbtn" onClick={onRelease}>+ Release retention</Action>
       </Head>
-      <Stats items={[["Retention withheld — company register", formatGbp(withheld)], ["Retention released — company register", formatGbp(released), "green"], ["Still retained — company register", formatGbp(withheld - released), "amber"], ["Certificates", String(books.certificates.length)]]} />
+      <Stats items={[["Withheld", formatGbp(withheld)], ["Released", formatGbp(released), "green"], ["Still retained", formatGbp(withheld - released), "amber"], ["Certificates", String(books.certificates.length)]]} />
       <RegisterSearch companyId={companyId} register="retention" dateField="release" dateFields={[["release", "Release date"]]} showSearch={false} statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
       <Grid headers={[{ label: "Project" }, { label: "Customer", hide: true }, { label: "Certificate" }, { label: "Certified", amt: true, hide: true }, { label: "Recorded rate" }, { label: "Withheld", amt: true }, { label: "Released", amt: true, hide: true }, { label: "Remaining", amt: true }, { label: "Status" }]} rows={books.certificates.map((row) => {
         const application = books.applications.find((item) => String(item.id) === String(row.application_id));
@@ -1200,16 +1322,13 @@ function Dayworks({ books, companyId, projectsById, onExplain, onNew }: { books:
   ];
   return (
     <>
-      <Head title="BASIC DAYWORKS" text="Amount register only: Labour / Materials / Plant totals on a7. Not the full experimental daywork engine.">
+      <Head title="Dayworks" text="Amount register only: labour / materials / plant totals. Not the experimental CVR-6 engine.">
         <Action className="btn mainbtn" onClick={onNew}>+ New daywork</Action>
       </Head>
-      <p className="notice neutral" role="note">
-        BASIC DAYWORKS stores amount totals only. Hours/quantities, individual rates, frozen rate, variation linkage and CVR-6 immutability remain {metricHonestyLabel("experimentalUnavailable")} — not active on this database.
-      </p>
-      <Stats items={[["Daywork approved — company register", formatGbp(dayApproved), "green"], ["Variation approved — company register", formatGbp(variationApproved), "green"], ["Hours / rates", "Not stored", "amber"], ["Contract uplift — company register", formatGbp(dayApproved + variationApproved), "blue"]]} />
+      <Stats items={[["Daywork approved", formatGbp(dayApproved), "green"], ["Variation approved", formatGbp(variationApproved), "green"], ["Hours / rates", "Not stored", "amber"], ["Contract uplift", formatGbp(dayApproved + variationApproved), "blue"]]} />
+      <p className="sub">Hours, rates and CVR-6 immutability remain {metricHonestyLabel("experimentalUnavailable")}.</p>
       <RegisterSearch companyId={companyId} register="dayworks" dateField="work" dateFields={[["work", "Work date"]]} statusOptions={[["all", "All"], ["approved", "Approved"], ["draft", "Draft"], ["submitted", "Submitted"]]} />
       <Grid headers={[{ label: "Project" }, { label: "Work/date", hide: true }, { label: "Reference" }, { label: "Description", hide: true }, { label: "Labour", amt: true, hide: true }, { label: "Materials", amt: true, hide: true }, { label: "Plant", amt: true, hide: true }, { label: "Approved value", amt: true }, { label: "Status" }]} rows={rows} />
-      <div className="notice">Only stored labour, material and plant amounts are shown. Do not invent hours or rates from these totals.</div>
     </>
   );
 }
@@ -1220,11 +1339,11 @@ function Loans({ books, companyId, names, view, onView, onExplain, onNew }: { bo
   const repaid = addMoney(posted.filter((row) => row.entry_kind === "loan_repayment" || row.entry_kind === "principal_repayment").map((row) => row.amount));
   return (
     <>
-      <Head title="Loans, advances & historical opening balances" text="Loan principal is a liability, not project income. A historical supplier opening balance is not loan principal.">
+      <Head title="Loans & advances" text="Loan principal is a liability, not project income or trading revenue.">
         <Action className="btn mainbtn" onClick={onNew}>+ Loan movement</Action>
       </Head>
       <div className="pills">{["Movements", "Opening balances", "Supplier position", "Audit"].map((item) => <button key={item} className={`pill${view === item ? " active" : ""}`} type="button" onClick={() => onView(item)}>{item}</button>)}</div>
-      <Stats items={[["Loan draw — company register", formatGbp(draw)], ["Principal repaid — company register", formatGbp(repaid), "green"], ["Loan principal remaining — company register", formatGbp(draw - repaid), "amber"], ["Historical supplier opening remaining", money(books.position?.opening_remaining), "violet"]]} />
+      <Stats items={[["Loan draw", formatGbp(draw)], ["Principal repaid", formatGbp(repaid), "green"], ["Principal remaining", formatGbp(draw - repaid), "amber"], ["Opening remaining", money(books.position?.opening_remaining), "violet"]]} />
       <RegisterSearch companyId={companyId} register="funding" dateField="entry" dateFields={[["entry", "Entry date"]]} statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
       {view === "Movements" ? <Grid headers={[{ label: "Kind" }, { label: "Reference" }, { label: "Date" }, { label: "Amount", amt: true }, { label: "Status" }]} rows={books.funding.map((row) => [labelKind(String(row.entry_kind)), String(row.external_reference || "Reference missing"), String(row.entry_date || ""), money(row.amount), badge(String(row.status) === "posted" ? "Posted" : "Draft", toneFor(String(row.status)))])} /> : null}
       {view === "Opening balances" ? <Grid headers={[{ label: "Kind" }, { label: "Reference" }, { label: "Date" }, { label: "Amount", amt: true }, { label: "Review" }]} rows={books.openings.map((row) => [labelKind(String(row.balance_kind)), String(row.source_reference || "Reference missing"), String(row.effective_date || ""), money(row.amount), badge(String(row.review_status || "Review"), "violet")])} /> : null}
