@@ -1,4 +1,4 @@
-/** Client mirror of server scoped commercial write paths (fail closed). */
+/** Client mirror of server scoped Finance write paths (fail closed). */
 
 export const SCOPED_WRITE_PATH_PREFIXES = [
   "/api/finance/contract-value",
@@ -10,17 +10,28 @@ export const SCOPED_WRITE_PATH_PREFIXES = [
   "/api/finance/applications",
   "/api/finance/certificates",
   "/api/finance/retention-releases",
-] as const;
-
-export const BLOCKED_WRITE_PATH_PREFIXES = [
-  "/api/finance/cost-documents",
-  "/api/finance/supplier-payments",
-  "/api/finance/worker-payments",
-  "/api/finance/customer-invoices",
+  "/api/finance/customer-receipts",
+  "/api/finance/customer-receipt-allocations",
+  "/api/finance/counterparties",
+  "/api/finance/cost-codes",
   "/api/finance/funding",
-  "/api/finance/projects",
+  "/api/finance/opening-balances",
+  "/api/finance/cis-splits",
+  "/api/finance/hmrc-payments",
+  "/api/finance/worker-allocations",
+  "/api/finance/worker-payments",
+  "/api/finance/supplier-payment-allocations",
+  "/api/finance/supplier-payments",
+  "/api/finance/customer-invoices",
+  "/api/finance/cost-documents",
   "/api/finance/cis/import",
   "/api/finance/paye/import",
+] as const;
+
+/** Still blocked client-side even when scoped write is on (not activated). */
+export const BLOCKED_WRITE_PATH_PREFIXES = [
+  "/api/finance/projects",
+  "/api/finance/project-links",
 ] as const;
 
 export function isScopedWritePath(path: string): boolean {

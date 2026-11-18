@@ -6,10 +6,10 @@ import {
   clientMaySendFinanceMutation,
   interpretFinanceWriteState,
   isScopedWritePath,
-} from "./finance-scoped-write";
+} from "./finance-scoped-write.ts";
 
 describe("finance scoped write UI gating", () => {
-  it("allows only scoped commercial paths", () => {
+  it("allows scoped Finance register paths", () => {
     assert.equal(isScopedWritePath("/api/finance/contract-value"), true);
     assert.equal(isScopedWritePath("/api/finance/budgets/abc/approve"), true);
     assert.equal(isScopedWritePath("/api/finance/cost-to-complete"), true);
@@ -19,9 +19,18 @@ describe("finance scoped write UI gating", () => {
     assert.equal(isScopedWritePath("/api/finance/applications"), true);
     assert.equal(isScopedWritePath("/api/finance/certificates"), true);
     assert.equal(isScopedWritePath("/api/finance/retention-releases"), true);
+    assert.equal(isScopedWritePath("/api/finance/cost-documents"), true);
+    assert.equal(isScopedWritePath("/api/finance/cost-documents/x/post"), true);
+    assert.equal(isScopedWritePath("/api/finance/supplier-payments"), true);
+    assert.equal(isScopedWritePath("/api/finance/worker-payments/x/allocations"), true);
+    assert.equal(isScopedWritePath("/api/finance/customer-invoices"), true);
+    assert.equal(isScopedWritePath("/api/finance/customer-receipts"), true);
+    assert.equal(isScopedWritePath("/api/finance/funding"), true);
+    assert.equal(isScopedWritePath("/api/finance/cis/import"), true);
+    assert.equal(isScopedWritePath("/api/finance/paye/import"), true);
   });
 
-  it("keeps payroll cost and ledger mutations blocked in the client gate", () => {
+  it("keeps project creation and workplace initialize blocked in the client gate", () => {
     for (const path of BLOCKED_WRITE_PATH_PREFIXES) {
       assert.equal(isScopedWritePath(path), false);
       assert.equal(
@@ -72,6 +81,13 @@ describe("finance scoped write UI gating", () => {
     );
     assert.equal(
       clientMaySendFinanceMutation("/api/finance/worker-payments", {
+        previewModeReadonly: true,
+        writeAllowed: true,
+      }),
+      true,
+    );
+    assert.equal(
+      clientMaySendFinanceMutation("/api/finance/projects", {
         previewModeReadonly: true,
         writeAllowed: true,
       }),

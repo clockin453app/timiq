@@ -9,11 +9,11 @@ Live-like environments (anything not a known local/test env) also require:
 - FINANCE_PILOT_COMPANY_IDS — resolved company must be listed
 
 FINANCE_PREVIEW_MODE=readonly keeps Finance mutations blocked by default.
-Scoped write may unlock a narrow commercial allowlist only when:
+Scoped write may unlock implemented Finance registers only when:
 - actor is company admin (SystemRole.ADMIN), never MASTER/administrator
 - company is in FINANCE_WRITE_COMPANY_IDS
-- project is in FINANCE_WRITE_PROJECT_IDS
-- project belongs to that company (database check)
+- for project-bound ops: project is in FINANCE_WRITE_PROJECT_IDS and belongs to company
+- for company-bound ops: company allowlist is enough (project allowlist must still be configured)
 
 Missing or invalid allowlist configuration fails closed.
 Unknown/unclassified APP_ENV values are treated as live-like (fail closed).
@@ -40,8 +40,8 @@ WRITE_ROLE_DENIED = "Finance write requires a company admin for the authorised c
 WRITE_PROJECT_REQUIRED = "Finance write requires an authorised project."
 WRITE_PROJECT_MISMATCH = "Finance project is not in the authorised company."
 
-# Commercial operations eligible for scoped write under preview readonly.
-SCOPED_WRITE_OPERATIONS = frozenset(
+# Project-bound commercial / CVR operations.
+PROJECT_SCOPED_WRITE_OPERATIONS = frozenset(
     {
         "contract_value",
         "budget_create",
@@ -56,8 +56,50 @@ SCOPED_WRITE_OPERATIONS = frozenset(
         "application_create",
         "certificate_create",
         "retention_release",
+        "customer_invoice_create",
+        "cost_document_draft",
+        "cost_document_post",
+        "cis_split",
+        "opening_balance_create",
+        "opening_balance_review",
+        "opening_balance_settle",
     }
 )
+# opening_balance_* / customer_invoice_create / cost_document_* may omit project_id
+# for company-level or overhead records (also listed in COMPANY_SCOPED).
+
+# Company-bound Finance registers (record-keeping only; no bank/HMRC submission).
+# cost_document_* also listed here so overhead-only drafts can pass without a project.
+COMPANY_SCOPED_WRITE_OPERATIONS = frozenset(
+    {
+        "counterparty_create",
+        "cost_code_create",
+        "funding_create",
+        "customer_receipt_create",
+        "customer_receipt_allocate",
+        "customer_receipt_reverse",
+        "customer_receipt_allocation_reverse",
+        "supplier_payment_create",
+        "supplier_payment_allocate",
+        "supplier_payment_reverse",
+        "supplier_payment_allocation_reverse",
+        "worker_payment_create",
+        "worker_payment_allocate",
+        "worker_payment_reverse",
+        "worker_allocation_reverse",
+        "cis_import",
+        "paye_import",
+        "hmrc_payment_create",
+        "cost_document_draft",
+        "cost_document_post",
+        "customer_invoice_create",
+        "opening_balance_create",
+        "opening_balance_review",
+        "opening_balance_settle",
+    }
+)
+
+SCOPED_WRITE_OPERATIONS = PROJECT_SCOPED_WRITE_OPERATIONS | COMPANY_SCOPED_WRITE_OPERATIONS
 
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 _FALSY = frozenset({"0", "false", "no", "off"})
@@ -202,6 +244,10 @@ def project_belongs_to_company(
     return row is not None
 
 
+def _actor_company_ok(actor: User, company_id: uuid.UUID) -> bool:
+    return finance_is_company_admin(actor) and actor.company_id is not None and actor.company_id == company_id
+
+
 def finance_write_allowed(
     db_session: Session,
     *,
@@ -214,17 +260,13 @@ def finance_write_allowed(
 
     When preview readonly is off, existing non-preview write behaviour applies
     (module + pilot/company access already enforced by callers).
-    When preview readonly is on, only scoped commercial ops may pass.
+    When preview readonly is on, only scoped Finance ops may pass.
     """
     if not finance_preview_readonly():
         return True
     if operation is not None and operation not in SCOPED_WRITE_OPERATIONS:
         return False
-    if project_id is None:
-        return False
-    if not finance_is_company_admin(actor):
-        return False
-    if actor.company_id is None or actor.company_id != company_id:
+    if not _actor_company_ok(actor, company_id):
         return False
     allowlists = _write_allowlists()
     if allowlists is None:
@@ -234,6 +276,16 @@ def finance_write_allowed(
         return False
     if company_id not in companies:
         return False
+    company_only = (
+        operation in COMPANY_SCOPED_WRITE_OPERATIONS
+        and operation not in PROJECT_SCOPED_WRITE_OPERATIONS
+    )
+    if company_only:
+        return True
+    # Project-bound ops (and dual-listed cost docs): project required unless dual-listed
+    # and caller intentionally omits project (overhead-only).
+    if project_id is None:
+        return operation in COMPANY_SCOPED_WRITE_OPERATIONS
     if project_id not in projects:
         return False
     if not project_belongs_to_company(db_session, company_id=company_id, project_id=project_id):
@@ -259,25 +311,58 @@ def assert_finance_write(
     ):
         return
     if not finance_preview_readonly():
-        # Non-preview path should not reach a deny from this helper.
         raise HTTPException(status_code=403, detail=WRITE_DENIED)
     if operation not in SCOPED_WRITE_OPERATIONS:
         raise HTTPException(status_code=403, detail=PREVIEW_READONLY)
-    if project_id is None:
-        raise HTTPException(status_code=403, detail=WRITE_PROJECT_REQUIRED)
-    if not finance_is_company_admin(actor):
-        raise HTTPException(status_code=403, detail=WRITE_ROLE_DENIED)
-    if actor.company_id is None or actor.company_id != company_id:
+    if not _actor_company_ok(actor, company_id):
         raise HTTPException(status_code=403, detail=WRITE_ROLE_DENIED)
     allowlists = _write_allowlists()
     if allowlists is None or not allowlists[0] or not allowlists[1]:
         raise HTTPException(status_code=403, detail=PREVIEW_READONLY)
     companies, projects = allowlists
-    if company_id not in companies or project_id not in projects:
+    if company_id not in companies:
+        raise HTTPException(status_code=403, detail=WRITE_DENIED)
+    if operation in COMPANY_SCOPED_WRITE_OPERATIONS:
+        raise HTTPException(status_code=403, detail=WRITE_DENIED)
+    if project_id is None:
+        raise HTTPException(status_code=403, detail=WRITE_PROJECT_REQUIRED)
+    if project_id not in projects:
         raise HTTPException(status_code=403, detail=WRITE_DENIED)
     if not project_belongs_to_company(db_session, company_id=company_id, project_id=project_id):
         raise HTTPException(status_code=403, detail=WRITE_PROJECT_MISMATCH)
     raise HTTPException(status_code=403, detail=WRITE_DENIED)
+
+
+def assert_projects_write_allowed(
+    db_session: Session,
+    *,
+    actor: User,
+    company_id: uuid.UUID,
+    project_ids: set[uuid.UUID],
+    operation: str,
+) -> None:
+    """Require every project id to pass project-scoped write.
+
+    Empty project set is allowed only for overhead-style cost documents, which
+    fall back to a company-scoped payment-register style gate.
+    """
+    if not project_ids:
+        assert_finance_write(
+            db_session,
+            actor=actor,
+            company_id=company_id,
+            project_id=None,
+            operation=operation,
+        )
+        return
+    for project_id in project_ids:
+        assert_finance_write(
+            db_session,
+            actor=actor,
+            company_id=company_id,
+            project_id=project_id,
+            operation=operation,
+        )
 
 
 def effective_finance_readonly(

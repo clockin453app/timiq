@@ -280,30 +280,27 @@ def test_revoking_allowlist_blocks_next_request(monkeypatch: pytest.MonkeyPatch)
     ) is False
 
 
-def test_ledger_mutations_stay_hard_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ledger_scoped_paths_soft_pass_guard(monkeypatch: pytest.MonkeyPatch) -> None:
     _enable_preview(monkeypatch)
     for path in (
         "/api/finance/cost-documents",
+        "/api/finance/cost-documents/11111111-1111-1111-1111-111111111111/post",
         "/api/finance/supplier-payments",
+        "/api/finance/supplier-payments/11111111-1111-1111-1111-111111111111/allocations",
         "/api/finance/worker-payments",
+        "/api/finance/worker-payments/11111111-1111-1111-1111-111111111111/allocations",
         "/api/finance/customer-invoices",
         "/api/finance/cis/import",
+        "/api/finance/paye/import",
     ):
-        with pytest.raises(HTTPException) as denied:
-            ledger_guard(_request("POST", path))  # type: ignore[arg-type]
-        assert denied.value.status_code == 403
-        assert denied.value.detail == PREVIEW_READONLY
+        ledger_guard(_request("POST", path))  # type: ignore[arg-type]
 
 
-def test_commercial_non_scoped_paths_stay_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_commercial_project_create_stays_hard_blocked(monkeypatch: pytest.MonkeyPatch) -> None:
     _enable_preview(monkeypatch)
     for path in (
         "/api/finance/projects",
         "/api/finance/project-links/initialize",
-        "/api/finance/funding",
-        "/api/finance/customer-receipts",
-        "/api/finance/opening-balances",
-        "/api/finance/counterparties",
     ):
         with pytest.raises(HTTPException) as denied:
             commercial_guard(_request("POST", path))  # type: ignore[arg-type]
@@ -323,6 +320,15 @@ def test_commercial_scoped_paths_soft_pass_guard(monkeypatch: pytest.MonkeyPatch
         "/api/finance/applications",
         "/api/finance/certificates",
         "/api/finance/retention-releases",
+        "/api/finance/funding",
+        "/api/finance/customer-receipts",
+        "/api/finance/opening-balances",
+        "/api/finance/counterparties",
+        "/api/finance/cost-codes",
+        "/api/finance/hmrc-payments",
+        "/api/finance/cis-splits",
+        "/api/finance/worker-allocations/11111111-1111-1111-1111-111111111111/reverse",
+        "/api/finance/supplier-payments/11111111-1111-1111-1111-111111111111/reverse",
     ):
         commercial_guard(_request("POST", path))  # type: ignore[arg-type]
 
@@ -557,6 +563,46 @@ def test_null_project_not_treated_as_authorised(monkeypatch: pytest.MonkeyPatch)
         project_id=None,
         operation="contract_value",
     ) is False
+
+
+def test_company_scoped_ops_allow_null_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    _enable_preview(monkeypatch)
+    company_id = uuid4()
+    project_id = uuid4()
+    _write_allowlists(monkeypatch, company_id=company_id, project_id=project_id)
+    actor = _actor(role=SystemRole.ADMIN, company_id=company_id)
+    for operation in (
+        "funding_create",
+        "customer_receipt_create",
+        "supplier_payment_create",
+        "worker_payment_create",
+        "cis_import",
+        "paye_import",
+        "hmrc_payment_create",
+        "counterparty_create",
+    ):
+        assert finance_write_allowed(
+            MagicMock(),
+            actor=actor,
+            company_id=company_id,
+            project_id=None,
+            operation=operation,
+        ) is True
+
+
+def test_overhead_cost_document_allows_null_project(monkeypatch: pytest.MonkeyPatch) -> None:
+    _enable_preview(monkeypatch)
+    company_id = uuid4()
+    project_id = uuid4()
+    _write_allowlists(monkeypatch, company_id=company_id, project_id=project_id)
+    actor = _actor(role=SystemRole.ADMIN, company_id=company_id)
+    assert finance_write_allowed(
+        MagicMock(),
+        actor=actor,
+        company_id=company_id,
+        project_id=None,
+        operation="cost_document_draft",
+    ) is True
 
 
 def test_audit_failure_rolls_back_contract_value(monkeypatch: pytest.MonkeyPatch) -> None:

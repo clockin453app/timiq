@@ -89,6 +89,18 @@ _SCOPED_WRITE_PATH_PREFIXES = (
     "/api/finance/applications",
     "/api/finance/certificates",
     "/api/finance/retention-releases",
+    "/api/finance/customer-receipts",
+    "/api/finance/customer-receipt-allocations",
+    "/api/finance/counterparties",
+    "/api/finance/cost-codes",
+    "/api/finance/funding",
+    "/api/finance/opening-balances",
+    "/api/finance/cis-splits",
+    "/api/finance/hmrc-payments",
+    "/api/finance/worker-allocations",
+    "/api/finance/worker-payments",
+    "/api/finance/supplier-payment-allocations",
+    "/api/finance/supplier-payments",
 )
 
 
@@ -340,6 +352,11 @@ def finance_forecast(body: ForecastBody, company_id: uuid.UUID | None = None, db
 @router.post("/opening-balances/{opening_id}/settlements")
 def finance_opening_settle(opening_id: uuid.UUID, body: SettlementBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
     scoped = _company(db_session, actor, company_id)
+    project_id = db_session.execute(
+        text("SELECT project_id FROM finance_opening_balances WHERE id = :opening_id AND company_id = :company_id"),
+        {"opening_id": opening_id, "company_id": scoped},
+    ).scalar_one_or_none()
+    assert_finance_write(db_session, actor=actor, company_id=scoped, project_id=project_id, operation="opening_balance_settle")
     return _run(db_session, lambda: {"id": str(settle_opening_balance(db_session, company_id=scoped, actor_user_id=actor.id, opening_id=opening_id, amount=body.amount, settlement_date=body.settlement_date, external_reference=body.external_reference))})
 
 
@@ -431,7 +448,7 @@ def finance_cost_codes(company_id: uuid.UUID | None = None, db_session: Session 
 
 @router.post("/cost-codes")
 def finance_cost_code_create(body: NamedBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="cost_code_create")
     return _run(db_session, lambda: {"id": str(create_cost_code(db_session, company_id=scoped, actor_user_id=actor.id, code=body.code, name=body.name))})
 
 
@@ -442,7 +459,7 @@ def finance_parties(counterparty_type: str | None = None, company_id: uuid.UUID 
 
 @router.post("/counterparties")
 def finance_party_create(body: PartyBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="counterparty_create")
     return _run(db_session, lambda: {"id": str(create_counterparty(db_session, company_id=scoped, actor_user_id=actor.id, counterparty_type=body.counterparty_type, name=body.name))})
 
 
@@ -478,25 +495,25 @@ def finance_contract(body: ContractBody, company_id: uuid.UUID | None = None, db
 
 @router.post("/customer-receipts")
 def finance_receipt(body: ReceiptBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="customer_receipt_create")
     return _run(db_session, lambda: {"id": str(create_receipt(db_session, company_id=scoped, actor_user_id=actor.id, counterparty_id=body.counterparty_id, receipt_date=body.receipt_date, amount=body.amount, external_reference=body.external_reference, notes=body.notes))})
 
 
 @router.post("/customer-receipts/{receipt_id}/allocations")
 def finance_receipt_allocate(receipt_id: uuid.UUID, body: ReceiptAllocationBatch, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="customer_receipt_allocate")
     return _run(db_session, lambda: allocate_receipt(db_session, company_id=scoped, actor_user_id=actor.id, receipt_id=receipt_id, allocations=[item.model_dump() for item in body.allocations]) or {"status": "posted"})
 
 
 @router.post("/customer-receipt-allocations/{allocation_id}/reverse")
 def finance_receipt_allocation_reverse(allocation_id: uuid.UUID, body: ReasonBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="customer_receipt_allocation_reverse")
     return _run(db_session, lambda: {"id": str(reverse_receipt_allocation(db_session, company_id=scoped, actor_user_id=actor.id, allocation_id=allocation_id, reason=body.reason))})
 
 
 @router.post("/customer-receipts/{receipt_id}/reverse")
 def finance_receipt_reverse(receipt_id: uuid.UUID, body: ReasonBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="customer_receipt_reverse")
     return _run(db_session, lambda: {"id": str(reverse_receipt(db_session, company_id=scoped, actor_user_id=actor.id, receipt_id=receipt_id, reason=body.reason))})
 
 
@@ -665,31 +682,36 @@ def finance_cvr_source_breakdown(
 
 @router.post("/cis-splits")
 def finance_split(body: SplitBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, body.project_id, operation="cis_split")
     return _run(db_session, lambda: {"id": str(create_cis_split(db_session, company_id=scoped, actor_user_id=actor.id, snapshot_id=body.snapshot_id, project_id=body.project_id, gross_amount=body.gross_amount, review_note=body.review_note))})
 
 
 @router.post("/funding")
 def finance_funding(body: FundingBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="funding_create")
     return _run(db_session, lambda: {"id": str(create_funding(db_session, company_id=scoped, actor_user_id=actor.id, entry_kind=body.entry_kind, entry_date=body.entry_date, amount=body.amount, counterparty_id=body.counterparty_id, source_user_id=body.source_user_id, external_reference=body.external_reference, notes=body.notes))})
 
 
 @router.post("/opening-balances")
 def finance_opening(body: OpeningBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, body.project_id, operation="opening_balance_create")
     return _run(db_session, lambda: {"id": str(create_opening_balance(db_session, company_id=scoped, actor_user_id=actor.id, balance_kind=body.balance_kind, effective_date=body.effective_date, amount=body.amount, source_reference=body.source_reference, explanation=body.explanation, counterparty_id=body.counterparty_id, project_id=body.project_id, source_user_id=body.source_user_id))})
 
 
 @router.post("/opening-balances/{opening_id}/review")
 def finance_opening_review(opening_id: uuid.UUID, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
     scoped = _company(db_session, actor, company_id)
+    project_id = db_session.execute(
+        text("SELECT project_id FROM finance_opening_balances WHERE id = :opening_id AND company_id = :company_id"),
+        {"opening_id": opening_id, "company_id": scoped},
+    ).scalar_one_or_none()
+    assert_finance_write(db_session, actor=actor, company_id=scoped, project_id=project_id, operation="opening_balance_review")
     return _run(db_session, lambda: review_opening_balance(db_session, company_id=scoped, actor_user_id=actor.id, opening_id=opening_id) or {"status": "reviewed"})
 
 
 @router.post("/hmrc-payments")
 def finance_hmrc(body: HmrcBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="hmrc_payment_create")
     return _run(db_session, lambda: {"id": str(create_hmrc_payment(db_session, company_id=scoped, actor_user_id=actor.id, payment_kind=body.payment_kind, payment_date=body.payment_date, amount=body.amount, external_reference=body.external_reference, notes=body.notes))})
 
 
@@ -721,25 +743,25 @@ def finance_paye_one(source_item_id: uuid.UUID, company_id: uuid.UUID | None = N
 
 @router.post("/worker-allocations/{allocation_id}/reverse")
 def finance_worker_allocation_reverse(allocation_id: uuid.UUID, body: ReasonBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="worker_allocation_reverse")
     return _run(db_session, lambda: {"id": str(reverse_worker_allocation(db_session, company_id=scoped, actor_user_id=actor.id, allocation_id=allocation_id, reason=body.reason))})
 
 
 @router.post("/worker-payments/{payment_id}/reverse")
 def finance_worker_payment_reverse(payment_id: uuid.UUID, body: ReasonBody, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="worker_payment_reverse")
     return _run(db_session, lambda: {"id": str(reverse_worker_payment(db_session, company_id=scoped, actor_user_id=actor.id, payment_id=payment_id, reason=body.reason))})
 
 
 @router.post("/supplier-payment-allocations/{allocation_id}/reverse")
 def finance_supplier_allocation_reverse(allocation_id: uuid.UUID, body: ReversalInput, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="supplier_payment_allocation_reverse")
     return _run(db_session, lambda: reverse_supplier_payment_allocation(db_session, company_id=scoped, actor_user_id=actor.id, allocation_id=allocation_id, payload=body))
 
 
 @router.post("/supplier-payments/{payment_id}/reverse")
 def finance_supplier_payment_reverse(payment_id: uuid.UUID, body: ReversalInput, company_id: uuid.UUID | None = None, db_session: Session = Depends(get_db_session), actor: User = Depends(get_current_user)):
-    scoped = _company(db_session, actor, company_id)
+    scoped = _company_for_write(db_session, actor, company_id, None, operation="supplier_payment_reverse")
     return _run(db_session, lambda: reverse_supplier_payment(db_session, company_id=scoped, actor_user_id=actor.id, payment_id=payment_id, payload=body))
 
 
