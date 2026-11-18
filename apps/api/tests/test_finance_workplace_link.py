@@ -352,3 +352,64 @@ def test_initialize_integrity_error_returns_existing_idempotently(monkeypatch):
     assert result["id"] == str(existing_id)
     assert result["link_status"] == "LINKED"
 
+def test_init_audit_action_fits_schema_limit():
+    from app.modules.finance.audit import AUDIT_ACTION_LIMIT
+
+    action = "project_init_workplace"
+    assert len(action) <= AUDIT_ACTION_LIMIT
+    assert len("project_initialized_from_workplace") > AUDIT_ACTION_LIMIT
+
+
+def test_initialize_writes_short_audit_action(monkeypatch):
+    """Ensure initialize records an audit action that fits String(32)."""
+    from uuid import uuid4
+    import app.modules.finance.workplace_link as wl
+    from app.modules.finance.audit import AUDIT_ACTION_LIMIT
+
+    company_id = uuid4()
+    workplace_id = uuid4()
+    captured = {}
+
+    def workplace_lookup(_):
+        return [{
+            "id": workplace_id,
+            "company_id": company_id,
+            "name": "Kennington",
+            "code": "0001",
+            "is_active": True,
+        }]
+
+    class _S(_Session):
+        def begin_nested(self):
+            class _N:
+                def __enter__(self_inner):
+                    return self_inner
+                def __exit__(self_inner, exc_type, exc, tb):
+                    return False
+            return _N()
+
+    session = _S([
+        ("FROM workplaces WHERE id", workplace_lookup),
+        ("FROM finance_projects", lambda _: []),
+    ])
+
+    def fake_insert(db, statement, params):
+        captured["insert"] = params
+
+    def fake_event(db, **kwargs):
+        captured["event"] = kwargs
+        assert len(kwargs["action"]) <= AUDIT_ACTION_LIMIT
+
+    monkeypatch.setattr(wl, "_insert", fake_insert)
+    monkeypatch.setattr(wl, "_event", fake_event)
+
+    result = wl.initialize_finance_project_from_workplace(
+        session,
+        company_id=company_id,
+        actor_user_id=None,
+        workplace_id=workplace_id,
+    )
+    assert result["created"] is True
+    assert captured["event"]["action"] == "project_init_workplace"
+    assert len(captured["event"]["action"]) <= AUDIT_ACTION_LIMIT
+
