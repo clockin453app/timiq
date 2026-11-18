@@ -115,11 +115,53 @@ const EMPTY: Books = {
 
 const LIABILITY = new Set(["supplier_invoice", "expense_receipt"]);
 const ReadOnlyPreview = createContext(true);
+const ScopedWrite = createContext(false);
 
-function Action({ className, onClick, children, disabled = false }: { className: string; onClick: () => void; children: ReactNode; disabled?: boolean }) {
+const SCOPED_WRITE_PATH_PREFIXES = [
+  "/api/finance/contract-value",
+  "/api/finance/budgets",
+  "/api/finance/cost-to-complete",
+  "/api/finance/variations",
+  "/api/finance/dayworks",
+  "/api/finance/commitments",
+  "/api/finance/applications",
+  "/api/finance/certificates",
+  "/api/finance/retention-releases",
+] as const;
+
+function isScopedWritePath(path: string): boolean {
+  const clean = path.split("?")[0] ?? path;
+  return SCOPED_WRITE_PATH_PREFIXES.some((prefix) => clean === prefix || clean.startsWith(`${prefix}/`));
+}
+
+function Action({
+  className,
+  onClick,
+  children,
+  disabled = false,
+  allowWhenScoped = false,
+}: {
+  className: string;
+  onClick: () => void;
+  children: ReactNode;
+  disabled?: boolean;
+  allowWhenScoped?: boolean;
+}) {
   const locked = useContext(ReadOnlyPreview);
-  const blocked = locked || disabled;
-  return <button className={className} type="button" disabled={blocked} title={locked ? "Disabled in read-only preview" : undefined} onClick={onClick}>{children}</button>;
+  const scoped = useContext(ScopedWrite);
+  const unlockedByScope = allowWhenScoped && scoped;
+  const blocked = (locked && !unlockedByScope) || disabled;
+  return (
+    <button
+      className={className}
+      type="button"
+      disabled={blocked}
+      title={blocked && locked ? "Disabled in read-only preview" : undefined}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  );
 }
 
 export type FinanceWorkspaceDemo = {
@@ -174,7 +216,9 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
     return pending ? [] : (demo.categories ?? []);
   });
   const [categoryLoadFailed, setCategoryLoadFailed] = useState(!(demo?.categories?.length));
-  const [previewReadonly, setPreviewReadonly] = useState(true);
+  const [previewModeReadonly, setPreviewModeReadonly] = useState(true);
+  const [writeAllowed, setWriteAllowed] = useState(false);
+  const previewReadonly = previewModeReadonly && !writeAllowed;
   const [navFocus, setNavFocus] = useState<FinanceNavigateTarget["focus"] | null>(null);
   const busy = useRef(false);
 
@@ -188,19 +232,40 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
 
   useEffect(() => {
     if (demoMode) {
-      setPreviewReadonly(true);
+      setPreviewModeReadonly(true);
+      setWriteAllowed(false);
       return;
     }
     let cancelled = false;
-    fetch(`${API_URL}/api/finance/preview-mode`, { credentials: "include" })
+    const params = new URLSearchParams();
+    if (companyId) params.set("company_id", companyId);
+    if (projectId) params.set("project_id", projectId);
+    const query = params.toString();
+    fetch(`${API_URL}/api/finance/preview-mode${query ? `?${query}` : ""}`, { credentials: "include" })
       .then(async (response) => {
         if (!response.ok) throw new Error("preview");
-        return response.json() as Promise<{ readonly?: boolean }>;
+        return response.json() as Promise<{
+          readonly?: boolean;
+          preview_mode_readonly?: boolean;
+          write_allowed?: boolean;
+        }>;
       })
-      .then((body) => { if (!cancelled) setPreviewReadonly(body.readonly !== false); })
-      .catch(() => { if (!cancelled) setPreviewReadonly(true); });
+      .then((body) => {
+        if (cancelled) return;
+        // Fail closed: missing flags keep Finance read-only.
+        setPreviewModeReadonly(
+          body.preview_mode_readonly === true
+          || (body.preview_mode_readonly == null && body.readonly !== false),
+        );
+        setWriteAllowed(body.write_allowed === true);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPreviewModeReadonly(true);
+        setWriteAllowed(false);
+      });
     return () => { cancelled = true; };
-  }, [companyId, demoMode]);
+  }, [companyId, projectId, demoMode]);
 
   useEffect(() => {
     if (demoMode) return;
@@ -328,7 +393,7 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
   }
 
   async function initializeWorkplaceLink(workplaceId: string) {
-    if (previewReadonly || demoMode) {
+    if (previewModeReadonly || demoMode) {
       setMessage("Initialize is blocked while Finance preview is read-only.");
       return;
     }
@@ -374,7 +439,12 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
   }
 
   async function send(path: string, body: unknown, posting: boolean, quiet = false) {
-    if (previewReadonly) { setError("Read-only preview is active. The change was not sent."); return null; }
+    if (previewModeReadonly) {
+      if (!writeAllowed || !isScopedWritePath(path)) {
+        setError("Read-only preview is active. The change was not sent.");
+        return null;
+      }
+    }
     if (busy.current) { setError("A finance save is already in progress. Wait for it to finish before trying again."); return null; }
     const prompt = posting ? confirmationCopy("finance record") : "Save this draft? It stays out of posted totals until posting is confirmed.";
     if (!quiet && !window.confirm(prompt)) return null;
@@ -453,14 +523,17 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
   });
 
   return (
-    <ReadOnlyPreview.Provider value={previewReadonly}>
-    <div className="fv3" data-finance-v3="true" data-readonly={previewReadonly ? "true" : "false"}>
+    <ReadOnlyPreview.Provider value={previewModeReadonly}>
+    <ScopedWrite.Provider value={writeAllowed}>
+    <div className="fv3" data-finance-v3="true" data-readonly={previewReadonly ? "true" : "false"} data-scoped-write={writeAllowed ? "true" : "false"}>
       <header className="top" aria-label="TIMIQ Finance">
         <div className="fv-bar-row">
           <div className="brand">TIMIQ <span>Finance</span></div>
           <div className="top-meta">
             {demoMode ? <span className="chip readonly">DEMO DATA · local only</span> : null}
-            {previewReadonly ? (
+            {writeAllowed ? (
+              <span className="chip live" title="Server authorised scoped commercial write for this company and project">SCOPED WRITE</span>
+            ) : previewModeReadonly ? (
               <span className="chip readonly" title="Operational mode — not an error">READ-ONLY</span>
             ) : (
               <span className="chip live">LIVE WRITE</span>
@@ -587,10 +660,16 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
                 categoryLoadFailed={categoryLoadFailed}
                 books={books}
                 demoMode={demoMode}
+                writeAllowed={writeAllowed}
                 demoAllocations={demoMode ? DEMO_ALLOCATION_LINES.filter((row) => row.projectId === projectId) : []}
                 onRefresh={() => setReloadToken((value) => value + 1)}
                 onNavigate={navigateFinance}
                 onExplain={open}
+                onEnterContract={() => setDrawer("contract-value")}
+                onEnterCostToComplete={() => setDrawer("cost-to-complete")}
+                onEnterBudget={() => setDrawer("budget")}
+                onEnterVariation={() => setDrawer("variation")}
+                onEnterDaywork={() => setDrawer("daywork")}
               />
             ) : (
               <FinanceOverviewScreen
@@ -648,6 +727,7 @@ export function FinanceWorkspace({ demo }: { demo?: FinanceWorkspaceDemo } = {})
         <Editor drawer={drawer} books={books} onClose={() => setDrawer(null)} send={send} />
       ) : null}
     </div>
+    </ScopedWrite.Provider>
     </ReadOnlyPreview.Provider>
   );
 }
@@ -1212,7 +1292,7 @@ function ProjectControl({ books, companyId, projectId, categories, categoryLoadF
           ) : null}
 
           <div className="bar" style={{ marginTop: 12 }}>
-            <Action className="btn" onClick={onBudget}>+ Budget revision</Action>
+            <Action className="btn" allowWhenScoped onClick={onBudget}>+ Budget revision</Action>
             <button className="btn" type="button" onClick={() => onExplain("CVR calculation and sources", projectId && selected ? cvrText(selected) : (rows.map(cvrText).join(" ") || "Select a company with projects."), "Employer NI, pension and PAYE on-costs are not included unless separately recorded.")}>Show CVR sources</button>
           </div>
         </div>
@@ -1854,7 +1934,7 @@ function Retention({ books, companyId, names, projectsById, onExplain, onRelease
   return (
     <>
       <Head title="Retention & certificates" text="Certificate retention held and released. Release is not new revenue.">
-        <Action className="btn mainbtn" onClick={onRelease}>+ Release retention</Action>
+        <Action className="btn mainbtn" allowWhenScoped onClick={onRelease}>+ Release retention</Action>
       </Head>
       <Stats items={[["Withheld", formatGbp(withheld)], ["Released", formatGbp(released), "green"], ["Still retained", formatGbp(withheld - released), "amber"], ["Certificates", String(books.certificates.length)]]} />
       <RegisterSearch enabled={!demoMode} companyId={companyId} register="retention" dateField="release" dateFields={[["release", "Release date"]]} showSearch={false} statusOptions={[["all", "All"], ["posted", "Posted"], ["draft", "Draft"]]} />
@@ -1964,7 +2044,7 @@ function Dayworks({ books, companyId, projectsById, onExplain, onNew, demoMode =
   return (
     <>
       <Head title="Dayworks" text="Amount register only: labour / materials / plant totals. Not the experimental CVR-6 engine.">
-        <Action className="btn mainbtn" onClick={onNew}>+ New daywork</Action>
+        <Action className="btn mainbtn" allowWhenScoped onClick={onNew}>+ New daywork</Action>
       </Head>
       <Stats items={[["Daywork approved", formatGbp(dayApproved), "green"], ["Variation approved", formatGbp(variationApproved), "green"], ["Hours / rates", "Not stored", "amber"], ["Contract uplift", formatGbp(dayApproved + variationApproved), "blue"]]} />
       <p className="sub">Hours, rates and CVR-6 immutability remain {metricHonestyLabel("experimentalUnavailable")}.</p>
@@ -2128,6 +2208,7 @@ function Editor({ drawer, books, onClose, send }: { drawer: string; books: Books
     project: "New project", budget: "Budget revision", invoice: "Supplier invoice", expense: "Project expense",
     "supplier-payment": "Record supplier payment", "worker-payment": "Record worker bank payment", "cis-import": "Import approved snapshot",
     "customer-invoice": "Customer invoice", receipt: "Customer receipt", retention: "Release retention", daywork: "New daywork", funding: "Loan movement",
+    "contract-value": "Contract value", "cost-to-complete": "Cost to complete", variation: "Variation",
   };
   return (
     <div className="drawerback" role="dialog" aria-modal="true" aria-label={title[drawer] ?? "Editor"}>
@@ -2136,6 +2217,9 @@ function Editor({ drawer, books, onClose, send }: { drawer: string; books: Books
         <section className="dbody">
           {drawer === "project" ? <ProjectForm books={books} send={send} onClose={onClose} /> : null}
           {drawer === "budget" ? <BudgetForm books={books} send={send} onClose={onClose} /> : null}
+          {drawer === "contract-value" ? <ContractValueForm books={books} send={send} onClose={onClose} /> : null}
+          {drawer === "cost-to-complete" ? <CostToCompleteForm books={books} send={send} onClose={onClose} /> : null}
+          {drawer === "variation" ? <VariationForm books={books} send={send} onClose={onClose} /> : null}
           {drawer === "invoice" || drawer === "expense" ? <CostForm kind={drawer} books={books} send={send} onClose={onClose} /> : null}
           {drawer === "supplier-payment" ? <SupplierPayForm books={books} send={send} onClose={onClose} /> : null}
           {drawer === "worker-payment" ? <WorkerPayForm books={books} send={send} /> : null}
@@ -2184,6 +2268,93 @@ function BudgetForm({ books, send, onClose }: { books: Books; send: EditorProps[
         <Field label="Project"><Select options={books.projects.map((item) => [String(item.id), String(item.name)])} value={project} onChange={setProject} /></Field>
         <Field label="Cost code"><Select options={books.codes.map((item) => [String(item.id), `${item.code} ${item.name}`])} value={code} onChange={setCode} /></Field>
         <Field label="Amount"><input value={amount} onChange={(event) => setAmount(event.target.value)} /></Field>
+      </div>
+      <Footer draft />
+    </form>
+  );
+}
+
+function ContractValueForm({ books, send, onClose }: { books: Books; send: EditorProps["send"]; onClose: () => void }) {
+  const [project, setProject] = useState("");
+  const [amount, setAmount] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState("");
+  return (
+    <form
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const saved = await send("/api/finance/contract-value", {
+          project_id: project,
+          amount,
+          effective_date: effectiveDate,
+        }, true);
+        if (saved) onClose();
+      }}
+    >
+      <p className="notice neutral">Stores a contract value revision for the selected project. This is not revenue and not project cost. Server audit and provenance are required.</p>
+      <div className="formrow">
+        <Field label="Project"><Select options={books.projects.map((item) => [String(item.id), String(item.name)])} value={project} onChange={setProject} /></Field>
+        <Field label="Effective date"><input required type="date" value={effectiveDate} onChange={(event) => setEffectiveDate(event.target.value)} /></Field>
+        <Field label="Contract amount (GBP)"><input required value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" /></Field>
+      </div>
+      <Footer post="Confirm contract value" />
+    </form>
+  );
+}
+
+function CostToCompleteForm({ books, send, onClose }: { books: Books; send: EditorProps["send"]; onClose: () => void }) {
+  const [project, setProject] = useState("");
+  const [amount, setAmount] = useState("");
+  const [explanation, setExplanation] = useState("");
+  return (
+    <form
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const saved = await send("/api/finance/cost-to-complete", {
+          project_id: project,
+          amount,
+          explanation,
+        }, true);
+        if (saved) onClose();
+      }}
+    >
+      <p className="notice neutral">Records an authorised cost-to-complete forecast. Missing CTC is not treated as £0.00. Explanation is required for audit.</p>
+      <div className="formrow">
+        <Field label="Project"><Select options={books.projects.map((item) => [String(item.id), String(item.name)])} value={project} onChange={setProject} /></Field>
+        <Field label="Amount (GBP)"><input required value={amount} onChange={(event) => setAmount(event.target.value)} placeholder="0.00" /></Field>
+        <Field label="Explanation"><input required value={explanation} onChange={(event) => setExplanation(event.target.value)} /></Field>
+      </div>
+      <Footer post="Confirm cost to complete" />
+    </form>
+  );
+}
+
+function VariationForm({ books, send, onClose }: { books: Books; send: EditorProps["send"]; onClose: () => void }) {
+  const [project, setProject] = useState("");
+  const [reference, setReference] = useState("");
+  const [description, setDescription] = useState("");
+  const [requested, setRequested] = useState("0.00");
+  const [submitted, setSubmitted] = useState("0.00");
+  return (
+    <form
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const saved = await send("/api/finance/variations", {
+          project_id: project,
+          reference_code: reference,
+          description,
+          requested_value: requested,
+          submitted_value: submitted,
+        }, false);
+        if (saved) onClose();
+      }}
+    >
+      <p className="notice neutral">Saves a variation draft. Approval is a separate step and does not happen here.</p>
+      <div className="formrow">
+        <Field label="Project"><Select options={books.projects.map((item) => [String(item.id), String(item.name)])} value={project} onChange={setProject} /></Field>
+        <Field label="Reference"><input required value={reference} onChange={(event) => setReference(event.target.value)} /></Field>
+        <Field label="Description"><input required value={description} onChange={(event) => setDescription(event.target.value)} /></Field>
+        <Field label="Requested value"><input value={requested} onChange={(event) => setRequested(event.target.value)} /></Field>
+        <Field label="Submitted value"><input value={submitted} onChange={(event) => setSubmitted(event.target.value)} /></Field>
       </div>
       <Footer draft />
     </form>

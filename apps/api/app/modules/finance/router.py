@@ -13,14 +13,17 @@ from sqlalchemy.orm import Session
 from app.core.company_scope import CompanyScopeError, resolve_operational_company_id
 from app.db.session import get_db_session
 from app.modules.auth.dependencies import get_current_user
-from app.modules.auth.models import User
+from app.modules.auth.models import SystemRole, User
 from app.modules.finance.access import (
     PREVIEW_READONLY,
+    SCOPED_WRITE_OPERATIONS,
     assert_finance_access,
     assert_finance_company_access,
+    effective_finance_readonly,
     finance_module_enabled,
     finance_preview_readonly,
     finance_user_authorized,
+    finance_write_allowed,
 )
 from app.modules.finance.cost_register_schemas import CostDraftInput
 from app.modules.finance.cost_register_service import (
@@ -125,9 +128,48 @@ def finance_module_status(actor: User = Depends(get_current_user)) -> dict[str, 
 
 
 @router.get("/preview-mode")
-def finance_preview_mode(actor: User = Depends(get_current_user)) -> dict[str, bool]:
+def finance_preview_mode(
+    company_id: uuid.UUID | None = None,
+    project_id: uuid.UUID | None = None,
+    db_session: Session = Depends(get_db_session),
+    actor: User = Depends(get_current_user),
+) -> dict[str, object]:
+    """Effective Finance lock for the current actor and optional company/project.
+
+    ``preview_mode_readonly`` mirrors the global env switch.
+    ``write_allowed`` is true only for fail-closed scoped commercial write.
+    ``readonly`` is the UI/effective lock for the supplied selection.
+    """
     assert_finance_access(actor)
-    return {"readonly": finance_preview_readonly()}
+    preview = finance_preview_readonly()
+    scoped_company: uuid.UUID | None = None
+    if company_id is not None or actor.system_role == SystemRole.ADMIN:
+        try:
+            scoped_company = resolve_operational_company_id(db_session, actor, company_id)
+            assert_finance_company_access(scoped_company)
+        except (CompanyScopeError, HTTPException):
+            scoped_company = None
+    write_allowed = False
+    if scoped_company is not None and project_id is not None:
+        write_allowed = finance_write_allowed(
+            db_session,
+            actor=actor,
+            company_id=scoped_company,
+            project_id=project_id,
+            operation="contract_value",
+        )
+    readonly = effective_finance_readonly(
+        db_session if scoped_company is not None else None,
+        actor=actor,
+        company_id=scoped_company,
+        project_id=project_id,
+    )
+    return {
+        "readonly": readonly,
+        "preview_mode_readonly": preview,
+        "write_allowed": write_allowed,
+        "scoped_operations": sorted(SCOPED_WRITE_OPERATIONS) if write_allowed else [],
+    }
 
 
 @router.get("/dashboard")

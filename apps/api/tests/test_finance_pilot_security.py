@@ -134,13 +134,20 @@ def test_readonly_blocks_mutations_on_both_finance_routers(
 ) -> None:
     monkeypatch.setenv("FINANCE_PREVIEW_MODE", "readonly")
     assert finance_preview_readonly() is True
+    blocked_path = SimpleNamespace(
+        method="POST",
+        url=SimpleNamespace(path="/api/finance/project-links/initialize"),
+    )
     for guard in (ledger_guard, commercial_guard):
         for method in ("POST", "PUT", "PATCH", "DELETE"):
             with pytest.raises(HTTPException) as denied:
-                guard(SimpleNamespace(method=method))  # type: ignore[arg-type]
+                guard(SimpleNamespace(method=method, url=blocked_path.url))  # type: ignore[arg-type]
             assert denied.value.status_code == 403
         for method in ("GET", "HEAD", "OPTIONS"):
-            guard(SimpleNamespace(method=method))  # type: ignore[arg-type]
+            guard(SimpleNamespace(method=method, url=blocked_path.url))  # type: ignore[arg-type]
+    # Ledger remains hard-blocked even on paths that commercial soft-allows.
+    with pytest.raises(HTTPException):
+        ledger_guard(SimpleNamespace(method="POST", url=SimpleNamespace(path="/api/finance/contract-value")))  # type: ignore[arg-type]
     for finance_router, guard in (
         (ledger_router, ledger_guard),
         (commercial_router, commercial_guard),
