@@ -218,7 +218,7 @@ def initialize_finance_project_from_workplace(
                 actor_user_id=actor_user_id,
                 entity_type="finance_project",
                 entity_id=project_id,
-                action="project_initialized_from_workplace",
+                action="project_init_workplace",
                 reason="Finance project created from workplace identity only.",
                 after={
                     "workplace_id": str(workplace_id),
